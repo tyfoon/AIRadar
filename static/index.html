@@ -1092,6 +1092,7 @@
         await Promise.all([
           loadDevices().then(() => refresh()),
           loadAccessControl(),
+          loadGlobalFilterStatus(),
         ]);
         updateRefreshTimestamp();
       } catch(err) {
