@@ -29,7 +29,30 @@
       "Skill(update-config:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(jq -e '.hooks.PostToolUse[] | select\\(.matcher == \"\"Write|Edit\"\"\\) | .hooks[] | select\\(.type == \"\"command\"\"\\) | .command' /Users/goswijnthijssen/AIRadar/.claude/settings.local.json)",
+      "Bash(brew install:*)",
+      "Bash(xxd)",
+      "Bash(rm -rf adguard)",
+      "Bash(mkdir -p adguard)",
+      "Bash(curl -sL \"https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.55/AdGuardHome_darwin_arm64.tar.gz\" -o adguard.tar.gz)",
+      "Bash(curl -v -L \"https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.55/AdGuardHome_darwin_arm64.tar.gz\" -o adguard.tar.gz)",
+      "Bash(gh api:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/goswijnthijssen/AIRadar && git add -A && git diff --cached --quiet || (git commit -m 'auto-sync: update AIRadar files' && git push origin main 2>/dev/null || true)",
+            "timeout": 30,
+            "statusMessage": "Syncing to GitHub..."
+          }
+        ]
+      }
     ]
   }
 }
