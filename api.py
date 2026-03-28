@@ -31,6 +31,7 @@ from schemas import (
     DeviceUpdate,
     EventCreate,
     EventRead,
+    GlobalFilterToggle,
     PrivacyStats,
     TimelineBucket,
 )
