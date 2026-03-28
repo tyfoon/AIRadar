@@ -815,9 +815,19 @@
       const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
       const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
 
+      // Active vs preventive indicator
+      const seenTag = svc.seen
+        ? `<span class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400" title="${svc.hit_count} events detected">● Active (${svc.hit_count.toLocaleString()})</span>`
+        : `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-700/40 text-slate-500" title="No traffic detected yet">○ Preventive</span>`;
+
+      // Last seen info
+      const lastSeenText = svc.seen && svc.last_seen
+        ? `Last seen: ${fmtTime(svc.last_seen)}`
+        : 'No traffic detected';
+
       return `
         <div class="svc-card bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 ${blockedClass}">
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between mb-1">
             <span class="text-xs px-2 py-0.5 rounded font-medium ${badge}">${name}</span>
             <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
               <input type="checkbox" ${isAllowed ? 'checked' : ''}
@@ -825,6 +835,7 @@
               <span class="slider"></span>
             </label>
           </div>
+          <div class="mb-3">${seenTag}</div>
           <div class="flex items-center gap-2">
             <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
               <option value="0">Permanent</option>
@@ -834,7 +845,7 @@
             </select>
             ${svc.is_blocked ? `<span class="text-xs px-2 py-0.5 rounded bg-red-900/40 text-red-300">${permLabel}</span>` : '<span class="text-xs text-emerald-500">✓ Allowed</span>'}
           </div>
-          <p class="text-xs text-slate-500 mt-2">${svc.domains.join(', ')}</p>
+          <p class="text-xs text-slate-500 mt-2">${lastSeenText}</p>
         </div>`;
     }
 
