@@ -1,6 +1,7 @@
 """
 AI-Radar — Database layer.
-Initializes a local SQLite database and defines the AI_Event and Device tables.
+Initializes a local SQLite database and defines the DetectionEvent and Device
+tables.  Supports both AI-service and Cloud-storage detection categories.
 """
 
 from datetime import datetime, timezone
@@ -18,35 +19,31 @@ class Base(DeclarativeBase):
     pass
 
 
-class AIEvent(Base):
-    """Stores a single AI-traffic detection event reported by a sensor."""
+class DetectionEvent(Base):
+    """Stores a single traffic detection event (AI or Cloud)."""
 
-    __tablename__ = "ai_events"
+    __tablename__ = "detection_events"
 
     id = Column(Integer, primary_key=True, index=True)
     sensor_id = Column(String, nullable=False, index=True)
     timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    detection_type = Column(String, nullable=False)  # e.g. "dns_query", "sni_hello"
-    ai_service = Column(String, nullable=False)       # e.g. "openai", "anthropic"
+    detection_type = Column(String, nullable=False)   # e.g. "sni_hello", "dns_query", "volumetric_upload"
+    ai_service = Column(String, nullable=False)        # e.g. "openai", "dropbox"
     source_ip = Column(String, nullable=False)
     bytes_transferred = Column(Integer, nullable=False, default=0)
     possible_upload = Column(Boolean, nullable=False, default=False)
+    category = Column(String, nullable=False, default="ai")  # "ai" or "cloud"
 
 
 class Device(Base):
-    """Caches resolved device information (reverse DNS, ARP/MAC).
-
-    Keyed by IP address — the sensor populates this table as it discovers
-    new source IPs on the network.  The dashboard uses it to show friendly
-    device names instead of raw IP addresses.
-    """
+    """Caches resolved device information (reverse DNS, ARP/MAC)."""
 
     __tablename__ = "devices"
 
-    ip = Column(String, primary_key=True)               # e.g. "192.168.1.42"
-    hostname = Column(String, nullable=True)             # reverse DNS result
-    mac_address = Column(String, nullable=True)          # from ARP table
-    display_name = Column(String, nullable=True)         # user-editable alias
+    ip = Column(String, primary_key=True)
+    hostname = Column(String, nullable=True)
+    mac_address = Column(String, nullable=True)
+    display_name = Column(String, nullable=True)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime, nullable=False,
@@ -54,14 +51,36 @@ class Device(Base):
 
 
 def init_db() -> None:
-    """Create all tables if they don't exist yet, and migrate schema."""
+    """Create all tables if they don't exist yet, and migrate schema.
+
+    Handles migration from the old 'ai_events' table to 'detection_events'.
+    """
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    # Migrate: rename old ai_events table to detection_events and add category
+    if "ai_events" in existing_tables and "detection_events" not in existing_tables:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE ai_events RENAME TO detection_events"))
+            # Add category column to the renamed table
+            conn.execute(text(
+                "ALTER TABLE detection_events ADD COLUMN category TEXT NOT NULL DEFAULT 'ai'"
+            ))
+
+    # Create any missing tables (detection_events, devices)
     Base.metadata.create_all(bind=engine)
 
-    # Add possible_upload column to existing databases that lack it
+    # If detection_events already existed, ensure it has the category column
     inspector = inspect(engine)
-    columns = [c["name"] for c in inspector.get_columns("ai_events")]
-    if "possible_upload" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text(
-                "ALTER TABLE ai_events ADD COLUMN possible_upload BOOLEAN NOT NULL DEFAULT 0"
-            ))
+    if "detection_events" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("detection_events")]
+        if "possible_upload" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE detection_events ADD COLUMN possible_upload BOOLEAN NOT NULL DEFAULT 0"
+                ))
+        if "category" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE detection_events ADD COLUMN category TEXT NOT NULL DEFAULT 'ai'"
+                ))
