@@ -133,6 +133,78 @@ class AdGuardClient:
                 blocked.append(r[2:-1])
         return blocked
 
+    async def set_parental_control(self, enabled: bool) -> bool:
+        """Enable or disable AdGuard Parental Control (NSFW / gambling / safe-search)."""
+        action = "enable" if enabled else "disable"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/control/parental/{action}",
+                    content="sensitivity=TEEN",
+                    headers={"Content-Type": "text/plain"},
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                return True
+        except (httpx.HTTPError, Exception) as exc:
+            print(f"[adguard] Failed to {action} parental control: {exc}")
+            return False
+
+    async def get_parental_status(self) -> bool:
+        """Return True if parental control is currently enabled."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self.base_url}/control/parental/status",
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("enabled", False)
+        except (httpx.HTTPError, Exception):
+            return False
+
+    async def set_blocked_services(self, services: list[str]) -> bool:
+        """Push the full list of blocked services to AdGuard Home.
+
+        The AdGuard endpoint replaces the entire list each time, so pass
+        ALL services that should be blocked (e.g. ["tiktok", "facebook"]).
+        Pass an empty list to unblock all.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/control/blocked_services/set",
+                    json={"ids": services, "schedule": {"time_zone": "Local"}},
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                return True
+        except (httpx.HTTPError, Exception) as exc:
+            print(f"[adguard] Failed to set blocked services: {exc}")
+            return False
+
+    async def get_blocked_services(self) -> list[str]:
+        """Return the list of currently blocked services in AdGuard."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self.base_url}/control/blocked_services/list",
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                # AdGuard may return {"ids": [...]} or just [...]
+                if isinstance(data, list):
+                    return data
+                return data.get("ids", [])
+        except (httpx.HTTPError, Exception):
+            return []
+
     async def get_status(self) -> dict:
         """Check if AdGuard Home is running and protection is enabled."""
         try:
