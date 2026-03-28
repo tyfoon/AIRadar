@@ -57,7 +57,8 @@
       "Bash(awk '!/^#/' /Users/goswijnthijssen/AIRadar/ssl.log)",
       "Bash(python3 -c \"from zeek_tailer import DOMAIN_MAP; cats = {}:*)",
       "Bash(curl -s \"http://localhost:8000/api/health\")",
-      "Bash(python3 -c \"from api import app; print\\(''''[OK] API loads''''\\)\")"
+      "Bash(python3 -c \"from api import app; print\\(''''[OK] API loads''''\\)\")",
+      "Bash(git rm:*)"
     ]
   },
   "hooks": {
