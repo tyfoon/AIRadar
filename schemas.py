@@ -23,7 +23,7 @@ class EventCreate(BaseModel):
     source_ip: str
     bytes_transferred: int
     possible_upload: bool = False
-    category: str = "ai"  # "ai" or "cloud"
+    category: str = "ai"  # "ai", "cloud", or "tracking"
 
 
 class EventRead(EventCreate):

@@ -4,11 +4,13 @@ Exposes endpoints for ingesting and querying detection events (AI + Cloud),
 managing discovered devices, analytics, and AdGuard Home privacy stats.
 """
 
+import asyncio
 import csv
 import io
+import os
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -33,7 +35,71 @@ from schemas import (
 STATIC_DIR = Path(__file__).parent / "static"
 
 # AdGuard Home client (configure port as needed)
-adguard = AdGuardClient(base_url="http://127.0.0.1:3001")
+adguard = AdGuardClient(base_url="http://127.0.0.1:80")
+
+# ---------------------------------------------------------------------------
+# Data retention settings
+# ---------------------------------------------------------------------------
+RETENTION_DAYS = 7          # Keep events for 7 days
+MAX_EVENTS = 50_000         # Hard cap on total events
+CLEANUP_INTERVAL = 3600     # Run cleanup every hour (seconds)
+DB_PATH = Path(__file__).parent / "airadar.db"
+MAX_DB_SIZE_MB = 500        # Warn/compact if DB exceeds this
+
+
+async def _periodic_cleanup():
+    """Background task: prune old events and compact the database."""
+    while True:
+        await asyncio.sleep(CLEANUP_INTERVAL)
+        try:
+            db = SessionLocal()
+
+            # 1) Delete events older than RETENTION_DAYS
+            cutoff = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
+            old = db.query(DetectionEvent).filter(
+                DetectionEvent.timestamp < cutoff
+            ).delete(synchronize_session=False)
+
+            # 2) If still over MAX_EVENTS, delete oldest
+            total = db.query(func.count(DetectionEvent.id)).scalar() or 0
+            overflow = 0
+            if total > MAX_EVENTS:
+                overflow_ids = (
+                    db.query(DetectionEvent.id)
+                    .order_by(DetectionEvent.timestamp.asc())
+                    .limit(total - MAX_EVENTS)
+                    .all()
+                )
+                ids = [r[0] for r in overflow_ids]
+                if ids:
+                    db.query(DetectionEvent).filter(
+                        DetectionEvent.id.in_(ids)
+                    ).delete(synchronize_session=False)
+                    overflow = len(ids)
+
+            db.commit()
+
+            remaining = db.query(func.count(DetectionEvent.id)).scalar() or 0
+            db.close()
+
+            # 3) VACUUM to reclaim disk space (runs outside SQLAlchemy session)
+            if old > 0 or overflow > 0:
+                from sqlalchemy import create_engine, text
+                engine = create_engine(f"sqlite:///{DB_PATH}")
+                with engine.connect() as conn:
+                    conn.execute(text("VACUUM"))
+                engine.dispose()
+
+            # 4) Log cleanup results
+            db_size_mb = DB_PATH.stat().st_size / (1024 * 1024) if DB_PATH.exists() else 0
+            if old > 0 or overflow > 0:
+                print(
+                    f"[cleanup] Removed {old} old + {overflow} overflow events. "
+                    f"Remaining: {remaining}. DB size: {db_size_mb:.1f} MB"
+                )
+
+        except Exception as exc:
+            print(f"[cleanup] Error: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +108,14 @@ adguard = AdGuardClient(base_url="http://127.0.0.1:3001")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Start background cleanup task
+    cleanup_task = asyncio.create_task(_periodic_cleanup())
+    print(
+        f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
+        f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
+    )
     yield
+    cleanup_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
@@ -250,19 +323,293 @@ def rename_device(ip: str, payload: DeviceUpdate, db: Session = Depends(get_db))
 
 
 # ---------------------------------------------------------------------------
-# GET /api/privacy/stats — AdGuard Home statistics
+# GET /api/privacy/stats — AdGuard Home + Zeek tracking statistics
 # ---------------------------------------------------------------------------
-@app.get("/api/privacy/stats", response_model=PrivacyStats)
-async def privacy_stats():
-    """Fetch blocking statistics from AdGuard Home.
+@app.get("/api/privacy/stats")
+async def privacy_stats(db: Session = Depends(get_db)):
+    """Fetch combined privacy stats: AdGuard blocking + Zeek tracker detection.
 
     Returns a safe fallback if AdGuard is not running yet.
     """
+    # 1) AdGuard stats
     try:
-        stats = await adguard.get_stats()
-        return PrivacyStats(**stats)
+        adguard_stats = await adguard.get_stats()
     except Exception:
-        return PrivacyStats(status="unavailable")
+        adguard_stats = {
+            "total_queries": 0,
+            "blocked_queries": 0,
+            "block_percentage": 0.0,
+            "top_blocked": [],
+            "status": "unavailable",
+        }
+
+    # 2) Zeek-detected trackers from our database (category="tracking")
+    from sqlalchemy import func
+
+    # Total tracking events
+    tracking_total = (
+        db.query(func.count(DetectionEvent.id))
+        .filter(DetectionEvent.category == "tracking")
+        .scalar() or 0
+    )
+
+    # Top trackers (grouped by ai_service, sorted by count)
+    top_trackers_raw = (
+        db.query(
+            DetectionEvent.ai_service,
+            func.count(DetectionEvent.id).label("hits"),
+        )
+        .filter(DetectionEvent.category == "tracking")
+        .group_by(DetectionEvent.ai_service)
+        .order_by(func.count(DetectionEvent.id).desc())
+        .limit(10)
+        .all()
+    )
+    top_trackers = [
+        {"service": row[0], "hits": row[1]} for row in top_trackers_raw
+    ]
+
+    # Recent tracking events (last 50)
+    recent_tracking = (
+        db.query(DetectionEvent)
+        .filter(DetectionEvent.category == "tracking")
+        .order_by(DetectionEvent.timestamp.desc())
+        .limit(50)
+        .all()
+    )
+    recent_list = [
+        {
+            "timestamp": str(e.timestamp),
+            "service": e.ai_service,
+            "source_ip": e.source_ip,
+            "detection_type": e.detection_type,
+        }
+        for e in recent_tracking
+    ]
+
+    return {
+        # AdGuard section
+        "adguard": adguard_stats,
+        # Zeek tracker section
+        "trackers": {
+            "total_detected": tracking_total,
+            "top_trackers": top_trackers,
+            "recent": recent_list,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/health — system health check for all services
+# ---------------------------------------------------------------------------
+@app.get("/api/health")
+async def health_check(db: Session = Depends(get_db)):
+    """Check the status of all AI-Radar components."""
+    import time as _time
+    import subprocess
+    results = []
+
+    # 1) FastAPI itself — if we get here, it's running
+    results.append({
+        "service": "FastAPI Backend",
+        "icon": "🖥️",
+        "status": "ok",
+        "response_ms": 0,
+        "details": "Serving on port 8000",
+    })
+
+    # 2) SQLite Database
+    t0 = _time.monotonic()
+    try:
+        from sqlalchemy import func
+        count = db.query(func.count(DetectionEvent.id)).scalar() or 0
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        results.append({
+            "service": "SQLite Database",
+            "icon": "🗄️",
+            "status": "ok",
+            "response_ms": ms,
+            "details": f"{count:,} events stored",
+        })
+    except Exception as exc:
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        results.append({
+            "service": "SQLite Database",
+            "icon": "🗄️",
+            "status": "error",
+            "response_ms": ms,
+            "details": str(exc),
+        })
+
+    # 3) Zeek process
+    t0 = _time.monotonic()
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "zeek.*-i"],
+            capture_output=True, timeout=5,
+        )
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if proc.returncode == 0:
+            pids = proc.stdout.decode().strip().split('\n')
+            results.append({
+                "service": "Zeek (Packet Capture)",
+                "icon": "📡",
+                "status": "ok",
+                "response_ms": ms,
+                "details": f"Running (PID {pids[0]})",
+            })
+        else:
+            results.append({
+                "service": "Zeek (Packet Capture)",
+                "icon": "📡",
+                "status": "error",
+                "response_ms": ms,
+                "details": "Process not found — run: sudo zeek -i en0 -C",
+            })
+    except Exception as exc:
+        results.append({
+            "service": "Zeek (Packet Capture)",
+            "icon": "📡",
+            "status": "error",
+            "response_ms": 0,
+            "details": str(exc),
+        })
+
+    # 4) Zeek Tailer process
+    t0 = _time.monotonic()
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "zeek_tailer"],
+            capture_output=True, timeout=5,
+        )
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if proc.returncode == 0:
+            pids = proc.stdout.decode().strip().split('\n')
+            # Check freshness — was there an event in the last 60s?
+            from datetime import datetime, timedelta
+            cutoff = datetime.utcnow() - timedelta(seconds=60)
+            recent = db.query(DetectionEvent).filter(
+                DetectionEvent.timestamp > cutoff
+            ).count()
+            fresh = f", {recent} events in last 60s" if recent else ", no recent events"
+            results.append({
+                "service": "Zeek Tailer",
+                "icon": "🔄",
+                "status": "ok",
+                "response_ms": ms,
+                "details": f"Running (PID {pids[0]}){fresh}",
+            })
+        else:
+            results.append({
+                "service": "Zeek Tailer",
+                "icon": "🔄",
+                "status": "error",
+                "response_ms": ms,
+                "details": "Process not found — run: python3 zeek_tailer.py --zeek-log-dir .",
+            })
+    except Exception as exc:
+        results.append({
+            "service": "Zeek Tailer",
+            "icon": "🔄",
+            "status": "error",
+            "response_ms": 0,
+            "details": str(exc),
+        })
+
+    # 5) AdGuard Home
+    t0 = _time.monotonic()
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{adguard.base_url}/control/status",
+                auth=adguard.auth,
+                timeout=5,
+            )
+            ms = round((_time.monotonic() - t0) * 1000, 1)
+            if resp.status_code == 200:
+                data = resp.json()
+                protection = "protection ON" if data.get("protection_enabled") else "protection OFF"
+                results.append({
+                    "service": "AdGuard Home",
+                    "icon": "🛡️",
+                    "status": "ok",
+                    "response_ms": ms,
+                    "details": f"Running on {adguard.base_url}, {protection}",
+                })
+            else:
+                results.append({
+                    "service": "AdGuard Home",
+                    "icon": "🛡️",
+                    "status": "warning",
+                    "response_ms": ms,
+                    "details": f"HTTP {resp.status_code} — may need authentication",
+                })
+    except Exception as exc:
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        results.append({
+            "service": "AdGuard Home",
+            "icon": "🛡️",
+            "status": "error",
+            "response_ms": ms,
+            "details": f"Not reachable: {exc}",
+        })
+
+    # 6) Zeek log freshness
+    import os
+    from pathlib import Path
+    log_dir = Path(".")
+    for logname in ["ssl.log", "conn.log"]:
+        logpath = log_dir / logname
+        t0 = _time.monotonic()
+        if logpath.exists():
+            age_s = _time.time() - os.path.getmtime(logpath)
+            ms = round((_time.monotonic() - t0) * 1000, 1)
+            size_kb = os.path.getsize(logpath) / 1024
+            if age_s < 30:
+                status = "ok"
+                detail = f"Last modified {age_s:.0f}s ago, {size_kb:,.0f} KB"
+            else:
+                status = "warning"
+                detail = f"Stale — last modified {age_s:.0f}s ago"
+            results.append({
+                "service": f"Zeek {logname}",
+                "icon": "📄",
+                "status": status,
+                "response_ms": ms,
+                "details": detail,
+            })
+        else:
+            results.append({
+                "service": f"Zeek {logname}",
+                "icon": "📄",
+                "status": "error",
+                "response_ms": 0,
+                "details": "File not found",
+            })
+
+    # 7) Database size & retention info
+    db_size_mb = DB_PATH.stat().st_size / (1024*1024) if DB_PATH.exists() else 0
+    event_count = db.query(func.count(DetectionEvent.id)).scalar() or 0
+    db_status = "ok" if db_size_mb < MAX_DB_SIZE_MB else "warning"
+    results.append({
+        "service": "Data Retention",
+        "icon": "🧹",
+        "status": db_status,
+        "response_ms": 0,
+        "details": (
+            f"DB: {db_size_mb:.1f} MB, {event_count:,} events. "
+            f"Policy: keep {RETENTION_DAYS} days, max {MAX_EVENTS:,} events. "
+            f"Cleanup runs every {CLEANUP_INTERVAL//60} min."
+        ),
+    })
+
+    ok = sum(1 for r in results if r["status"] == "ok")
+    total = len(results)
+    return {
+        "summary": {"ok": ok, "total": total, "all_ok": ok == total},
+        "services": results,
+    }
 
 
 # ---------------------------------------------------------------------------

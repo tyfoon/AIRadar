@@ -21,3 +21,11 @@ Thumbs.db
 
 # Debug scripts
 quic_debug*.py
+
+# Zeek logs (generated at runtime)
+*.log
+
+# AdGuard Home runtime data
+adguard/data/
+adguard/AdGuardHome.yaml
+adguard/AdGuardHome/

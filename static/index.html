@@ -50,6 +50,9 @@
       <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="privacy">
         🛡️ Privacy
       </button>
+      <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="health">
+        ⚙️ System Health
+      </button>
     </nav>
 
     <!-- ================================================================ -->
@@ -175,43 +178,135 @@
     <!-- ================================================================ -->
     <div id="tab-privacy" class="tab-panel space-y-6">
 
-      <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <!-- === Row 1: AdGuard stats + Zeek tracker stats === -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <!-- AdGuard cards -->
         <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Total DNS Queries</p>
+          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">DNS Queries</p>
           <p id="priv-total" class="text-3xl font-bold tabular-nums">0</p>
+          <p class="text-xs text-slate-500 mt-1">via AdGuard Home</p>
         </div>
         <div class="bg-red-900/20 border border-red-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-red-400 mb-1">Blocked Queries</p>
+          <p class="text-xs uppercase tracking-wider text-red-400 mb-1">DNS Blocked</p>
           <p id="priv-blocked" class="text-3xl font-bold tabular-nums text-red-300">0</p>
+          <p class="text-xs text-slate-500 mt-1"><span id="priv-pct" class="text-red-400">0%</span> block rate</p>
         </div>
-        <div class="bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-emerald-400 mb-1">Block Rate</p>
-          <p id="priv-pct" class="text-3xl font-bold tabular-nums text-emerald-300">0%</p>
+        <!-- Zeek tracker cards -->
+        <div class="bg-amber-900/20 border border-amber-700/40 rounded-xl p-5">
+          <p class="text-xs uppercase tracking-wider text-amber-400 mb-1">Trackers Detected</p>
+          <p id="tracker-total" class="text-3xl font-bold tabular-nums text-amber-300">0</p>
+          <p class="text-xs text-slate-500 mt-1">via Zeek network analysis</p>
+        </div>
+        <div class="bg-purple-900/20 border border-purple-700/40 rounded-xl p-5">
+          <p class="text-xs uppercase tracking-wider text-purple-400 mb-1">Unique Trackers</p>
+          <p id="tracker-unique" class="text-3xl font-bold tabular-nums text-purple-300">0</p>
+          <p class="text-xs text-slate-500 mt-1">distinct tracking services</p>
+        </div>
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">AdGuard Status</p>
+          <p id="priv-status" class="text-lg font-semibold mt-1">--</p>
         </div>
       </section>
 
+      <!-- === Row 2: Charts side by side === -->
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- AdGuard blocked domains chart -->
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+          <h2 class="text-sm font-medium text-slate-300 mb-3">Top Blocked Domains (AdGuard)</h2>
+          <div id="priv-chart-container">
+            <canvas id="privChart" height="220"></canvas>
+          </div>
+          <p id="priv-unavailable" class="text-slate-500 text-center py-8 hidden">
+            AdGuard Home is not active on DNS yet.<br>
+            <span class="text-xs">Point your DNS to 127.0.0.1 to start blocking.</span>
+          </p>
+        </div>
+        <!-- Zeek tracker breakdown chart -->
+        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+          <h2 class="text-sm font-medium text-slate-300 mb-3">Tracker Breakdown (Zeek Network)</h2>
+          <canvas id="trackerChart" height="220"></canvas>
+        </div>
+      </section>
+
+      <!-- === Row 3: Recent tracker events table === -->
       <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-medium text-slate-300">Top Blocked Domains</h2>
-          <span id="priv-status" class="text-xs px-2 py-1 rounded bg-emerald-900/40 text-emerald-400">Connected</span>
+        <h2 class="text-sm font-medium text-slate-300 mb-3">Recent Tracker Activity</h2>
+        <div class="overflow-x-auto max-h-72 overflow-y-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs uppercase text-slate-400 border-b border-slate-700/50 sticky top-0 bg-slate-800/90">
+              <tr>
+                <th class="py-2 px-3">Time</th>
+                <th class="py-2 px-3">Tracker</th>
+                <th class="py-2 px-3">Type</th>
+                <th class="py-2 px-3">Source</th>
+              </tr>
+            </thead>
+            <tbody id="tracker-table-body" class="text-slate-300">
+              <tr><td colspan="4" class="py-8 text-center text-slate-500">Waiting for data...</td></tr>
+            </tbody>
+          </table>
         </div>
-        <div id="priv-chart-container">
-          <canvas id="privChart" height="200"></canvas>
-        </div>
-        <p id="priv-unavailable" class="text-slate-500 text-center py-12 hidden">
-          AdGuard Home is not running. Start it with:<br>
-          <code class="text-slate-400 bg-slate-800 px-3 py-1 rounded mt-2 inline-block">./adguard/AdGuardHome/AdGuardHome</code>
+      </section>
+
+      <!-- === Row 4: Explanation === -->
+      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <h2 class="text-sm font-medium text-slate-300 mb-3">How Privacy monitoring works</h2>
+        <p class="text-sm text-slate-400 leading-relaxed">
+          This tab combines two data sources for a complete privacy picture:<br>
+          <span class="text-amber-400 font-medium">Zeek Network Analysis</span> detects tracker connections at the TLS/SNI level — these are actual encrypted connections to ad networks, analytics platforms, and telemetry services. Even when your browser blocks cookies, these network-level trackers still phone home.<br>
+          <span class="text-emerald-400 font-medium">AdGuard Home</span> blocks trackers at the DNS level — preventing the connection before it starts.
+          <a href="http://localhost:80" target="_blank" class="text-indigo-400 hover:underline">Open AdGuard dashboard</a>
         </p>
       </section>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- System Health tab                                              -->
+    <!-- ============================================================= -->
+    <div id="tab-health" class="tab-panel space-y-6">
+
+      <section class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-slate-200">Service Health Check</h2>
+        <button id="health-refresh-btn"
+                onclick="runHealthCheck()"
+                class="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-all active:scale-95">
+          <span id="health-refresh-icon">🔄</span> Run Check
+        </button>
+      </section>
+
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="health-cards">
+        <!-- Cards will be injected by JS -->
+        <div class="col-span-full text-center text-slate-500 py-12">
+          Press <span class="text-indigo-400 font-medium">Run Check</span> to test all services.
+        </div>
+      </section>
+
+      <section id="health-details" class="hidden bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <h3 class="text-sm font-medium text-slate-300 mb-3">Detailed Results</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs uppercase text-slate-400 border-b border-slate-700/50">
+              <tr>
+                <th class="py-2 px-3">Service</th>
+                <th class="py-2 px-3">Status</th>
+                <th class="py-2 px-3">Response Time</th>
+                <th class="py-2 px-3">Details</th>
+              </tr>
+            </thead>
+            <tbody id="health-tbody" class="text-slate-300"></tbody>
+          </table>
+        </div>
+      </section>
 
       <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h2 class="text-sm font-medium text-slate-300 mb-3">What is this?</h2>
+        <h3 class="text-sm font-medium text-slate-300 mb-3">Service Overview</h3>
         <p class="text-sm text-slate-400 leading-relaxed">
-          The Privacy tab connects to your local
-          <a href="http://localhost:3000" target="_blank" class="text-indigo-400 hover:underline">AdGuard Home</a>
-          instance to show DNS-level ad &amp; tracker blocking statistics.
-          AdGuard Home acts as a network-wide ad-blocker by filtering DNS queries before
-          they reach external resolvers.
+          This tab checks the status of all AI-Radar components:
+          <span class="text-indigo-400">FastAPI backend</span> (event storage &amp; API),
+          <span class="text-emerald-400">Zeek</span> (network packet capture),
+          <span class="text-amber-400">Zeek Tailer</span> (log processing &amp; event forwarding),
+          <span class="text-cyan-400">AdGuard Home</span> (DNS-level ad/tracker blocking), and
+          <span class="text-purple-400">SQLite Database</span> (event persistence).
         </p>
       </section>
     </div>
@@ -342,7 +437,7 @@
     const cloudDoughnut = makeDoughnut('cloudServiceChart');
     const cloudTimeline = makeTimeline('cloudTimelineChart');
 
-    // Privacy bar chart
+    // Privacy bar chart (AdGuard blocked)
     const privChart = new Chart(document.getElementById('privChart').getContext('2d'), {
       type:'bar',
       data:{labels:[],datasets:[{label:'Blocked',data:[],backgroundColor:'#ef4444',borderRadius:4}]},
@@ -352,6 +447,19 @@
         scales:{
           x:{ticks:{color:'#64748b'},grid:{color:'#1e293b'}},
           y:{ticks:{color:'#94a3b8',font:{size:11}},grid:{display:false}},
+        }
+      }
+    });
+
+    // Tracker doughnut chart (Zeek-detected)
+    const trackerPalette = ['#f59e0b','#8b5cf6','#ef4444','#06b6d4','#ec4899','#10b981','#f97316','#6366f1','#14b8a6','#e11d48'];
+    const trackerChart = new Chart(document.getElementById('trackerChart').getContext('2d'), {
+      type:'doughnut',
+      data:{labels:[],datasets:[{data:[],backgroundColor:trackerPalette,borderWidth:0}]},
+      options:{
+        responsive:true, cutout:'55%',
+        plugins:{
+          legend:{position:'right',labels:{color:'#94a3b8',font:{size:11},padding:10,boxWidth:12}},
         }
       }
     });
@@ -490,34 +598,149 @@
         renderTable(cloudEvt, 'cloud-tbody', 'cloud-empty');
         updateCharts(cloudEvt, cloudTl, cloudDoughnut, cloudTimeline);
 
-        // Privacy tab
+        // Privacy tab — combined AdGuard + Zeek tracker data
         const privRes = await fetch('/api/privacy/stats');
         const priv = await privRes.json();
-        document.getElementById('priv-total').textContent = priv.total_queries.toLocaleString();
-        document.getElementById('priv-blocked').textContent = priv.blocked_queries.toLocaleString();
-        document.getElementById('priv-pct').textContent = priv.block_percentage + '%';
+
+        // AdGuard section
+        const ag = priv.adguard || {};
+        document.getElementById('priv-total').textContent = (ag.total_queries||0).toLocaleString();
+        document.getElementById('priv-blocked').textContent = (ag.blocked_queries||0).toLocaleString();
+        document.getElementById('priv-pct').textContent = (ag.block_percentage||0) + '%';
 
         const statusEl = document.getElementById('priv-status');
         const unavail = document.getElementById('priv-unavailable');
         const chartC = document.getElementById('priv-chart-container');
-        if (priv.status === 'ok') {
-          statusEl.textContent = 'Connected';
-          statusEl.className = 'text-xs px-2 py-1 rounded bg-emerald-900/40 text-emerald-400';
+        if (ag.status === 'ok') {
+          statusEl.textContent = '● Connected';
+          statusEl.className = 'text-lg font-semibold text-emerald-400';
           unavail.classList.add('hidden');
           chartC.classList.remove('hidden');
-          // Update privacy chart
-          const topD = priv.top_blocked.slice(0,10);
+          const topD = (ag.top_blocked||[]).slice(0,10);
           privChart.data.labels = topD.map(d=>d.domain.length>30 ? d.domain.slice(0,27)+'...' : d.domain);
           privChart.data.datasets[0].data = topD.map(d=>d.count);
           privChart.update();
         } else {
-          statusEl.textContent = 'Offline';
-          statusEl.className = 'text-xs px-2 py-1 rounded bg-red-900/40 text-red-400';
+          statusEl.textContent = '● Offline';
+          statusEl.className = 'text-lg font-semibold text-red-400';
           chartC.classList.add('hidden');
           unavail.classList.remove('hidden');
         }
 
+        // Zeek tracker section
+        const tk = priv.trackers || {};
+        document.getElementById('tracker-total').textContent = (tk.total_detected||0).toLocaleString();
+        document.getElementById('tracker-unique').textContent = (tk.top_trackers||[]).length;
+
+        // Tracker doughnut chart
+        const topT = (tk.top_trackers||[]).slice(0,10);
+        trackerChart.data.labels = topT.map(t => t.service.replace(/_/g,' '));
+        trackerChart.data.datasets[0].data = topT.map(t => t.hits);
+        trackerChart.update();
+
+        // Tracker table
+        const tbody = document.getElementById('tracker-table-body');
+        const recent = tk.recent || [];
+        if (recent.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-500">No trackers detected yet — they will appear once browsing activity generates tracking connections.</td></tr>';
+        } else {
+          tbody.innerHTML = recent.map(e => {
+            const svc = e.service.replace(/_/g,' ');
+            const badgeColors = {
+              'google ads':'bg-red-900/40 text-red-300',
+              'google analytics':'bg-orange-900/40 text-orange-300',
+              'google telemetry':'bg-yellow-900/40 text-yellow-300',
+              'meta tracking':'bg-blue-900/40 text-blue-300',
+              'apple ads':'bg-slate-700/40 text-slate-300',
+              'microsoft ads':'bg-cyan-900/40 text-cyan-300',
+              'hotjar':'bg-amber-900/40 text-amber-300',
+              'datadog':'bg-purple-900/40 text-purple-300',
+            };
+            const badge = badgeColors[svc] || 'bg-slate-700/40 text-slate-300';
+            return `<tr class="border-b border-slate-700/30 hover:bg-slate-700/20">
+              <td class="py-2 px-3 text-xs tabular-nums text-slate-400">${fmtTime(e.timestamp)}</td>
+              <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ${badge}">${svc}</span></td>
+              <td class="py-2 px-3 text-xs text-slate-400">${e.detection_type}</td>
+              <td class="py-2 px-3 text-xs font-mono text-slate-400">${e.source_ip}</td>
+            </tr>`;
+          }).join('');
+        }
+
       } catch(err) { console.error('Polling error:', err); }
+    }
+
+    // =====================================================================
+    // Health Check
+    // =====================================================================
+    async function runHealthCheck() {
+      const btn = document.getElementById('health-refresh-btn');
+      const icon = document.getElementById('health-refresh-icon');
+      btn.disabled = true;
+      btn.classList.add('opacity-60');
+      icon.textContent = '⏳';
+
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        const services = data.services || [];
+        const summary = data.summary || {};
+
+        // Render cards
+        const cards = document.getElementById('health-cards');
+        const statusColors = {
+          ok:      { bg:'bg-emerald-900/20', border:'border-emerald-700/40', text:'text-emerald-400', label:'● Online' },
+          warning: { bg:'bg-amber-900/20',   border:'border-amber-700/40',   text:'text-amber-400',   label:'⚠ Warning' },
+          error:   { bg:'bg-red-900/20',     border:'border-red-700/40',     text:'text-red-400',     label:'✗ Offline' },
+        };
+
+        cards.innerHTML = services.map(s => {
+          const c = statusColors[s.status] || statusColors.error;
+          return `
+            <div class="${c.bg} border ${c.border} rounded-xl p-5">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xl">${s.icon}</span>
+                <span class="text-xs px-2 py-0.5 rounded ${c.bg} ${c.text} font-medium">${c.label}</span>
+              </div>
+              <p class="text-sm font-medium text-slate-200">${s.service}</p>
+              <p class="text-xs text-slate-400 mt-1">${s.details}</p>
+              ${s.response_ms > 0 ? `<p class="text-xs text-slate-500 mt-1">${s.response_ms}ms</p>` : ''}
+            </div>`;
+        }).join('');
+
+        // Summary banner at top
+        const allOk = summary.all_ok;
+        const bannerColor = allOk ? 'bg-emerald-900/20 border-emerald-700/40' : 'bg-amber-900/20 border-amber-700/40';
+        const bannerText = allOk
+          ? `<span class="text-emerald-400 font-medium">All ${summary.total} services are healthy</span>`
+          : `<span class="text-amber-400 font-medium">${summary.ok}/${summary.total} services healthy</span>`;
+        const banner = `<div class="col-span-full ${bannerColor} border rounded-xl p-4 text-center text-sm">${bannerText} — checked at ${new Date().toLocaleTimeString()}</div>`;
+        cards.innerHTML = banner + cards.innerHTML;
+
+        // Detail table
+        const details = document.getElementById('health-details');
+        details.classList.remove('hidden');
+        const tbody = document.getElementById('health-tbody');
+        tbody.innerHTML = services.map(s => {
+          const c = statusColors[s.status] || statusColors.error;
+          return `<tr class="border-b border-slate-700/30">
+            <td class="py-2.5 px-3"><span class="mr-2">${s.icon}</span>${s.service}</td>
+            <td class="py-2.5 px-3"><span class="text-xs px-2 py-0.5 rounded ${c.bg} ${c.text}">${c.label}</span></td>
+            <td class="py-2.5 px-3 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
+            <td class="py-2.5 px-3 text-xs text-slate-400">${s.details}</td>
+          </tr>`;
+        }).join('');
+
+      } catch(err) {
+        const cards = document.getElementById('health-cards');
+        cards.innerHTML = `<div class="col-span-full bg-red-900/20 border border-red-700/40 rounded-xl p-6 text-center">
+          <p class="text-red-400 font-medium">Health check failed</p>
+          <p class="text-sm text-slate-400 mt-1">${err.message}</p>
+        </div>`;
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-60');
+        icon.textContent = '🔄';
+      }
     }
 
     // =====================================================================

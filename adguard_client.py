@@ -13,9 +13,9 @@ class AdGuardClient:
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:3000",
-        username: str = "",
-        password: str = "",
+        base_url: str = "http://127.0.0.1:80",
+        username: str = "goswijn@goswijn.com",
+        password: str = "3xvBqkA5vYKUW7z",
     ):
         self.base_url = base_url.rstrip("/")
         self.auth = (username, password) if username else None

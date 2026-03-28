@@ -43,7 +43,21 @@
       "Bash(zeek --version)",
       "Bash(curl -s \"http://localhost:8000/api/events?limit=2\")",
       "Bash(curl -s \"http://localhost:8000/api/privacy/stats\")",
-      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/adguard/AdGuardHome)"
+      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/adguard/AdGuardHome)",
+      "Bash(curl -s \"http://127.0.0.1:3001/control/stats\")",
+      "Bash(curl -sv \"http://127.0.0.1:3001/control/stats\")",
+      "Bash(curl -sv \"http://127.0.0.1:3000/control/stats\")",
+      "Bash(curl -sv \"http://127.0.0.1:80/control/stats\")",
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:80/control/stats\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" -o /dev/null -w \"HTTP %{http_code}\" \"http://127.0.0.1:80/control/stats\")",
+      "Bash(python3 -c \"from zeek_tailer import record_upload, flush_upload_buckets, UPLOAD_DEBOUNCE_SECONDS; print\\(f''[OK] Debounce loaded, window={UPLOAD_DEBOUNCE_SECONDS}s''\\)\")",
+      "Bash(python3 -c \"from zeek_tailer import match_domain, _google_context; import time; _google_context[''10.0.0.1''] = \\(''google_gemini'', ''ai'', time.time\\(\\)\\); print\\(''Gemini context:'', match_domain\\(''www.googleapis.com'', ''10.0.0.1''\\)\\); print\\(''No context:'', match_domain\\(''www.googleapis.com'', ''10.0.0.2''\\)\\); print\\(''Direct Gemini:'', match_domain\\(''gemini.google.com'', ''10.0.0.3''\\)\\)\")",
+      "Bash(curl -s \"http://localhost:8000/api/devices\")",
+      "Bash(awk '!/^#/' /Users/goswijnthijssen/AIRadar/ssl.log)",
+      "Bash(python3 -c \"from zeek_tailer import DOMAIN_MAP; cats = {}:*)",
+      "Bash(curl -s \"http://localhost:8000/api/health\")",
+      "Bash(python3 -c \"from api import app; print\\(''''[OK] API loads''''\\)\")"
     ]
   },
   "hooks": {
