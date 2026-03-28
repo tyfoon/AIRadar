@@ -115,6 +115,20 @@ class BlockRuleUnblock(BaseModel):
     domain: str
 
 
+class GlobalFilterToggle(BaseModel):
+    """Payload for POST /api/filters/parental and /api/filters/services."""
+
+    enabled: bool
+
+
+class GlobalFilterStatus(BaseModel):
+    """Status of all global filters."""
+
+    parental_enabled: bool = False
+    social_media_blocked: list[str] = []
+    gaming_blocked: list[str] = []
+
+
 class PrivacyStats(BaseModel):
     """Summary of AdGuard Home blocking statistics."""
 
