@@ -60,7 +60,8 @@
       "Bash(python3 -c \"from api import app; print\\(''''[OK] API loads''''\\)\")",
       "Bash(git rm:*)",
       "Bash(git stash:*)",
-      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:80/control/filtering/status\")"
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:80/control/filtering/status\")",
+      "Bash(python3 -c \"from api import app; print\\(''[OK] API loads''\\); print\\(''Routes:'', [r.path for r in app.routes if hasattr\\(r,''path''\\) and ''rule'' in r.path]\\)\")"
     ]
   },
   "hooks": {
