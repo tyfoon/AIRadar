@@ -58,7 +58,9 @@
       "Bash(python3 -c \"from zeek_tailer import DOMAIN_MAP; cats = {}:*)",
       "Bash(curl -s \"http://localhost:8000/api/health\")",
       "Bash(python3 -c \"from api import app; print\\(''''[OK] API loads''''\\)\")",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(git stash:*)",
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:80/control/filtering/status\")"
     ]
   },
   "hooks": {

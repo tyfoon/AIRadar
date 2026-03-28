@@ -50,6 +50,21 @@ class Device(Base):
                        default=lambda: datetime.now(timezone.utc))
 
 
+class BlockRule(Base):
+    """Stores active and expired block rules for AI/Cloud services."""
+
+    __tablename__ = "block_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    service_name = Column(String, nullable=False, index=True)   # e.g. "dropbox", "openai"
+    domain = Column(String, nullable=False)                      # e.g. "dropbox.com"
+    category = Column(String, nullable=False, default="ai")      # "ai" or "cloud"
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=True)                 # NULL = permanent
+
+
 def init_db() -> None:
     """Create all tables if they don't exist yet, and migrate schema.
 
