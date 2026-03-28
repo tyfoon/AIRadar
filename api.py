@@ -105,20 +105,63 @@ async def _periodic_cleanup():
             print(f"[cleanup] Error: {exc}")
 
 
+RULE_EXPIRY_INTERVAL = 60  # Check expired rules every 60 seconds
+
+
+async def _expire_block_rules():
+    """Background task: unblock services whose temporary rules have expired."""
+    while True:
+        await asyncio.sleep(RULE_EXPIRY_INTERVAL)
+        try:
+            db = SessionLocal()
+            now = datetime.utcnow()
+
+            # Find active rules that have expired
+            expired = (
+                db.query(BlockRule)
+                .filter(
+                    BlockRule.is_active == True,
+                    BlockRule.expires_at != None,
+                    BlockRule.expires_at <= now,
+                )
+                .all()
+            )
+
+            for rule in expired:
+                # Unblock in AdGuard
+                ok = await adguard.unblock_domain(rule.domain)
+                rule.is_active = False
+                status = "ok" if ok else "AdGuard error"
+                print(
+                    f"[rules] Expired: {rule.service_name} ({rule.domain}) "
+                    f"— unblocked ({status})"
+                )
+
+            if expired:
+                db.commit()
+
+            db.close()
+        except Exception as exc:
+            print(f"[rules] Expiry check error: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Start background cleanup task
+    # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
+    expiry_task = asyncio.create_task(_expire_block_rules())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
     )
+    print(f"[rules] Block rule expiry checker running every {RULE_EXPIRY_INTERVAL}s")
     yield
     cleanup_task.cancel()
+    expiry_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
