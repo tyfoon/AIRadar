@@ -915,11 +915,38 @@
     }
 
     // =====================================================================
-    // Init
+    // Manual Refresh
+    // =====================================================================
+    function updateRefreshTimestamp() {
+      const el = document.getElementById('last-refresh');
+      if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+
+    async function manualRefresh() {
+      const btn = document.getElementById('refresh-btn');
+      const icon = document.getElementById('refresh-icon');
+      if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+      if (icon) icon.style.animation = 'spin 0.6s linear infinite';
+
+      try {
+        await Promise.all([
+          loadDevices().then(() => refresh()),
+          loadAccessControl(),
+        ]);
+        updateRefreshTimestamp();
+      } catch(err) {
+        console.error('Refresh error:', err);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+        if (icon) icon.style.animation = '';
+      }
+    }
+
+    // =====================================================================
+    // Init (single load on page open, no polling)
     // =====================================================================
     loadAccessControl();
-    loadDevices().then(() => refresh());
-    setInterval(() => { loadDevices().then(() => refresh()); loadAccessControl(); }, 5000);
+    loadDevices().then(() => { refresh(); updateRefreshTimestamp(); });
   </script>
 </body>
 </html>
