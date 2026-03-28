@@ -66,7 +66,9 @@
       "Bash(curl -s -X POST \"http://localhost:8000/api/rules/block\" -H \"Content-Type: application/json\" -d '{\"\"\"\"service_name\"\"\"\":\"\"\"\"mega\"\"\"\",\"\"\"\"domain\"\"\"\":\"\"\"\"mega.nz\"\"\"\",\"\"\"\"category\"\"\"\":\"\"\"\"cloud\"\"\"\",\"\"\"\"duration_minutes\"\"\"\":1}')",
       "Bash(curl -s -u goswijn@goswijn.com:3xvBqkA5vYKUW7z http://127.0.0.1:80/control/filtering/status)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''User rules:'''', d.get\\(''''user_rules''''\\)\\)\")",
-      "Bash(curl -s -X POST \"http://localhost:8000/api/rules/unblock\" -H \"Content-Type: application/json\" -d '{\"\"\"\"service_name\"\"\"\":\"\"\"\"mega\"\"\"\",\"\"\"\"domain\"\"\"\":\"\"\"\"mega.nz\"\"\"\"}')"
+      "Bash(curl -s -X POST \"http://localhost:8000/api/rules/unblock\" -H \"Content-Type: application/json\" -d '{\"\"\"\"service_name\"\"\"\":\"\"\"\"mega\"\"\"\",\"\"\"\"domain\"\"\"\":\"\"\"\"mega.nz\"\"\"\"}')",
+      "Bash(scutil --dns)",
+      "Bash(sudo networksetup:*)"
     ]
   },
   "hooks": {
