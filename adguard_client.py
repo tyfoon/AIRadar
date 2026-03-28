@@ -68,6 +68,71 @@ class AdGuardClient:
                 "status": f"unavailable: {exc}",
             }
 
+    async def _get_user_rules(self) -> list[str]:
+        """Fetch current user filtering rules from AdGuard."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self.base_url}/control/filtering/status",
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                rules = data.get("user_rules") or []
+                return [r for r in rules if r.strip()]
+        except (httpx.HTTPError, Exception):
+            return []
+
+    async def _set_user_rules(self, rules: list[str]) -> bool:
+        """Write the full set of user filtering rules to AdGuard."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/control/filtering/set_rules",
+                    json={"rules": rules},
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                return True
+        except (httpx.HTTPError, Exception) as exc:
+            print(f"[adguard] Failed to set rules: {exc}")
+            return False
+
+    async def block_domain(self, domain: str) -> bool:
+        """Add a block rule for a domain (||domain^).
+
+        Returns True if the rule was added successfully.
+        """
+        rule = f"||{domain}^"
+        rules = await self._get_user_rules()
+        if rule in rules:
+            return True  # Already blocked
+        rules.append(rule)
+        return await self._set_user_rules(rules)
+
+    async def unblock_domain(self, domain: str) -> bool:
+        """Remove the block rule for a domain.
+
+        Returns True if the rule was removed successfully.
+        """
+        rule = f"||{domain}^"
+        rules = await self._get_user_rules()
+        if rule not in rules:
+            return True  # Already unblocked
+        rules = [r for r in rules if r != rule]
+        return await self._set_user_rules(rules)
+
+    async def get_blocked_domains(self) -> list[str]:
+        """Return list of currently blocked domains from user rules."""
+        rules = await self._get_user_rules()
+        blocked = []
+        for r in rules:
+            if r.startswith("||") and r.endswith("^"):
+                blocked.append(r[2:-1])
+        return blocked
+
     async def get_status(self) -> dict:
         """Check if AdGuard Home is running and protection is enabled."""
         try:
