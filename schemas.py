@@ -1,5 +1,6 @@
 """
 AI-Radar — Pydantic schemas for request / response validation.
+Supports both AI and Cloud detection categories.
 """
 
 from datetime import datetime
@@ -9,10 +10,10 @@ from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
-# AI Event schemas
+# Detection Event schemas
 # ---------------------------------------------------------------------------
 
-class AIEventCreate(BaseModel):
+class EventCreate(BaseModel):
     """Payload accepted by POST /api/ingest."""
 
     sensor_id: str
@@ -22,9 +23,10 @@ class AIEventCreate(BaseModel):
     source_ip: str
     bytes_transferred: int
     possible_upload: bool = False
+    category: str = "ai"  # "ai" or "cloud"
 
 
-class AIEventRead(AIEventCreate):
+class EventRead(EventCreate):
     """Response model returned by GET /api/events (includes the DB id)."""
 
     id: int
@@ -68,12 +70,22 @@ class DeviceUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TimelineBucket(BaseModel):
-    """One time bucket for the timeline chart.
+    """One time bucket for the timeline chart."""
 
-    Contains per-service event counts and the number of upload events,
-    so the frontend can render stacked bars and upload markers.
-    """
+    bucket: str
+    services: dict[str, int]
+    uploads: int = 0
 
-    bucket: str                        # ISO timestamp (e.g. "2026-03-27T18:00:00")
-    services: dict[str, int]           # { "openai": 12, "anthropic_claude": 5, ... }
-    uploads: int = 0                   # count of possible_upload events in this bucket
+
+# ---------------------------------------------------------------------------
+# Privacy / AdGuard schemas
+# ---------------------------------------------------------------------------
+
+class PrivacyStats(BaseModel):
+    """Summary of AdGuard Home blocking statistics."""
+
+    total_queries: int = 0
+    blocked_queries: int = 0
+    block_percentage: float = 0.0
+    top_blocked: list[dict] = []  # [{"domain": "...", "count": N}, ...]
+    status: str = "ok"  # "ok" or "unavailable"
