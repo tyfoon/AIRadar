@@ -21,6 +21,16 @@
     .tab-btn:not(.active):hover { color: #94a3b8; background: rgba(51,65,85,0.3); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
+    /* Toggle switch */
+    .toggle { position:relative; width:44px; height:24px; cursor:pointer; }
+    .toggle input { opacity:0; width:0; height:0; }
+    .toggle .slider { position:absolute; inset:0; background:#dc2626; border-radius:12px; transition:.3s; }
+    .toggle .slider::before { content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.3s; }
+    .toggle input:checked + .slider { background:#10b981; }
+    .toggle input:checked + .slider::before { transform:translateX(20px); }
+    .toggle input:disabled + .slider { opacity:0.5; cursor:not-allowed; }
+    .svc-card { transition: all 0.2s; }
+    .svc-card.blocked { border-color: rgba(220,38,38,0.4); background: rgba(127,29,29,0.15); }
   </style>
 </head>
 <body class="text-slate-200 min-h-screen">
