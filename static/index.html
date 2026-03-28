@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Radar Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #0f172a; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    select, input[type="datetime-local"] {
+      background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+      border-radius: 0.5rem; padding: 0.35rem 0.6rem; font-size: 0.8rem;
+    }
+    select:focus, input:focus { outline: none; border-color: #6366f1; }
+  </style>
+</head>
+<body class="text-slate-200 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-slate-700/60 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="h-9 w-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm">AR</div>
+      <h1 class="text-xl font-semibold tracking-tight">AI-Radar <span class="text-slate-500 font-normal text-sm">v0.2</span></h1>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-slate-400">
+      <span id="status-dot" class="h-2 w-2 rounded-full bg-emerald-500 inline-block"></span>
+      <span>Live &mdash; polling every 5 s</span>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Stat cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Total Events</p>
+        <p id="stat-total" class="text-3xl font-bold tabular-nums">0</p>
+      </div>
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Unique Services</p>
+        <p id="stat-services" class="text-3xl font-bold tabular-nums">0</p>
+      </div>
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Devices</p>
+        <p id="stat-sources" class="text-3xl font-bold tabular-nums">0</p>
+      </div>
+      <div class="bg-orange-900/20 border border-orange-700/40 rounded-xl p-5">
+        <p class="text-xs uppercase tracking-wider text-orange-400 mb-1">Uploads Detected</p>
+        <p id="stat-uploads" class="text-3xl font-bold tabular-nums text-orange-300">0</p>
+      </div>
+    </section>
+
+    <!-- Filter bar -->
+    <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl px-5 py-3 flex flex-wrap items-center gap-3">
+      <span class="text-xs uppercase tracking-wider text-slate-400 mr-1">Filters</span>
+
+      <select id="filter-service">
+        <option value="">All services</option>
+      </select>
+
+      <select id="filter-device">
+        <option value="">All devices</option>
+      </select>
+
+      <select id="filter-period">
+        <option value="">All time</option>
+        <option value="60" selected>Last hour</option>
+        <option value="1440">Last 24 h</option>
+        <option value="10080">Last 7 days</option>
+        <option value="custom">Custom range</option>
+      </select>
+
+      <input type="datetime-local" id="filter-start" class="hidden" />
+      <input type="datetime-local" id="filter-end"   class="hidden" />
+
+      <button id="btn-apply"
+        class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium transition-colors">
+        Apply
+      </button>
+      <button id="btn-export"
+        class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium transition-colors">
+        Export CSV
+      </button>
+    </section>
+
+    <!-- Timeline chart (full width) -->
+    <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+      <h2 class="text-sm font-medium text-slate-300 mb-3">Activity Timeline</h2>
+      <canvas id="timelineChart" height="100"></canvas>
+    </section>
+
+    <!-- Doughnut + Table -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Doughnut chart -->
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-1">
+        <h2 class="text-sm font-medium text-slate-300 mb-4">Detections by Service</h2>
+        <canvas id="serviceChart" height="260"></canvas>
+      </div>
+
+      <!-- Event table -->
+      <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-2 overflow-x-auto">
+        <h2 class="text-sm font-medium text-slate-300 mb-2">Latest Events</h2>
+        <p class="text-xs text-slate-500 mb-3">Rows in orange indicate a possible file upload (&gt;100 KB outbound). Click a device name to rename it.</p>
+        <table class="w-full text-sm text-left">
+          <thead>
+            <tr class="text-xs uppercase tracking-wider text-slate-400 border-b border-slate-700/50">
+              <th class="py-2 pr-4">Time</th>
+              <th class="py-2 pr-4">Service</th>
+              <th class="py-2 pr-4">Type</th>
+              <th class="py-2 pr-4">Device</th>
+              <th class="py-2 pr-4">Sensor</th>
+              <th class="py-2 text-right">Bytes</th>
+            </tr>
+          </thead>
+          <tbody id="event-tbody"></tbody>
+        </table>
+        <p id="empty-msg" class="text-slate-500 text-center py-8 hidden">No events captured yet.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // Colour palette
+    // -----------------------------------------------------------------------
+    const COLORS = [
+      '#6366f1', '#22d3ee', '#f59e0b', '#ef4444',
+      '#10b981', '#ec4899', '#8b5cf6', '#f97316',
+    ];
+    const SERVICE_BADGES = {
+      google_gemini:      'bg-yellow-900/60 text-yellow-300',
+      openai:             'bg-emerald-900/60 text-emerald-300',
+      anthropic_claude:   'bg-indigo-900/60 text-indigo-300',
+      microsoft_copilot:  'bg-blue-900/60 text-blue-300',
+      perplexity:         'bg-cyan-900/60 text-cyan-300',
+      huggingface:        'bg-amber-900/60 text-amber-300',
+      mistral:            'bg-purple-900/60 text-purple-300',
+    };
+    const DEFAULT_BADGE = 'bg-slate-700 text-slate-300';
+
+    // -----------------------------------------------------------------------
+    // Device lookup map (ip -> best display name)
+    // -----------------------------------------------------------------------
+    let deviceMap = {};  // { ip: { hostname, mac_address, display_name } }
+
+    function deviceName(ip) {
+      const d = deviceMap[ip];
+      if (!d) return ip;
+      return d.display_name || d.hostname || ip;
+    }
+
+    async function loadDevices() {
+      try {
+        const res = await fetch('/api/devices');
+        if (!res.ok) return;
+        const devices = await res.json();
+        deviceMap = {};
+        devices.forEach(d => { deviceMap[d.ip] = d; });
+
+        // populate the device filter dropdown
+        const sel = document.getElementById('filter-device');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">All devices</option>';
+        devices.forEach(d => {
+          const label = d.display_name || d.hostname || d.ip;
+          sel.innerHTML += `<option value="${d.ip}">${label}</option>`;
+        });
+        sel.value = current;
+      } catch(e) { console.error('Device fetch error', e); }
+    }
+
+    // -----------------------------------------------------------------------
+    // Charts
+    // -----------------------------------------------------------------------
+    const doughnutCtx = document.getElementById('serviceChart').getContext('2d');
+    const doughnutChart = new Chart(doughnutCtx, {
+      type: 'doughnut',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: COLORS, borderWidth: 0 }] },
+      options: {
+        cutout: '55%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16, font: { size: 12 } } },
+        },
+      },
+    });
+
+    // Service-specific colors for stacked bars (matches badge palette)
+    const SERVICE_COLORS = {
+      google_gemini:      '#f59e0b',
+      openai:             '#10b981',
+      anthropic_claude:   '#6366f1',
+      microsoft_copilot:  '#3b82f6',
+      perplexity:         '#22d3ee',
+      huggingface:        '#f97316',
+      mistral:            '#8b5cf6',
+    };
+    const FALLBACK_COLORS = ['#ec4899', '#14b8a6', '#e11d48', '#a855f7'];
+    let fallbackIdx = 0;
+
+    function serviceColor(svc) {
+      if (SERVICE_COLORS[svc]) return SERVICE_COLORS[svc];
+      if (!SERVICE_COLORS[svc]) {
+        SERVICE_COLORS[svc] = FALLBACK_COLORS[fallbackIdx % FALLBACK_COLORS.length];
+        fallbackIdx++;
+      }
+      return SERVICE_COLORS[svc];
+    }
+
+    const timelineCtx = document.getElementById('timelineChart').getContext('2d');
+    const timelineChart = new Chart(timelineCtx, {
+      type: 'bar',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#94a3b8', padding: 12, font: { size: 11 }, usePointStyle: true, pointStyle: 'rect' },
+          },
+          tooltip: {
+            mode: 'index',
+            callbacks: {
+              afterBody: (items) => {
+                // Show upload count if the "Uploads" dataset exists
+                const uploadDs = timelineChart.data.datasets.find(ds => ds._isUpload);
+                if (uploadDs && items.length > 0) {
+                  const idx = items[0].dataIndex;
+                  const val = uploadDs.data[idx];
+                  if (val > 0) return `\nUploads detected: ${val}`;
+                }
+                return '';
+              }
+            }
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: '#64748b', maxRotation: 45, font: { size: 10 } },
+            grid: { display: false },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#64748b', precision: 0 },
+            grid: { color: '#1e293b' },
+          },
+          y2: {
+            position: 'right',
+            beginAtZero: true,
+            ticks: { color: '#ef4444', precision: 0, font: { size: 10 } },
+            grid: { display: false },
+            title: { display: true, text: 'Uploads', color: '#ef4444', font: { size: 10 } },
+          },
+        },
+      },
+    });
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+    function formatTime(iso) {
+      const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function formatBucket(iso) {
+      const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function badge(service) {
+      const cls = SERVICE_BADGES[service] || DEFAULT_BADGE;
+      return `<span class="px-2 py-0.5 rounded text-xs font-medium ${cls}">${service}</span>`;
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter state helpers
+    // -----------------------------------------------------------------------
+    function getFilterParams() {
+      const params = new URLSearchParams();
+      const service = document.getElementById('filter-service').value;
+      const device  = document.getElementById('filter-device').value;
+      const period  = document.getElementById('filter-period').value;
+
+      if (service) params.set('service', service);
+      if (device)  params.set('source_ip', device);
+
+      if (period === 'custom') {
+        const s = document.getElementById('filter-start').value;
+        const e = document.getElementById('filter-end').value;
+        if (s) params.set('start', new Date(s).toISOString());
+        if (e) params.set('end',   new Date(e).toISOString());
+      } else if (period) {
+        const ms = parseInt(period) * 60 * 1000;
+        params.set('start', new Date(Date.now() - ms).toISOString());
+      }
+      return params;
+    }
+
+    function getBucketSize() {
+      const period = document.getElementById('filter-period').value;
+      if (!period || period === 'custom') return 'hour';
+      const mins = parseInt(period);
+      if (mins <= 60) return 'minute';
+      if (mins <= 1440) return 'hour';
+      return 'day';
+    }
+
+    // Show/hide custom date inputs
+    document.getElementById('filter-period').addEventListener('change', (e) => {
+      const show = e.target.value === 'custom';
+      document.getElementById('filter-start').classList.toggle('hidden', !show);
+      document.getElementById('filter-end').classList.toggle('hidden', !show);
+    });
+
+    // -----------------------------------------------------------------------
+    // Device rename (click handler)
+    // -----------------------------------------------------------------------
+    document.addEventListener('click', async (e) => {
+      const el = e.target.closest('.device-name');
+      if (!el) return;
+      const ip = el.dataset.ip;
+      const current = deviceMap[ip]?.display_name || deviceMap[ip]?.hostname || ip;
+      const newName = prompt(`Rename device (${ip}):`, current);
+      if (newName && newName !== current) {
+        try {
+          await fetch(`/api/devices/${encodeURIComponent(ip)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: newName }),
+          });
+          await loadDevices();
+          await refresh();
+        } catch(err) { console.error('Rename failed', err); }
+      }
+    });
+
+    // -----------------------------------------------------------------------
+    // Fetch & render
+    // -----------------------------------------------------------------------
+    async function refresh() {
+      try {
+        const params = getFilterParams();
+
+        // Fetch events + timeline in parallel
+        const [evtRes, tlRes] = await Promise.all([
+          fetch('/api/events?' + params.toString()),
+          fetch('/api/timeline?bucket_size=' + getBucketSize() + '&' + params.toString()),
+        ]);
+        if (!evtRes.ok) return;
+        const events = await evtRes.json();
+        const timeline = tlRes.ok ? await tlRes.json() : [];
+
+        // -- Stats --
+        document.getElementById('stat-total').textContent = events.length;
+        const services = new Set(events.map(e => e.ai_service));
+        document.getElementById('stat-services').textContent = services.size;
+        const sources = new Set(events.map(e => e.source_ip));
+        document.getElementById('stat-sources').textContent = Object.keys(deviceMap).length || sources.size;
+        const uploads = events.filter(e => e.possible_upload).length;
+        document.getElementById('stat-uploads').textContent = uploads;
+
+        // Populate service filter (preserve current selection)
+        const svcSel = document.getElementById('filter-service');
+        const curSvc = svcSel.value;
+        const allServices = [...services].sort();
+        svcSel.innerHTML = '<option value="">All services</option>';
+        allServices.forEach(s => {
+          svcSel.innerHTML += `<option value="${s}">${s}</option>`;
+        });
+        svcSel.value = curSvc;
+
+        // -- Table --
+        const tbody = document.getElementById('event-tbody');
+        const empty = document.getElementById('empty-msg');
+        if (events.length === 0) {
+          tbody.innerHTML = '';
+          empty.classList.remove('hidden');
+        } else {
+          empty.classList.add('hidden');
+          tbody.innerHTML = events.map(e => {
+            const isUpload = e.possible_upload;
+            const rowCls = isUpload
+              ? 'border-b border-orange-700/40 bg-orange-900/20'
+              : 'border-b border-slate-700/30 hover:bg-slate-700/20';
+            const uploadBadge = isUpload
+              ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-800/60 text-orange-300">UPLOAD</span>'
+              : '';
+            const dName = deviceName(e.source_ip);
+            const deviceCell = `<span class="device-name cursor-pointer hover:text-indigo-400 transition-colors" data-ip="${e.source_ip}" title="${e.source_ip}">${dName}</span>`;
+            return `
+            <tr class="${rowCls} transition-colors">
+              <td class="py-2 pr-4 tabular-nums text-slate-400">${formatTime(e.timestamp)}</td>
+              <td class="py-2 pr-4">${badge(e.ai_service)}</td>
+              <td class="py-2 pr-4 font-mono text-xs text-slate-300">${e.detection_type}${uploadBadge}</td>
+              <td class="py-2 pr-4 text-xs">${deviceCell}</td>
+              <td class="py-2 pr-4 text-xs text-slate-400">${e.sensor_id}</td>
+              <td class="py-2 text-right tabular-nums">${e.bytes_transferred.toLocaleString()}</td>
+            </tr>`;
+          }).join('');
+        }
+
+        // -- Doughnut chart --
+        const counts = {};
+        events.forEach(e => { counts[e.ai_service] = (counts[e.ai_service] || 0) + 1; });
+        doughnutChart.data.labels = Object.keys(counts);
+        doughnutChart.data.datasets[0].data = Object.values(counts);
+        doughnutChart.update();
+
+        // -- Timeline chart (stacked by service + red upload dots) --
+        const bucketLabels = timeline.map(p => formatBucket(p.bucket));
+
+        // Collect all services that appear in the timeline
+        const tlServices = new Set();
+        timeline.forEach(p => Object.keys(p.services).forEach(s => tlServices.add(s)));
+
+        // Build one stacked bar dataset per service
+        const barDatasets = [...tlServices].sort().map(svc => ({
+          label: svc,
+          data: timeline.map(p => p.services[svc] || 0),
+          backgroundColor: serviceColor(svc),
+          borderRadius: 3,
+          stack: 'stack0',
+          yAxisID: 'y',
+        }));
+
+        // Upload markers — red scatter dots on a separate Y axis
+        const uploadData = timeline.map(p => p.uploads || 0);
+        const hasUploads = uploadData.some(v => v > 0);
+        if (hasUploads) {
+          barDatasets.push({
+            label: 'Uploads',
+            data: uploadData,
+            type: 'line',
+            borderColor: '#ef4444',
+            backgroundColor: '#ef4444',
+            pointBackgroundColor: '#ef4444',
+            pointRadius: uploadData.map(v => v > 0 ? 6 : 0),
+            pointStyle: 'circle',
+            borderWidth: 0,
+            showLine: false,
+            yAxisID: 'y2',
+            _isUpload: true,
+          });
+        }
+
+        timelineChart.data.labels = bucketLabels;
+        timelineChart.data.datasets = barDatasets;
+        timelineChart.options.scales.y2.display = hasUploads;
+        timelineChart.update();
+
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // CSV export
+    // -----------------------------------------------------------------------
+    document.getElementById('btn-export').addEventListener('click', () => {
+      const params = getFilterParams();
+      window.location.href = '/api/events/export?' + params.toString();
+    });
+
+    // Apply filters button
+    document.getElementById('btn-apply').addEventListener('click', refresh);
+
+    // -----------------------------------------------------------------------
+    // Init: load devices, then start polling
+    // -----------------------------------------------------------------------
+    loadDevices().then(() => refresh());
+    setInterval(() => { loadDevices().then(() => refresh()); }, 5000);
+  </script>
+</body>
+</html>
