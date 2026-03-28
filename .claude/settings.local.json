@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 api.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/docs)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:8000/api/events)",
+      "Bash(pkill -f \"uvicorn.*api:app\")",
+      "Bash(python3 -c \"from sensor import match_ai_domain, extract_sni; print\\(''[OK] sensor.py imports cleanly''\\); print\\(''  match test:'', match_ai_domain\\(''api.openai.com''\\)\\); print\\(''  subdomain test:'', match_ai_domain\\(''foo.api.openai.com''\\)\\); print\\(''  negative test:'', match_ai_domain\\(''example.com''\\)\\)\")",
+      "Bash(python3 -c \"from sensor import main; main\\(\\)\")",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(lsof -ti:8000)",
+      "Bash(xargs kill:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/api/events)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"from sensor import decrypt_quic_initial, _reassemble_crypto_stream, _crypto_streams; print\\(''[OK] sensor.py loads with CRYPTO stream reassembly''\\)\")",
+      "Bash(python3 -c \"from sensor import _ai_ip_map, _outbound_bytes, _track_outbound_bytes, _learn_ai_ips_from_dns, UPLOAD_THRESHOLD_BYTES; print\\(f''[OK] Sensor loads, threshold={UPLOAD_THRESHOLD_BYTES:,} bytes''\\)\")",
+      "Bash(python3 -c \"from sensor import _track_outbound_bytes; print\\(''[OK] sensor.py loads''\\)\")",
+      "Bash(python3 -c \"from database import Device, AIEvent, init_db; from schemas import DeviceRead, DeviceRegister, DeviceUpdate, TimelinePoint; print\\(''[OK] All models & schemas load correctly''\\)\")",
+      "Bash(python3 -c \"from api import app; print\\(''[OK] FastAPI app loads, routes:'', [r.path for r in app.routes if hasattr\\(r, ''path''\\)]\\)\")",
+      "Bash(python3 -c \"from sensor import resolve_device, register_device_async, _resolve_hostname; h = _resolve_hostname\\(''192.168.1.1''\\); print\\(f''[OK] Sensor loads, router hostname: {h}''\\)\")",
+      "Bash(python3 -c \"from api import app; print\\(''[OK] API loads''\\); from schemas import TimelineBucket; print\\(''[OK] TimelineBucket schema:'', TimelineBucket.model_fields.keys\\(\\)\\)\")",
+      "WebFetch(domain:www.amazon.de)",
+      "Bash(gh repo:*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
