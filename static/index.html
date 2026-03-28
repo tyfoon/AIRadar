@@ -203,8 +203,9 @@
           <p id="priv-total" class="text-3xl font-bold tabular-nums">0</p>
           <p class="text-xs text-slate-500 mt-1">via AdGuard Home</p>
         </div>
-        <div class="bg-red-900/20 border border-red-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-red-400 mb-1">DNS Blocked</p>
+        <div class="bg-red-900/20 border border-red-700/40 rounded-xl p-5 cursor-pointer hover:bg-red-900/30 transition-colors"
+             onclick="toggleBlockedList()" title="Click to see blocked domains">
+          <p class="text-xs uppercase tracking-wider text-red-400 mb-1">DNS Blocked <span class="text-slate-500 normal-case">▾ click for details</span></p>
           <p id="priv-blocked" class="text-3xl font-bold tabular-nums text-red-300">0</p>
           <p class="text-xs text-slate-500 mt-1"><span id="priv-pct" class="text-red-400">0%</span> block rate</p>
         </div>
