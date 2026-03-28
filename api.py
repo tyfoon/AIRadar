@@ -570,8 +570,14 @@ async def unblock_service(payload: BlockRuleUnblock, db: Session = Depends(get_d
 
 @app.get("/api/rules/services")
 def get_known_services(db: Session = Depends(get_db)):
-    """Return all known services with their current block status."""
-    # Get active rules
+    """Return all known services with their current block status.
+
+    Each service includes a 'seen' flag indicating whether it has been
+    detected in actual network traffic, plus a hit_count and last_seen
+    timestamp.  Services that have never been seen are labeled as
+    'preventive' in the UI.
+    """
+    # Get active block rules
     active_rules = (
         db.query(BlockRule)
         .filter(BlockRule.is_active == True)
@@ -585,9 +591,28 @@ def get_known_services(db: Session = Depends(get_db)):
                 "is_permanent": rule.expires_at is None,
             }
 
+    # Query actual traffic per service (ai + cloud only, not tracking)
+    seen_raw = (
+        db.query(
+            DetectionEvent.ai_service,
+            func.count(DetectionEvent.id).label("hits"),
+            func.max(DetectionEvent.timestamp).label("last_seen"),
+        )
+        .filter(DetectionEvent.category.in_(["ai", "cloud"]))
+        .group_by(DetectionEvent.ai_service)
+        .all()
+    )
+    seen_map: dict[str, dict] = {}
+    for row in seen_raw:
+        seen_map[row[0]] = {
+            "hit_count": row[1],
+            "last_seen": str(row[2]) if row[2] else None,
+        }
+
     services = []
     for svc, info in SERVICE_DOMAINS.items():
         block_info = blocked_map.get(svc)
+        traffic = seen_map.get(svc)
         services.append({
             "service_name": svc,
             "category": info["category"],
@@ -595,7 +620,13 @@ def get_known_services(db: Session = Depends(get_db)):
             "is_blocked": svc in blocked_map,
             "is_permanent": block_info["is_permanent"] if block_info else False,
             "expires_at": block_info["expires_at"] if block_info else None,
+            "seen": traffic is not None,
+            "hit_count": traffic["hit_count"] if traffic else 0,
+            "last_seen": traffic["last_seen"] if traffic else None,
         })
+
+    # Sort: seen services first, then preventive
+    services.sort(key=lambda s: (not s["seen"], s["service_name"]))
     return services
 
 
