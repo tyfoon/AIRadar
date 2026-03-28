@@ -1107,6 +1107,7 @@
     // Init (single load on page open, no polling)
     // =====================================================================
     loadAccessControl();
+    loadGlobalFilterStatus();
     loadDevices().then(() => { refresh(); updateRefreshTimestamp(); });
   </script>
 </body>
