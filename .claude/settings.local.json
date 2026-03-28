@@ -37,7 +37,13 @@
       "Bash(mkdir -p adguard)",
       "Bash(curl -sL \"https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.55/AdGuardHome_darwin_arm64.tar.gz\" -o adguard.tar.gz)",
       "Bash(curl -v -L \"https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.55/AdGuardHome_darwin_arm64.tar.gz\" -o adguard.tar.gz)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(python3 -c \"from database import DetectionEvent, Device, init_db; from schemas import EventCreate, EventRead, PrivacyStats; from adguard_client import AdGuardClient; print\\(''[OK] All modules load correctly''\\)\")",
+      "Bash(python3 -c \"from database import DetectionEvent, Device, init_db; from schemas import EventCreate, EventRead, PrivacyStats; from adguard_client import AdGuardClient; from api import app; print\\(''[OK] All modules load''\\); print\\(''[OK] API routes:'', [r.path for r in app.routes if hasattr\\(r,''path''\\)]\\)\")",
+      "Bash(zeek --version)",
+      "Bash(curl -s \"http://localhost:8000/api/events?limit=2\")",
+      "Bash(curl -s \"http://localhost:8000/api/privacy/stats\")",
+      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/adguard/AdGuardHome)"
     ]
   },
   "hooks": {
