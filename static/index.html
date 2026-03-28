@@ -882,6 +882,65 @@
     }
 
     // =====================================================================
+    // Global Office Filters
+    // =====================================================================
+    async function loadGlobalFilterStatus() {
+      try {
+        const res = await fetch('/api/filters/status');
+        const data = await res.json();
+
+        document.getElementById('toggle-parental').checked = data.parental_enabled;
+        document.getElementById('toggle-social').checked = data.social_media_blocked;
+        document.getElementById('toggle-gaming').checked = data.gaming_blocked;
+
+        // Visual feedback — highlight active cards
+        toggleCardStyle('filter-parental-card', data.parental_enabled);
+        toggleCardStyle('filter-social-card', data.social_media_blocked);
+        toggleCardStyle('filter-gaming-card', data.gaming_blocked);
+      } catch(err) {
+        console.error('Global filter status load error:', err);
+      }
+    }
+
+    function toggleCardStyle(cardId, active) {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      if (active) {
+        card.classList.add('border-red-700/40', 'bg-red-900/10');
+        card.classList.remove('border-slate-700/50', 'bg-slate-800/60');
+      } else {
+        card.classList.remove('border-red-700/40', 'bg-red-900/10');
+        card.classList.add('border-slate-700/50', 'bg-slate-800/60');
+      }
+    }
+
+    async function toggleGlobalFilter(type, checkbox) {
+      checkbox.disabled = true;
+      const enabled = checkbox.checked;
+      const endpoints = { parental:'/api/filters/parental', social:'/api/filters/social', gaming:'/api/filters/gaming' };
+      const cardIds = { parental:'filter-parental-card', social:'filter-social-card', gaming:'filter-gaming-card' };
+
+      try {
+        const res = await fetch(endpoints[type], {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ enabled }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        toggleCardStyle(cardIds[type], enabled);
+      } catch(err) {
+        console.error(`Toggle ${type} error:`, err);
+        checkbox.checked = !checkbox.checked; // revert
+        alert(`Failed to update filter: ${err.message}`);
+      } finally {
+        checkbox.disabled = false;
+      }
+    }
+
+    // =====================================================================
     // Access Control — Block Rule Engine
     // =====================================================================
     const svcDisplayNames = {
