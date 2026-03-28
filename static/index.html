@@ -226,6 +226,17 @@
         </div>
       </section>
 
+      <!-- Expandable blocked domains list -->
+      <section id="blocked-domains-panel" class="hidden bg-red-900/10 border border-red-700/30 rounded-xl p-5 transition-all">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-red-300">Blocked DNS Domains</h2>
+          <button onclick="toggleBlockedList()" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">✕ Close</button>
+        </div>
+        <div id="blocked-domains-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+          <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
+        </div>
+      </section>
+
       <!-- === Row 2: Charts side by side === -->
       <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- AdGuard blocked domains chart -->
