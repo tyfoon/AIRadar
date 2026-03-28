@@ -29,6 +29,7 @@
     .toggle input:checked + .slider { background:#10b981; }
     .toggle input:checked + .slider::before { transform:translateX(20px); }
     .toggle input:disabled + .slider { opacity:0.5; cursor:not-allowed; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .svc-card { transition: all 0.2s; }
     .svc-card.blocked { border-color: rgba(220,38,38,0.4); background: rgba(127,29,29,0.15); }
   </style>
