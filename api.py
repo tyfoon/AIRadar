@@ -446,6 +446,160 @@ async def privacy_stats(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Block Rule Engine
+# ---------------------------------------------------------------------------
+
+# Known services with all their domains (for multi-domain blocking)
+SERVICE_DOMAINS: dict[str, dict] = {
+    # AI
+    "openai":           {"domains": ["openai.com", "chatgpt.com", "oaiusercontent.com"], "category": "ai"},
+    "anthropic_claude": {"domains": ["claude.ai", "anthropic.com"], "category": "ai"},
+    "google_gemini":    {"domains": ["gemini.google.com", "generativelanguage.googleapis.com", "aistudio.google.com"], "category": "ai"},
+    "microsoft_copilot":{"domains": ["copilot.microsoft.com", "sydney.bing.com"], "category": "ai"},
+    "perplexity":       {"domains": ["perplexity.ai"], "category": "ai"},
+    "huggingface":      {"domains": ["huggingface.co"], "category": "ai"},
+    "mistral":          {"domains": ["mistral.ai"], "category": "ai"},
+    # Cloud
+    "dropbox":          {"domains": ["dropbox.com"], "category": "cloud"},
+    "wetransfer":       {"domains": ["wetransfer.com"], "category": "cloud"},
+    "google_drive":     {"domains": ["drive.google.com", "docs.google.com"], "category": "cloud"},
+    "onedrive":         {"domains": ["onedrive.live.com", "storage.live.com"], "category": "cloud"},
+    "icloud":           {"domains": ["icloud.com"], "category": "cloud"},
+    "box":              {"domains": ["box.com"], "category": "cloud"},
+    "mega":             {"domains": ["mega.nz"], "category": "cloud"},
+}
+
+
+@app.get("/api/rules", response_model=list[BlockRuleRead])
+def get_rules(db: Session = Depends(get_db)):
+    """Return all block rules (active and expired)."""
+    return (
+        db.query(BlockRule)
+        .order_by(BlockRule.created_at.desc())
+        .all()
+    )
+
+
+@app.post("/api/rules/block", response_model=list[BlockRuleRead], status_code=201)
+async def block_service(payload: BlockRuleCreate, db: Session = Depends(get_db)):
+    """Block a service by adding rules to AdGuard Home.
+
+    If the service has multiple domains, ALL are blocked. Optionally
+    set duration_minutes for a temporary block.
+    """
+    svc = payload.service_name.lower()
+    info = SERVICE_DOMAINS.get(svc)
+    domains = info["domains"] if info else [payload.domain]
+    category = info["category"] if info else payload.category
+
+    # Calculate expiry
+    expires = None
+    if payload.duration_minutes and payload.duration_minutes > 0:
+        expires = datetime.utcnow() + timedelta(minutes=payload.duration_minutes)
+
+    created = []
+    for domain in domains:
+        # Check if already actively blocked
+        existing = (
+            db.query(BlockRule)
+            .filter(
+                BlockRule.domain == domain,
+                BlockRule.is_active == True,
+            )
+            .first()
+        )
+        if existing:
+            # Update expiry if changed
+            existing.expires_at = expires
+            db.commit()
+            db.refresh(existing)
+            created.append(existing)
+            continue
+
+        # Block in AdGuard
+        ok = await adguard.block_domain(domain)
+        if not ok:
+            print(f"[rules] Warning: AdGuard block failed for {domain}")
+
+        rule = BlockRule(
+            service_name=svc,
+            domain=domain,
+            category=category,
+            is_active=True,
+            expires_at=expires,
+        )
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+        created.append(rule)
+
+    label = f"for {payload.duration_minutes}m" if payload.duration_minutes else "permanently"
+    print(f"[rules] Blocked {svc} ({len(domains)} domains) {label}")
+    return created
+
+
+@app.post("/api/rules/unblock")
+async def unblock_service(payload: BlockRuleUnblock, db: Session = Depends(get_db)):
+    """Unblock a service by removing rules from AdGuard Home."""
+    svc = payload.service_name.lower()
+    info = SERVICE_DOMAINS.get(svc)
+    domains = info["domains"] if info else [payload.domain]
+
+    unblocked = 0
+    for domain in domains:
+        # Unblock in AdGuard
+        await adguard.unblock_domain(domain)
+
+        # Deactivate all active rules for this domain
+        active = (
+            db.query(BlockRule)
+            .filter(
+                BlockRule.domain == domain,
+                BlockRule.is_active == True,
+            )
+            .all()
+        )
+        for rule in active:
+            rule.is_active = False
+            unblocked += 1
+
+    db.commit()
+    print(f"[rules] Unblocked {svc} ({unblocked} rules deactivated)")
+    return {"service": svc, "unblocked": unblocked}
+
+
+@app.get("/api/rules/services")
+def get_known_services(db: Session = Depends(get_db)):
+    """Return all known services with their current block status."""
+    # Get active rules
+    active_rules = (
+        db.query(BlockRule)
+        .filter(BlockRule.is_active == True)
+        .all()
+    )
+    blocked_map: dict[str, dict] = {}
+    for rule in active_rules:
+        if rule.service_name not in blocked_map:
+            blocked_map[rule.service_name] = {
+                "expires_at": str(rule.expires_at) if rule.expires_at else None,
+                "is_permanent": rule.expires_at is None,
+            }
+
+    services = []
+    for svc, info in SERVICE_DOMAINS.items():
+        block_info = blocked_map.get(svc)
+        services.append({
+            "service_name": svc,
+            "category": info["category"],
+            "domains": info["domains"],
+            "is_blocked": svc in blocked_map,
+            "is_permanent": block_info["is_permanent"] if block_info else False,
+            "expires_at": block_info["expires_at"] if block_info else None,
+        })
+    return services
+
+
+# ---------------------------------------------------------------------------
 # GET /api/health — system health check for all services
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
