@@ -21,8 +21,11 @@ from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
-from database import DetectionEvent, Device, SessionLocal, init_db
+from database import BlockRule, DetectionEvent, Device, SessionLocal, init_db
 from schemas import (
+    BlockRuleCreate,
+    BlockRuleRead,
+    BlockRuleUnblock,
     DeviceRead,
     DeviceRegister,
     DeviceUpdate,
