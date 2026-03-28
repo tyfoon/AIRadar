@@ -278,6 +278,125 @@
     </div>
 
     <!-- ============================================================= -->
+    <!-- TAB 4: ACCESS CONTROL                                          -->
+    <!-- ============================================================= -->
+    <div id="tab-access" class="tab-panel space-y-6">
+
+      <!-- Cluster A: Global Office Filters -->
+      <section>
+        <div class="flex items-center gap-2 mb-4">
+          <span class="text-lg">🏢</span>
+          <h2 class="text-lg font-semibold text-slate-200">Global Office Filters</h2>
+          <span class="text-xs text-slate-500 ml-2">Network-wide policies via AdGuard Home</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          <!-- Safe Work Environment -->
+          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-parental-card">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="text-sm font-medium text-slate-200">🔞 Safe Work Environment</h3>
+                <p class="text-xs text-slate-500 mt-1">Blocks NSFW, gambling, enforces SafeSearch</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="toggle-parental" onchange="toggleGlobalFilter('parental', this)">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">NSFW</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-amber-900/30 text-amber-400">Gambling</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400">SafeSearch</span>
+            </div>
+          </div>
+
+          <!-- Block Social Media -->
+          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-social-card">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="text-sm font-medium text-slate-200">📱 Block Social Media</h3>
+                <p class="text-xs text-slate-500 mt-1">Meta, TikTok, X, Snapchat &amp; more</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="toggle-social" onchange="toggleGlobalFilter('social', this)">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <span class="text-[10px] px-2 py-0.5 rounded bg-blue-900/30 text-blue-400">Facebook</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-pink-900/30 text-pink-400">Instagram</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">TikTok</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-sky-900/30 text-sky-400">Twitter/X</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-yellow-900/30 text-yellow-400">Snapchat</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">Pinterest</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-blue-900/30 text-blue-300">LinkedIn</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-orange-900/30 text-orange-400">Reddit</span>
+            </div>
+          </div>
+
+          <!-- Block Gaming -->
+          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-gaming-card">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="text-sm font-medium text-slate-200">🎮 Block Gaming</h3>
+                <p class="text-xs text-slate-500 mt-1">Steam, Epic, Roblox, Twitch, Discord</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="toggle-gaming" onchange="toggleGlobalFilter('gaming', this)">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">Steam</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">Epic Games</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">Roblox</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-purple-900/30 text-purple-400">Twitch</span>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-900/30 text-indigo-400">Discord</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Cluster B: Granular App Control -->
+      <section>
+        <div class="flex items-center gap-2 mb-4">
+          <span class="text-lg">🎯</span>
+          <h2 class="text-lg font-semibold text-slate-200">Granular App Control</h2>
+          <span class="text-xs text-slate-500 ml-2">Block individual AI &amp; Cloud services via DNS</span>
+        </div>
+
+        <!-- AI Services -->
+        <div class="mb-6">
+          <h3 class="text-sm font-medium text-slate-400 uppercase tracking-wider mb-3">🤖 AI Services</h3>
+          <div id="access-control-ai" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading services...</p>
+          </div>
+        </div>
+
+        <!-- Cloud Services -->
+        <div>
+          <h3 class="text-sm font-medium text-slate-400 uppercase tracking-wider mb-3">☁️ Cloud Storage</h3>
+          <div id="access-control-cloud" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading services...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Info -->
+      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+        <h3 class="text-sm font-medium text-slate-300 mb-2">How Access Control Works</h3>
+        <p class="text-sm text-slate-400 leading-relaxed">
+          <span class="text-indigo-400 font-medium">Global filters</span> use AdGuard Home's built-in category blocking to instantly block entire classes of services (social media, gaming, adult content) network-wide.<br>
+          <span class="text-emerald-400 font-medium">Granular controls</span> add DNS-level rules (<code class="text-xs text-slate-300 bg-slate-700/50 px-1.5 py-0.5 rounded">||domain^</code>) to selectively block individual AI or Cloud services. Temporary blocks auto-expire after the set duration.<br>
+          All blocking is enforced at the DNS level — devices must use <code class="text-xs text-slate-300 bg-slate-700/50 px-1.5 py-0.5 rounded">127.0.0.1</code> as their DNS server.
+          <a href="http://localhost:80" target="_blank" class="text-indigo-400 hover:underline ml-1">Open AdGuard Dashboard →</a>
+        </p>
+      </section>
+    </div>
+
+    <!-- ============================================================= -->
     <!-- System Health tab                                              -->
     <!-- ============================================================= -->
     <div id="tab-health" class="tab-panel space-y-6">
