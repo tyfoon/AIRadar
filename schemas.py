@@ -81,6 +81,40 @@ class TimelineBucket(BaseModel):
 # Privacy / AdGuard schemas
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Block Rule schemas
+# ---------------------------------------------------------------------------
+
+class BlockRuleCreate(BaseModel):
+    """Payload for POST /api/rules/block."""
+
+    service_name: str         # e.g. "openai"
+    domain: str               # e.g. "openai.com"
+    category: str = "ai"      # "ai" or "cloud"
+    duration_minutes: Optional[int] = None  # None = permanent
+
+
+class BlockRuleRead(BaseModel):
+    """Response model for block rules."""
+
+    id: int
+    service_name: str
+    domain: str
+    category: str
+    is_active: bool
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class BlockRuleUnblock(BaseModel):
+    """Payload for POST /api/rules/unblock."""
+
+    service_name: str
+    domain: str
+
+
 class PrivacyStats(BaseModel):
     """Summary of AdGuard Home blocking statistics."""
 
