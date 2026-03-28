@@ -447,6 +447,83 @@ async def privacy_stats(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Global Filters — Parental Control & Service Blocking via AdGuard
+# ---------------------------------------------------------------------------
+
+# AdGuard built-in service identifiers for social media / gaming
+SOCIAL_MEDIA_SERVICES = [
+    "facebook", "instagram", "tiktok", "twitter", "snapchat",
+    "pinterest", "linkedin", "reddit", "tumblr",
+]
+GAMING_SERVICES = [
+    "steam", "epic_games", "roblox", "twitch", "discord",
+    "origin", "nintendo", "playstation", "xbox_live",
+]
+
+
+@app.post("/api/filters/parental")
+async def toggle_parental(payload: GlobalFilterToggle):
+    """Enable or disable AdGuard Parental Control (NSFW / gambling / safe-search)."""
+    ok = await adguard.set_parental_control(payload.enabled)
+    if not ok:
+        raise HTTPException(status_code=502, detail="AdGuard Home is not reachable")
+    state = "enabled" if payload.enabled else "disabled"
+    print(f"[filters] Parental control {state}")
+    return {"parental_enabled": payload.enabled}
+
+
+@app.post("/api/filters/social")
+async def toggle_social_media(payload: GlobalFilterToggle):
+    """Block or unblock social media services via AdGuard blocked_services."""
+    current = await adguard.get_blocked_services()
+    if payload.enabled:
+        # ADD social services to the list (keep gaming etc.)
+        merged = list(set(current + SOCIAL_MEDIA_SERVICES))
+    else:
+        # REMOVE social services from the list
+        merged = [s for s in current if s not in SOCIAL_MEDIA_SERVICES]
+    ok = await adguard.set_blocked_services(merged)
+    if not ok:
+        raise HTTPException(status_code=502, detail="AdGuard Home is not reachable")
+    state = "blocked" if payload.enabled else "unblocked"
+    print(f"[filters] Social media {state} ({len(SOCIAL_MEDIA_SERVICES)} services)")
+    return {"social_media_blocked": payload.enabled, "services": merged}
+
+
+@app.post("/api/filters/gaming")
+async def toggle_gaming(payload: GlobalFilterToggle):
+    """Block or unblock gaming services via AdGuard blocked_services."""
+    current = await adguard.get_blocked_services()
+    if payload.enabled:
+        merged = list(set(current + GAMING_SERVICES))
+    else:
+        merged = [s for s in current if s not in GAMING_SERVICES]
+    ok = await adguard.set_blocked_services(merged)
+    if not ok:
+        raise HTTPException(status_code=502, detail="AdGuard Home is not reachable")
+    state = "blocked" if payload.enabled else "unblocked"
+    print(f"[filters] Gaming {state} ({len(GAMING_SERVICES)} services)")
+    return {"gaming_blocked": payload.enabled, "services": merged}
+
+
+@app.get("/api/filters/status")
+async def get_filter_status():
+    """Return current state of all global filters."""
+    parental = await adguard.get_parental_status()
+    blocked_services = await adguard.get_blocked_services()
+
+    social_active = all(s in blocked_services for s in SOCIAL_MEDIA_SERVICES)
+    gaming_active = all(s in blocked_services for s in GAMING_SERVICES)
+
+    return {
+        "parental_enabled": parental,
+        "social_media_blocked": social_active,
+        "gaming_blocked": gaming_active,
+        "blocked_services": blocked_services,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Block Rule Engine
 # ---------------------------------------------------------------------------
 
