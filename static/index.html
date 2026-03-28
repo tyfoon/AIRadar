@@ -776,10 +776,134 @@
     }
 
     // =====================================================================
+    // Access Control — Block Rule Engine
+    // =====================================================================
+    const svcDisplayNames = {
+      openai:'OpenAI', anthropic_claude:'Claude', google_gemini:'Gemini',
+      microsoft_copilot:'Copilot', perplexity:'Perplexity', huggingface:'Hugging Face',
+      mistral:'Mistral', dropbox:'Dropbox', wetransfer:'WeTransfer',
+      google_drive:'Google Drive', onedrive:'OneDrive', icloud:'iCloud',
+      box:'Box', mega:'MEGA',
+    };
+    const svcBadgeColors = {
+      openai:'bg-emerald-900/40 text-emerald-300', anthropic_claude:'bg-amber-900/40 text-amber-300',
+      google_gemini:'bg-blue-900/40 text-blue-300', microsoft_copilot:'bg-cyan-900/40 text-cyan-300',
+      perplexity:'bg-purple-900/40 text-purple-300', huggingface:'bg-yellow-900/40 text-yellow-300',
+      mistral:'bg-orange-900/40 text-orange-300', dropbox:'bg-blue-900/40 text-blue-300',
+      wetransfer:'bg-cyan-900/40 text-cyan-300', google_drive:'bg-emerald-900/40 text-emerald-300',
+      onedrive:'bg-sky-900/40 text-sky-300', icloud:'bg-slate-700/40 text-slate-300',
+      box:'bg-blue-900/40 text-blue-300', mega:'bg-red-900/40 text-red-300',
+    };
+
+    function remainingTime(expiresAt) {
+      if (!expiresAt) return null;
+      const exp = new Date(expiresAt.endsWith('Z') ? expiresAt : expiresAt+'Z');
+      const diff = exp - new Date();
+      if (diff <= 0) return 'expiring...';
+      const mins = Math.floor(diff / 60000);
+      if (mins < 60) return `${mins}m left`;
+      const hrs = Math.floor(mins / 60);
+      const rm = mins % 60;
+      return `${hrs}h ${rm}m left`;
+    }
+
+    function renderServiceCard(svc) {
+      const name = svcDisplayNames[svc.service_name] || svc.service_name;
+      const badge = svcBadgeColors[svc.service_name] || 'bg-slate-700/40 text-slate-300';
+      const isAllowed = !svc.is_blocked;
+      const blockedClass = svc.is_blocked ? 'blocked' : '';
+      const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
+      const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
+
+      return `
+        <div class="svc-card bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 ${blockedClass}">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs px-2 py-0.5 rounded font-medium ${badge}">${name}</span>
+            <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
+              <input type="checkbox" ${isAllowed ? 'checked' : ''}
+                     onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
+              <option value="0">Permanent</option>
+              <option value="60">1 Hour</option>
+              <option value="240">4 Hours</option>
+              <option value="480">8 Hours</option>
+            </select>
+            ${svc.is_blocked ? `<span class="text-xs px-2 py-0.5 rounded bg-red-900/40 text-red-300">${permLabel}</span>` : '<span class="text-xs text-emerald-500">✓ Allowed</span>'}
+          </div>
+          <p class="text-xs text-slate-500 mt-2">${svc.domains.join(', ')}</p>
+        </div>`;
+    }
+
+    async function toggleService(serviceName, domain, category, checkbox) {
+      checkbox.disabled = true;
+      const isNowAllowed = checkbox.checked;
+
+      try {
+        if (isNowAllowed) {
+          // Unblock
+          await fetch('/api/rules/unblock', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ service_name: serviceName, domain }),
+          });
+        } else {
+          // Block
+          const durSelect = document.getElementById('dur-' + serviceName);
+          const dur = parseInt(durSelect?.value || '0');
+          await fetch('/api/rules/block', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+              service_name: serviceName,
+              domain,
+              category,
+              duration_minutes: dur || null,
+            }),
+          });
+        }
+        // Refresh the access control panels
+        await loadAccessControl();
+      } catch(err) {
+        console.error('Toggle error:', err);
+        checkbox.checked = !checkbox.checked; // Revert
+      } finally {
+        checkbox.disabled = false;
+      }
+    }
+
+    async function loadAccessControl() {
+      try {
+        const res = await fetch('/api/rules/services');
+        const services = await res.json();
+
+        const aiContainer = document.getElementById('access-control-ai');
+        const cloudContainer = document.getElementById('access-control-cloud');
+
+        const aiSvcs = services.filter(s => s.category === 'ai');
+        const cloudSvcs = services.filter(s => s.category === 'cloud');
+
+        aiContainer.innerHTML = aiSvcs.length
+          ? aiSvcs.map(renderServiceCard).join('')
+          : '<p class="text-slate-500 text-sm col-span-full text-center py-4">No AI services configured</p>';
+
+        cloudContainer.innerHTML = cloudSvcs.length
+          ? cloudSvcs.map(renderServiceCard).join('')
+          : '<p class="text-slate-500 text-sm col-span-full text-center py-4">No Cloud services configured</p>';
+      } catch(err) {
+        console.error('Access control load error:', err);
+      }
+    }
+
+    // =====================================================================
     // Init
     // =====================================================================
+    loadAccessControl();
     loadDevices().then(() => refresh());
-    setInterval(() => { loadDevices().then(() => refresh()); }, 5000);
+    setInterval(() => { loadDevices().then(() => refresh()); loadAccessControl(); }, 5000);
   </script>
 </body>
 </html>
