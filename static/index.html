@@ -767,6 +767,7 @@
           unavail.classList.add('hidden');
           chartC.classList.remove('hidden');
           const topD = (ag.top_blocked||[]).slice(0,10);
+          _cachedTopBlocked = ag.top_blocked || [];
           privChart.data.labels = topD.map(d=>d.domain.length>30 ? d.domain.slice(0,27)+'...' : d.domain);
           privChart.data.datasets[0].data = topD.map(d=>d.count);
           privChart.update();
