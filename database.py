@@ -100,3 +100,12 @@ def init_db() -> None:
                 conn.execute(text(
                     "ALTER TABLE detection_events ADD COLUMN category TEXT NOT NULL DEFAULT 'ai'"
                 ))
+
+    # Ensure devices table has vendor column
+    if "devices" in inspector.get_table_names():
+        dev_cols = [c["name"] for c in inspector.get_columns("devices")]
+        if "vendor" not in dev_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE devices ADD COLUMN vendor TEXT"
+                ))
