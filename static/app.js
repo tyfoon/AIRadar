@@ -1,0 +1,1004 @@
+/* ================================================================
+   AI-Radar — Dashboard Application (app.js)
+   Single-file JS for the premium UniFi-style frontend.
+   ================================================================ */
+
+'use strict';
+
+// ================================================================
+// THEME
+// ================================================================
+function isDark() { return document.documentElement.classList.contains('dark'); }
+
+function toggleTheme() {
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('airadar-theme', isDark() ? 'dark' : 'light');
+  updateChartsTheme();
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('airadar-theme');
+  if (saved === 'light') document.documentElement.classList.remove('dark');
+  else document.documentElement.classList.add('dark');
+}
+
+// ================================================================
+// CHART THEME COLORS
+// ================================================================
+const TC = {
+  get grid()    { return isDark() ? '#1e293b' : '#e2e8f0'; },
+  get tick()    { return isDark() ? '#64748b' : '#94a3b8'; },
+  get legend()  { return isDark() ? '#94a3b8' : '#475569'; },
+};
+
+// ================================================================
+// SIDEBAR
+// ================================================================
+let sidebarCollapsed = false;
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  const sb = document.getElementById('sidebar');
+  const main = document.getElementById('main');
+  const icon = document.getElementById('collapse-icon');
+  if (sidebarCollapsed) {
+    sb.classList.add('collapsed');
+    sb.style.width = '64px';
+    main.style.marginLeft = '64px';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    sb.classList.remove('collapsed');
+    sb.style.width = '240px';
+    main.style.marginLeft = '240px';
+    icon.style.transform = '';
+  }
+  localStorage.setItem('airadar-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded');
+}
+
+function initSidebar() {
+  if (localStorage.getItem('airadar-sidebar') === 'collapsed') toggleSidebar();
+}
+
+function toggleMobileSidebar() {
+  // For mobile, we could show the sidebar as an overlay — for now, just navigate
+}
+
+// ================================================================
+// NAVIGATION / ROUTING
+// ================================================================
+const PAGE_TITLES = {
+  dashboard: 'Dashboard',
+  ai: 'AI Radar',
+  cloud: 'Cloud Storage',
+  privacy: 'Privacy',
+  rules: 'Rules & Access Control',
+  settings: 'Settings',
+};
+
+let currentPage = 'dashboard';
+
+function navigate(page) {
+  if (!PAGE_TITLES[page]) page = 'dashboard';
+  currentPage = page;
+
+  // Update page visibility
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById('page-' + page);
+  if (el) el.classList.add('active');
+
+  // Update page title
+  const titleEl = document.getElementById('page-title');
+  if (titleEl) titleEl.textContent = PAGE_TITLES[page];
+
+  // Highlight sidebar
+  document.querySelectorAll('.nav-item').forEach(a => {
+    const isActive = a.dataset.page === page;
+    a.classList.toggle('bg-indigo-50', isActive && !isDark());
+    a.classList.toggle('dark:bg-indigo-950/40', isActive);
+    a.classList.toggle('text-indigo-600', isActive && !isDark());
+    a.classList.toggle('dark:text-indigo-400', isActive);
+    a.classList.toggle('text-slate-500', !isActive && !isDark());
+    a.classList.toggle('dark:text-slate-400', !isActive);
+  });
+
+  // Highlight mobile nav
+  document.querySelectorAll('.mob-nav').forEach(a => {
+    const isActive = a.dataset.page === page;
+    a.classList.toggle('text-indigo-600', isActive && !isDark());
+    a.classList.toggle('dark:text-indigo-400', isActive);
+    a.classList.toggle('text-slate-400', !isActive && !isDark());
+    a.classList.toggle('dark:text-slate-500', !isActive);
+  });
+
+  // Load data for this page
+  refreshPage(page);
+}
+
+function initRouter() {
+  window.addEventListener('hashchange', () => {
+    const page = location.hash.replace('#/', '') || 'dashboard';
+    navigate(page);
+  });
+  const initial = location.hash.replace('#/', '') || 'dashboard';
+  navigate(initial);
+}
+
+// ================================================================
+// SERVICE & COLOR CONSTANTS
+// ================================================================
+const ACCENT_COLORS = ['#6366f1','#22d3ee','#f59e0b','#ef4444','#10b981','#ec4899','#8b5cf6','#f97316','#14b8a6','#e11d48'];
+
+const SERVICE_COLORS = {
+  google_gemini:'#f59e0b', openai:'#10b981', anthropic_claude:'#6366f1',
+  microsoft_copilot:'#3b82f6', perplexity:'#22d3ee', huggingface:'#f97316',
+  mistral:'#8b5cf6', dropbox:'#3b82f6', wetransfer:'#14b8a6',
+  google_drive:'#22c55e', onedrive:'#0ea5e9', icloud:'#6b7280',
+  box:'#60a5fa', mega:'#ef4444',
+};
+
+const SERVICE_NAMES = {
+  openai:'OpenAI', anthropic_claude:'Claude', google_gemini:'Gemini',
+  microsoft_copilot:'Copilot', perplexity:'Perplexity', huggingface:'Hugging Face',
+  mistral:'Mistral', dropbox:'Dropbox', wetransfer:'WeTransfer',
+  google_drive:'Google Drive', onedrive:'OneDrive', icloud:'iCloud',
+  box:'Box', mega:'MEGA',
+};
+
+const SVC_BADGE_CLS = {
+  openai:'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
+  anthropic_claude:'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300',
+  google_gemini:'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
+  microsoft_copilot:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  perplexity:'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300',
+  huggingface:'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
+  mistral:'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
+  dropbox:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  wetransfer:'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300',
+  google_drive:'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
+  onedrive:'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
+  icloud:'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
+  box:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  mega:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+};
+
+let _fallbackIdx = 0;
+function svcColor(s) {
+  if (!SERVICE_COLORS[s]) SERVICE_COLORS[s] = ACCENT_COLORS[_fallbackIdx++ % ACCENT_COLORS.length];
+  return SERVICE_COLORS[s];
+}
+
+function badge(s) {
+  const cls = SVC_BADGE_CLS[s] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+  return `<span class="px-2 py-0.5 rounded text-[11px] font-medium ${cls}">${s}</span>`;
+}
+
+// ================================================================
+// DEVICE MAP
+// ================================================================
+let deviceMap = {};
+
+function deviceName(ip) {
+  const d = deviceMap[ip];
+  return d ? (d.display_name || d.hostname || ip) : ip;
+}
+
+async function loadDevices() {
+  try {
+    const res = await fetch('/api/devices');
+    if (!res.ok) return;
+    const devices = await res.json();
+    deviceMap = {};
+    devices.forEach(d => { deviceMap[d.ip] = d; });
+    // Populate AI filter dropdown
+    const sel = document.getElementById('ai-filter-device');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">All devices</option>';
+      devices.forEach(d => {
+        sel.innerHTML += `<option value="${d.ip}">${d.display_name || d.hostname || d.ip}</option>`;
+      });
+      sel.value = cur;
+    }
+  } catch(e) { console.error('loadDevices:', e); }
+}
+
+// Device rename handler
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('.device-name');
+  if (!el) return;
+  const ip = el.dataset.ip;
+  const cur = deviceMap[ip]?.display_name || deviceMap[ip]?.hostname || ip;
+  const n = prompt(`Rename device (${ip}):`, cur);
+  if (n && n !== cur) {
+    await fetch(`/api/devices/${encodeURIComponent(ip)}`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({display_name: n}),
+    });
+    await loadDevices();
+    refreshPage(currentPage);
+  }
+});
+
+// ================================================================
+// HELPERS
+// ================================================================
+function fmtTime(iso) {
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function fmtBucket(iso) {
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+
+function getFilterParams(cat) {
+  const p = new URLSearchParams();
+  p.set('category', cat);
+  if (cat === 'ai') {
+    const svc = document.getElementById('ai-filter-service')?.value;
+    const dev = document.getElementById('ai-filter-device')?.value;
+    const per = document.getElementById('ai-filter-period')?.value;
+    if (svc) p.set('service', svc);
+    if (dev) p.set('source_ip', dev);
+    if (per) p.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
+  }
+  return p;
+}
+
+function getBucketSize() {
+  const per = document.getElementById('ai-filter-period')?.value;
+  if (!per) return 'hour';
+  const m = parseInt(per);
+  if (m <= 60) return 'minute';
+  if (m <= 1440) return 'hour';
+  return 'day';
+}
+
+function exportCSV(cat) {
+  const p = getFilterParams(cat);
+  window.location.href = '/api/events/export?' + p.toString();
+}
+
+// ================================================================
+// CHART MANAGEMENT
+// ================================================================
+const charts = {};
+
+function getOrCreateChart(id, config) {
+  if (charts[id]) return charts[id];
+  const canvas = document.getElementById(id);
+  if (!canvas) return null;
+  charts[id] = new Chart(canvas.getContext('2d'), config);
+  return charts[id];
+}
+
+function makeDoughnutConfig() {
+  return {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: ACCENT_COLORS, borderWidth: 0 }] },
+    options: {
+      cutout: '60%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: TC.legend, padding: 12, font: { size: 11, family: 'Inter' }, usePointStyle: true, pointStyle: 'circle' } },
+      },
+      responsive: true,
+      maintainAspectRatio: true,
+    }
+  };
+}
+
+function makeTimelineConfig() {
+  return {
+    type: 'bar',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: {
+        legend: { position: 'top', labels: { color: TC.legend, padding: 10, font: { size: 10, family: 'Inter' }, usePointStyle: true, pointStyle: 'rect' } },
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: TC.tick, maxRotation: 45, font: { size: 10 } }, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: TC.tick, precision: 0 }, grid: { color: TC.grid } },
+        y2: { position: 'right', beginAtZero: true, display: false, ticks: { color: '#ef4444', precision: 0, font: { size: 10 } }, grid: { display: false } },
+      }
+    }
+  };
+}
+
+function makeBarConfig() {
+  return {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Blocked', data: [], backgroundColor: '#ef4444', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: TC.tick }, grid: { color: TC.grid } },
+        y: { ticks: { color: TC.legend, font: { size: 11 } }, grid: { display: false } },
+      }
+    }
+  };
+}
+
+function updateChartsTheme() {
+  Object.values(charts).forEach(chart => {
+    if (chart.options.plugins?.legend?.labels) chart.options.plugins.legend.labels.color = TC.legend;
+    if (chart.options.scales?.x) {
+      if (chart.options.scales.x.ticks) chart.options.scales.x.ticks.color = TC.tick;
+      if (chart.options.scales.x.grid) chart.options.scales.x.grid.color = TC.grid;
+    }
+    if (chart.options.scales?.y) {
+      if (chart.options.scales.y.ticks) chart.options.scales.y.ticks.color = TC.tick;
+      if (chart.options.scales.y.grid) chart.options.scales.y.grid.color = TC.grid;
+    }
+    chart.update();
+  });
+}
+
+// ================================================================
+// RENDER HELPERS
+// ================================================================
+function renderEventsTable(events, tbodyId, emptyId) {
+  const tbody = document.getElementById(tbodyId);
+  const empty = document.getElementById(emptyId);
+  if (!tbody) return;
+  if (!events.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+  if (empty) empty.classList.add('hidden');
+  tbody.innerHTML = events.map(e => {
+    const up = e.possible_upload;
+    const rc = up
+      ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50 dark:bg-orange-900/10'
+      : 'border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20';
+    const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
+    const dn = deviceName(e.source_ip);
+    const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" data-ip="${e.source_ip}" title="${e.source_ip}">${dn}</span>`;
+    return `<tr class="${rc} transition-colors">
+      <td class="py-2 pr-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
+      <td class="py-2 pr-4">${badge(e.ai_service)}</td>
+      <td class="py-2 pr-4 font-mono text-xs text-slate-600 dark:text-slate-300">${e.detection_type}${ub}</td>
+      <td class="py-2 pr-4 text-xs">${dc}</td>
+      <td class="py-2 text-right tabular-nums text-xs">${e.bytes_transferred.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
+  // Doughnut
+  const dChart = getOrCreateChart(doughnutId, makeDoughnutConfig());
+  if (dChart) {
+    const counts = {};
+    events.forEach(e => { counts[e.ai_service] = (counts[e.ai_service] || 0) + 1; });
+    dChart.data.labels = Object.keys(counts);
+    dChart.data.datasets[0].data = Object.values(counts);
+    dChart.data.datasets[0].backgroundColor = Object.keys(counts).map(s => svcColor(s));
+    dChart.update();
+  }
+
+  // Timeline
+  const tChart = getOrCreateChart(timelineId, makeTimelineConfig());
+  if (tChart) {
+    const labels = timeline.map(p => fmtBucket(p.bucket));
+    const svcs = new Set();
+    timeline.forEach(p => Object.keys(p.services).forEach(s => svcs.add(s)));
+    const ds = [...svcs].sort().map(s => ({
+      label: SERVICE_NAMES[s] || s,
+      data: timeline.map(p => p.services[s] || 0),
+      backgroundColor: svcColor(s),
+      borderRadius: 3, stack: 's', yAxisID: 'y',
+    }));
+    const ul = timeline.map(p => p.uploads || 0);
+    if (ul.some(v => v > 0)) {
+      ds.push({
+        label: 'Uploads', data: ul, type: 'line', borderColor: '#ef4444', backgroundColor: '#ef4444',
+        pointBackgroundColor: '#ef4444', pointRadius: ul.map(v => v > 0 ? 5 : 0), pointStyle: 'circle',
+        borderWidth: 0, showLine: false, yAxisID: 'y2', _isUpload: true,
+      });
+      tChart.options.scales.y2.display = true;
+    } else {
+      tChart.options.scales.y2.display = false;
+    }
+    tChart.data.labels = labels;
+    tChart.data.datasets = ds;
+    tChart.update();
+  }
+}
+
+// ================================================================
+// PAGE REFRESH LOGIC
+// ================================================================
+async function refreshPage(page) {
+  try {
+    if (page === 'dashboard') await refreshDashboard();
+    else if (page === 'ai') await refreshAI();
+    else if (page === 'cloud') await refreshCloud();
+    else if (page === 'privacy') await refreshPrivacy();
+    else if (page === 'rules') await refreshRules();
+    // settings is static, no refresh needed
+  } catch(err) { console.error('Page refresh error:', err); }
+}
+
+// --- DASHBOARD ---
+async function refreshDashboard() {
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const [aiEvt, cloudEvt, privRes, healthRes] = await Promise.all([
+    fetch('/api/events?category=ai&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
+    fetch('/api/events?category=cloud&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
+    fetch('/api/privacy/stats').then(r => r.json()).catch(() => null),
+    fetch('/api/health').then(r => r.json()).catch(() => null),
+  ]);
+
+  // Metrics
+  document.getElementById('dash-devices').textContent = Object.keys(deviceMap).length;
+  document.getElementById('dash-events-today').textContent = (aiEvt.length + cloudEvt.length).toLocaleString();
+
+  const ag = privRes?.adguard || {};
+  document.getElementById('dash-blocked').textContent = (ag.blocked_queries || 0).toLocaleString();
+
+  // Health status
+  if (healthRes) {
+    const ok = healthRes.summary?.all_ok;
+    const dot = document.getElementById('dash-health-dot');
+    const txt = document.getElementById('dash-health');
+    const topDot = document.getElementById('status-dot');
+    const topTxt = document.getElementById('status-text');
+    if (ok) {
+      dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+      txt.textContent = 'All Systems OK';
+      txt.className = 'text-lg font-semibold text-emerald-600 dark:text-emerald-400';
+      topDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+      topTxt.textContent = 'All Systems Operational';
+    } else {
+      const issues = healthRes.summary.total - healthRes.summary.ok;
+      dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+      txt.textContent = `${issues} Issue${issues > 1 ? 's' : ''} Detected`;
+      txt.className = 'text-lg font-semibold text-amber-600 dark:text-amber-400';
+      topDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+      topTxt.textContent = `${issues} Issue${issues > 1 ? 's' : ''}`;
+    }
+  }
+
+  // Mini donuts
+  const aiDonut = getOrCreateChart('dash-ai-donut', makeDoughnutConfig());
+  if (aiDonut) {
+    const ac = {}; aiEvt.forEach(e => { ac[e.ai_service] = (ac[e.ai_service] || 0) + 1; });
+    aiDonut.data.labels = Object.keys(ac).map(k => SERVICE_NAMES[k] || k);
+    aiDonut.data.datasets[0].data = Object.values(ac);
+    aiDonut.data.datasets[0].backgroundColor = Object.keys(ac).map(k => svcColor(k));
+    aiDonut.update();
+  }
+
+  const cloudDonut = getOrCreateChart('dash-cloud-donut', makeDoughnutConfig());
+  if (cloudDonut) {
+    const cc = {}; cloudEvt.forEach(e => { cc[e.ai_service] = (cc[e.ai_service] || 0) + 1; });
+    cloudDonut.data.labels = Object.keys(cc).map(k => SERVICE_NAMES[k] || k);
+    cloudDonut.data.datasets[0].data = Object.values(cc);
+    cloudDonut.data.datasets[0].backgroundColor = Object.keys(cc).map(k => svcColor(k));
+    cloudDonut.update();
+  }
+
+  const privDonut = getOrCreateChart('dash-priv-donut', makeDoughnutConfig());
+  if (privDonut && ag.top_blocked?.length) {
+    const top5 = ag.top_blocked.slice(0, 5);
+    privDonut.data.labels = top5.map(d => d.domain?.length > 20 ? d.domain.slice(0, 18) + '...' : d.domain);
+    privDonut.data.datasets[0].data = top5.map(d => d.count);
+    privDonut.update();
+  }
+
+  // Alarms
+  const allEvt = [...aiEvt, ...cloudEvt].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const alarms = allEvt.filter(e => e.possible_upload || e.bytes_transferred > 100000).slice(0, 15);
+
+  const alarmsBody = document.getElementById('dash-alarms-body');
+  if (alarmsBody) {
+    if (alarms.length === 0) {
+      alarmsBody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">No alarms — network is clean.</td></tr>';
+    } else {
+      alarmsBody.innerHTML = alarms.map(e => {
+        const isUpload = e.possible_upload;
+        const severity = isUpload
+          ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">HIGH</span>'
+          : '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">MED</span>';
+        const desc = isUpload
+          ? `Upload detected (${(e.bytes_transferred / 1024).toFixed(0)} KB)`
+          : `High volume traffic (${(e.bytes_transferred / 1024).toFixed(0)} KB)`;
+        return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+          <td class="py-2.5 pr-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
+          <td class="py-2.5 pr-4">${severity}</td>
+          <td class="py-2.5 pr-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
+          <td class="py-2.5 pr-4">${badge(e.ai_service)}</td>
+          <td class="py-2.5 text-xs">${deviceName(e.source_ip)}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+}
+
+// --- AI RADAR ---
+async function refreshAI() {
+  const p = getFilterParams('ai');
+  const [events, timeline] = await Promise.all([
+    fetch('/api/events?' + p).then(r => r.json()),
+    fetch('/api/timeline?bucket_size=' + getBucketSize() + '&' + p).then(r => r.json()),
+  ]);
+
+  document.getElementById('ai-stat-total').textContent = events.length;
+  document.getElementById('ai-stat-services').textContent = new Set(events.map(e => e.ai_service)).size;
+  document.getElementById('ai-stat-sources').textContent = Object.keys(deviceMap).length || new Set(events.map(e => e.source_ip)).size;
+  document.getElementById('ai-stat-uploads').textContent = events.filter(e => e.possible_upload).length;
+
+  // Populate service filter
+  const svcSel = document.getElementById('ai-filter-service');
+  if (svcSel) {
+    const cur = svcSel.value;
+    const allSvcs = [...new Set(events.map(e => e.ai_service))].sort();
+    svcSel.innerHTML = '<option value="">All services</option>';
+    allSvcs.forEach(s => { svcSel.innerHTML += `<option value="${s}">${SERVICE_NAMES[s] || s}</option>`; });
+    svcSel.value = cur;
+  }
+
+  renderEventsTable(events, 'ai-tbody', 'ai-empty');
+  updateCategoryCharts(events, timeline, 'ai-service-chart', 'ai-timeline-chart');
+}
+
+// --- CLOUD ---
+async function refreshCloud() {
+  const p = getFilterParams('cloud');
+  const [events, timeline] = await Promise.all([
+    fetch('/api/events?' + p).then(r => r.json()),
+    fetch('/api/timeline?bucket_size=hour&' + p).then(r => r.json()),
+  ]);
+
+  document.getElementById('cloud-stat-total').textContent = events.length;
+  document.getElementById('cloud-stat-services').textContent = new Set(events.map(e => e.ai_service)).size;
+  document.getElementById('cloud-stat-uploads').textContent = events.filter(e => e.possible_upload).length;
+
+  renderEventsTable(events, 'cloud-tbody', 'cloud-empty');
+  updateCategoryCharts(events, timeline, 'cloud-service-chart', 'cloud-timeline-chart');
+}
+
+// --- PRIVACY ---
+let _cachedTopBlocked = [];
+
+async function refreshPrivacy() {
+  const privRes = await fetch('/api/privacy/stats').then(r => r.json());
+
+  // AdGuard section
+  const ag = privRes.adguard || {};
+  document.getElementById('priv-total').textContent = (ag.total_queries || 0).toLocaleString();
+  document.getElementById('priv-blocked').textContent = (ag.blocked_queries || 0).toLocaleString();
+  document.getElementById('priv-pct').textContent = (ag.block_percentage || 0) + '%';
+
+  const statusEl = document.getElementById('priv-status');
+  const unavail = document.getElementById('priv-unavailable');
+  const chartC = document.getElementById('priv-chart-container');
+
+  if (ag.status === 'ok') {
+    statusEl.textContent = '● Connected';
+    statusEl.className = 'text-base font-semibold mt-2 text-emerald-600 dark:text-emerald-400';
+    if (unavail) unavail.classList.add('hidden');
+    if (chartC) chartC.classList.remove('hidden');
+
+    const topD = (ag.top_blocked || []).slice(0, 10);
+    _cachedTopBlocked = ag.top_blocked || [];
+
+    const bChart = getOrCreateChart('priv-chart', makeBarConfig());
+    if (bChart) {
+      bChart.data.labels = topD.map(d => d.domain.length > 30 ? d.domain.slice(0, 27) + '...' : d.domain);
+      bChart.data.datasets[0].data = topD.map(d => d.count);
+      bChart.update();
+    }
+
+    // Update blocked domains panel if visible
+    const panel = document.getElementById('blocked-domains-panel');
+    if (panel && !panel.classList.contains('hidden')) renderBlockedDomainsList();
+  } else {
+    statusEl.textContent = '● Offline';
+    statusEl.className = 'text-base font-semibold mt-2 text-red-500 dark:text-red-400';
+    if (chartC) chartC.classList.add('hidden');
+    if (unavail) unavail.classList.remove('hidden');
+  }
+
+  // Zeek tracker section
+  const tk = privRes.trackers || {};
+  document.getElementById('tracker-total').textContent = (tk.total_detected || 0).toLocaleString();
+  document.getElementById('tracker-unique').textContent = (tk.top_trackers || []).length;
+
+  const tChart = getOrCreateChart('tracker-chart', makeDoughnutConfig());
+  if (tChart) {
+    const topT = (tk.top_trackers || []).slice(0, 10);
+    tChart.data.labels = topT.map(t => t.service.replace(/_/g, ' '));
+    tChart.data.datasets[0].data = topT.map(t => t.hits);
+    tChart.update();
+  }
+
+  // Tracker table
+  const tbody = document.getElementById('tracker-table-body');
+  const recent = tk.recent || [];
+  if (tbody) {
+    if (recent.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">No trackers detected yet.</td></tr>';
+    } else {
+      const trackerBadges = {
+        'google ads':'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+        'google analytics':'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400',
+        'google telemetry':'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400',
+        'meta tracking':'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+        'apple ads':'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
+        'microsoft ads':'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400',
+        'hotjar':'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
+        'datadog':'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
+      };
+      tbody.innerHTML = recent.map(e => {
+        const svc = e.service.replace(/_/g, ' ');
+        const cls = trackerBadges[svc] || 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300';
+        return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20">
+          <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
+          <td class="py-2 px-3"><span class="text-[11px] px-2 py-0.5 rounded ${cls}">${svc}</span></td>
+          <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
+          <td class="py-2 px-3 text-xs font-mono text-slate-500 dark:text-slate-400">${e.source_ip}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+}
+
+// Blocked domains panel
+function toggleBlockedDomains() {
+  const panel = document.getElementById('blocked-domains-panel');
+  if (!panel) return;
+  const hidden = panel.classList.contains('hidden');
+  if (hidden) { panel.classList.remove('hidden'); renderBlockedDomainsList(); }
+  else panel.classList.add('hidden');
+}
+
+function renderBlockedDomainsList() {
+  const container = document.getElementById('blocked-domains-list');
+  if (!container) return;
+  if (!_cachedTopBlocked?.length) {
+    container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">No blocked domains data available.</p>';
+    return;
+  }
+  const maxCount = _cachedTopBlocked[0]?.count || 1;
+  container.innerHTML = _cachedTopBlocked.map((d, i) => {
+    const pct = Math.max(5, (d.count / maxCount) * 100);
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-700/30">
+      <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-[11px] font-mono text-slate-700 dark:text-slate-200 truncate" title="${d.domain}">${d.domain}</p>
+        <div class="mt-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700/50 overflow-hidden">
+          <div class="h-full rounded-full bg-red-500/70" style="width:${pct}%"></div>
+        </div>
+      </div>
+      <span class="text-[11px] tabular-nums text-red-500 dark:text-red-400 font-medium">${d.count.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+}
+
+// --- RULES ---
+async function refreshRules() {
+  await Promise.all([loadGlobalFilterStatus(), loadAccessControl()]);
+}
+
+async function loadGlobalFilterStatus() {
+  try {
+    const res = await fetch('/api/filters/status');
+    const data = await res.json();
+    document.getElementById('toggle-parental').checked = data.parental_enabled;
+    document.getElementById('toggle-social').checked = data.social_media_blocked;
+    document.getElementById('toggle-gaming').checked = data.gaming_blocked;
+    styleFilterCard('filter-parental-card', data.parental_enabled);
+    styleFilterCard('filter-social-card', data.social_media_blocked);
+    styleFilterCard('filter-gaming-card', data.gaming_blocked);
+  } catch(e) { console.error('loadGlobalFilterStatus:', e); }
+}
+
+function styleFilterCard(id, active) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  if (active) {
+    card.classList.add('border-red-300', 'dark:border-red-700/40', 'bg-red-50', 'dark:bg-red-900/10');
+    card.classList.remove('border-slate-200', 'dark:border-slate-700/50', 'bg-white', 'dark:bg-slate-800/50');
+  } else {
+    card.classList.remove('border-red-300', 'dark:border-red-700/40', 'bg-red-50', 'dark:bg-red-900/10');
+    card.classList.add('border-slate-200', 'dark:border-slate-700/50', 'bg-white', 'dark:bg-slate-800/50');
+  }
+}
+
+async function toggleGlobalFilter(type, checkbox) {
+  checkbox.disabled = true;
+  const enabled = checkbox.checked;
+  const endpoints = { parental: '/api/filters/parental', social: '/api/filters/social', gaming: '/api/filters/gaming' };
+  const cards = { parental: 'filter-parental-card', social: 'filter-social-card', gaming: 'filter-gaming-card' };
+  try {
+    const res = await fetch(endpoints[type], {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    styleFilterCard(cards[type], enabled);
+  } catch(err) {
+    console.error('toggleGlobalFilter:', err);
+    checkbox.checked = !checkbox.checked;
+    alert('Failed to update filter: ' + err.message);
+  } finally { checkbox.disabled = false; }
+}
+
+// --- GRANULAR SERVICE CARDS ---
+async function loadAccessControl() {
+  try {
+    const res = await fetch('/api/rules/services');
+    const services = await res.json();
+    const aiContainer = document.getElementById('access-control-ai');
+    const cloudContainer = document.getElementById('access-control-cloud');
+    const aiSvcs = services.filter(s => s.category === 'ai');
+    const cloudSvcs = services.filter(s => s.category === 'cloud');
+    aiContainer.innerHTML = aiSvcs.length
+      ? aiSvcs.map(renderServiceCard).join('')
+      : '<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">No AI services configured</p>';
+    cloudContainer.innerHTML = cloudSvcs.length
+      ? cloudSvcs.map(renderServiceCard).join('')
+      : '<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">No Cloud services configured</p>';
+  } catch(e) { console.error('loadAccessControl:', e); }
+}
+
+function remainingTime(expiresAt) {
+  if (!expiresAt) return null;
+  const exp = new Date(expiresAt.endsWith('Z') ? expiresAt : expiresAt + 'Z');
+  const diff = exp - new Date();
+  if (diff <= 0) return 'expiring...';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m left`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m left`;
+}
+
+function renderServiceCard(svc) {
+  const name = SERVICE_NAMES[svc.service_name] || svc.service_name;
+  const badgeCls = SVC_BADGE_CLS[svc.service_name] || 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300';
+  const isAllowed = !svc.is_blocked;
+  const blockedClass = svc.is_blocked ? 'blocked' : '';
+  const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
+  const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
+
+  const seenTag = svc.seen
+    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● Active (${svc.hit_count.toLocaleString()})</span>`
+    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="No traffic detected">○ Preventive</span>`;
+
+  const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : 'No traffic detected';
+
+  return `
+    <div class="svc-card bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 rounded-xl p-4 ${blockedClass}">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] px-2 py-0.5 rounded font-medium ${badgeCls}">${name}</span>
+        <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
+          <input type="checkbox" ${isAllowed ? 'checked' : ''}
+                 onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="mb-2">${seenTag}</div>
+      <div class="flex items-center gap-2">
+        <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
+          <option value="0">Always</option>
+          <option value="60">1 Hour</option>
+          <option value="120">2 Hours</option>
+          <option value="240">4 Hours</option>
+          <option value="360">6 Hours</option>
+          <option value="480">8 Hours</option>
+          <option value="custom">Custom...</option>
+        </select>
+        ${svc.is_blocked
+          ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">${permLabel}</span>`
+          : '<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ Allowed</span>'}
+      </div>
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2">${lastSeenText}</p>
+    </div>`;
+}
+
+// Track pending custom block
+let _pendingCustomBlock = null;
+
+async function toggleService(serviceName, domain, category, checkbox) {
+  checkbox.disabled = true;
+  const isNowAllowed = checkbox.checked;
+  try {
+    if (isNowAllowed) {
+      await fetch('/api/rules/unblock', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ service_name: serviceName, domain }),
+      });
+    } else {
+      const durSelect = document.getElementById('dur-' + serviceName);
+      const durVal = durSelect?.value || '0';
+
+      if (durVal === 'custom') {
+        // Open modal
+        _pendingCustomBlock = { serviceName, domain, category, checkbox };
+        document.getElementById('modal-backdrop').classList.remove('hidden');
+        const input = document.getElementById('modal-block-until');
+        // Default to 4 hours from now
+        const def = new Date(Date.now() + 4 * 3600000);
+        input.value = def.toISOString().slice(0, 16);
+        return; // Don't finalize yet
+      }
+
+      const dur = parseInt(durVal);
+      await fetch('/api/rules/block', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          service_name: serviceName, domain, category,
+          duration_minutes: dur || null,
+        }),
+      });
+    }
+    await loadAccessControl();
+  } catch(err) {
+    console.error('toggleService:', err);
+    checkbox.checked = !checkbox.checked;
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.add('hidden');
+  if (_pendingCustomBlock) {
+    _pendingCustomBlock.checkbox.checked = true; // revert
+    _pendingCustomBlock.checkbox.disabled = false;
+    _pendingCustomBlock = null;
+  }
+}
+
+async function confirmCustomBlock() {
+  if (!_pendingCustomBlock) return;
+  const { serviceName, domain, category, checkbox } = _pendingCustomBlock;
+  const until = document.getElementById('modal-block-until').value;
+  if (!until) { alert('Please select a date/time.'); return; }
+
+  const untilDate = new Date(until);
+  const now = new Date();
+  const durationMin = Math.max(1, Math.round((untilDate - now) / 60000));
+
+  try {
+    await fetch('/api/rules/block', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        service_name: serviceName, domain, category,
+        duration_minutes: durationMin,
+      }),
+    });
+    await loadAccessControl();
+  } catch(err) {
+    console.error('confirmCustomBlock:', err);
+    checkbox.checked = true; // revert
+  } finally {
+    checkbox.disabled = false;
+    _pendingCustomBlock = null;
+    document.getElementById('modal-backdrop').classList.add('hidden');
+  }
+}
+
+// ================================================================
+// HEALTH CHECK
+// ================================================================
+async function runHealthCheck() {
+  const btn = document.getElementById('health-run-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    const services = data.services || [];
+    const summary = data.summary || {};
+
+    const statusMap = {
+      ok:      { bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-700/40', text: 'text-emerald-600 dark:text-emerald-400', label: '● Online' },
+      warning: { bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-700/40', text: 'text-amber-600 dark:text-amber-400', label: '⚠ Warning' },
+      error:   { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-700/40', text: 'text-red-600 dark:text-red-400', label: '✗ Offline' },
+    };
+
+    const cards = document.getElementById('health-cards');
+    const allOk = summary.all_ok;
+    const bannerBg = allOk ? 'bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200 dark:border-emerald-700/40' : 'bg-amber-50 dark:bg-amber-900/15 border-amber-200 dark:border-amber-700/40';
+    const bannerText = allOk
+      ? `<span class="text-emerald-600 dark:text-emerald-400 font-medium">All ${summary.total} services healthy</span>`
+      : `<span class="text-amber-600 dark:text-amber-400 font-medium">${summary.ok}/${summary.total} healthy</span>`;
+    const banner = `<div class="col-span-full ${bannerBg} border rounded-xl p-3 text-center text-sm">${bannerText} — ${new Date().toLocaleTimeString()}</div>`;
+
+    cards.innerHTML = banner + services.map(s => {
+      const c = statusMap[s.status] || statusMap.error;
+      return `<div class="${c.bg} border ${c.border} rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-lg">${s.icon}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded ${c.bg} ${c.text} font-semibold">${c.label}</span>
+        </div>
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${s.service}</p>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">${s.details}</p>
+        ${s.response_ms > 0 ? `<p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${s.response_ms}ms</p>` : ''}
+      </div>`;
+    }).join('');
+
+    // Details table
+    const details = document.getElementById('health-details');
+    details.classList.remove('hidden');
+    const tbody = document.getElementById('health-tbody');
+    tbody.innerHTML = services.map(s => {
+      const c = statusMap[s.status] || statusMap.error;
+      return `<tr class="border-b border-slate-100 dark:border-slate-700/30">
+        <td class="py-2.5 px-3 text-sm"><span class="mr-2">${s.icon}</span>${s.service}</td>
+        <td class="py-2.5 px-3"><span class="text-[10px] px-2 py-0.5 rounded ${c.bg} ${c.text} font-semibold">${c.label}</span></td>
+        <td class="py-2.5 px-3 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
+        <td class="py-2.5 px-3 text-xs text-slate-500 dark:text-slate-400">${s.details}</td>
+      </tr>`;
+    }).join('');
+
+  } catch(err) {
+    const cards = document.getElementById('health-cards');
+    cards.innerHTML = `<div class="col-span-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-xl p-6 text-center">
+      <p class="text-red-600 dark:text-red-400 font-medium">Health check failed</p>
+      <p class="text-sm text-slate-500 mt-1">${err.message}</p>
+    </div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Check'; }
+  }
+}
+
+// ================================================================
+// MANUAL REFRESH
+// ================================================================
+function updateRefreshTimestamp() {
+  const el = document.getElementById('last-refresh');
+  if (el) el.textContent = new Date().toLocaleTimeString();
+}
+
+async function manualRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  const icon = document.getElementById('refresh-icon');
+  if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+  if (icon) icon.classList.add('animate-spin');
+
+  try {
+    await loadDevices();
+    await refreshPage(currentPage);
+    updateRefreshTimestamp();
+  } catch(err) { console.error('Refresh error:', err); }
+  finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    if (icon) icon.classList.remove('animate-spin');
+  }
+}
+
+// ================================================================
+// INIT
+// ================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
+  initSidebar();
+  await loadDevices();
+  initRouter();
+  updateRefreshTimestamp();
+
+  // Quick health check for top bar
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (h.summary?.all_ok) {
+      dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+      txt.textContent = 'All Systems Operational';
+    } else {
+      const issues = h.summary.total - h.summary.ok;
+      dot.className = 'w-2 h-2 rounded-full bg-amber-500';
+      txt.textContent = `${issues} Issue${issues > 1 ? 's' : ''}`;
+    }
+  } catch(e) {
+    document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
+    document.getElementById('status-text').textContent = 'Connection Error';
+  }
+});
