@@ -558,12 +558,23 @@ async function refreshCloud() {
   const p = getFilterParams('cloud');
   const [events, timeline] = await Promise.all([
     fetch('/api/events?' + p).then(r => r.json()),
-    fetch('/api/timeline?bucket_size=hour&' + p).then(r => r.json()),
+    fetch('/api/timeline?bucket_size=' + getBucketSize('cloud') + '&' + p).then(r => r.json()),
   ]);
 
   document.getElementById('cloud-stat-total').textContent = events.length;
   document.getElementById('cloud-stat-services').textContent = new Set(events.map(e => e.ai_service)).size;
+  document.getElementById('cloud-stat-sources').textContent = Object.keys(deviceMap).length || new Set(events.map(e => e.source_ip)).size;
   document.getElementById('cloud-stat-uploads').textContent = events.filter(e => e.possible_upload).length;
+
+  // Populate service filter
+  const svcSel = document.getElementById('cloud-filter-service');
+  if (svcSel) {
+    const cur = svcSel.value;
+    const allSvcs = [...new Set(events.map(e => e.ai_service))].sort();
+    svcSel.innerHTML = '<option value="">All services</option>';
+    allSvcs.forEach(s => { svcSel.innerHTML += `<option value="${s}">${SERVICE_NAMES[s] || s}</option>`; });
+    svcSel.value = cur;
+  }
 
   renderEventsTable(events, 'cloud-tbody', 'cloud-empty');
   updateCategoryCharts(events, timeline, 'cloud-service-chart', 'cloud-timeline-chart');
