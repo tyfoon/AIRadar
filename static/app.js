@@ -563,6 +563,124 @@ async function refreshDashboard() {
   renderSankey([...sankeyAi, ...sankeyCloud]);
 }
 
+// --- SANKEY DIAGRAM ---
+let sankeyInstance = null;
+
+function renderSankey(events) {
+  const container = document.getElementById('sankey-chart');
+  const emptyMsg = document.getElementById('sankey-empty');
+  if (!container) return;
+
+  if (!events.length) {
+    container.style.display = 'none';
+    if (emptyMsg) emptyMsg.classList.remove('hidden');
+    return;
+  }
+  container.style.display = '';
+  if (emptyMsg) emptyMsg.classList.add('hidden');
+
+  // Build flows: device → AI-Radar → service, weighted by bytes_transferred
+  const deviceFlows = {};  // device → total bytes
+  const serviceFlows = {}; // service → total bytes
+
+  events.forEach(e => {
+    const dev = deviceName(e.source_ip);
+    const svc = SERVICE_NAMES[e.ai_service] || e.ai_service;
+    deviceFlows[dev] = (deviceFlows[dev] || 0) + (e.bytes_transferred || 1);
+    serviceFlows[svc] = (serviceFlows[svc] || 0) + (e.bytes_transferred || 1);
+  });
+
+  // Build per-link flows: device → service
+  const linkMap = {};
+  events.forEach(e => {
+    const dev = deviceName(e.source_ip);
+    const svc = SERVICE_NAMES[e.ai_service] || e.ai_service;
+    const key = dev + '→' + svc;
+    linkMap[key] = (linkMap[key] || 0) + (e.bytes_transferred || 1);
+  });
+
+  // Nodes
+  const nodes = [];
+  const nodeSet = new Set();
+  Object.keys(deviceFlows).forEach(d => { if (!nodeSet.has(d)) { nodeSet.add(d); nodes.push({ name: d }); } });
+  nodes.push({ name: 'AI-Radar' });
+  Object.keys(serviceFlows).forEach(s => { if (!nodeSet.has(s)) { nodeSet.add(s); nodes.push({ name: s }); } });
+
+  // Links: device → AI-Radar, AI-Radar → service
+  const links = [];
+  Object.entries(deviceFlows).forEach(([dev, bytes]) => {
+    links.push({ source: dev, target: 'AI-Radar', value: bytes });
+  });
+  Object.entries(serviceFlows).forEach(([svc, bytes]) => {
+    links.push({ source: 'AI-Radar', target: svc, value: bytes });
+  });
+
+  const dark = isDark();
+  const textColor = dark ? '#94a3b8' : '#475569';
+
+  if (sankeyInstance) sankeyInstance.dispose();
+  sankeyInstance = echarts.init(container, null, { renderer: 'canvas' });
+
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      triggerOn: 'mousemove',
+      backgroundColor: dark ? '#1e293b' : '#fff',
+      borderColor: dark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+      textStyle: { color: dark ? '#e2e8f0' : '#1e293b', fontSize: 12, fontFamily: 'Inter' },
+      formatter: (params) => {
+        if (params.dataType === 'edge') {
+          const kb = (params.value / 1024).toFixed(1);
+          return `${params.data.source} → ${params.data.target}<br/><b>${kb} KB</b>`;
+        }
+        return params.name;
+      }
+    },
+    series: [{
+      type: 'sankey',
+      layout: 'none',
+      emphasis: { focus: 'adjacency' },
+      nodeAlign: 'justify',
+      layoutIterations: 32,
+      nodeGap: 12,
+      nodeWidth: 20,
+      data: nodes.map(n => ({
+        name: n.name,
+        itemStyle: {
+          color: n.name === 'AI-Radar' ? '#6366f1'
+            : serviceFlows[n.name] ? (SERVICE_COLORS[Object.keys(SERVICE_NAMES).find(k => SERVICE_NAMES[k] === n.name)] || '#6366f1')
+            : '#3b82f6',
+          borderColor: 'transparent',
+        },
+        label: {
+          color: textColor,
+          fontSize: 11,
+          fontFamily: 'Inter',
+        }
+      })),
+      links: links,
+      lineStyle: {
+        color: 'gradient',
+        curveness: 0.5,
+        opacity: dark ? 0.25 : 0.35,
+      },
+      label: {
+        position: 'right',
+        color: textColor,
+        fontSize: 11,
+        fontFamily: 'Inter',
+      },
+      left: 40, right: 120, top: 10, bottom: 10,
+    }]
+  };
+
+  sankeyInstance.setOption(option);
+
+  // Resize observer
+  const resizeObserver = new ResizeObserver(() => { sankeyInstance?.resize(); });
+  resizeObserver.observe(container);
+}
+
 // --- AI RADAR ---
 async function refreshAI() {
   const p = getFilterParams('ai');
