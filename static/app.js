@@ -422,6 +422,7 @@ async function refreshPage(page) {
     else if (page === 'ai') await refreshAI();
     else if (page === 'cloud') await refreshCloud();
     else if (page === 'privacy') await refreshPrivacy();
+    else if (page === 'devices') await refreshDevices();
     else if (page === 'rules') await refreshRules();
     // settings is static, no refresh needed
   } catch(err) { console.error('Page refresh error:', err); }
