@@ -989,9 +989,9 @@ async function refreshDevices() {
       : '';
 
     return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-      <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-slate-800/50 z-10">
+      <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
         <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-ip="${ip}" title="${ip}">${dn}</span>
-        <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ip}</p>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ip}${deviceMap[ip]?.vendor ? ' · ' + deviceMap[ip].vendor : ''}</p>
       </td>
       <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">${total}${uploadBadge}</td>
       ${cells}
