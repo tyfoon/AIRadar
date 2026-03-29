@@ -465,11 +465,13 @@ async function refreshPage(page) {
 // --- DASHBOARD ---
 async function refreshDashboard() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const [aiEvt, cloudEvt, privRes, healthRes] = await Promise.all([
+  const [aiEvt, cloudEvt, privRes, healthRes, sankeyAi, sankeyCloud] = await Promise.all([
     fetch('/api/events?category=ai&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/events?category=cloud&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/privacy/stats').then(r => r.json()).catch(() => null),
     fetch('/api/health').then(r => r.json()).catch(() => null),
+    fetch('/api/events?category=ai&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
+    fetch('/api/events?category=cloud&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
   ]);
 
   // Metrics
