@@ -698,6 +698,147 @@ function renderBlockedDomainsList() {
   }).join('');
 }
 
+// Tracker details panel
+let _cachedTopTrackers = [];
+
+function toggleTrackerDetails() {
+  const panel = document.getElementById('tracker-details-panel');
+  if (!panel) return;
+  const hidden = panel.classList.contains('hidden');
+  if (hidden) { panel.classList.remove('hidden'); renderTrackerDetailsList(); }
+  else panel.classList.add('hidden');
+}
+
+function renderTrackerDetailsList() {
+  const container = document.getElementById('tracker-details-list');
+  if (!container) return;
+  if (!_cachedTopTrackers?.length) {
+    container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">No tracker data available.</p>';
+    return;
+  }
+  const maxHits = _cachedTopTrackers[0]?.hits || 1;
+  container.innerHTML = _cachedTopTrackers.map((t, i) => {
+    const pct = Math.max(5, (t.hits / maxHits) * 100);
+    const name = t.service.replace(/_/g, ' ');
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-700/30">
+      <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-[11px] font-medium text-slate-700 dark:text-slate-200 truncate" title="${name}">${name}</p>
+        <div class="mt-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700/50 overflow-hidden">
+          <div class="h-full rounded-full bg-amber-500/70" style="width:${pct}%"></div>
+        </div>
+      </div>
+      <span class="text-[11px] tabular-nums text-amber-500 dark:text-amber-400 font-medium">${t.hits.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+}
+
+// --- DEVICES ---
+async function refreshDevices() {
+  const per = document.getElementById('dev-filter-period')?.value;
+  const params = new URLSearchParams();
+  params.set('limit', '1000');
+  if (per) params.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
+
+  // Fetch all categories in parallel
+  const [aiEvt, cloudEvt, trackEvt] = await Promise.all([
+    fetch('/api/events?category=ai&' + params).then(r => r.json()),
+    fetch('/api/events?category=cloud&' + params).then(r => r.json()),
+    fetch('/api/events?category=tracking&' + params).then(r => r.json()),
+  ]);
+
+  const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt];
+
+  // Build device → service → {count, uploads} map
+  const matrix = {};       // ip → { svc → { count, uploads } }
+  const allServices = new Set();
+
+  allEvents.forEach(e => {
+    if (!matrix[e.source_ip]) matrix[e.source_ip] = {};
+    const row = matrix[e.source_ip];
+    if (!row[e.ai_service]) row[e.ai_service] = { count: 0, uploads: 0 };
+    row[e.ai_service].count++;
+    if (e.possible_upload) row[e.ai_service].uploads++;
+    allServices.add(e.ai_service);
+  });
+
+  const services = [...allServices].sort();
+  const deviceIPs = Object.keys(matrix);
+
+  // Sort devices by total event count (most active first)
+  deviceIPs.sort((a, b) => {
+    const totalA = Object.values(matrix[a]).reduce((s, v) => s + v.count, 0);
+    const totalB = Object.values(matrix[b]).reduce((s, v) => s + v.count, 0);
+    return totalB - totalA;
+  });
+
+  // Stats
+  const totalUploads = allEvents.filter(e => e.possible_upload).length;
+  document.getElementById('dev-stat-total').textContent = Object.keys(deviceMap).length || deviceIPs.length;
+  document.getElementById('dev-stat-violators').textContent = deviceIPs.length;
+  document.getElementById('dev-stat-events').textContent = allEvents.length.toLocaleString();
+  document.getElementById('dev-stat-uploads').textContent = totalUploads;
+
+  // Find global max for heat intensity
+  let globalMax = 1;
+  deviceIPs.forEach(ip => {
+    Object.values(matrix[ip]).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
+  });
+
+  // Render header
+  const thead = document.getElementById('devices-matrix-head');
+  thead.innerHTML = `<tr>
+    <th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-slate-800/80 z-10 min-w-[180px]">Device</th>
+    <th class="py-3 px-3 font-medium text-right min-w-[60px]">Total</th>
+    ${services.map(s => `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}">${SERVICE_NAMES[s] || s}</th>`).join('')}
+  </tr>`;
+
+  // Render body
+  const tbody = document.getElementById('devices-matrix-body');
+  if (deviceIPs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="' + (services.length + 2) + '" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">No device activity detected in this period.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = deviceIPs.map(ip => {
+    const row = matrix[ip];
+    const total = Object.values(row).reduce((s, v) => s + v.count, 0);
+    const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
+    const dn = deviceName(ip);
+
+    const cells = services.map(s => {
+      const v = row[s];
+      if (!v) return `<td class="py-2.5 px-2 text-center"><span class="inline-block w-full py-1 rounded text-[10px] text-slate-300 dark:text-slate-600">—</span></td>`;
+
+      const intensity = v.count / globalMax;
+      let bg, text;
+      if (intensity < 0.15)      { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
+      else if (intensity < 0.4)  { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
+      else if (intensity < 0.7)  { bg = 'bg-orange-300 dark:bg-orange-700/60'; text = 'text-orange-900 dark:text-orange-100'; }
+      else                       { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
+
+      const uploadIcon = v.uploads > 0 ? ' <span class="text-orange-500" title="' + v.uploads + ' upload(s)">▲</span>' : '';
+
+      return `<td class="py-2.5 px-2 text-center">
+        <span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${v.count}${uploadIcon}</span>
+      </td>`;
+    }).join('');
+
+    const uploadBadge = totalUploads > 0
+      ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
+      : '';
+
+    return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+      <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-slate-800/50 z-10">
+        <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-ip="${ip}" title="${ip}">${dn}</span>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ip}</p>
+      </td>
+      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">${total}${uploadBadge}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+}
+
 // --- RULES ---
 async function refreshRules() {
   await Promise.all([loadGlobalFilterStatus(), loadAccessControl()]);
