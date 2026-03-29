@@ -1,0 +1,94 @@
+/* ================================================================
+   AI-Radar — Custom Styles
+   Everything Tailwind can't handle inline.
+   ================================================================ */
+
+/* --- Inter font (loaded in HTML <link>) --- */
+
+/* --- Scrollbars --- */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }
+:root:not(.dark) ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
+/* --- Form elements --- */
+select, input[type="datetime-local"], input[type="text"], input[type="number"] {
+  background: #f8fafc; border: 1px solid #e2e8f0; color: #1e293b;
+  border-radius: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.8rem;
+  transition: border-color 0.15s;
+}
+select:focus, input:focus { outline: none; border-color: #6366f1; }
+.dark select, .dark input[type="datetime-local"], .dark input[type="text"], .dark input[type="number"] {
+  background: #1e293b; border-color: #334155; color: #e2e8f0;
+}
+
+/* --- Toggle switch --- */
+.toggle { position: relative; width: 40px; height: 22px; cursor: pointer; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle .slider {
+  position: absolute; inset: 0; background: #dc2626; border-radius: 11px;
+  transition: background 0.25s;
+}
+.toggle .slider::before {
+  content: ''; position: absolute; width: 16px; height: 16px;
+  left: 3px; top: 3px; background: #fff; border-radius: 50%;
+  transition: transform 0.25s;
+}
+.toggle input:checked + .slider { background: #10b981; }
+.toggle input:checked + .slider::before { transform: translateX(18px); }
+.toggle input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+/* --- Sidebar --- */
+#sidebar {
+  transition: width 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+#sidebar .nav-label {
+  transition: opacity 0.2s, width 0.2s;
+  overflow: hidden; white-space: nowrap;
+}
+#sidebar.collapsed .nav-label { opacity: 0; width: 0; }
+#sidebar.collapsed .logo-text { opacity: 0; width: 0; overflow: hidden; }
+
+/* --- Page transitions --- */
+.page { display: none; }
+.page.active { display: block; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- Spin animation for refresh --- */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 0.6s linear infinite; }
+
+/* --- Service card blocked state --- */
+.svc-card { transition: all 0.2s; }
+.svc-card.blocked { border-color: rgba(220,38,38,0.4) !important; background: rgba(127,29,29,0.12) !important; }
+
+/* --- Subtle card hover --- */
+.card-hover { transition: box-shadow 0.2s, border-color 0.2s; }
+.card-hover:hover { border-color: rgba(99,102,241,0.3); box-shadow: 0 0 0 1px rgba(99,102,241,0.1); }
+
+/* --- Metric card pulse on update --- */
+@keyframes pulse-once { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+.pulse { animation: pulse-once 0.4s ease; }
+
+/* --- Modal backdrop --- */
+#modal-backdrop {
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
+}
+
+/* --- Chart container responsive --- */
+canvas { max-width: 100%; }
+
+/* --- Tooltip style override --- */
+.tippy-box { font-size: 12px !important; }
+
+/* --- Mobile bottom bar --- */
+@media (max-width: 767px) {
+  #sidebar { display: none !important; }
+  #mobile-nav { display: flex !important; }
+  #main { margin-left: 0 !important; }
+}
+@media (min-width: 768px) {
+  #mobile-nav { display: none !important; }
+}
