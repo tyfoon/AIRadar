@@ -207,6 +207,13 @@ function deviceName(ip) {
   return d ? (d.display_name || d.hostname || ip) : ip;
 }
 
+function deviceLabel(ip) {
+  const d = deviceMap[ip];
+  const name = d ? (d.display_name || d.hostname || ip) : ip;
+  const vendor = d?.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">(${d.vendor})</span>` : '';
+  return name + vendor;
+}
+
 async function loadDevices() {
   try {
     const res = await fetch('/api/devices');
