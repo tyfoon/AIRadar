@@ -43,6 +43,7 @@ class Device(Base):
     ip = Column(String, primary_key=True)
     hostname = Column(String, nullable=True)
     mac_address = Column(String, nullable=True)
+    vendor = Column(String, nullable=True)          # MAC vendor (e.g. "Apple", "Samsung")
     display_name = Column(String, nullable=True)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
