@@ -22,6 +22,24 @@ from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
 from database import BlockRule, DetectionEvent, Device, SessionLocal, init_db
+
+# MAC Vendor lookup
+try:
+    from mac_vendor_lookup import MacLookup
+    _mac_lookup = MacLookup()
+    _mac_lookup.update_vendors()  # download OUI database on startup
+except Exception:
+    _mac_lookup = None
+
+
+def _resolve_vendor(mac: str | None) -> str | None:
+    """Look up the hardware vendor from a MAC address."""
+    if not mac or not _mac_lookup:
+        return None
+    try:
+        return _mac_lookup.lookup(mac)
+    except Exception:
+        return None
 from schemas import (
     BlockRuleCreate,
     BlockRuleRead,
