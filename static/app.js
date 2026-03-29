@@ -558,6 +558,9 @@ async function refreshDashboard() {
       }).join('');
     }
   }
+
+  // Sankey Data Flow Diagram
+  renderSankey([...sankeyAi, ...sankeyCloud]);
 }
 
 // --- AI RADAR ---
