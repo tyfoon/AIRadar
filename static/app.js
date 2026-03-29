@@ -391,7 +391,7 @@ function renderEventsTable(events, tbodyId, emptyId) {
     const up = e.possible_upload;
     const rc = up
       ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50 dark:bg-orange-900/10'
-      : 'border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20';
+      : 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20';
     const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     const dn = deviceName(e.source_ip);
     const vendorTag = deviceMap[e.source_ip]?.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 block">${deviceMap[e.source_ip].vendor}</span>` : '';
@@ -548,7 +548,7 @@ async function refreshDashboard() {
         const desc = isUpload
           ? `Upload detected (${(e.bytes_transferred / 1024).toFixed(0)} KB)`
           : `High volume traffic (${(e.bytes_transferred / 1024).toFixed(0)} KB)`;
-        return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+        return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
           <td class="py-2.5 pr-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
           <td class="py-2.5 pr-4">${severity}</td>
           <td class="py-2.5 pr-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
@@ -815,7 +815,7 @@ async function refreshPrivacy() {
       tbody.innerHTML = recent.map(e => {
         const svc = e.service.replace(/_/g, ' ');
         const cls = trackerBadges[svc] || 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300';
-        return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20">
+        return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
           <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
           <td class="py-2 px-3"><span class="text-[11px] px-2 py-0.5 rounded ${cls}">${svc}</span></td>
           <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
@@ -845,7 +845,7 @@ function renderBlockedDomainsList() {
   const maxCount = _cachedTopBlocked[0]?.count || 1;
   container.innerHTML = _cachedTopBlocked.map((d, i) => {
     const pct = Math.max(5, (d.count / maxCount) * 100);
-    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-700/30">
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
       <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-mono text-slate-700 dark:text-slate-200 truncate" title="${d.domain}">${d.domain}</p>
@@ -880,7 +880,7 @@ function renderTrackerDetailsList() {
   container.innerHTML = _cachedTopTrackers.map((t, i) => {
     const pct = Math.max(5, (t.hits / maxHits) * 100);
     const name = t.service.replace(/_/g, ' ');
-    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-slate-700/30">
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
       <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-medium text-slate-700 dark:text-slate-200 truncate" title="${name}">${name}</p>
@@ -988,7 +988,7 @@ async function refreshDevices() {
       ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
       : '';
 
-    return `<tr class="border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
       <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
         <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-ip="${ip}" title="${ip}">${dn}</span>
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ip}${deviceMap[ip]?.vendor ? ' · ' + deviceMap[ip].vendor : ''}</p>
@@ -1253,7 +1253,7 @@ async function runHealthCheck() {
     const tbody = document.getElementById('health-tbody');
     tbody.innerHTML = services.map(s => {
       const c = statusMap[s.status] || statusMap.error;
-      return `<tr class="border-b border-slate-100 dark:border-slate-700/30">
+      return `<tr class="border-b border-slate-100 dark:border-white/[0.04]">
         <td class="py-2.5 px-3 text-sm"><span class="mr-2">${s.icon}</span>${s.service}</td>
         <td class="py-2.5 px-3"><span class="text-[10px] px-2 py-0.5 rounded ${c.bg} ${c.text} font-semibold">${c.label}</span></td>
         <td class="py-2.5 px-3 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
