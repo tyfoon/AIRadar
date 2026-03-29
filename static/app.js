@@ -177,9 +177,24 @@ function svcColor(s) {
   return SERVICE_COLORS[s];
 }
 
+function svcLogo(s) {
+  const domain = SERVICE_LOGO_DOMAIN[s];
+  if (domain) {
+    const color = svcColor(s);
+    const letter = (SERVICE_NAMES[s] || s).charAt(0);
+    return `<img src="https://logo.clearbit.com/${domain}" alt="${s}" class="svc-logo"
+      onerror="this.outerHTML='<span class=\\'svc-logo-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
+  }
+  const color = svcColor(s);
+  const letter = (SERVICE_NAMES[s] || s).charAt(0);
+  return `<span class="svc-logo-fallback" style="background:${color}">${letter}</span>`;
+}
+
 function badge(s) {
   const cls = SVC_BADGE_CLS[s] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
-  return `<span class="px-2 py-0.5 rounded text-[11px] font-medium ${cls}">${s}</span>`;
+  const logo = svcLogo(s);
+  const name = SERVICE_NAMES[s] || s;
+  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium ${cls}">${logo} ${name}</span>`;
 }
 
 // ================================================================
