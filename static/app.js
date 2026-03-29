@@ -394,7 +394,8 @@ function renderEventsTable(events, tbodyId, emptyId) {
       : 'border-b border-slate-100 dark:border-slate-700/30 hover:bg-slate-50 dark:hover:bg-slate-700/20';
     const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     const dn = deviceName(e.source_ip);
-    const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" data-ip="${e.source_ip}" title="${e.source_ip}">${dn}</span>`;
+    const vendorTag = deviceMap[e.source_ip]?.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 block">${deviceMap[e.source_ip].vendor}</span>` : '';
+    const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" data-ip="${e.source_ip}" title="${e.source_ip}">${dn}${vendorTag}</span>`;
     return `<tr class="${rc} transition-colors">
       <td class="py-2 pr-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
       <td class="py-2 pr-4">${badge(e.ai_service)}</td>
