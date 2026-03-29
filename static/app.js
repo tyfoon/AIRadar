@@ -26,9 +26,9 @@ function initTheme() {
 // CHART THEME COLORS
 // ================================================================
 const TC = {
-  get grid()    { return isDark() ? '#1e293b' : '#e2e8f0'; },
-  get tick()    { return isDark() ? '#64748b' : '#94a3b8'; },
-  get legend()  { return isDark() ? '#94a3b8' : '#475569'; },
+  get grid()    { return isDark() ? 'rgba(255,255,255,0.04)' : '#e2e8f0'; },
+  get tick()    { return isDark() ? '#475569' : '#94a3b8'; },
+  get legend()  { return isDark() ? '#64748b' : '#475569'; },
 };
 
 // ================================================================
