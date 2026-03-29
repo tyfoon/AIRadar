@@ -145,6 +145,15 @@ const SERVICE_NAMES = {
   box:'Box', mega:'MEGA',
 };
 
+// Domain mapping for Clearbit logos
+const SERVICE_LOGO_DOMAIN = {
+  openai:'openai.com', anthropic_claude:'anthropic.com', google_gemini:'google.com',
+  microsoft_copilot:'microsoft.com', perplexity:'perplexity.ai', huggingface:'huggingface.co',
+  mistral:'mistral.ai', dropbox:'dropbox.com', wetransfer:'wetransfer.com',
+  google_drive:'google.com', onedrive:'microsoft.com', icloud:'apple.com',
+  box:'box.com', mega:'mega.nz',
+};
+
 const SVC_BADGE_CLS = {
   openai:'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
   anthropic_claude:'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300',
