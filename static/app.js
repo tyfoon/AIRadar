@@ -624,12 +624,17 @@ async function refreshPrivacy() {
 
   // Zeek tracker section
   const tk = privRes.trackers || {};
+  _cachedTopTrackers = tk.top_trackers || [];
   document.getElementById('tracker-total').textContent = (tk.total_detected || 0).toLocaleString();
-  document.getElementById('tracker-unique').textContent = (tk.top_trackers || []).length;
+  document.getElementById('tracker-unique').textContent = _cachedTopTrackers.length;
+
+  // Update tracker details panel if already open
+  const tPanel = document.getElementById('tracker-details-panel');
+  if (tPanel && !tPanel.classList.contains('hidden')) renderTrackerDetailsList();
 
   const tChart = getOrCreateChart('tracker-chart', makeDoughnutConfig());
   if (tChart) {
-    const topT = (tk.top_trackers || []).slice(0, 10);
+    const topT = _cachedTopTrackers.slice(0, 10);
     tChart.data.labels = topT.map(t => t.service.replace(/_/g, ' '));
     tChart.data.datasets[0].data = topT.map(t => t.hits);
     tChart.update();
