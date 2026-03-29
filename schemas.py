@@ -44,6 +44,7 @@ class DeviceRead(BaseModel):
     ip: str
     hostname: Optional[str] = None
     mac_address: Optional[str] = None
+    vendor: Optional[str] = None
     display_name: Optional[str] = None
     first_seen: datetime
     last_seen: datetime
