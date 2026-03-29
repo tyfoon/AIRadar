@@ -1,105 +1,224 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI-Radar Dashboard</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>AI-Radar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <style>
-    body { background: #0f172a; }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-    select, input[type="datetime-local"] {
-      background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
-      border-radius: 0.5rem; padding: 0.35rem 0.6rem; font-size: 0.8rem;
-    }
-    select:focus, input:focus { outline: none; border-color: #6366f1; }
-    .tab-btn { transition: all 0.2s; }
-    .tab-btn.active { border-color: #6366f1; color: #e2e8f0; background: rgba(99,102,241,0.1); }
-    .tab-btn:not(.active) { border-color: transparent; color: #64748b; }
-    .tab-btn:not(.active):hover { color: #94a3b8; background: rgba(51,65,85,0.3); }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-    /* Toggle switch */
-    .toggle { position:relative; width:44px; height:24px; cursor:pointer; }
-    .toggle input { opacity:0; width:0; height:0; }
-    .toggle .slider { position:absolute; inset:0; background:#dc2626; border-radius:12px; transition:.3s; }
-    .toggle .slider::before { content:''; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.3s; }
-    .toggle input:checked + .slider { background:#10b981; }
-    .toggle input:checked + .slider::before { transform:translateX(20px); }
-    .toggle input:disabled + .slider { opacity:0.5; cursor:not-allowed; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .svc-card { transition: all 0.2s; }
-    .svc-card.blocked { border-color: rgba(220,38,38,0.4); background: rgba(127,29,29,0.15); }
-  </style>
+  <link rel="stylesheet" href="/static/style.css"/>
 </head>
-<body class="text-slate-200 min-h-screen">
 
-  <!-- Header -->
-  <header class="border-b border-slate-700/60 px-6 py-4 flex items-center justify-between">
+<body class="font-sans bg-slate-50 dark:bg-[#0B0F19] text-slate-800 dark:text-slate-100 min-h-screen">
+
+<!-- ============================================================= -->
+<!-- SIDEBAR (Desktop)                                              -->
+<!-- ============================================================= -->
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-60 bg-white dark:bg-[#111827] border-r border-slate-200 dark:border-slate-800 z-40 flex flex-col">
+
+  <!-- Logo -->
+  <div class="flex items-center gap-3 px-5 h-16 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+    <div class="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">AR</div>
+    <span class="logo-text font-semibold text-sm tracking-tight text-slate-800 dark:text-white">AI-Radar</span>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+    <a href="#/dashboard" data-page="dashboard" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <a href="#/ai" data-page="ai" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>
+      <span class="nav-label">AI Radar</span>
+    </a>
+    <a href="#/cloud" data-page="cloud" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
+      <span class="nav-label">Cloud Storage</span>
+    </a>
+    <a href="#/privacy" data-page="privacy" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+      <span class="nav-label">Privacy</span>
+    </a>
+
+    <div class="my-3 border-t border-slate-200 dark:border-slate-700/50"></div>
+
+    <a href="#/rules" data-page="rules" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+      <span class="nav-label">Rules</span>
+    </a>
+    <a href="#/settings" data-page="settings" class="nav-item group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <span class="nav-label">Settings</span>
+    </a>
+  </nav>
+
+  <!-- Bottom -->
+  <div class="px-3 py-3 border-t border-slate-200 dark:border-slate-800 space-y-1">
+    <button onclick="toggleTheme()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg id="theme-icon-sun" class="w-5 h-5 hidden dark:block flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>
+      <svg id="theme-icon-moon" class="w-5 h-5 block dark:hidden flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/></svg>
+      <span class="nav-label text-xs">Toggle Theme</span>
+    </button>
+    <button onclick="toggleSidebar()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg id="collapse-icon" class="w-5 h-5 flex-shrink-0 transition-transform" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5"/></svg>
+      <span class="nav-label text-xs">Collapse</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ============================================================= -->
+<!-- MOBILE BOTTOM NAV                                              -->
+<!-- ============================================================= -->
+<nav id="mobile-nav" class="fixed bottom-0 left-0 right-0 h-14 bg-white dark:bg-[#111827] border-t border-slate-200 dark:border-slate-800 z-40 items-center justify-around px-2 hidden">
+  <a href="#/dashboard" data-page="dashboard" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+    Home
+  </a>
+  <a href="#/ai" data-page="ai" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+    AI
+  </a>
+  <a href="#/cloud" data-page="cloud" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
+    Cloud
+  </a>
+  <a href="#/privacy" data-page="privacy" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+    Privacy
+  </a>
+  <a href="#/rules" data-page="rules" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+    Rules
+  </a>
+</nav>
+
+<!-- ============================================================= -->
+<!-- MAIN CONTENT AREA                                              -->
+<!-- ============================================================= -->
+<div id="main" class="ml-60 transition-all duration-300 min-h-screen pb-16 md:pb-0">
+
+  <!-- Top Bar -->
+  <header class="sticky top-0 z-30 h-14 bg-white/80 dark:bg-[#0B0F19]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6">
     <div class="flex items-center gap-3">
-      <div class="h-9 w-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm">AR</div>
-      <h1 class="text-xl font-semibold tracking-tight">AI-Radar <span class="text-slate-500 font-normal text-sm">v0.3</span></h1>
+      <button onclick="toggleMobileSidebar()" class="md:hidden p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+      </button>
+      <h2 id="page-title" class="text-sm font-semibold text-slate-700 dark:text-slate-200">Dashboard</h2>
     </div>
-    <div class="flex items-center gap-3">
-      <span id="last-refresh" class="text-xs text-slate-500"></span>
-      <button onclick="manualRefresh()" id="refresh-btn"
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-xs text-slate-300 transition-all active:scale-95">
-        <span id="refresh-icon">↻</span> Refresh
+    <div class="flex items-center gap-4">
+      <div id="system-status" class="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+        <span id="status-text">Checking...</span>
+      </div>
+      <span id="last-refresh" class="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline tabular-nums"></span>
+      <button onclick="manualRefresh()" id="refresh-btn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs text-slate-600 dark:text-slate-300 transition-all active:scale-95 font-medium">
+        <svg id="refresh-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 14.652"/></svg>
+        <span class="hidden sm:inline">Refresh</span>
       </button>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+  <!-- Page Content -->
+  <main class="p-4 sm:p-6 max-w-[1600px] mx-auto">
 
-    <!-- Tab navigation -->
-    <nav class="flex gap-1 border-b border-slate-700/50 pb-0">
-      <button class="tab-btn active px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="ai">
-        🤖 AI Radar
-      </button>
-      <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="cloud">
-        ☁️ Cloud Storage
-      </button>
-      <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="privacy">
-        🛡️ Privacy
-      </button>
-      <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="access">
-        🛑 Access Control
-      </button>
-      <button class="tab-btn px-5 py-2.5 rounded-t-lg text-sm font-medium border-b-2" data-tab="health">
-        ⚙️ System Health
-      </button>
-    </nav>
+    <!-- ============================================================= -->
+    <!-- PAGE: DASHBOARD                                                -->
+    <!-- ============================================================= -->
+    <section id="page-dashboard" class="page active space-y-6">
 
-    <!-- ================================================================ -->
-    <!-- TAB 1: AI RADAR                                                  -->
-    <!-- ================================================================ -->
-    <div id="tab-ai" class="tab-panel active space-y-6">
+      <!-- Metric cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">System</p>
+          <div class="flex items-center gap-2 mt-2">
+            <span id="dash-health-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+            <p id="dash-health" class="text-lg font-semibold">Checking...</p>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Devices</p>
+          <p id="dash-devices" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Events Today</p>
+          <p id="dash-events-today" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">DNS Blocked</p>
+          <p id="dash-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500">0</p>
+        </div>
+      </div>
 
-      <!-- Stat cards -->
-      <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">AI Events</p>
-          <p id="ai-stat-total" class="text-3xl font-bold tabular-nums">0</p>
+      <!-- Three donuts -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">AI Traffic</h3>
+          <canvas id="dash-ai-donut" height="200"></canvas>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">AI Services</p>
-          <p id="ai-stat-services" class="text-3xl font-bold tabular-nums">0</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Cloud Traffic</h3>
+          <canvas id="dash-cloud-donut" height="200"></canvas>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Devices</p>
-          <p id="ai-stat-sources" class="text-3xl font-bold tabular-nums">0</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Privacy Blocks</h3>
+          <canvas id="dash-priv-donut" height="200"></canvas>
         </div>
-        <div class="bg-orange-900/20 border border-orange-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-orange-400 mb-1">AI Uploads</p>
-          <p id="ai-stat-uploads" class="text-3xl font-bold tabular-nums text-orange-300">0</p>
+      </div>
+
+      <!-- Latest Alarms -->
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Latest Alarms</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead>
+              <tr class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700/50">
+                <th class="pb-2 pr-4 font-medium">Time</th>
+                <th class="pb-2 pr-4 font-medium">Severity</th>
+                <th class="pb-2 pr-4 font-medium">Event</th>
+                <th class="pb-2 pr-4 font-medium">Service</th>
+                <th class="pb-2 font-medium">Device</th>
+              </tr>
+            </thead>
+            <tbody id="dash-alarms-body" class="text-slate-600 dark:text-slate-300">
+              <tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">Loading alarms...</td></tr>
+            </tbody>
+          </table>
         </div>
-      </section>
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- PAGE: AI RADAR                                                 -->
+    <!-- ============================================================= -->
+    <section id="page-ai" class="page space-y-6">
+
+      <!-- Stats -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">AI Events</p>
+          <p id="ai-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Services</p>
+          <p id="ai-stat-services" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Devices</p>
+          <p id="ai-stat-sources" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-orange-500 dark:text-orange-400 font-medium">Uploads</p>
+          <p id="ai-stat-uploads" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
+        </div>
+      </div>
 
       <!-- Filter bar -->
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl px-5 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-xs uppercase tracking-wider text-slate-400 mr-1">Filters</span>
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Filters</span>
         <select id="ai-filter-service"><option value="">All services</option></select>
         <select id="ai-filter-device"><option value="">All devices</option></select>
         <select id="ai-filter-period">
@@ -108,1062 +227,340 @@
           <option value="1440">Last 24 h</option>
           <option value="10080">Last 7 days</option>
         </select>
-        <button onclick="refresh()" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium transition-colors">Apply</button>
-        <button onclick="exportCSV('ai')" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium transition-colors">Export CSV</button>
-      </section>
+        <button onclick="refreshPage('ai')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors">Apply</button>
+        <button onclick="exportCSV('ai')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors">Export CSV</button>
+      </div>
 
       <!-- Timeline -->
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h2 class="text-sm font-medium text-slate-300 mb-3">AI Activity Timeline</h2>
-        <canvas id="aiTimelineChart" height="100"></canvas>
-      </section>
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Activity Timeline</h3>
+        <canvas id="ai-timeline-chart" height="90"></canvas>
+      </div>
 
       <!-- Doughnut + Table -->
-      <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-1">
-          <h2 class="text-sm font-medium text-slate-300 mb-4">AI Detections by Service</h2>
-          <canvas id="aiServiceChart" height="260"></canvas>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover lg:col-span-1">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">By Service</h3>
+          <canvas id="ai-service-chart" height="260"></canvas>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-2 overflow-x-auto">
-          <h2 class="text-sm font-medium text-slate-300 mb-2">Latest AI Events</h2>
-          <p class="text-xs text-slate-500 mb-3">Orange rows indicate possible file uploads (&gt;100 KB outbound).</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover lg:col-span-2 overflow-x-auto">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Latest Events</h3>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3">Orange rows indicate possible file uploads (&gt;100 KB outbound).</p>
           <table class="w-full text-sm text-left">
             <thead>
-              <tr class="text-xs uppercase tracking-wider text-slate-400 border-b border-slate-700/50">
-                <th class="py-2 pr-4">Time</th><th class="py-2 pr-4">Service</th>
-                <th class="py-2 pr-4">Type</th><th class="py-2 pr-4">Device</th>
-                <th class="py-2 text-right">Bytes</th>
+              <tr class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700/50">
+                <th class="pb-2 pr-4 font-medium">Time</th><th class="pb-2 pr-4 font-medium">Service</th>
+                <th class="pb-2 pr-4 font-medium">Type</th><th class="pb-2 pr-4 font-medium">Device</th>
+                <th class="pb-2 text-right font-medium">Bytes</th>
               </tr>
             </thead>
             <tbody id="ai-tbody"></tbody>
           </table>
-          <p id="ai-empty" class="text-slate-500 text-center py-8 hidden">No AI events captured yet.</p>
+          <p id="ai-empty" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm">No AI events captured yet.</p>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
 
-    <!-- ================================================================ -->
-    <!-- TAB 2: CLOUD STORAGE                                             -->
-    <!-- ================================================================ -->
-    <div id="tab-cloud" class="tab-panel space-y-6">
+    <!-- ============================================================= -->
+    <!-- PAGE: CLOUD STORAGE                                            -->
+    <!-- ============================================================= -->
+    <section id="page-cloud" class="page space-y-6">
 
-      <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Cloud Events</p>
-          <p id="cloud-stat-total" class="text-3xl font-bold tabular-nums">0</p>
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Cloud Events</p>
+          <p id="cloud-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">Cloud Services</p>
-          <p id="cloud-stat-services" class="text-3xl font-bold tabular-nums">0</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Services</p>
+          <p id="cloud-stat-services" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
-        <div class="bg-orange-900/20 border border-orange-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-orange-400 mb-1">Cloud Uploads</p>
-          <p id="cloud-stat-uploads" class="text-3xl font-bold tabular-nums text-orange-300">0</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-orange-500 dark:text-orange-400 font-medium">Uploads</p>
+          <p id="cloud-stat-uploads" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
         </div>
-      </section>
+      </div>
 
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h2 class="text-sm font-medium text-slate-300 mb-3">Cloud Activity Timeline</h2>
-        <canvas id="cloudTimelineChart" height="100"></canvas>
-      </section>
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Activity Timeline</h3>
+        <canvas id="cloud-timeline-chart" height="90"></canvas>
+      </div>
 
-      <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-1">
-          <h2 class="text-sm font-medium text-slate-300 mb-4">Cloud Services Breakdown</h2>
-          <canvas id="cloudServiceChart" height="260"></canvas>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover lg:col-span-1">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">By Service</h3>
+          <canvas id="cloud-service-chart" height="260"></canvas>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 lg:col-span-2 overflow-x-auto">
-          <h2 class="text-sm font-medium text-slate-300 mb-2">Latest Cloud Events</h2>
-          <p class="text-xs text-slate-500 mb-3">Focus on data uploads to cloud storage services (Dropbox, WeTransfer, Google Drive, etc.).</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover lg:col-span-2 overflow-x-auto">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Latest Events</h3>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3">Cloud storage events (Dropbox, WeTransfer, Google Drive, etc.).</p>
           <table class="w-full text-sm text-left">
             <thead>
-              <tr class="text-xs uppercase tracking-wider text-slate-400 border-b border-slate-700/50">
-                <th class="py-2 pr-4">Time</th><th class="py-2 pr-4">Service</th>
-                <th class="py-2 pr-4">Type</th><th class="py-2 pr-4">Device</th>
-                <th class="py-2 text-right">Bytes</th>
+              <tr class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700/50">
+                <th class="pb-2 pr-4 font-medium">Time</th><th class="pb-2 pr-4 font-medium">Service</th>
+                <th class="pb-2 pr-4 font-medium">Type</th><th class="pb-2 pr-4 font-medium">Device</th>
+                <th class="pb-2 text-right font-medium">Bytes</th>
               </tr>
             </thead>
             <tbody id="cloud-tbody"></tbody>
           </table>
-          <p id="cloud-empty" class="text-slate-500 text-center py-8 hidden">No cloud events captured yet.</p>
+          <p id="cloud-empty" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm">No cloud events captured yet.</p>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
 
-    <!-- ================================================================ -->
-    <!-- TAB 3: PRIVACY (AdGuard)                                         -->
-    <!-- ================================================================ -->
-    <div id="tab-privacy" class="tab-panel space-y-6">
+    <!-- ============================================================= -->
+    <!-- PAGE: PRIVACY                                                  -->
+    <!-- ============================================================= -->
+    <section id="page-privacy" class="page space-y-6">
 
-      <!-- === Row 1: AdGuard stats + Zeek tracker stats === -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <!-- AdGuard cards -->
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">DNS Queries</p>
-          <p id="priv-total" class="text-3xl font-bold tabular-nums">0</p>
-          <p class="text-xs text-slate-500 mt-1">via AdGuard Home</p>
+      <!-- Stats row -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">DNS Queries</p>
+          <p id="priv-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">via AdGuard Home</p>
         </div>
-        <div class="bg-red-900/20 border border-red-700/40 rounded-xl p-5 cursor-pointer hover:bg-red-900/30 transition-colors"
-             onclick="toggleBlockedList()" title="Click to see blocked domains">
-          <p class="text-xs uppercase tracking-wider text-red-400 mb-1">DNS Blocked <span class="text-slate-500 normal-case">▾ click for details</span></p>
-          <p id="priv-blocked" class="text-3xl font-bold tabular-nums text-red-300">0</p>
-          <p class="text-xs text-slate-500 mt-1"><span id="priv-pct" class="text-red-400">0%</span> block rate</p>
+        <div class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover cursor-pointer" onclick="toggleBlockedDomains()">
+          <p class="text-[11px] uppercase tracking-wider text-red-500 dark:text-red-400 font-medium">DNS Blocked <span class="normal-case text-slate-400 dark:text-slate-500">▾</span></p>
+          <p id="priv-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
+          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1"><span id="priv-pct" class="text-red-500 dark:text-red-400">0%</span> block rate</p>
         </div>
-        <!-- Zeek tracker cards -->
-        <div class="bg-amber-900/20 border border-amber-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-amber-400 mb-1">Trackers Detected</p>
-          <p id="tracker-total" class="text-3xl font-bold tabular-nums text-amber-300">0</p>
-          <p class="text-xs text-slate-500 mt-1">via Zeek network analysis</p>
+        <div class="bg-white dark:bg-amber-900/10 border border-slate-200 dark:border-amber-700/30 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-amber-500 dark:text-amber-400 font-medium">Trackers</p>
+          <p id="tracker-total" class="text-2xl font-bold mt-2 tabular-nums text-amber-500 dark:text-amber-400">0</p>
+          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">via Zeek analysis</p>
         </div>
-        <div class="bg-purple-900/20 border border-purple-700/40 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-purple-400 mb-1">Unique Trackers</p>
-          <p id="tracker-unique" class="text-3xl font-bold tabular-nums text-purple-300">0</p>
-          <p class="text-xs text-slate-500 mt-1">distinct tracking services</p>
+        <div class="bg-white dark:bg-purple-900/10 border border-slate-200 dark:border-purple-700/30 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-purple-500 dark:text-purple-400 font-medium">Unique Trackers</p>
+          <p id="tracker-unique" class="text-2xl font-bold mt-2 tabular-nums text-purple-500 dark:text-purple-400">0</p>
         </div>
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <p class="text-xs uppercase tracking-wider text-slate-400 mb-1">AdGuard Status</p>
-          <p id="priv-status" class="text-lg font-semibold mt-1">--</p>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">AdGuard</p>
+          <p id="priv-status" class="text-base font-semibold mt-2">--</p>
         </div>
-      </section>
+      </div>
 
-      <!-- Expandable blocked domains list -->
-      <section id="blocked-domains-panel" class="hidden bg-red-900/10 border border-red-700/30 rounded-xl p-5 transition-all">
+      <!-- Blocked domains expandable -->
+      <div id="blocked-domains-panel" class="hidden bg-white dark:bg-red-900/5 border border-slate-200 dark:border-red-700/20 rounded-xl p-5">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-sm font-medium text-red-300">Blocked DNS Domains</h2>
-          <button onclick="toggleBlockedList()" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">✕ Close</button>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-red-500 dark:text-red-400">Blocked Domains</h3>
+          <button onclick="toggleBlockedDomains()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">&times; Close</button>
         </div>
-        <div id="blocked-domains-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-          <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
-        </div>
-      </section>
+        <div id="blocked-domains-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto"></div>
+      </div>
 
-      <!-- === Row 2: Charts side by side === -->
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- AdGuard blocked domains chart -->
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <h2 class="text-sm font-medium text-slate-300 mb-3">Top Blocked Domains (AdGuard)</h2>
-          <div id="priv-chart-container">
-            <canvas id="privChart" height="220"></canvas>
-          </div>
-          <p id="priv-unavailable" class="text-slate-500 text-center py-8 hidden">
-            AdGuard Home is not active on DNS yet.<br>
-            <span class="text-xs">Point your DNS to 127.0.0.1 to start blocking.</span>
-          </p>
+      <!-- Charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Top Blocked (AdGuard)</h3>
+          <div id="priv-chart-container"><canvas id="priv-chart" height="220"></canvas></div>
+          <p id="priv-unavailable" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm">AdGuard Home not active on DNS yet.</p>
         </div>
-        <!-- Zeek tracker breakdown chart -->
-        <div class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-          <h2 class="text-sm font-medium text-slate-300 mb-3">Tracker Breakdown (Zeek Network)</h2>
-          <canvas id="trackerChart" height="220"></canvas>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Tracker Breakdown (Zeek)</h3>
+          <canvas id="tracker-chart" height="220"></canvas>
         </div>
-      </section>
+      </div>
 
-      <!-- === Row 3: Recent tracker events table === -->
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h2 class="text-sm font-medium text-slate-300 mb-3">Recent Tracker Activity</h2>
+      <!-- Tracker table -->
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Recent Tracker Activity</h3>
         <div class="overflow-x-auto max-h-72 overflow-y-auto">
           <table class="w-full text-sm text-left">
-            <thead class="text-xs uppercase text-slate-400 border-b border-slate-700/50 sticky top-0 bg-slate-800/90">
-              <tr>
-                <th class="py-2 px-3">Time</th>
-                <th class="py-2 px-3">Tracker</th>
-                <th class="py-2 px-3">Type</th>
-                <th class="py-2 px-3">Source</th>
-              </tr>
+            <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700/50 sticky top-0 bg-white dark:bg-slate-800/90">
+              <tr><th class="pb-2 px-3 font-medium">Time</th><th class="pb-2 px-3 font-medium">Tracker</th><th class="pb-2 px-3 font-medium">Type</th><th class="pb-2 px-3 font-medium">Source</th></tr>
             </thead>
-            <tbody id="tracker-table-body" class="text-slate-300">
-              <tr><td colspan="4" class="py-8 text-center text-slate-500">Waiting for data...</td></tr>
+            <tbody id="tracker-table-body" class="text-slate-600 dark:text-slate-300">
+              <tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">Waiting for data...</td></tr>
             </tbody>
           </table>
         </div>
-      </section>
-
-      <!-- === Row 4: Explanation === -->
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h2 class="text-sm font-medium text-slate-300 mb-3">How Privacy monitoring works</h2>
-        <p class="text-sm text-slate-400 leading-relaxed">
-          This tab combines two data sources for a complete privacy picture:<br>
-          <span class="text-amber-400 font-medium">Zeek Network Analysis</span> detects tracker connections at the TLS/SNI level — these are actual encrypted connections to ad networks, analytics platforms, and telemetry services. Even when your browser blocks cookies, these network-level trackers still phone home.<br>
-          <span class="text-emerald-400 font-medium">AdGuard Home</span> blocks trackers at the DNS level — preventing the connection before it starts.
-          <a href="http://localhost:80" target="_blank" class="text-indigo-400 hover:underline">Open AdGuard dashboard</a>
-        </p>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <!-- ============================================================= -->
-    <!-- TAB 4: ACCESS CONTROL                                          -->
+    <!-- PAGE: RULES & ACCESS CONTROL                                   -->
     <!-- ============================================================= -->
-    <div id="tab-access" class="tab-panel space-y-6">
+    <section id="page-rules" class="page space-y-6">
 
-      <!-- Cluster A: Global Office Filters -->
-      <section>
-        <div class="flex items-center gap-2 mb-4">
-          <span class="text-lg">🏢</span>
-          <h2 class="text-lg font-semibold text-slate-200">Global Office Filters</h2>
-          <span class="text-xs text-slate-500 ml-2">Network-wide policies via AdGuard Home</span>
-        </div>
-
+      <!-- Global Filters -->
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Global Office Filters</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-          <!-- Safe Work Environment -->
-          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-parental-card">
-            <div class="flex items-center justify-between mb-3">
+          <div id="filter-parental-card" class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
               <div>
-                <h3 class="text-sm font-medium text-slate-200">🔞 Safe Work Environment</h3>
-                <p class="text-xs text-slate-500 mt-1">Blocks NSFW, gambling, enforces SafeSearch</p>
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Safe Work Environment</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">NSFW, gambling, SafeSearch</p>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="toggle-parental" onchange="toggleGlobalFilter('parental', this)">
-                <span class="slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="toggle-parental" onchange="toggleGlobalFilter('parental',this)"><span class="slider"></span></label>
             </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">NSFW</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-amber-900/30 text-amber-400">Gambling</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400">SafeSearch</span>
+            <div class="flex flex-wrap gap-1 mt-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">NSFW</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">Gambling</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">SafeSearch</span>
             </div>
           </div>
 
-          <!-- Block Social Media -->
-          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-social-card">
-            <div class="flex items-center justify-between mb-3">
+          <div id="filter-social-card" class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
               <div>
-                <h3 class="text-sm font-medium text-slate-200">📱 Block Social Media</h3>
-                <p class="text-xs text-slate-500 mt-1">Meta, TikTok, X, Snapchat &amp; more</p>
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Block Social Media</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Meta, TikTok, X, Snapchat &amp; more</p>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="toggle-social" onchange="toggleGlobalFilter('social', this)">
-                <span class="slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="toggle-social" onchange="toggleGlobalFilter('social',this)"><span class="slider"></span></label>
             </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <span class="text-[10px] px-2 py-0.5 rounded bg-blue-900/30 text-blue-400">Facebook</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-pink-900/30 text-pink-400">Instagram</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">TikTok</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-sky-900/30 text-sky-400">Twitter/X</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-yellow-900/30 text-yellow-400">Snapchat</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">Pinterest</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-blue-900/30 text-blue-300">LinkedIn</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-orange-900/30 text-orange-400">Reddit</span>
+            <div class="flex flex-wrap gap-1 mt-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Facebook</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400">Instagram</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">TikTok</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400">X</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400">Snapchat</span>
             </div>
           </div>
 
-          <!-- Block Gaming -->
-          <div class="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5" id="filter-gaming-card">
-            <div class="flex items-center justify-between mb-3">
+          <div id="filter-gaming-card" class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+            <div class="flex items-center justify-between mb-2">
               <div>
-                <h3 class="text-sm font-medium text-slate-200">🎮 Block Gaming</h3>
-                <p class="text-xs text-slate-500 mt-1">Steam, Epic, Roblox, Twitch, Discord</p>
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Block Gaming</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Steam, Epic, Roblox, Twitch, Discord</p>
               </div>
-              <label class="toggle">
-                <input type="checkbox" id="toggle-gaming" onchange="toggleGlobalFilter('gaming', this)">
-                <span class="slider"></span>
-              </label>
+              <label class="toggle"><input type="checkbox" id="toggle-gaming" onchange="toggleGlobalFilter('gaming',this)"><span class="slider"></span></label>
             </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">Steam</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700/50 text-slate-300">Epic Games</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-red-900/30 text-red-400">Roblox</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-purple-900/30 text-purple-400">Twitch</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-900/30 text-indigo-400">Discord</span>
+            <div class="flex flex-wrap gap-1 mt-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">Steam</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">Epic</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">Roblox</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">Twitch</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">Discord</span>
             </div>
           </div>
-
         </div>
-      </section>
+      </div>
 
-      <!-- Cluster B: Granular App Control -->
-      <section>
-        <div class="flex items-center gap-2 mb-4">
-          <span class="text-lg">🎯</span>
-          <h2 class="text-lg font-semibold text-slate-200">Granular App Control</h2>
-          <span class="text-xs text-slate-500 ml-2">Block individual AI &amp; Cloud services via DNS</span>
+      <!-- Granular App Control -->
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">AI Services</h3>
+        <div id="access-control-ai" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
         </div>
+      </div>
 
-        <!-- AI Services -->
-        <div class="mb-6">
-          <h3 class="text-sm font-medium text-slate-400 uppercase tracking-wider mb-3">🤖 AI Services</h3>
-          <div id="access-control-ai" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading services...</p>
-          </div>
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Cloud Services</h3>
+        <div id="access-control-cloud" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
         </div>
-
-        <!-- Cloud Services -->
-        <div>
-          <h3 class="text-sm font-medium text-slate-400 uppercase tracking-wider mb-3">☁️ Cloud Storage</h3>
-          <div id="access-control-cloud" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            <p class="text-slate-500 text-sm col-span-full text-center py-4">Loading services...</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Info -->
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h3 class="text-sm font-medium text-slate-300 mb-2">How Access Control Works</h3>
-        <p class="text-sm text-slate-400 leading-relaxed">
-          <span class="text-indigo-400 font-medium">Global filters</span> use AdGuard Home's built-in category blocking to instantly block entire classes of services (social media, gaming, adult content) network-wide.<br>
-          <span class="text-emerald-400 font-medium">Granular controls</span> add DNS-level rules (<code class="text-xs text-slate-300 bg-slate-700/50 px-1.5 py-0.5 rounded">||domain^</code>) to selectively block individual AI or Cloud services. Temporary blocks auto-expire after the set duration.<br>
-          All blocking is enforced at the DNS level — devices must use <code class="text-xs text-slate-300 bg-slate-700/50 px-1.5 py-0.5 rounded">127.0.0.1</code> as their DNS server.
-          <a href="http://localhost:80" target="_blank" class="text-indigo-400 hover:underline ml-1">Open AdGuard Dashboard →</a>
-        </p>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <!-- ============================================================= -->
-    <!-- System Health tab                                              -->
+    <!-- PAGE: SETTINGS                                                 -->
     <!-- ============================================================= -->
-    <div id="tab-health" class="tab-panel space-y-6">
+    <section id="page-settings" class="page space-y-6">
 
-      <section class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-slate-200">Service Health Check</h2>
-        <button id="health-refresh-btn"
-                onclick="runHealthCheck()"
-                class="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-all active:scale-95">
-          <span id="health-refresh-icon">🔄</span> Run Check
-        </button>
-      </section>
-
-      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="health-cards">
-        <!-- Cards will be injected by JS -->
-        <div class="col-span-full text-center text-slate-500 py-12">
-          Press <span class="text-indigo-400 font-medium">Run Check</span> to test all services.
+      <!-- Health Check -->
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">System Health</h3>
+          <button id="health-run-btn" onclick="runHealthCheck()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors active:scale-95">Run Check</button>
         </div>
-      </section>
+        <div id="health-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-8">Press <span class="text-indigo-500 font-medium">Run Check</span> to test all services.</p>
+        </div>
+      </div>
 
-      <section id="health-details" class="hidden bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h3 class="text-sm font-medium text-slate-300 mb-3">Detailed Results</h3>
+      <!-- Health details table -->
+      <div id="health-details" class="hidden bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Detailed Results</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-sm text-left">
-            <thead class="text-xs uppercase text-slate-400 border-b border-slate-700/50">
-              <tr>
-                <th class="py-2 px-3">Service</th>
-                <th class="py-2 px-3">Status</th>
-                <th class="py-2 px-3">Response Time</th>
-                <th class="py-2 px-3">Details</th>
-              </tr>
+            <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700/50">
+              <tr><th class="pb-2 px-3 font-medium">Service</th><th class="pb-2 px-3 font-medium">Status</th><th class="pb-2 px-3 font-medium">Response</th><th class="pb-2 px-3 font-medium">Details</th></tr>
             </thead>
-            <tbody id="health-tbody" class="text-slate-300"></tbody>
+            <tbody id="health-tbody" class="text-slate-600 dark:text-slate-300"></tbody>
           </table>
         </div>
-      </section>
+      </div>
 
-      <section class="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
-        <h3 class="text-sm font-medium text-slate-300 mb-3">Service Overview</h3>
-        <p class="text-sm text-slate-400 leading-relaxed">
-          This tab checks the status of all AI-Radar components:
-          <span class="text-indigo-400">FastAPI backend</span> (event storage &amp; API),
-          <span class="text-emerald-400">Zeek</span> (network packet capture),
-          <span class="text-amber-400">Zeek Tailer</span> (log processing &amp; event forwarding),
-          <span class="text-cyan-400">AdGuard Home</span> (DNS-level ad/tracker blocking), and
-          <span class="text-purple-400">SQLite Database</span> (event persistence).
+      <!-- Appliance Config -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Network Configuration</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">DNS Server</span>
+              <span class="font-mono text-slate-700 dark:text-slate-200">127.0.0.1</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">AdGuard Home</span>
+              <a href="http://localhost:80" target="_blank" class="text-indigo-500 hover:underline font-mono">localhost:80</a>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">API Backend</span>
+              <span class="font-mono text-slate-700 dark:text-slate-200">localhost:8000</span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+              <span class="text-slate-500 dark:text-slate-400">Sensor</span>
+              <span class="font-mono text-slate-700 dark:text-slate-200">Zeek + zeek_tailer.py</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Data Retention</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">Retention Period</span>
+              <span class="text-slate-700 dark:text-slate-200">7 days</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">Max Events</span>
+              <span class="text-slate-700 dark:text-slate-200">50,000</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
+              <span class="text-slate-500 dark:text-slate-400">Cleanup Interval</span>
+              <span class="text-slate-700 dark:text-slate-200">Every 60 min</span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+              <span class="text-slate-500 dark:text-slate-400">DB Compaction</span>
+              <span class="text-slate-700 dark:text-slate-200">Auto VACUUM on cleanup</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">About</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+          <span class="font-semibold text-slate-700 dark:text-slate-200">AI-Radar v0.4</span> — Network intelligence appliance for monitoring AI &amp; Cloud service usage.<br>
+          Powered by <span class="text-indigo-500">Zeek</span> (packet capture) + <span class="text-emerald-500">AdGuard Home</span> (DNS blocking) + <span class="text-amber-500">FastAPI</span> (backend).
         </p>
-      </section>
-    </div>
+      </div>
+    </section>
 
   </main>
+</div>
 
-  <script>
-    // =====================================================================
-    // Tab switching
-    // =====================================================================
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-        // Auto-refresh data when switching tabs
-        manualRefresh();
-      });
-    });
+<!-- ============================================================= -->
+<!-- CUSTOM BLOCK DURATION MODAL                                    -->
+<!-- ============================================================= -->
+<div id="modal-backdrop" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl mx-4">
+    <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Custom Block Duration</h3>
+    <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Block until</label>
+    <input type="datetime-local" id="modal-block-until" class="w-full mb-4"/>
+    <div class="flex gap-2">
+      <button onclick="confirmCustomBlock()" class="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors">Block</button>
+      <button onclick="closeModal()" class="flex-1 px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-sm font-medium transition-colors">Cancel</button>
+    </div>
+  </div>
+</div>
 
-    // =====================================================================
-    // Colour palette
-    // =====================================================================
-    const COLORS = ['#6366f1','#22d3ee','#f59e0b','#ef4444','#10b981','#ec4899','#8b5cf6','#f97316'];
-    const SERVICE_BADGES = {
-      google_gemini:     'bg-yellow-900/60 text-yellow-300',
-      openai:            'bg-emerald-900/60 text-emerald-300',
-      anthropic_claude:  'bg-indigo-900/60 text-indigo-300',
-      microsoft_copilot: 'bg-blue-900/60 text-blue-300',
-      perplexity:        'bg-cyan-900/60 text-cyan-300',
-      huggingface:       'bg-amber-900/60 text-amber-300',
-      mistral:           'bg-purple-900/60 text-purple-300',
-      dropbox:           'bg-blue-900/60 text-blue-300',
-      wetransfer:        'bg-teal-900/60 text-teal-300',
-      google_drive:      'bg-green-900/60 text-green-300',
-      onedrive:          'bg-sky-900/60 text-sky-300',
-      icloud:            'bg-gray-700/60 text-gray-300',
-      box:               'bg-blue-900/60 text-blue-200',
-      mega:              'bg-red-900/60 text-red-300',
-    };
-    const SERVICE_COLORS = {
-      google_gemini:'#f59e0b', openai:'#10b981', anthropic_claude:'#6366f1',
-      microsoft_copilot:'#3b82f6', perplexity:'#22d3ee', huggingface:'#f97316',
-      mistral:'#8b5cf6', dropbox:'#3b82f6', wetransfer:'#14b8a6',
-      google_drive:'#22c55e', onedrive:'#0ea5e9', icloud:'#6b7280',
-      box:'#60a5fa', mega:'#ef4444',
-    };
-    const FALLBACK = ['#ec4899','#14b8a6','#e11d48','#a855f7'];
-    let fallbackIdx = 0;
-    function svcColor(s) {
-      if (!SERVICE_COLORS[s]) { SERVICE_COLORS[s] = FALLBACK[fallbackIdx++ % FALLBACK.length]; }
-      return SERVICE_COLORS[s];
-    }
-    function badge(s) {
-      const cls = SERVICE_BADGES[s] || 'bg-slate-700 text-slate-300';
-      return `<span class="px-2 py-0.5 rounded text-xs font-medium ${cls}">${s}</span>`;
-    }
-
-    // =====================================================================
-    // Device map
-    // =====================================================================
-    let deviceMap = {};
-    function deviceName(ip) {
-      const d = deviceMap[ip];
-      return d ? (d.display_name || d.hostname || ip) : ip;
-    }
-    async function loadDevices() {
-      try {
-        const res = await fetch('/api/devices');
-        if (!res.ok) return;
-        const devices = await res.json();
-        deviceMap = {};
-        devices.forEach(d => { deviceMap[d.ip] = d; });
-        // populate filter dropdown
-        const sel = document.getElementById('ai-filter-device');
-        const cur = sel.value;
-        sel.innerHTML = '<option value="">All devices</option>';
-        devices.forEach(d => {
-          sel.innerHTML += `<option value="${d.ip}">${d.display_name||d.hostname||d.ip}</option>`;
-        });
-        sel.value = cur;
-      } catch(e) {}
-    }
-
-    // =====================================================================
-    // Device rename
-    // =====================================================================
-    document.addEventListener('click', async (e) => {
-      const el = e.target.closest('.device-name');
-      if (!el) return;
-      const ip = el.dataset.ip;
-      const cur = deviceMap[ip]?.display_name || deviceMap[ip]?.hostname || ip;
-      const n = prompt(`Rename device (${ip}):`, cur);
-      if (n && n !== cur) {
-        await fetch(`/api/devices/${encodeURIComponent(ip)}`, {
-          method:'PUT', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({display_name:n}),
-        });
-        await loadDevices(); await refresh();
-      }
-    });
-
-    // =====================================================================
-    // Charts setup
-    // =====================================================================
-    function makeDoughnut(id) {
-      return new Chart(document.getElementById(id).getContext('2d'), {
-        type:'doughnut',
-        data:{labels:[],datasets:[{data:[],backgroundColor:COLORS,borderWidth:0}]},
-        options:{cutout:'55%',plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',padding:16,font:{size:12}}}}}
-      });
-    }
-    function makeTimeline(id) {
-      return new Chart(document.getElementById(id).getContext('2d'), {
-        type:'bar', data:{labels:[],datasets:[]},
-        options:{
-          responsive:true,
-          plugins:{legend:{position:'top',labels:{color:'#94a3b8',padding:12,font:{size:11},usePointStyle:true,pointStyle:'rect'}}},
-          scales:{
-            x:{stacked:true,ticks:{color:'#64748b',maxRotation:45,font:{size:10}},grid:{display:false}},
-            y:{stacked:true,beginAtZero:true,ticks:{color:'#64748b',precision:0},grid:{color:'#1e293b'}},
-            y2:{position:'right',beginAtZero:true,ticks:{color:'#ef4444',precision:0,font:{size:10}},grid:{display:false},title:{display:true,text:'Uploads',color:'#ef4444',font:{size:10}},display:false},
-          }
-        }
-      });
-    }
-    const aiDoughnut = makeDoughnut('aiServiceChart');
-    const aiTimeline = makeTimeline('aiTimelineChart');
-    const cloudDoughnut = makeDoughnut('cloudServiceChart');
-    const cloudTimeline = makeTimeline('cloudTimelineChart');
-
-    // Privacy bar chart (AdGuard blocked)
-    const privChart = new Chart(document.getElementById('privChart').getContext('2d'), {
-      type:'bar',
-      data:{labels:[],datasets:[{label:'Blocked',data:[],backgroundColor:'#ef4444',borderRadius:4}]},
-      options:{
-        indexAxis:'y', responsive:true,
-        plugins:{legend:{display:false}},
-        scales:{
-          x:{ticks:{color:'#64748b'},grid:{color:'#1e293b'}},
-          y:{ticks:{color:'#94a3b8',font:{size:11}},grid:{display:false}},
-        }
-      }
-    });
-
-    // Tracker doughnut chart (Zeek-detected)
-    const trackerPalette = ['#f59e0b','#8b5cf6','#ef4444','#06b6d4','#ec4899','#10b981','#f97316','#6366f1','#14b8a6','#e11d48'];
-    const trackerChart = new Chart(document.getElementById('trackerChart').getContext('2d'), {
-      type:'doughnut',
-      data:{labels:[],datasets:[{data:[],backgroundColor:trackerPalette,borderWidth:0}]},
-      options:{
-        responsive:true, cutout:'55%',
-        plugins:{
-          legend:{position:'right',labels:{color:'#94a3b8',font:{size:11},padding:10,boxWidth:12}},
-        }
-      }
-    });
-
-    // =====================================================================
-    // Helpers
-    // =====================================================================
-    function fmtTime(iso) {
-      const d = new Date(iso.endsWith('Z') ? iso : iso+'Z');
-      return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    }
-    function fmtBucket(iso) {
-      const d = new Date(iso.endsWith('Z') ? iso : iso+'Z');
-      return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    }
-
-    function getFilterParams(cat) {
-      const p = new URLSearchParams();
-      p.set('category', cat);
-      if (cat === 'ai') {
-        const svc = document.getElementById('ai-filter-service').value;
-        const dev = document.getElementById('ai-filter-device').value;
-        const per = document.getElementById('ai-filter-period').value;
-        if (svc) p.set('service', svc);
-        if (dev) p.set('source_ip', dev);
-        if (per) { p.set('start', new Date(Date.now() - parseInt(per)*60000).toISOString()); }
-      }
-      return p;
-    }
-
-    function getBucketSize() {
-      const per = document.getElementById('ai-filter-period').value;
-      if (!per) return 'hour';
-      const m = parseInt(per);
-      if (m <= 60) return 'minute';
-      if (m <= 1440) return 'hour';
-      return 'day';
-    }
-
-    function exportCSV(cat) {
-      const p = getFilterParams(cat);
-      window.location.href = '/api/events/export?' + p.toString();
-    }
-
-    function renderTable(events, tbodyId, emptyId) {
-      const tbody = document.getElementById(tbodyId);
-      const empty = document.getElementById(emptyId);
-      if (!events.length) {
-        tbody.innerHTML = '';
-        empty.classList.remove('hidden');
-        return;
-      }
-      empty.classList.add('hidden');
-      tbody.innerHTML = events.map(e => {
-        const up = e.possible_upload;
-        const rc = up ? 'border-b border-orange-700/40 bg-orange-900/20' : 'border-b border-slate-700/30 hover:bg-slate-700/20';
-        const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-800/60 text-orange-300">UPLOAD</span>' : '';
-        const dn = deviceName(e.source_ip);
-        const dc = `<span class="device-name cursor-pointer hover:text-indigo-400 transition-colors" data-ip="${e.source_ip}" title="${e.source_ip}">${dn}</span>`;
-        return `<tr class="${rc} transition-colors">
-          <td class="py-2 pr-4 tabular-nums text-slate-400">${fmtTime(e.timestamp)}</td>
-          <td class="py-2 pr-4">${badge(e.ai_service)}</td>
-          <td class="py-2 pr-4 font-mono text-xs text-slate-300">${e.detection_type}${ub}</td>
-          <td class="py-2 pr-4 text-xs">${dc}</td>
-          <td class="py-2 text-right tabular-nums">${e.bytes_transferred.toLocaleString()}</td>
-        </tr>`;
-      }).join('');
-    }
-
-    function updateCharts(events, timeline, doughnut, timelineChart) {
-      // Doughnut
-      const counts = {};
-      events.forEach(e => { counts[e.ai_service] = (counts[e.ai_service]||0)+1; });
-      doughnut.data.labels = Object.keys(counts);
-      doughnut.data.datasets[0].data = Object.values(counts);
-      doughnut.update();
-
-      // Timeline stacked bars
-      const labels = timeline.map(p => fmtBucket(p.bucket));
-      const svcs = new Set();
-      timeline.forEach(p => Object.keys(p.services).forEach(s => svcs.add(s)));
-      const ds = [...svcs].sort().map(s => ({
-        label:s, data:timeline.map(p=>p.services[s]||0),
-        backgroundColor:svcColor(s), borderRadius:3, stack:'s', yAxisID:'y',
-      }));
-      const ul = timeline.map(p=>p.uploads||0);
-      if (ul.some(v=>v>0)) {
-        ds.push({
-          label:'Uploads',data:ul,type:'line',borderColor:'#ef4444',backgroundColor:'#ef4444',
-          pointBackgroundColor:'#ef4444',pointRadius:ul.map(v=>v>0?6:0),pointStyle:'circle',
-          borderWidth:0,showLine:false,yAxisID:'y2',_isUpload:true,
-        });
-      }
-      timelineChart.data.labels = labels;
-      timelineChart.data.datasets = ds;
-      timelineChart.options.scales.y2.display = ul.some(v=>v>0);
-      timelineChart.update();
-    }
-
-    // =====================================================================
-    // Refresh
-    // =====================================================================
-    async function refresh() {
-      try {
-        // AI tab
-        const aiP = getFilterParams('ai');
-        const [aiEvt, aiTl] = await Promise.all([
-          fetch('/api/events?'+aiP).then(r=>r.json()),
-          fetch('/api/timeline?bucket_size='+getBucketSize()+'&'+aiP).then(r=>r.json()),
-        ]);
-        document.getElementById('ai-stat-total').textContent = aiEvt.length;
-        document.getElementById('ai-stat-services').textContent = new Set(aiEvt.map(e=>e.ai_service)).size;
-        document.getElementById('ai-stat-sources').textContent = Object.keys(deviceMap).length || new Set(aiEvt.map(e=>e.source_ip)).size;
-        document.getElementById('ai-stat-uploads').textContent = aiEvt.filter(e=>e.possible_upload).length;
-
-        // Populate service filter
-        const svcSel = document.getElementById('ai-filter-service');
-        const curSvc = svcSel.value;
-        const allSvcs = [...new Set(aiEvt.map(e=>e.ai_service))].sort();
-        svcSel.innerHTML = '<option value="">All services</option>';
-        allSvcs.forEach(s => { svcSel.innerHTML += `<option value="${s}">${s}</option>`; });
-        svcSel.value = curSvc;
-
-        renderTable(aiEvt, 'ai-tbody', 'ai-empty');
-        updateCharts(aiEvt, aiTl, aiDoughnut, aiTimeline);
-
-        // Cloud tab
-        const cloudP = getFilterParams('cloud');
-        const [cloudEvt, cloudTl] = await Promise.all([
-          fetch('/api/events?'+cloudP).then(r=>r.json()),
-          fetch('/api/timeline?bucket_size='+getBucketSize()+'&'+cloudP).then(r=>r.json()),
-        ]);
-        document.getElementById('cloud-stat-total').textContent = cloudEvt.length;
-        document.getElementById('cloud-stat-services').textContent = new Set(cloudEvt.map(e=>e.ai_service)).size;
-        document.getElementById('cloud-stat-uploads').textContent = cloudEvt.filter(e=>e.possible_upload).length;
-        renderTable(cloudEvt, 'cloud-tbody', 'cloud-empty');
-        updateCharts(cloudEvt, cloudTl, cloudDoughnut, cloudTimeline);
-
-        // Privacy tab — combined AdGuard + Zeek tracker data
-        const privRes = await fetch('/api/privacy/stats');
-        const priv = await privRes.json();
-
-        // AdGuard section
-        const ag = priv.adguard || {};
-        document.getElementById('priv-total').textContent = (ag.total_queries||0).toLocaleString();
-        document.getElementById('priv-blocked').textContent = (ag.blocked_queries||0).toLocaleString();
-        document.getElementById('priv-pct').textContent = (ag.block_percentage||0) + '%';
-
-        const statusEl = document.getElementById('priv-status');
-        const unavail = document.getElementById('priv-unavailable');
-        const chartC = document.getElementById('priv-chart-container');
-        if (ag.status === 'ok') {
-          statusEl.textContent = '● Connected';
-          statusEl.className = 'text-lg font-semibold text-emerald-400';
-          unavail.classList.add('hidden');
-          chartC.classList.remove('hidden');
-          const topD = (ag.top_blocked||[]).slice(0,10);
-          _cachedTopBlocked = ag.top_blocked || [];
-          if (!document.getElementById('blocked-domains-panel').classList.contains('hidden')) renderBlockedDomainsList();
-          privChart.data.labels = topD.map(d=>d.domain.length>30 ? d.domain.slice(0,27)+'...' : d.domain);
-          privChart.data.datasets[0].data = topD.map(d=>d.count);
-          privChart.update();
-        } else {
-          statusEl.textContent = '● Offline';
-          statusEl.className = 'text-lg font-semibold text-red-400';
-          chartC.classList.add('hidden');
-          unavail.classList.remove('hidden');
-        }
-
-        // Zeek tracker section
-        const tk = priv.trackers || {};
-        document.getElementById('tracker-total').textContent = (tk.total_detected||0).toLocaleString();
-        document.getElementById('tracker-unique').textContent = (tk.top_trackers||[]).length;
-
-        // Tracker doughnut chart
-        const topT = (tk.top_trackers||[]).slice(0,10);
-        trackerChart.data.labels = topT.map(t => t.service.replace(/_/g,' '));
-        trackerChart.data.datasets[0].data = topT.map(t => t.hits);
-        trackerChart.update();
-
-        // Tracker table
-        const tbody = document.getElementById('tracker-table-body');
-        const recent = tk.recent || [];
-        if (recent.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-500">No trackers detected yet — they will appear once browsing activity generates tracking connections.</td></tr>';
-        } else {
-          tbody.innerHTML = recent.map(e => {
-            const svc = e.service.replace(/_/g,' ');
-            const badgeColors = {
-              'google ads':'bg-red-900/40 text-red-300',
-              'google analytics':'bg-orange-900/40 text-orange-300',
-              'google telemetry':'bg-yellow-900/40 text-yellow-300',
-              'meta tracking':'bg-blue-900/40 text-blue-300',
-              'apple ads':'bg-slate-700/40 text-slate-300',
-              'microsoft ads':'bg-cyan-900/40 text-cyan-300',
-              'hotjar':'bg-amber-900/40 text-amber-300',
-              'datadog':'bg-purple-900/40 text-purple-300',
-            };
-            const badge = badgeColors[svc] || 'bg-slate-700/40 text-slate-300';
-            return `<tr class="border-b border-slate-700/30 hover:bg-slate-700/20">
-              <td class="py-2 px-3 text-xs tabular-nums text-slate-400">${fmtTime(e.timestamp)}</td>
-              <td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded ${badge}">${svc}</span></td>
-              <td class="py-2 px-3 text-xs text-slate-400">${e.detection_type}</td>
-              <td class="py-2 px-3 text-xs font-mono text-slate-400">${e.source_ip}</td>
-            </tr>`;
-          }).join('');
-        }
-
-      } catch(err) { console.error('Polling error:', err); }
-    }
-
-    // =====================================================================
-    // Blocked Domains expandable panel
-    // =====================================================================
-    let _cachedTopBlocked = [];
-
-    function toggleBlockedList() {
-      const panel = document.getElementById('blocked-domains-panel');
-      if (!panel) return;
-      const isHidden = panel.classList.contains('hidden');
-      if (isHidden) {
-        panel.classList.remove('hidden');
-        renderBlockedDomainsList();
-      } else {
-        panel.classList.add('hidden');
-      }
-    }
-
-    function renderBlockedDomainsList() {
-      const container = document.getElementById('blocked-domains-list');
-      if (!_cachedTopBlocked || _cachedTopBlocked.length === 0) {
-        container.innerHTML = '<p class="text-slate-500 text-sm col-span-full text-center py-4">No blocked domains data available yet.</p>';
-        return;
-      }
-      container.innerHTML = _cachedTopBlocked.map((d, i) => {
-        const domain = d.domain || '—';
-        const count = (d.count || 0).toLocaleString();
-        const barPct = _cachedTopBlocked[0].count > 0 ? Math.max(5, (d.count / _cachedTopBlocked[0].count) * 100) : 0;
-        return `
-          <div class="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-700/30">
-            <span class="text-xs text-slate-500 w-5 text-right tabular-nums">${i+1}</span>
-            <div class="flex-1 min-w-0">
-              <p class="text-xs font-mono text-slate-200 truncate" title="${domain}">${domain}</p>
-              <div class="mt-1 h-1 rounded-full bg-slate-700/50 overflow-hidden">
-                <div class="h-full rounded-full bg-red-500/70" style="width:${barPct}%"></div>
-              </div>
-            </div>
-            <span class="text-xs tabular-nums text-red-400 font-medium whitespace-nowrap">${count}</span>
-          </div>`;
-      }).join('');
-    }
-
-    // =====================================================================
-    // Health Check
-    // =====================================================================
-    async function runHealthCheck() {
-      const btn = document.getElementById('health-refresh-btn');
-      const icon = document.getElementById('health-refresh-icon');
-      btn.disabled = true;
-      btn.classList.add('opacity-60');
-      icon.textContent = '⏳';
-
-      try {
-        const res = await fetch('/api/health');
-        const data = await res.json();
-        const services = data.services || [];
-        const summary = data.summary || {};
-
-        // Render cards
-        const cards = document.getElementById('health-cards');
-        const statusColors = {
-          ok:      { bg:'bg-emerald-900/20', border:'border-emerald-700/40', text:'text-emerald-400', label:'● Online' },
-          warning: { bg:'bg-amber-900/20',   border:'border-amber-700/40',   text:'text-amber-400',   label:'⚠ Warning' },
-          error:   { bg:'bg-red-900/20',     border:'border-red-700/40',     text:'text-red-400',     label:'✗ Offline' },
-        };
-
-        cards.innerHTML = services.map(s => {
-          const c = statusColors[s.status] || statusColors.error;
-          return `
-            <div class="${c.bg} border ${c.border} rounded-xl p-5">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-xl">${s.icon}</span>
-                <span class="text-xs px-2 py-0.5 rounded ${c.bg} ${c.text} font-medium">${c.label}</span>
-              </div>
-              <p class="text-sm font-medium text-slate-200">${s.service}</p>
-              <p class="text-xs text-slate-400 mt-1">${s.details}</p>
-              ${s.response_ms > 0 ? `<p class="text-xs text-slate-500 mt-1">${s.response_ms}ms</p>` : ''}
-            </div>`;
-        }).join('');
-
-        // Summary banner at top
-        const allOk = summary.all_ok;
-        const bannerColor = allOk ? 'bg-emerald-900/20 border-emerald-700/40' : 'bg-amber-900/20 border-amber-700/40';
-        const bannerText = allOk
-          ? `<span class="text-emerald-400 font-medium">All ${summary.total} services are healthy</span>`
-          : `<span class="text-amber-400 font-medium">${summary.ok}/${summary.total} services healthy</span>`;
-        const banner = `<div class="col-span-full ${bannerColor} border rounded-xl p-4 text-center text-sm">${bannerText} — checked at ${new Date().toLocaleTimeString()}</div>`;
-        cards.innerHTML = banner + cards.innerHTML;
-
-        // Detail table
-        const details = document.getElementById('health-details');
-        details.classList.remove('hidden');
-        const tbody = document.getElementById('health-tbody');
-        tbody.innerHTML = services.map(s => {
-          const c = statusColors[s.status] || statusColors.error;
-          return `<tr class="border-b border-slate-700/30">
-            <td class="py-2.5 px-3"><span class="mr-2">${s.icon}</span>${s.service}</td>
-            <td class="py-2.5 px-3"><span class="text-xs px-2 py-0.5 rounded ${c.bg} ${c.text}">${c.label}</span></td>
-            <td class="py-2.5 px-3 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
-            <td class="py-2.5 px-3 text-xs text-slate-400">${s.details}</td>
-          </tr>`;
-        }).join('');
-
-      } catch(err) {
-        const cards = document.getElementById('health-cards');
-        cards.innerHTML = `<div class="col-span-full bg-red-900/20 border border-red-700/40 rounded-xl p-6 text-center">
-          <p class="text-red-400 font-medium">Health check failed</p>
-          <p class="text-sm text-slate-400 mt-1">${err.message}</p>
-        </div>`;
-      } finally {
-        btn.disabled = false;
-        btn.classList.remove('opacity-60');
-        icon.textContent = '🔄';
-      }
-    }
-
-    // =====================================================================
-    // Global Office Filters
-    // =====================================================================
-    async function loadGlobalFilterStatus() {
-      try {
-        const res = await fetch('/api/filters/status');
-        const data = await res.json();
-
-        document.getElementById('toggle-parental').checked = data.parental_enabled;
-        document.getElementById('toggle-social').checked = data.social_media_blocked;
-        document.getElementById('toggle-gaming').checked = data.gaming_blocked;
-
-        // Visual feedback — highlight active cards
-        toggleCardStyle('filter-parental-card', data.parental_enabled);
-        toggleCardStyle('filter-social-card', data.social_media_blocked);
-        toggleCardStyle('filter-gaming-card', data.gaming_blocked);
-      } catch(err) {
-        console.error('Global filter status load error:', err);
-      }
-    }
-
-    function toggleCardStyle(cardId, active) {
-      const card = document.getElementById(cardId);
-      if (!card) return;
-      if (active) {
-        card.classList.add('border-red-700/40', 'bg-red-900/10');
-        card.classList.remove('border-slate-700/50', 'bg-slate-800/60');
-      } else {
-        card.classList.remove('border-red-700/40', 'bg-red-900/10');
-        card.classList.add('border-slate-700/50', 'bg-slate-800/60');
-      }
-    }
-
-    async function toggleGlobalFilter(type, checkbox) {
-      checkbox.disabled = true;
-      const enabled = checkbox.checked;
-      const endpoints = { parental:'/api/filters/parental', social:'/api/filters/social', gaming:'/api/filters/gaming' };
-      const cardIds = { parental:'filter-parental-card', social:'filter-social-card', gaming:'filter-gaming-card' };
-
-      try {
-        const res = await fetch(endpoints[type], {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ enabled }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || `HTTP ${res.status}`);
-        }
-        toggleCardStyle(cardIds[type], enabled);
-      } catch(err) {
-        console.error(`Toggle ${type} error:`, err);
-        checkbox.checked = !checkbox.checked; // revert
-        alert(`Failed to update filter: ${err.message}`);
-      } finally {
-        checkbox.disabled = false;
-      }
-    }
-
-    // =====================================================================
-    // Access Control — Block Rule Engine
-    // =====================================================================
-    const svcDisplayNames = {
-      openai:'OpenAI', anthropic_claude:'Claude', google_gemini:'Gemini',
-      microsoft_copilot:'Copilot', perplexity:'Perplexity', huggingface:'Hugging Face',
-      mistral:'Mistral', dropbox:'Dropbox', wetransfer:'WeTransfer',
-      google_drive:'Google Drive', onedrive:'OneDrive', icloud:'iCloud',
-      box:'Box', mega:'MEGA',
-    };
-    const svcBadgeColors = {
-      openai:'bg-emerald-900/40 text-emerald-300', anthropic_claude:'bg-amber-900/40 text-amber-300',
-      google_gemini:'bg-blue-900/40 text-blue-300', microsoft_copilot:'bg-cyan-900/40 text-cyan-300',
-      perplexity:'bg-purple-900/40 text-purple-300', huggingface:'bg-yellow-900/40 text-yellow-300',
-      mistral:'bg-orange-900/40 text-orange-300', dropbox:'bg-blue-900/40 text-blue-300',
-      wetransfer:'bg-cyan-900/40 text-cyan-300', google_drive:'bg-emerald-900/40 text-emerald-300',
-      onedrive:'bg-sky-900/40 text-sky-300', icloud:'bg-slate-700/40 text-slate-300',
-      box:'bg-blue-900/40 text-blue-300', mega:'bg-red-900/40 text-red-300',
-    };
-
-    function remainingTime(expiresAt) {
-      if (!expiresAt) return null;
-      const exp = new Date(expiresAt.endsWith('Z') ? expiresAt : expiresAt+'Z');
-      const diff = exp - new Date();
-      if (diff <= 0) return 'expiring...';
-      const mins = Math.floor(diff / 60000);
-      if (mins < 60) return `${mins}m left`;
-      const hrs = Math.floor(mins / 60);
-      const rm = mins % 60;
-      return `${hrs}h ${rm}m left`;
-    }
-
-    function renderServiceCard(svc) {
-      const name = svcDisplayNames[svc.service_name] || svc.service_name;
-      const badge = svcBadgeColors[svc.service_name] || 'bg-slate-700/40 text-slate-300';
-      const isAllowed = !svc.is_blocked;
-      const blockedClass = svc.is_blocked ? 'blocked' : '';
-      const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
-      const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
-
-      // Active vs preventive indicator
-      const seenTag = svc.seen
-        ? `<span class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400" title="${svc.hit_count} events detected">● Active (${svc.hit_count.toLocaleString()})</span>`
-        : `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-700/40 text-slate-500" title="No traffic detected yet">○ Preventive</span>`;
-
-      // Last seen info
-      const lastSeenText = svc.seen && svc.last_seen
-        ? `Last seen: ${fmtTime(svc.last_seen)}`
-        : 'No traffic detected';
-
-      return `
-        <div class="svc-card bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 ${blockedClass}">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs px-2 py-0.5 rounded font-medium ${badge}">${name}</span>
-            <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
-              <input type="checkbox" ${isAllowed ? 'checked' : ''}
-                     onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)" />
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div class="mb-3">${seenTag}</div>
-          <div class="flex items-center gap-2">
-            <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
-              <option value="0">Permanent</option>
-              <option value="60">1 Hour</option>
-              <option value="240">4 Hours</option>
-              <option value="480">8 Hours</option>
-            </select>
-            ${svc.is_blocked ? `<span class="text-xs px-2 py-0.5 rounded bg-red-900/40 text-red-300">${permLabel}</span>` : '<span class="text-xs text-emerald-500">✓ Allowed</span>'}
-          </div>
-          <p class="text-xs text-slate-500 mt-2">${lastSeenText}</p>
-        </div>`;
-    }
-
-    async function toggleService(serviceName, domain, category, checkbox) {
-      checkbox.disabled = true;
-      const isNowAllowed = checkbox.checked;
-
-      try {
-        if (isNowAllowed) {
-          // Unblock
-          await fetch('/api/rules/unblock', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ service_name: serviceName, domain }),
-          });
-        } else {
-          // Block
-          const durSelect = document.getElementById('dur-' + serviceName);
-          const dur = parseInt(durSelect?.value || '0');
-          await fetch('/api/rules/block', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({
-              service_name: serviceName,
-              domain,
-              category,
-              duration_minutes: dur || null,
-            }),
-          });
-        }
-        // Refresh the access control panels
-        await loadAccessControl();
-      } catch(err) {
-        console.error('Toggle error:', err);
-        checkbox.checked = !checkbox.checked; // Revert
-      } finally {
-        checkbox.disabled = false;
-      }
-    }
-
-    async function loadAccessControl() {
-      try {
-        const res = await fetch('/api/rules/services');
-        const services = await res.json();
-
-        const aiContainer = document.getElementById('access-control-ai');
-        const cloudContainer = document.getElementById('access-control-cloud');
-
-        const aiSvcs = services.filter(s => s.category === 'ai');
-        const cloudSvcs = services.filter(s => s.category === 'cloud');
-
-        aiContainer.innerHTML = aiSvcs.length
-          ? aiSvcs.map(renderServiceCard).join('')
-          : '<p class="text-slate-500 text-sm col-span-full text-center py-4">No AI services configured</p>';
-
-        cloudContainer.innerHTML = cloudSvcs.length
-          ? cloudSvcs.map(renderServiceCard).join('')
-          : '<p class="text-slate-500 text-sm col-span-full text-center py-4">No Cloud services configured</p>';
-      } catch(err) {
-        console.error('Access control load error:', err);
-      }
-    }
-
-    // =====================================================================
-    // Manual Refresh
-    // =====================================================================
-    function updateRefreshTimestamp() {
-      const el = document.getElementById('last-refresh');
-      if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
-    }
-
-    async function manualRefresh() {
-      const btn = document.getElementById('refresh-btn');
-      const icon = document.getElementById('refresh-icon');
-      if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
-      if (icon) icon.style.animation = 'spin 0.6s linear infinite';
-
-      try {
-        await Promise.all([
-          loadDevices().then(() => refresh()),
-          loadAccessControl(),
-          loadGlobalFilterStatus(),
-        ]);
-        updateRefreshTimestamp();
-      } catch(err) {
-        console.error('Refresh error:', err);
-      } finally {
-        if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
-        if (icon) icon.style.animation = '';
-      }
-    }
-
-    // =====================================================================
-    // Init (single load on page open, no polling)
-    // =====================================================================
-    loadAccessControl();
-    loadGlobalFilterStatus();
-    loadDevices().then(() => { refresh(); updateRefreshTimestamp(); });
-  </script>
+<script src="/static/app.js"></script>
 </body>
 </html>
