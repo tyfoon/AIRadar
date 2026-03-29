@@ -527,7 +527,7 @@ async function refreshAI() {
   const p = getFilterParams('ai');
   const [events, timeline] = await Promise.all([
     fetch('/api/events?' + p).then(r => r.json()),
-    fetch('/api/timeline?bucket_size=' + getBucketSize() + '&' + p).then(r => r.json()),
+    fetch('/api/timeline?bucket_size=' + getBucketSize('ai') + '&' + p).then(r => r.json()),
   ]);
 
   document.getElementById('ai-stat-total').textContent = events.length;
