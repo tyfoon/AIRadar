@@ -369,6 +369,15 @@
         <div id="blocked-domains-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto"></div>
       </div>
 
+      <!-- Tracker details expandable -->
+      <div id="tracker-details-panel" class="hidden bg-white dark:bg-amber-900/5 border border-slate-200 dark:border-amber-700/20 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-amber-500 dark:text-amber-400">Detected Trackers</h3>
+          <button onclick="toggleTrackerDetails()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">&times; Close</button>
+        </div>
+        <div id="tracker-details-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto"></div>
+      </div>
+
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
