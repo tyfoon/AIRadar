@@ -71,6 +71,7 @@ const PAGE_TITLES = {
   ai: 'AI Radar',
   cloud: 'Cloud Storage',
   privacy: 'Privacy',
+  devices: 'Devices',
   rules: 'Rules & Access Control',
   settings: 'Settings',
 };
