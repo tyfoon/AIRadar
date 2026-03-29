@@ -235,10 +235,12 @@ function fmtBucket(iso) {
 function getFilterParams(cat) {
   const p = new URLSearchParams();
   p.set('category', cat);
-  if (cat === 'ai') {
-    const svc = document.getElementById('ai-filter-service')?.value;
-    const dev = document.getElementById('ai-filter-device')?.value;
-    const per = document.getElementById('ai-filter-period')?.value;
+  // All insight pages share the same filter pattern: service, device, period
+  const prefix = (cat === 'ai') ? 'ai' : (cat === 'cloud') ? 'cloud' : null;
+  if (prefix) {
+    const svc = document.getElementById(prefix + '-filter-service')?.value;
+    const dev = document.getElementById(prefix + '-filter-device')?.value;
+    const per = document.getElementById(prefix + '-filter-period')?.value;
     if (svc) p.set('service', svc);
     if (dev) p.set('source_ip', dev);
     if (per) p.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
@@ -246,8 +248,9 @@ function getFilterParams(cat) {
   return p;
 }
 
-function getBucketSize() {
-  const per = document.getElementById('ai-filter-period')?.value;
+function getBucketSize(cat) {
+  const prefix = (cat === 'cloud') ? 'cloud' : 'ai';
+  const per = document.getElementById(prefix + '-filter-period')?.value;
   if (!per) return 'hour';
   const m = parseInt(per);
   if (m <= 60) return 'minute';
