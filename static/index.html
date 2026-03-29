@@ -266,7 +266,7 @@
     <!-- ============================================================= -->
     <section id="page-cloud" class="page space-y-6">
 
-      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
           <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Cloud Events</p>
           <p id="cloud-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
@@ -275,10 +275,29 @@
           <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Services</p>
           <p id="cloud-stat-services" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
+        <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Devices</p>
+          <p id="cloud-stat-sources" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+        </div>
         <div class="bg-white dark:bg-slate-800/50 border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
           <p class="text-[11px] uppercase tracking-wider text-orange-500 dark:text-orange-400 font-medium">Uploads</p>
           <p id="cloud-stat-uploads" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
         </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Filters</span>
+        <select id="cloud-filter-service"><option value="">All services</option></select>
+        <select id="cloud-filter-device"><option value="">All devices</option></select>
+        <select id="cloud-filter-period">
+          <option value="">All time</option>
+          <option value="60" selected>Last hour</option>
+          <option value="1440">Last 24 h</option>
+          <option value="10080">Last 7 days</option>
+        </select>
+        <button onclick="refreshPage('cloud')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors">Apply</button>
+        <button onclick="exportCSV('cloud')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors">Export CSV</button>
       </div>
 
       <div class="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 rounded-xl p-5 card-hover">
