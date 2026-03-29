@@ -1084,6 +1084,7 @@ function renderServiceCard(svc) {
   const blockedClass = svc.is_blocked ? 'blocked' : '';
   const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
   const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
+  const logo = svcLogo(svc.service_name);
 
   const seenTag = svc.seen
     ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● Active (${svc.hit_count.toLocaleString()})</span>`
@@ -1092,9 +1093,12 @@ function renderServiceCard(svc) {
   const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : 'No traffic detected';
 
   return `
-    <div class="svc-card bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 rounded-xl p-4 ${blockedClass}">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[11px] px-2 py-0.5 rounded font-medium ${badgeCls}">${name}</span>
+    <div class="svc-card bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ${blockedClass}">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          ${logo}
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${name}</span>
+        </div>
         <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
           <input type="checkbox" ${isAllowed ? 'checked' : ''}
                  onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
