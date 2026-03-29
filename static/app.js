@@ -190,16 +190,18 @@ async function loadDevices() {
     const devices = await res.json();
     deviceMap = {};
     devices.forEach(d => { deviceMap[d.ip] = d; });
-    // Populate AI filter dropdown
-    const sel = document.getElementById('ai-filter-device');
-    if (sel) {
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">All devices</option>';
-      devices.forEach(d => {
-        sel.innerHTML += `<option value="${d.ip}">${d.display_name || d.hostname || d.ip}</option>`;
-      });
-      sel.value = cur;
-    }
+    // Populate device filter dropdowns (AI + Cloud)
+    ['ai-filter-device', 'cloud-filter-device'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (sel) {
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All devices</option>';
+        devices.forEach(d => {
+          sel.innerHTML += `<option value="${d.ip}">${d.display_name || d.hostname || d.ip}</option>`;
+        });
+        sel.value = cur;
+      }
+    });
   } catch(e) { console.error('loadDevices:', e); }
 }
 
