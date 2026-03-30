@@ -537,6 +537,45 @@ async def privacy_stats(db: Session = Depends(get_db)):
         for e in recent_tracking
     ]
 
+    # 3) VPN / tunnel alerts (detection_type == "vpn_tunnel")
+    vpn_rows = (
+        db.query(
+            DetectionEvent.source_ip,
+            func.max(DetectionEvent.timestamp).label("last_seen"),
+            func.sum(DetectionEvent.bytes_transferred).label("total_bytes"),
+            func.count(DetectionEvent.id).label("hits"),
+        )
+        .filter(DetectionEvent.detection_type == "vpn_tunnel")
+        .group_by(DetectionEvent.source_ip)
+        .order_by(func.max(DetectionEvent.timestamp).desc())
+        .limit(20)
+        .all()
+    )
+
+    # Enrich with device info (hostname / MAC)
+    vpn_alerts = []
+    for row in vpn_rows:
+        # Try to find a device for this IP
+        device_ip = (
+            db.query(DeviceIP).filter(DeviceIP.ip_address == row.source_ip).first()
+        )
+        device_info = {}
+        if device_ip and device_ip.device:
+            dev = device_ip.device
+            device_info = {
+                "hostname": dev.hostname,
+                "mac_address": dev.mac_address,
+                "display_name": dev.display_name,
+                "vendor": dev.vendor,
+            }
+        vpn_alerts.append({
+            "source_ip": row.source_ip,
+            "last_seen": str(row.last_seen),
+            "total_bytes": int(row.total_bytes or 0),
+            "hits": row.hits,
+            **device_info,
+        })
+
     return {
         # AdGuard section
         "adguard": adguard_stats,
@@ -546,6 +585,8 @@ async def privacy_stats(db: Session = Depends(get_db)):
             "top_trackers": top_trackers,
             "recent": recent_list,
         },
+        # VPN / evasion alerts
+        "vpn_alerts": vpn_alerts,
     }
 
 
