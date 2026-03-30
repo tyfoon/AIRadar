@@ -963,7 +963,7 @@ async function refreshDevices() {
   thead.innerHTML = `<tr>
     <th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">Device</th>
     <th class="py-3 px-3 font-medium text-right min-w-[60px]">Total</th>
-    ${services.map(s => `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}">${SERVICE_NAMES[s] || s}</th>`).join('')}
+    ${services.map(s => `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}"><span class="inline-flex items-center gap-1 justify-center">${svcLogo(s)} <span class="truncate max-w-[60px]">${svcDisplayName(s)}</span></span></th>`).join('')}
   </tr>`;
 
   // Render body
