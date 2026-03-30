@@ -348,6 +348,31 @@ function getOrCreateChart(id, config) {
   return charts[id];
 }
 
+// Custom HTML legend with logos
+function renderHtmlLegend(containerId, chart, serviceKeys) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const items = chart.data.labels.map((label, i) => {
+    const color = chart.data.datasets[0].backgroundColor[i] || ACCENT_COLORS[i % ACCENT_COLORS.length];
+    const key = serviceKeys ? serviceKeys[i] : null;
+    const logo = key ? svcLogo(key) : `<span class="svc-logo-fallback" style="background:${color}">${label.charAt(0)}</span>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${logo} ${label}</span>`;
+  });
+  container.innerHTML = items.join('');
+}
+
+function renderTimelineHtmlLegend(containerId, chart, serviceKeys) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const items = chart.data.datasets.map((ds, i) => {
+    if (ds._isUpload) return `<span class="inline-flex items-center gap-1 text-[11px] text-red-500 mr-3 mb-1"><span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Uploads</span>`;
+    const key = serviceKeys ? serviceKeys[i] : null;
+    const logo = key ? svcLogo(key) : `<span class="w-3 h-3 rounded inline-block" style="background:${ds.backgroundColor}"></span>`;
+    return `<span class="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${logo} ${ds.label}</span>`;
+  });
+  container.innerHTML = items.join('');
+}
+
 function makeDoughnutConfig() {
   return {
     type: 'doughnut',
@@ -355,7 +380,7 @@ function makeDoughnutConfig() {
     options: {
       cutout: '60%',
       plugins: {
-        legend: { position: 'bottom', labels: { color: TC.legend, padding: 12, font: { size: 11, family: 'Inter' }, usePointStyle: true, pointStyle: 'circle' } },
+        legend: { display: false },
       },
       responsive: true,
       maintainAspectRatio: true,
@@ -371,7 +396,7 @@ function makeTimelineConfig() {
       responsive: true,
       maintainAspectRatio: true,
       plugins: {
-        legend: { position: 'top', labels: { color: TC.legend, padding: 10, font: { size: 10, family: 'Inter' }, usePointStyle: true, pointStyle: 'rect' } },
+        legend: { display: false },
       },
       scales: {
         x: { stacked: true, ticks: { color: TC.tick, maxRotation: 45, font: { size: 10 } }, grid: { display: false } },
