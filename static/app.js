@@ -1118,10 +1118,10 @@ async function refreshDevices() {
     const row = matrix[mac];
     const total = Object.values(row).reduce((s, v) => s + v.count, 0);
     const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
-    const dev = deviceMap[mac] || (mac.startsWith('_ip_') ? null : null);
+    const dev = deviceMap[mac] || null;
     const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
     const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
-    const vendorInfo = dev?.vendor ? ' · ' + dev.vendor : '';
+    const dtTag = deviceTypeTag(dev);
 
     const cells = services.map(s => {
       const v = row[s];
