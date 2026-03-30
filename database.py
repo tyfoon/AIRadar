@@ -13,7 +13,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
-DATABASE_URL = "sqlite:///./airadar.db"
+import os
+
+_db_path = os.environ.get("AIRADAR_DB_PATH", "./data/airadar.db")
+os.makedirs(os.path.dirname(_db_path) or ".", exist_ok=True)
+DATABASE_URL = f"sqlite:///{_db_path}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)

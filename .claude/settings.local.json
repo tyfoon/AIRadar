@@ -91,7 +91,11 @@
       "Bash(sqlite3 airadar.db \"SELECT sni, orig_bytes, resp_bytes, ts FROM events WHERE sni LIKE ''%openai%'' OR sni LIKE ''%chatgpt%'' ORDER BY ts DESC LIMIT 10;\")",
       "Bash(sqlite3 airadar.db \".tables\")",
       "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE ai_service LIKE ''%openai%'' OR ai_service LIKE ''%chatgpt%'' ORDER BY timestamp DESC LIMIT 10;\")",
-      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, bytes_transferred, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 20;\")"
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, bytes_transferred, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 20;\")",
+      "Bash(sqlite3 airadar.db \"SELECT COUNT\\(*\\) FROM detection_events WHERE detection_type=''sni_hello'' AND bytes_transferred=0;\")",
+      "Bash(sqlite3 airadar.db \"SELECT COUNT\\(*\\) FROM detection_events;\")",
+      "Bash(sqlite3 airadar.db \"DELETE FROM detection_events WHERE detection_type=''sni_hello'' AND bytes_transferred=0; SELECT ''Remaining: '' || COUNT\\(*\\) FROM detection_events;\")",
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/static/)"
     ]
   },
   "hooks": {
