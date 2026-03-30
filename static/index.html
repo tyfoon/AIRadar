@@ -294,6 +294,71 @@
           <p id="ai-empty" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm">No AI events captured yet.</p>
         </div>
       </div>
+
+      </div><!-- /ai-tab-radar -->
+
+      <!-- Tab: AI Adoption -->
+      <div id="ai-tab-adoption" class="space-y-6 hidden">
+
+        <!-- Adoption Metrics -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">AI Adoption Overview</h3>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div class="text-center">
+              <div id="ai-adopt-rate" class="text-2xl font-bold tabular-nums text-indigo-500 dark:text-indigo-400">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Adoption Rate</p>
+              <p id="ai-adopt-rate-detail" class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">— of — devices</p>
+            </div>
+            <div class="text-center">
+              <div id="ai-adopt-avg-queries" class="text-2xl font-bold tabular-nums">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Avg Queries / Device / Day</p>
+            </div>
+            <div class="text-center">
+              <div id="ai-adopt-active-today" class="text-2xl font-bold tabular-nums text-emerald-500 dark:text-emerald-400">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Active Today</p>
+            </div>
+            <div class="text-center">
+              <div id="ai-adopt-svc-per-user" class="text-2xl font-bold tabular-nums">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Avg Services / User</p>
+            </div>
+            <div class="text-center">
+              <div id="ai-adopt-power" class="text-2xl font-bold tabular-nums text-amber-500 dark:text-amber-400">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Power Users</p>
+              <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">&gt;50 queries/day</p>
+            </div>
+            <div class="text-center">
+              <div id="ai-adopt-top-svc" class="text-lg font-bold">—</div>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Most Popular</p>
+            </div>
+          </div>
+
+          <!-- Adoption bar -->
+          <div class="mt-4">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] text-slate-400 dark:text-slate-500">Organisation AI Adoption</span>
+              <span id="ai-adopt-bar-label" class="text-[10px] font-medium text-indigo-500 dark:text-indigo-400">—</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div id="ai-adopt-bar" class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-device breakdown -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Per-Device AI Usage</h3>
+          <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3">Queries in selected period. Bars show relative usage intensity.</p>
+          <div id="ai-adopt-devices" class="space-y-1.5 max-h-[400px] overflow-y-auto"></div>
+        </div>
+
+        <!-- AI Service Popularity (reuse period from radar tab) -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Service Popularity</h3>
+          <div id="ai-adopt-svc-breakdown" class="space-y-2"></div>
+        </div>
+
+      </div><!-- /ai-tab-adoption -->
+
     </section>
 
     <!-- ============================================================= -->
