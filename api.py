@@ -626,6 +626,76 @@ async def get_filter_status():
 
 
 # ---------------------------------------------------------------------------
+# Active Protect — CrowdSec IPS Integration
+# ---------------------------------------------------------------------------
+
+class CrowdSecClient:
+    """Stub client for CrowdSec Local API (LAPI).
+    Will eventually connect to http://localhost:8080 to manage
+    the firewall bouncer and fetch threat intelligence decisions.
+    """
+
+    def __init__(self, base_url: str = "http://localhost:8080"):
+        self.base_url = base_url
+        self._enabled = False   # in-memory state until CrowdSec is deployed
+
+    async def is_running(self) -> bool:
+        """Check if CrowdSec LAPI is reachable."""
+        try:
+            async with httpx.AsyncClient(timeout=2) as client:
+                r = await client.get(f"{self.base_url}/health")
+                return r.status_code == 200
+        except Exception:
+            return False
+
+    async def get_decisions_count(self) -> int:
+        """Get the number of active ban decisions (blocked IPs)."""
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                r = await client.get(
+                    f"{self.base_url}/v1/decisions",
+                    headers={"X-Api-Key": os.getenv("CROWDSEC_API_KEY", "")},
+                )
+                if r.status_code == 200:
+                    return len(r.json() or [])
+        except Exception:
+            pass
+        return 0
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool):
+        self._enabled = value
+
+
+crowdsec = CrowdSecClient()
+
+
+@app.get("/api/ips/status")
+async def get_ips_status():
+    """Return Active Protect (IPS) status."""
+    running = await crowdsec.is_running()
+    blocked = await crowdsec.get_decisions_count() if running else 0
+    return {
+        "enabled": crowdsec.enabled,
+        "crowdsec_running": running,
+        "active_threats_blocked": blocked,
+    }
+
+
+@app.post("/api/ips/toggle")
+async def toggle_ips(payload: GlobalFilterToggle):
+    """Enable or disable Active Protect (IPS)."""
+    crowdsec.enabled = payload.enabled
+    state = "enabled" if payload.enabled else "disabled"
+    print(f"[ips] Active Protect {state}")
+    return {"enabled": crowdsec.enabled}
+
+
+# ---------------------------------------------------------------------------
 # Block Rule Engine
 # ---------------------------------------------------------------------------
 
