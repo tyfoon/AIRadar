@@ -475,10 +475,12 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
   if (dChart) {
     const counts = {};
     events.forEach(e => { counts[e.ai_service] = (counts[e.ai_service] || 0) + 1; });
-    dChart.data.labels = Object.keys(counts);
+    const dKeys = Object.keys(counts);
+    dChart.data.labels = dKeys.map(s => svcDisplayName(s));
     dChart.data.datasets[0].data = Object.values(counts);
-    dChart.data.datasets[0].backgroundColor = Object.keys(counts).map(s => svcColor(s));
+    dChart.data.datasets[0].backgroundColor = dKeys.map(s => svcColor(s));
     dChart.update();
+    renderHtmlLegend(doughnutId + '-legend', dChart, dKeys);
   }
 
   // Timeline
@@ -487,7 +489,8 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
     const labels = timeline.map(p => fmtBucket(p.bucket));
     const svcs = new Set();
     timeline.forEach(p => Object.keys(p.services).forEach(s => svcs.add(s)));
-    const ds = [...svcs].sort().map(s => ({
+    const svcKeys = [...svcs].sort();
+    const ds = svcKeys.map(s => ({
       label: svcDisplayName(s),
       data: timeline.map(p => p.services[s] || 0),
       backgroundColor: svcColor(s),
@@ -507,6 +510,7 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
     tChart.data.labels = labels;
     tChart.data.datasets = ds;
     tChart.update();
+    renderTimelineHtmlLegend(timelineId + '-legend', tChart, svcKeys);
   }
 }
 
