@@ -74,7 +74,8 @@
       "Bash(python3 -c \"import schemas; print\\(''''schemas.py imports OK''''\\)\")",
       "Bash(python3 -c \"import api; print\\(''API OK''\\)\")",
       "Bash(pip3 list:*)",
-      "Bash(python3 -c \"import api; import database; import schemas; print\\(''All imports OK''\\)\")"
+      "Bash(python3 -c \"import api; import database; import schemas; print\\(''All imports OK''\\)\")",
+      "Bash(node --check /Users/goswijnthijssen/AIRadar/static/app.js)"
     ]
   },
   "hooks": {
