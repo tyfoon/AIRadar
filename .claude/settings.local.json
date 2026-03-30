@@ -96,7 +96,9 @@
       "Bash(sqlite3 airadar.db \"SELECT COUNT\\(*\\) FROM detection_events;\")",
       "Bash(sqlite3 airadar.db \"DELETE FROM detection_events WHERE detection_type=''sni_hello'' AND bytes_transferred=0; SELECT ''Remaining: '' || COUNT\\(*\\) FROM detection_events;\")",
       "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/static/)",
-      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/setup_n95.sh)"
+      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/setup_n95.sh)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''zeek_tailer.py'', doraise=True\\); py_compile.compile\\(''api.py'', doraise=True\\); print\\(''✓ Python OK''\\)\")",
+      "Bash(sqlite3 airadar.db \"SELECT detection_type, ai_service, source_ip, bytes_transferred, timestamp FROM detection_events WHERE detection_type=''vpn_tunnel'' ORDER BY timestamp DESC LIMIT 10;\")"
     ]
   },
   "hooks": {

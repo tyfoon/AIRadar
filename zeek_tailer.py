@@ -100,6 +100,36 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     "sendgb.com":                        ("sendgb", "cloud"),
     "smash.gg":                          ("smash", "cloud"),
 
+    # --- VPN services (category="tracking") ---
+    # NordVPN
+    "nordvpn.com":                       ("vpn_nordvpn", "tracking"),
+    "nordvpn.net":                       ("vpn_nordvpn", "tracking"),
+    "nord-apps.com":                     ("vpn_nordvpn", "tracking"),
+    "nordcdn.com":                       ("vpn_nordvpn", "tracking"),
+    # ExpressVPN
+    "expressvpn.com":                    ("vpn_expressvpn", "tracking"),
+    "expressapisv2.net":                 ("vpn_expressvpn", "tracking"),
+    # Surfshark
+    "surfshark.com":                     ("vpn_surfshark", "tracking"),
+    # ProtonVPN
+    "protonvpn.com":                     ("vpn_protonvpn", "tracking"),
+    "protonvpn.ch":                      ("vpn_protonvpn", "tracking"),
+    "proton.me":                         ("vpn_protonvpn", "tracking"),
+    # Private Internet Access
+    "privateinternetaccess.com":         ("vpn_pia", "tracking"),
+    # CyberGhost
+    "cyberghostvpn.com":                 ("vpn_cyberghost", "tracking"),
+    # Mullvad
+    "mullvad.net":                       ("vpn_mullvad", "tracking"),
+    # IPVanish
+    "ipvanish.com":                      ("vpn_ipvanish", "tracking"),
+    # TunnelBear
+    "tunnelbear.com":                    ("vpn_tunnelbear", "tracking"),
+    # Windscribe
+    "windscribe.com":                    ("vpn_windscribe", "tracking"),
+    # Generic
+    "warp.cloudflareaccess.org":         ("vpn_cloudflare_warp", "tracking"),
+
     # --- Tracking / Ads (category="tracking") ---
     # Google Ads & Analytics
     "doubleclick.net":                   ("google_ads", "tracking"),
