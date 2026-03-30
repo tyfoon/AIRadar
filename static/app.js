@@ -1293,7 +1293,7 @@ async function refreshDevices() {
 
 // --- RULES ---
 async function refreshRules() {
-  await Promise.all([loadGlobalFilterStatus(), loadAccessControl()]);
+  await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl()]);
 }
 
 async function loadGlobalFilterStatus() {
