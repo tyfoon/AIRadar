@@ -5,3 +5,4 @@ pydantic==2.10.3
 requests==2.32.3
 aiofiles==24.1.0
 httpx==0.28.1
+mac-vendor-lookup==0.1.12
