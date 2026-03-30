@@ -518,7 +518,7 @@ async def privacy_stats(
     # Total tracking events
     tracking_total = (
         db.query(func.count(DetectionEvent.id))
-        .filter(DetectionEvent.category == "tracking")
+        .filter(*tracker_filter)
         .scalar() or 0
     )
 
@@ -528,7 +528,7 @@ async def privacy_stats(
             DetectionEvent.ai_service,
             func.count(DetectionEvent.id).label("hits"),
         )
-        .filter(DetectionEvent.category == "tracking")
+        .filter(*tracker_filter)
         .group_by(DetectionEvent.ai_service)
         .order_by(func.count(DetectionEvent.id).desc())
         .limit(10)
@@ -541,7 +541,7 @@ async def privacy_stats(
     # Recent tracking events (last 50)
     recent_tracking = (
         db.query(DetectionEvent)
-        .filter(DetectionEvent.category == "tracking")
+        .filter(*tracker_filter)
         .order_by(DetectionEvent.timestamp.desc())
         .limit(50)
         .all()
