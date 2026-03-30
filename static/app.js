@@ -863,9 +863,12 @@ async function refreshPrivacy() {
   const tChart = getOrCreateChart('tracker-chart', makeDoughnutConfig());
   if (tChart) {
     const topT = _cachedTopTrackers.slice(0, 10);
+    const trackerKeys = topT.map(t => t.service);
     tChart.data.labels = topT.map(t => svcDisplayName(t.service));
     tChart.data.datasets[0].data = topT.map(t => t.hits);
+    tChart.data.datasets[0].backgroundColor = trackerKeys.map(s => svcColor(s));
     tChart.update();
+    renderHtmlLegend('tracker-chart-legend', tChart, trackerKeys);
   }
 
   // Tracker table
