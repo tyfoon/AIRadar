@@ -86,7 +86,8 @@
       "Bash(echo \"Status: $?\")",
       "Bash(python3 -c \"import api\")",
       "Bash(python3 -c \"from database import init_db; init_db\\(\\); print\\(''Migration OK''\\)\")",
-      "Bash(curl -s http://localhost:8000/)"
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(python3 -c 'import api')"
     ]
   },
   "hooks": {
