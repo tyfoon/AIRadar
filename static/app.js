@@ -138,11 +138,25 @@ const SERVICE_COLORS = {
 };
 
 const SERVICE_NAMES = {
+  // AI
   openai:'OpenAI', anthropic_claude:'Claude', google_gemini:'Gemini',
   microsoft_copilot:'Copilot', perplexity:'Perplexity', huggingface:'Hugging Face',
-  mistral:'Mistral', dropbox:'Dropbox', wetransfer:'WeTransfer',
-  google_drive:'Google Drive', onedrive:'OneDrive', icloud:'iCloud',
-  box:'Box', mega:'MEGA',
+  mistral:'Mistral',
+  // Cloud
+  dropbox:'Dropbox', wetransfer:'WeTransfer', google_drive:'Google Drive',
+  onedrive:'OneDrive', icloud:'iCloud', box:'Box', mega:'MEGA',
+  // Trackers
+  google_ads:'Google Ads', google_analytics:'Google Analytics',
+  google_telemetry:'Google Telemetry', meta_tracking:'Meta Tracking',
+  apple_ads:'Apple Ads', microsoft_ads:'Microsoft Ads',
+  hotjar:'Hotjar', datadog:'Datadog',
+  // Social / Gaming (for Rules page)
+  facebook:'Facebook', instagram:'Instagram', tiktok:'TikTok',
+  twitter:'X (Twitter)', snapchat:'Snapchat', pinterest:'Pinterest',
+  linkedin:'LinkedIn', reddit:'Reddit', tumblr:'Tumblr',
+  steam:'Steam', epic_games:'Epic Games', roblox:'Roblox',
+  twitch:'Twitch', discord:'Discord', nintendo:'Nintendo',
+  playstation:'PlayStation', xbox_live:'Xbox Live',
 };
 
 // Domain mapping for Clearbit logos
