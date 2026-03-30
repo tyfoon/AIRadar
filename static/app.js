@@ -582,10 +582,12 @@ async function refreshDashboard() {
   const cloudDonut = getOrCreateChart('dash-cloud-donut', makeDoughnutConfig());
   if (cloudDonut) {
     const cc = {}; cloudEvt.forEach(e => { cc[e.ai_service] = (cc[e.ai_service] || 0) + 1; });
-    cloudDonut.data.labels = Object.keys(cc).map(k => svcDisplayName(k));
+    const cloudKeys = Object.keys(cc);
+    cloudDonut.data.labels = cloudKeys.map(k => svcDisplayName(k));
     cloudDonut.data.datasets[0].data = Object.values(cc);
-    cloudDonut.data.datasets[0].backgroundColor = Object.keys(cc).map(k => svcColor(k));
+    cloudDonut.data.datasets[0].backgroundColor = cloudKeys.map(k => svcColor(k));
     cloudDonut.update();
+    renderHtmlLegend('dash-cloud-donut-legend', cloudDonut, cloudKeys);
   }
 
   const privDonut = getOrCreateChart('dash-priv-donut', makeDoughnutConfig());
