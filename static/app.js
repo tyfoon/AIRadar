@@ -803,7 +803,7 @@ async function refreshPrivacy() {
   const tChart = getOrCreateChart('tracker-chart', makeDoughnutConfig());
   if (tChart) {
     const topT = _cachedTopTrackers.slice(0, 10);
-    tChart.data.labels = topT.map(t => t.service.replace(/_/g, ' '));
+    tChart.data.labels = topT.map(t => svcDisplayName(t.service));
     tChart.data.datasets[0].data = topT.map(t => t.hits);
     tChart.update();
   }
