@@ -189,6 +189,11 @@ const SERVICE_LOGO_DOMAIN = {
   epic_games:'epicgames.com', roblox:'roblox.com', twitch:'twitch.tv',
   discord:'discord.com', nintendo:'nintendo.com', playstation:'playstation.com',
   xbox_live:'xbox.com', signal:'signal.org', whatsapp:'whatsapp.com',
+  // VPN services
+  vpn_active:'nordvpn.com', vpn_nordvpn:'nordvpn.com', vpn_expressvpn:'expressvpn.com',
+  vpn_surfshark:'surfshark.com', vpn_protonvpn:'protonvpn.com', vpn_pia:'privateinternetaccess.com',
+  vpn_cyberghost:'cyberghostvpn.com', vpn_mullvad:'mullvad.net', vpn_ipvanish:'ipvanish.com',
+  vpn_tunnelbear:'tunnelbear.com', vpn_windscribe:'windscribe.com', vpn_cloudflare_warp:'cloudflare.com',
 };
 
 const SVC_BADGE_CLS = {
