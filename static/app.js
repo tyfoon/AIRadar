@@ -181,6 +181,7 @@ const SERVICE_LOGO_DOMAIN = {
 };
 
 const SVC_BADGE_CLS = {
+  // AI
   openai:'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
   anthropic_claude:'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300',
   google_gemini:'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
@@ -188,6 +189,7 @@ const SVC_BADGE_CLS = {
   perplexity:'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300',
   huggingface:'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
   mistral:'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
+  // Cloud
   dropbox:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
   wetransfer:'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300',
   google_drive:'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
@@ -195,6 +197,15 @@ const SVC_BADGE_CLS = {
   icloud:'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
   box:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
   mega:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  // Trackers
+  google_ads:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  google_analytics:'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
+  google_telemetry:'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
+  meta_tracking:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  apple_ads:'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
+  microsoft_ads:'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300',
+  hotjar:'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
+  datadog:'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
 };
 
 let _fallbackIdx = 0;
