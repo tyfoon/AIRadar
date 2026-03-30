@@ -574,7 +574,7 @@ async function refreshDashboard() {
   ]);
 
   // Metrics
-  document.getElementById('dash-devices').textContent = Object.keys(deviceMap).length;
+  document.getElementById('dash-devices').textContent = Object.keys(deviceMap).length || 0;
   document.getElementById('dash-events-today').textContent = (aiEvt.length + cloudEvt.length).toLocaleString();
 
   const ag = privRes?.adguard || {};
