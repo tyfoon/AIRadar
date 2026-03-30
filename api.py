@@ -21,7 +21,7 @@ from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
-from database import BlockRule, DetectionEvent, Device, SessionLocal, init_db
+from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, init_db
 
 # MAC Vendor lookup
 try:
