@@ -837,7 +837,6 @@ async function refreshPrivacy() {
       bChart.data.labels = topD.map(d => d.domain.length > 30 ? d.domain.slice(0, 27) + '...' : d.domain);
       bChart.data.datasets[0].data = topD.map(d => d.count);
       bChart.update();
-      renderHtmlLegend('priv-chart-legend', bChart, null);
     }
 
     // Update blocked domains panel if visible
