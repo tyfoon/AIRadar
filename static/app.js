@@ -870,6 +870,106 @@ async function refreshAI() {
 
   renderEventsTable(events, 'ai-tbody', 'ai-empty');
   updateCategoryCharts(events, timeline, 'ai-service-chart', 'ai-timeline-chart');
+  renderAiAdoption(events);
+}
+
+function renderAiAdoption(events) {
+  const totalDevices = Object.keys(deviceMap).length || 1;
+
+  // Group events by MAC (physical device)
+  const deviceEvents = {};  // mac → [events]
+  events.forEach(e => {
+    const mac = ipToMac[e.source_ip] || `_ip_${e.source_ip}`;
+    if (!deviceEvents[mac]) deviceEvents[mac] = [];
+    deviceEvents[mac].push(e);
+  });
+
+  const aiDeviceCount = Object.keys(deviceEvents).length;
+
+  // Adoption rate
+  const adoptionPct = totalDevices > 0 ? Math.round((aiDeviceCount / totalDevices) * 100) : 0;
+  document.getElementById('ai-adopt-rate').textContent = adoptionPct + '%';
+  document.getElementById('ai-adopt-rate-detail').textContent = `${aiDeviceCount} of ${totalDevices} devices`;
+  document.getElementById('ai-adopt-bar').style.width = adoptionPct + '%';
+  document.getElementById('ai-adopt-bar-label').textContent = adoptionPct + '%';
+
+  // Determine time span in days from event data
+  let spanDays = 1;
+  if (events.length > 1) {
+    const times = events.map(e => new Date(e.timestamp).getTime());
+    const minT = Math.min(...times);
+    const maxT = Math.max(...times);
+    spanDays = Math.max(1, (maxT - minT) / (1000 * 60 * 60 * 24));
+  }
+
+  // Avg queries per device per day
+  const avgPerDevDay = aiDeviceCount > 0 ? (events.length / aiDeviceCount / spanDays) : 0;
+  document.getElementById('ai-adopt-avg-queries').textContent = avgPerDevDay < 10 ? avgPerDevDay.toFixed(1) : Math.round(avgPerDevDay);
+
+  // Active today
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayMacs = new Set();
+  events.forEach(e => {
+    if (new Date(e.timestamp) >= todayStart) {
+      todayMacs.add(ipToMac[e.source_ip] || `_ip_${e.source_ip}`);
+    }
+  });
+  document.getElementById('ai-adopt-active-today').textContent = todayMacs.size;
+
+  // Avg services per user
+  const svcPerDevice = Object.values(deviceEvents).map(evts => new Set(evts.map(e => e.ai_service)).size);
+  const avgSvc = svcPerDevice.length > 0 ? (svcPerDevice.reduce((a,b) => a+b, 0) / svcPerDevice.length) : 0;
+  document.getElementById('ai-adopt-svc-per-user').textContent = avgSvc.toFixed(1);
+
+  // Power users (>50 queries per day)
+  const powerThreshold = 50;
+  let powerCount = 0;
+  Object.values(deviceEvents).forEach(evts => {
+    if ((evts.length / spanDays) > powerThreshold) powerCount++;
+  });
+  document.getElementById('ai-adopt-power').textContent = powerCount;
+
+  // Top service
+  const svcCounts = {};
+  events.forEach(e => { svcCounts[e.ai_service] = (svcCounts[e.ai_service] || 0) + 1; });
+  const topSvc = Object.entries(svcCounts).sort((a,b) => b[1] - a[1])[0];
+  const topEl = document.getElementById('ai-adopt-top-svc');
+  if (topSvc) {
+    topEl.innerHTML = svcLogoName(topSvc[0]);
+  } else {
+    topEl.textContent = '—';
+  }
+
+  // Per-device breakdown bars
+  const container = document.getElementById('ai-adopt-devices');
+  if (!container) return;
+
+  const deviceRows = Object.entries(deviceEvents).map(([mac, evts]) => {
+    const dev = deviceMap[mac];
+    const name = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+    const dt = _detectDeviceType(dev);
+    const count = evts.length;
+    const svcs = [...new Set(evts.map(e => e.ai_service))];
+    const uploads = evts.filter(e => e.possible_upload).length;
+    return { mac, name, dt, count, svcs, uploads };
+  }).sort((a,b) => b.count - a.count);
+
+  const maxCount = deviceRows[0]?.count || 1;
+
+  container.innerHTML = deviceRows.map(d => {
+    const pct = Math.round((d.count / maxCount) * 100);
+    const svcLogos = d.svcs.slice(0, 5).map(s => svcLogo(s)).join('');
+    const uploadBadge = d.uploads > 0 ? ` <span class="text-[9px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${d.uploads}▲</span>` : '';
+    return `<div class="flex items-center gap-2 text-[11px]">
+      <span class="w-[140px] truncate flex-shrink-0 text-slate-600 dark:text-slate-300" title="${d.name}">${d.dt.icon} ${d.name}</span>
+      <div class="flex-1 h-4 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
+        <div class="h-full rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 transition-all duration-500" style="width:${pct}%"></div>
+        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 40 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${d.count}</span>
+      </div>
+      <span class="flex items-center gap-0.5 flex-shrink-0">${svcLogos}</span>
+      ${uploadBadge}
+    </div>`;
+  }).join('');
 }
 
 // --- CLOUD ---
