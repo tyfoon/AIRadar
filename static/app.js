@@ -72,6 +72,7 @@ const PAGE_TITLES = {
   cloud: 'Cloud Storage',
   privacy: 'Privacy',
   devices: 'Devices',
+  ips: 'Active Protect',
   rules: 'Rules & Access Control',
   settings: 'Settings',
 };
