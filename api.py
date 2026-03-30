@@ -32,7 +32,7 @@ except Exception:
     _mac_lookup = None
 
 
-def _resolve_vendor(mac: str | None) -> str | None:
+def _resolve_vendor(mac: Optional[str] = None) -> Optional[str]:
     """Look up the hardware vendor from a MAC address."""
     if not mac or not _mac_lookup:
         return None
