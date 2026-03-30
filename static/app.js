@@ -596,6 +596,7 @@ async function refreshDashboard() {
     privDonut.data.labels = top5.map(d => d.domain?.length > 20 ? d.domain.slice(0, 18) + '...' : d.domain);
     privDonut.data.datasets[0].data = top5.map(d => d.count);
     privDonut.update();
+    renderHtmlLegend('dash-priv-donut-legend', privDonut, null);
   }
 
   // Alarms
