@@ -537,15 +537,19 @@ async def privacy_stats(db: Session = Depends(get_db)):
         for e in recent_tracking
     ]
 
-    # 3) VPN / tunnel alerts (detection_type == "vpn_tunnel")
+    # 3) VPN / tunnel alerts (vpn_tunnel events + vpn_* service SNI events)
     vpn_rows = (
         db.query(
             DetectionEvent.source_ip,
             func.max(DetectionEvent.timestamp).label("last_seen"),
             func.sum(DetectionEvent.bytes_transferred).label("total_bytes"),
             func.count(DetectionEvent.id).label("hits"),
+            func.max(DetectionEvent.ai_service).label("vpn_service"),
         )
-        .filter(DetectionEvent.detection_type == "vpn_tunnel")
+        .filter(
+            (DetectionEvent.detection_type == "vpn_tunnel")
+            | (DetectionEvent.ai_service.like("vpn_%"))
+        )
         .group_by(DetectionEvent.source_ip)
         .order_by(func.max(DetectionEvent.timestamp).desc())
         .limit(20)
