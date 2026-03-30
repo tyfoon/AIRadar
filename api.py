@@ -236,7 +236,8 @@ def list_events(
     if service:
         q = q.filter(DetectionEvent.ai_service == service)
     if source_ip:
-        q = q.filter(DetectionEvent.source_ip == source_ip)
+        ips = [s.strip() for s in source_ip.split(',') if s.strip()]
+        q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
         q = q.filter(DetectionEvent.category == category)
     if start:
@@ -262,7 +263,8 @@ def export_events(
     if service:
         q = q.filter(DetectionEvent.ai_service == service)
     if source_ip:
-        q = q.filter(DetectionEvent.source_ip == source_ip)
+        ips = [s.strip() for s in source_ip.split(',') if s.strip()]
+        q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
         q = q.filter(DetectionEvent.category == category)
     if start:
@@ -320,7 +322,8 @@ def timeline(
     if service:
         q = q.filter(DetectionEvent.ai_service == service)
     if source_ip:
-        q = q.filter(DetectionEvent.source_ip == source_ip)
+        ips = [s.strip() for s in source_ip.split(',') if s.strip()]
+        q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
         q = q.filter(DetectionEvent.category == category)
     if start:
