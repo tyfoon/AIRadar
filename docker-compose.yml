@@ -2,6 +2,8 @@
 # AI-Radar — Docker Compose (Production)
 # Deploys on a headless Ubuntu mini-PC acting as L2 bridge.
 # All services use host networking to see real client IPs.
+#
+# Configuration: copy .env.example → .env and adjust values.
 # ──────────────────────────────────────────────────────────────
 
 services:
@@ -12,22 +14,22 @@ services:
     container_name: airadar-app
     network_mode: "host"
     restart: unless-stopped
+    env_file: .env
     environment:
+      # Container-internal overrides (paths inside the container)
       - AIRADAR_DB_PATH=/app/data/airadar.db
-      - ZEEK_LOG_DIR=/app/logs
-      - ADGUARD_URL=http://localhost:3000
-      - CROWDSEC_URL=http://localhost:8080
+      - PYTHONUNBUFFERED=1
     volumes:
       # Persistent database — survives container restarts
       - ./data:/app/data
       # Read-only access to Zeek logs on the host
-      - /opt/zeek/logs:/app/logs:ro
+      - ${ZEEK_LOG_DIR:-/opt/zeek/logs}:/app/logs:ro
     depends_on:
       - adguardhome
       - crowdsec
 
   # ── AdGuard Home — DNS-level ad/tracker blocking ──────────
-  # Web UI: http://<bridge-ip>:3000
+  # Web UI: http://<bridge-ip>:3000 (first run) → :80 (after setup)
   # DNS:    <bridge-ip>:53
   adguardhome:
     image: adguard/adguardhome:latest
@@ -52,4 +54,4 @@ services:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
       # Same Zeek logs as our app — CrowdSec parses them for threats
-      - /opt/zeek/logs:/var/log/zeek:ro
+      - ${ZEEK_LOG_DIR:-/opt/zeek/logs}:/var/log/zeek:ro
