@@ -999,6 +999,26 @@ function renderAiAdoption(events) {
       ${uploadBadge}
     </div>`;
   }).join('');
+
+  // Service popularity breakdown
+  const svcBreakdown = document.getElementById('ai-adopt-svc-breakdown');
+  if (!svcBreakdown) return;
+  const svcEntries = Object.entries(svcCounts).sort((a,b) => b[1] - a[1]);
+  const maxSvcCount = svcEntries[0]?.[1] || 1;
+  const totalEvents = events.length || 1;
+
+  svcBreakdown.innerHTML = svcEntries.map(([svc, count]) => {
+    const pct = Math.round((count / maxSvcCount) * 100);
+    const share = Math.round((count / totalEvents) * 100);
+    const usersCount = Object.values(deviceEvents).filter(evts => evts.some(e => e.ai_service === svc)).length;
+    return `<div class="flex items-center gap-3 text-[11px]">
+      <span class="w-[120px] flex-shrink-0">${svcLogoName(svc)}</span>
+      <div class="flex-1 h-5 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
+        <div class="h-full rounded bg-gradient-to-r from-indigo-500/70 to-purple-500/70" style="width:${pct}%"></div>
+        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} queries · ${share}% share · ${usersCount} user${usersCount !== 1 ? 's' : ''}</span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // --- CLOUD ---
