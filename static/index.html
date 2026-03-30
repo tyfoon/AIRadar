@@ -509,6 +509,28 @@
           </table>
         </div>
       </div>
+
+      <!-- VPN & Evasion Alerts -->
+      <div id="vpn-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover transition-all">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-orange-500/10 dark:bg-orange-500/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-orange-500 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            </div>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">VPN &amp; Evasion Alerts</h3>
+          </div>
+          <span id="vpn-status-badge" class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">No tunnels</span>
+        </div>
+        <div id="vpn-alerts-body">
+          <div class="flex flex-col items-center justify-center py-8 text-center">
+            <div class="w-12 h-12 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center mb-3">
+              <svg class="w-6 h-6 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <p class="text-sm text-slate-500 dark:text-slate-400">No active VPN tunnels detected</p>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Monitoring OpenVPN, WireGuard, IPsec &amp; more</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ============================================================= -->
