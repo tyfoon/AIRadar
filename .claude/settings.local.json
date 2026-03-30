@@ -98,7 +98,15 @@
       "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/static/)",
       "Bash(chmod +x /Users/goswijnthijssen/AIRadar/setup_n95.sh)",
       "Bash(python3 -c \"import py_compile; py_compile.compile\\(''zeek_tailer.py'', doraise=True\\); py_compile.compile\\(''api.py'', doraise=True\\); print\\(''✓ Python OK''\\)\")",
-      "Bash(sqlite3 airadar.db \"SELECT detection_type, ai_service, source_ip, bytes_transferred, timestamp FROM detection_events WHERE detection_type=''vpn_tunnel'' ORDER BY timestamp DESC LIMIT 10;\")"
+      "Bash(sqlite3 airadar.db \"SELECT detection_type, ai_service, source_ip, bytes_transferred, timestamp FROM detection_events WHERE detection_type=''vpn_tunnel'' ORDER BY timestamp DESC LIMIT 10;\")",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''zeek_tailer.py'', doraise=True\\); print\\(''✓ OK''\\)\")",
+      "Bash(while read:*)",
+      "Bash(do date:*)",
+      "Bash(done)",
+      "Bash(curl -s -o /dev/null https://www.google.com)",
+      "Bash(curl -s -o /dev/null https://chatgpt.com)",
+      "Bash(sudo kill:*)",
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 5;\")"
     ]
   },
   "hooks": {
