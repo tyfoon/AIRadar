@@ -561,7 +561,7 @@ async def privacy_stats(db: Session = Depends(get_db)):
     for row in vpn_rows:
         # Try to find a device for this IP
         device_ip = (
-            db.query(DeviceIP).filter(DeviceIP.ip_address == row.source_ip).first()
+            db.query(DeviceIP).filter(DeviceIP.ip == row.source_ip).first()
         )
         device_info = {}
         if device_ip and device_ip.device:

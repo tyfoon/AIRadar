@@ -106,7 +106,9 @@
       "Bash(curl -s -o /dev/null https://www.google.com)",
       "Bash(curl -s -o /dev/null https://chatgpt.com)",
       "Bash(sudo kill:*)",
-      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 5;\")"
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 5;\")",
+      "Bash(curl -s http://localhost:8000/api/privacy/stats)",
+      "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8000/api/privacy/stats)"
     ]
   },
   "hooks": {
