@@ -694,6 +694,48 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 f"from {src_ip} — {vpn_total/1024:,.0f} KB"
                             )
 
+                # --- Heuristic VPN detection ---
+                # Large single-connection to an unknown external IP (not a known
+                # AI/Cloud service) hints at an encrypted tunnel.
+                if (
+                    _is_local_ip(src_ip)
+                    and resp_ip
+                    and resp_ip not in _known_ips
+                    and not _is_local_ip(resp_ip)
+                ):
+                    try:
+                        h_ob = record.get("orig_bytes", "0")
+                        h_orig = int(h_ob) if h_ob and h_ob != "-" else 0
+                    except ValueError:
+                        h_orig = 0
+                    try:
+                        h_rb = record.get("resp_bytes", "0")
+                        h_resp = int(h_rb) if h_rb and h_rb != "-" else 0
+                    except ValueError:
+                        h_resp = 0
+                    h_total = h_orig + h_resp
+
+                    if h_total >= HEURISTIC_VPN_BYTE_THRESHOLD:
+                        now = time.time()
+                        h_key = (src_ip, resp_ip)
+                        h_last = _heuristic_vpn_seen.get(h_key, 0)
+                        if (now - h_last) >= HEURISTIC_VPN_DEDUP_SECONDS:
+                            _heuristic_vpn_seen[h_key] = now
+                            asyncio.create_task(register_device(client, src_ip))
+                            await send_event(
+                                client,
+                                detection_type="vpn_tunnel",
+                                ai_service="vpn_active",
+                                source_ip=src_ip,
+                                bytes_transferred=h_total,
+                                category="tracking",
+                            )
+                            print(
+                                f"    └─ Heuristic VPN: large encrypted flow "
+                                f"to {resp_ip}:{resp_port} ({proto.upper()}) "
+                                f"from {src_ip} — {h_total/1024/1024:,.1f} MB"
+                            )
+
                 # Check if destination IP is a known AI/Cloud service
                 if resp_ip not in _known_ips:
                     continue
