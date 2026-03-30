@@ -136,6 +136,11 @@ const SERVICE_COLORS = {
   mistral:'#8b5cf6', dropbox:'#3b82f6', wetransfer:'#14b8a6',
   google_drive:'#22c55e', onedrive:'#0ea5e9', icloud:'#6b7280',
   box:'#60a5fa', mega:'#ef4444',
+  // VPN
+  vpn_active:'#f97316', vpn_nordvpn:'#4687ff', vpn_expressvpn:'#da3940',
+  vpn_surfshark:'#1cbdb4', vpn_protonvpn:'#6d4aff', vpn_pia:'#4bb543',
+  vpn_cyberghost:'#ffd400', vpn_mullvad:'#294d73', vpn_ipvanish:'#70bb44',
+  vpn_tunnelbear:'#ffc600', vpn_windscribe:'#1a5276', vpn_cloudflare_warp:'#f48120',
 };
 
 const SERVICE_NAMES = {
