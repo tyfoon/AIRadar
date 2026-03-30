@@ -1340,6 +1340,66 @@ async function toggleGlobalFilter(type, checkbox) {
   } finally { checkbox.disabled = false; }
 }
 
+// --- Active Protect (IPS) ---
+async function loadIpsStatus() {
+  try {
+    const res = await fetch('/api/ips/status');
+    const data = await res.json();
+    const toggle = document.getElementById('toggle-ips');
+    if (toggle) toggle.checked = data.enabled;
+    styleIpsCard(data.enabled);
+
+    // Update threat count
+    const countEl = document.getElementById('ips-threats-count');
+    if (countEl) countEl.textContent = data.active_threats_blocked.toLocaleString();
+
+    // Update status dot (green = running, amber = enabled but offline, grey = off)
+    const dot = document.getElementById('ips-status-dot');
+    if (dot) {
+      dot.classList.remove('bg-emerald-400', 'dark:bg-emerald-500', 'bg-amber-400', 'dark:bg-amber-500', 'bg-slate-300', 'dark:bg-slate-600');
+      if (data.crowdsec_running) {
+        dot.classList.add('bg-emerald-400', 'dark:bg-emerald-500');
+        dot.title = 'CrowdSec online';
+      } else if (data.enabled) {
+        dot.classList.add('bg-amber-400', 'dark:bg-amber-500');
+        dot.title = 'CrowdSec not reachable';
+      } else {
+        dot.classList.add('bg-slate-300', 'dark:bg-slate-600');
+        dot.title = 'CrowdSec offline';
+      }
+    }
+  } catch(e) { console.error('loadIpsStatus:', e); }
+}
+
+function styleIpsCard(active) {
+  const card = document.getElementById('filter-ips-card');
+  if (!card) return;
+  if (active) {
+    card.classList.add('border-emerald-300', 'dark:border-emerald-700/40', 'bg-emerald-50', 'dark:bg-emerald-900/10');
+    card.classList.remove('border-slate-200', 'dark:border-white/[0.05]', 'bg-white', 'dark:bg-white/[0.03]');
+  } else {
+    card.classList.remove('border-emerald-300', 'dark:border-emerald-700/40', 'bg-emerald-50', 'dark:bg-emerald-900/10');
+    card.classList.add('border-slate-200', 'dark:border-white/[0.05]', 'bg-white', 'dark:bg-white/[0.03]');
+  }
+}
+
+async function toggleIps(checkbox) {
+  checkbox.disabled = true;
+  const enabled = checkbox.checked;
+  try {
+    const res = await fetch('/api/ips/toggle', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    styleIpsCard(enabled);
+  } catch(err) {
+    console.error('toggleIps:', err);
+    checkbox.checked = !checkbox.checked;
+    alert('Failed to toggle Active Protect: ' + err.message);
+  } finally { checkbox.disabled = false; }
+}
+
 // --- GRANULAR SERVICE CARDS ---
 async function loadAccessControl() {
   try {
