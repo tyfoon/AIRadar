@@ -686,6 +686,11 @@ async function refreshDashboard() {
       topDot.className = 'w-2 h-2 rounded-full bg-amber-500';
       topTxt.textContent = `${issues} Issue${issues > 1 ? 's' : ''}`;
     }
+    // Store health data for detail panel
+    _lastHealthData = healthRes;
+    // Auto-update panel if already open
+    const hp = document.getElementById('dash-health-panel');
+    if (hp && !hp.classList.contains('hidden')) renderDashHealthServices();
   }
 
   // Mini donuts
