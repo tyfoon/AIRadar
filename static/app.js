@@ -1635,6 +1635,31 @@ async function refreshDevices() {
 }
 
 // --- RULES ---
+let _currentRulesTab = 'outbound';
+
+function switchRulesTab(tab) {
+  _currentRulesTab = tab;
+  const outDiv = document.getElementById('rules-tab-outbound');
+  const inDiv  = document.getElementById('rules-tab-inbound');
+  const btnOut = document.getElementById('rules-tab-btn-outbound');
+  const btnIn  = document.getElementById('rules-tab-btn-inbound');
+
+  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+
+  if (tab === 'outbound') {
+    outDiv.classList.remove('hidden');
+    inDiv.classList.add('hidden');
+    btnOut.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
+    btnIn.className  = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
+  } else {
+    outDiv.classList.add('hidden');
+    inDiv.classList.remove('hidden');
+    btnOut.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
+    btnIn.className  = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
+  }
+}
+
 async function refreshRules() {
   await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl()]);
 }
