@@ -178,16 +178,11 @@ function svcColor(s) {
 }
 
 function svcLogo(s) {
-  const domain = SERVICE_LOGO_DOMAIN[s];
-  if (domain) {
-    const color = svcColor(s);
-    const letter = (SERVICE_NAMES[s] || s).charAt(0);
-    return `<img src="https://logo.clearbit.com/${domain}" alt="${s}" class="svc-logo"
-      onerror="this.outerHTML='<span class=\\'svc-logo-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
-  }
+  const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
   const color = svcColor(s);
   const letter = (SERVICE_NAMES[s] || s).charAt(0);
-  return `<span class="svc-logo-fallback" style="background:${color}">${letter}</span>`;
+  return `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${s}" class="svc-logo"
+    onerror="this.outerHTML='<span class=\\'svc-logo-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
 }
 
 function badge(s) {
