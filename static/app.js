@@ -207,9 +207,7 @@ function svcLogoName(s) {
 
 function badge(s) {
   const cls = SVC_BADGE_CLS[s] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
-  const logo = svcLogo(s);
-  const name = SERVICE_NAMES[s] || s;
-  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium ${cls}">${logo} ${name}</span>`;
+  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium ${cls}">${svcLogo(s)} ${svcDisplayName(s)}</span>`;
 }
 
 // ================================================================
