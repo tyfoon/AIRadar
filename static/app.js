@@ -1133,7 +1133,9 @@ async function refreshCloud() {
 let _cachedTopBlocked = [];
 
 async function refreshPrivacy() {
-  const privRes = await fetch('/api/privacy/stats').then(r => r.json());
+  // Build filter params for tracker events
+  const fp = getFilterParams('tracking');
+  const privRes = await fetch('/api/privacy/stats?' + fp).then(r => r.json());
 
   // AdGuard section
   const ag = privRes.adguard || {};
