@@ -108,7 +108,11 @@
       "Bash(sudo kill:*)",
       "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 5;\")",
       "Bash(curl -s http://localhost:8000/api/privacy/stats)",
-      "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8000/api/privacy/stats)"
+      "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8000/api/privacy/stats)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''api.py'', doraise=True\\); print\\(''✓ Python OK''\\)\")",
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE detection_type=''vpn_tunnel'' OR ai_service LIKE ''vpn_%'' ORDER BY timestamp DESC;\")",
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE ai_service LIKE ''%vpn%'' OR detection_type LIKE ''%vpn%'' ORDER BY timestamp DESC;\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''vpn_alerts''''\\), indent=2\\)\\)\")"
     ]
   },
   "hooks": {

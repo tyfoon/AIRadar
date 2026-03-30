@@ -557,6 +557,8 @@ async def privacy_stats(
     ]
 
     # 3) VPN / tunnel alerts (vpn_tunnel events + vpn_* service SNI events)
+    #    Only show alerts where the most recent event is within 15 minutes
+    vpn_active_cutoff = datetime.utcnow() - timedelta(minutes=15)
     vpn_rows = (
         db.query(
             DetectionEvent.source_ip,
@@ -570,6 +572,7 @@ async def privacy_stats(
             | (DetectionEvent.ai_service.like("vpn_%"))
         )
         .group_by(DetectionEvent.source_ip)
+        .having(func.max(DetectionEvent.timestamp) >= vpn_active_cutoff)
         .order_by(func.max(DetectionEvent.timestamp).desc())
         .limit(20)
         .all()
