@@ -167,6 +167,15 @@
         </div>
       </div>
 
+      <!-- Health detail expandable panel -->
+      <div id="dash-health-panel" class="hidden bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 transition-all">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">System Health Details</h3>
+          <button onclick="toggleDashHealthDetail()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">&times; Close</button>
+        </div>
+        <div id="dash-health-services" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+      </div>
+
       <!-- Sankey Data Flow Diagram -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
         <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Network Data Flow</h3>
