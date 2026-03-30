@@ -1212,32 +1212,59 @@ async function refreshPrivacy() {
     }
   }
 
-  // VPN & Evasion Alerts
+  // Populate tracker filter dropdowns
+  const privSvcSel = document.getElementById('priv-filter-service');
+  if (privSvcSel) {
+    const cur = privSvcSel.value;
+    const allSvcs = [...new Set((tk.top_trackers || []).map(t => t.service))].sort();
+    privSvcSel.innerHTML = '<option value="">All trackers</option>';
+    allSvcs.forEach(s => { privSvcSel.innerHTML += `<option value="${s}">${svcDisplayName(s)}</option>`; });
+    privSvcSel.value = cur;
+  }
+  const privDevSel = document.getElementById('priv-filter-device');
+  if (privDevSel) {
+    const cur = privDevSel.value;
+    const allDevs = [...new Set(recent.map(e => e.source_ip))].sort();
+    privDevSel.innerHTML = '<option value="">All devices</option>';
+    allDevs.forEach(ip => {
+      const name = deviceName(ip);
+      privDevSel.innerHTML += `<option value="${ip}">${name !== ip ? name + ' (' + ip + ')' : ip}</option>`;
+    });
+    privDevSel.value = cur;
+  }
+
+  // VPN stat card + expandable panel
   renderVpnAlerts(privRes.vpn_alerts || []);
 }
 
-// VPN alert rendering
-function _vpnTypeFromPort(port) {
-  const map = { 1194: 'OpenVPN', 51820: 'WireGuard', 500: 'IPsec/IKEv2', 4500: 'IPsec NAT-T', 443: 'QUIC VPN', 1723: 'PPTP', 1701: 'L2TP' };
-  return map[port] || 'Encrypted Tunnel';
+// VPN toggle + rendering
+function toggleVpnDetail() {
+  const panel = document.getElementById('vpn-detail-panel');
+  if (!panel) return;
+  const hidden = panel.classList.contains('hidden');
+  if (hidden) { panel.classList.remove('hidden'); }
+  else panel.classList.add('hidden');
 }
 
 function renderVpnAlerts(alerts) {
+  const statCount = document.getElementById('vpn-stat-count');
+  const statLabel = document.getElementById('vpn-stat-label');
+  const statCard = document.getElementById('vpn-stat-card');
   const body = document.getElementById('vpn-alerts-body');
-  const badge = document.getElementById('vpn-status-badge');
-  const card = document.getElementById('vpn-card');
-  if (!body) return;
+  if (!statCount) return;
 
-  if (!alerts || alerts.length === 0) {
-    // Safe — no VPNs
-    card.className = card.className.replace(/border-orange-\S+|border-red-\S+/g, '').trim();
-    if (!card.className.includes('border-slate-200')) card.className += ' border-slate-200 dark:border-white/[0.05]';
-    badge.textContent = 'No tunnels';
-    badge.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400';
-    body.innerHTML = `
-      <div class="flex flex-col items-center justify-center py-8 text-center">
-        <div class="w-12 h-12 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center mb-3">
-          <svg class="w-6 h-6 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+  const count = alerts?.length || 0;
+  statCount.textContent = count;
+
+  if (count === 0) {
+    statLabel.textContent = 'No tunnels detected';
+    statLabel.className = 'text-emerald-500 dark:text-emerald-400';
+    statCard.className = statCard.className.replace(/border-orange-\S+/g, '').replace(/dark:border-orange-\S+/g, '');
+    if (!statCard.className.includes('border-slate-200')) statCard.className += ' border-slate-200 dark:border-white/[0.05]';
+    if (body) body.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-6 text-center">
+        <div class="w-10 h-10 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center mb-2">
+          <svg class="w-5 h-5 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400">No active VPN tunnels detected</p>
         <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Monitoring OpenVPN, WireGuard, IPsec &amp; more</p>
@@ -1245,24 +1272,22 @@ function renderVpnAlerts(alerts) {
     return;
   }
 
-  // Active VPN alerts — warning theme
-  card.className = card.className
-    .replace(/border-slate-200\s*/g, '')
-    .replace(/dark:border-white\/\[0\.05\]/g, '');
-  if (!card.className.includes('border-orange')) {
-    card.className += ' border-orange-500/40 dark:border-orange-500/30';
+  // Active alerts — orange warning
+  statLabel.textContent = count === 1 ? '1 device using VPN' : `${count} devices using VPN`;
+  statLabel.className = 'text-orange-500 dark:text-orange-400';
+  statCard.className = statCard.className
+    .replace(/border-slate-200\s*/g, '').replace(/dark:border-white\/\[0\.05\]/g, '');
+  if (!statCard.className.includes('border-orange')) {
+    statCard.className += ' border-orange-500/40 dark:border-orange-500/30';
   }
 
-  badge.textContent = `${alerts.length} active`;
-  badge.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 animate-pulse';
-
-  body.innerHTML = `
+  if (body) body.innerHTML = `
     <div class="overflow-x-auto max-h-64 overflow-y-auto">
       <table class="w-full text-sm text-left">
         <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
           <tr>
             <th class="pb-2 px-3 font-medium">Device</th>
-            <th class="pb-2 px-3 font-medium">Type</th>
+            <th class="pb-2 px-3 font-medium">VPN Service</th>
             <th class="pb-2 px-3 font-medium">Data</th>
             <th class="pb-2 px-3 font-medium">Events</th>
             <th class="pb-2 px-3 font-medium">Last Seen</th>
