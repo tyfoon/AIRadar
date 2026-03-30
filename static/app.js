@@ -1343,34 +1343,97 @@ async function toggleGlobalFilter(type, checkbox) {
 }
 
 // --- Active Protect (IPS) ---
+async function refreshIps() {
+  await loadIpsStatus();
+}
+
 async function loadIpsStatus() {
   try {
     const res = await fetch('/api/ips/status');
     const data = await res.json();
-    const toggle = document.getElementById('toggle-ips');
-    if (toggle) toggle.checked = data.enabled;
+
+    // Sync both toggles (rules card + IPS page)
+    ['toggle-ips', 'toggle-ips-page'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.checked = data.enabled;
+    });
     styleIpsCard(data.enabled);
-
-    // Update threat count
-    const countEl = document.getElementById('ips-threats-count');
-    if (countEl) countEl.textContent = data.active_threats_blocked.toLocaleString();
-
-    // Update status dot (green = running, amber = enabled but offline, grey = off)
-    const dot = document.getElementById('ips-status-dot');
-    if (dot) {
-      dot.classList.remove('bg-emerald-400', 'dark:bg-emerald-500', 'bg-amber-400', 'dark:bg-amber-500', 'bg-slate-300', 'dark:bg-slate-600');
-      if (data.crowdsec_running) {
-        dot.classList.add('bg-emerald-400', 'dark:bg-emerald-500');
-        dot.title = 'CrowdSec online';
-      } else if (data.enabled) {
-        dot.classList.add('bg-amber-400', 'dark:bg-amber-500');
-        dot.title = 'CrowdSec not reachable';
-      } else {
-        dot.classList.add('bg-slate-300', 'dark:bg-slate-600');
-        dot.title = 'CrowdSec offline';
-      }
-    }
+    _updateIpsBanner(data);
+    _updateIpsStats(data);
   } catch(e) { console.error('loadIpsStatus:', e); }
+}
+
+function _updateIpsBanner(data) {
+  const banner = document.getElementById('ips-banner');
+  const statusText = document.getElementById('ips-banner-status');
+  const shield = document.getElementById('ips-shield-icon');
+  if (!banner) return;
+
+  if (data.enabled && data.crowdsec_running) {
+    statusText.textContent = 'Active — protecting your network';
+    statusText.className = 'text-sm text-emerald-500 dark:text-emerald-400';
+    banner.classList.remove('border-slate-200', 'dark:border-white/[0.05]');
+    banner.classList.add('border-emerald-300', 'dark:border-emerald-700/40');
+    if (shield) shield.className = 'w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-2xl';
+  } else if (data.enabled) {
+    statusText.textContent = 'Enabled — CrowdSec engine not reachable';
+    statusText.className = 'text-sm text-amber-500 dark:text-amber-400';
+    banner.classList.remove('border-slate-200', 'dark:border-white/[0.05]');
+    banner.classList.add('border-amber-300', 'dark:border-amber-700/40');
+    if (shield) shield.className = 'w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-2xl';
+  } else {
+    statusText.textContent = 'Disabled — network is not protected';
+    statusText.className = 'text-sm text-slate-400 dark:text-slate-500';
+    banner.classList.remove('border-emerald-300', 'dark:border-emerald-700/40', 'border-amber-300', 'dark:border-amber-700/40');
+    banner.classList.add('border-slate-200', 'dark:border-white/[0.05]');
+    if (shield) shield.className = 'w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-2xl';
+  }
+}
+
+function _updateIpsStats(data) {
+  // Threats blocked count
+  const blockedEl = document.getElementById('ips-stat-blocked');
+  if (blockedEl) blockedEl.textContent = data.active_threats_blocked.toLocaleString();
+
+  // Decisions count
+  const decisionsEl = document.getElementById('ips-stat-decisions');
+  if (decisionsEl) decisionsEl.textContent = data.active_threats_blocked.toLocaleString();
+
+  // Rules card badge
+  const countEl = document.getElementById('ips-threats-count');
+  if (countEl) countEl.textContent = data.active_threats_blocked.toLocaleString();
+
+  // Engine status
+  const engineEl = document.getElementById('ips-engine-status');
+  if (engineEl) {
+    if (data.crowdsec_running) {
+      engineEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 dark:bg-emerald-500 inline-block"></span> Online';
+      engineEl.className = 'inline-flex items-center gap-1.5 text-sm font-medium text-emerald-500 dark:text-emerald-400';
+    } else {
+      engineEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> Offline';
+      engineEl.className = 'inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 dark:text-slate-500';
+    }
+  }
+
+  // Status dot on rules card
+  const dot = document.getElementById('ips-status-dot');
+  if (dot) {
+    dot.classList.remove('bg-emerald-400', 'dark:bg-emerald-500', 'bg-amber-400', 'dark:bg-amber-500', 'bg-slate-300', 'dark:bg-slate-600');
+    if (data.crowdsec_running) {
+      dot.classList.add('bg-emerald-400', 'dark:bg-emerald-500');
+      dot.title = 'CrowdSec online';
+    } else if (data.enabled) {
+      dot.classList.add('bg-amber-400', 'dark:bg-amber-500');
+      dot.title = 'CrowdSec not reachable';
+    } else {
+      dot.classList.add('bg-slate-300', 'dark:bg-slate-600');
+      dot.title = 'CrowdSec offline';
+    }
+  }
+
+  // Show/hide setup guide
+  const guide = document.getElementById('ips-setup-guide');
+  if (guide) guide.classList.toggle('hidden', data.crowdsec_running);
 }
 
 function styleIpsCard(active) {
@@ -1394,7 +1457,14 @@ async function toggleIps(checkbox) {
       body: JSON.stringify({ enabled }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    // Sync both toggles
+    ['toggle-ips', 'toggle-ips-page'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.checked = enabled;
+    });
     styleIpsCard(enabled);
+    // Re-fetch full status to update banner/stats
+    await loadIpsStatus();
   } catch(err) {
     console.error('toggleIps:', err);
     checkbox.checked = !checkbox.checked;
