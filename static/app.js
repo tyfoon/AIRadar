@@ -1080,7 +1080,7 @@ function _toggleDevGroup(groupKey) {
   _renderDeviceMatrix();
 }
 
-function _showCellEvents(mac, service) {
+function _showCellEvents(mac, service, category) {
   const panel = document.getElementById('dev-event-detail');
   const title = document.getElementById('dev-event-detail-title');
   const tbody = document.getElementById('dev-event-detail-body');
