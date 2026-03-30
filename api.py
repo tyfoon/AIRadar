@@ -672,7 +672,7 @@ class CrowdSecClient:
         self._enabled = value
 
 
-crowdsec = CrowdSecClient()
+crowdsec = CrowdSecClient(base_url=os.environ.get("CROWDSEC_URL", "http://localhost:8080"))
 
 
 @app.get("/api/ips/status")
