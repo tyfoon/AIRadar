@@ -186,24 +186,59 @@ def init_db() -> None:
     # Create any remaining tables that don't exist yet
     Base.metadata.create_all(bind=engine)
 
-    # --- Merge placeholder devices into real-MAC devices by hostname ---
+    # --- Merge placeholder devices into real-MAC devices ---
     inspector = inspect(engine)
     if "devices" in inspector.get_table_names() and "device_ips" in inspector.get_table_names():
         with engine.begin() as conn:
             placeholders = conn.execute(text(
-                "SELECT mac_address, hostname FROM devices "
-                "WHERE mac_address LIKE 'unknown_%' AND hostname IS NOT NULL"
+                "SELECT d.mac_address, d.hostname FROM devices d "
+                "WHERE d.mac_address LIKE 'unknown_%'"
             )).fetchall()
+
             for ph_mac, ph_host in placeholders:
-                real = conn.execute(text(
-                    "SELECT mac_address FROM devices "
-                    "WHERE hostname = :host AND mac_address NOT LIKE 'unknown_%' LIMIT 1"
-                ), {"host": ph_host}).fetchone()
-                if not real:
+                target_mac = None
+
+                # Strategy 1: hostname match
+                if ph_host:
+                    real = conn.execute(text(
+                        "SELECT mac_address FROM devices "
+                        "WHERE hostname = :host AND mac_address NOT LIKE 'unknown_%' LIMIT 1"
+                    ), {"host": ph_host}).fetchone()
+                    if real:
+                        target_mac = real[0]
+
+                # Strategy 2: IPv6 /64 prefix match
+                if not target_mac:
+                    ph_ips = conn.execute(text(
+                        "SELECT ip FROM device_ips WHERE mac_address = :mac"
+                    ), {"mac": ph_mac}).fetchall()
+                    for (ph_ip,) in ph_ips:
+                        if ":" not in ph_ip:
+                            continue
+                        try:
+                            import ipaddress
+                            net = ipaddress.ip_network(f"{ph_ip}/64", strict=False)
+                            parts = net.network_address.exploded.split(":")
+                            prefix = ":".join(parts[:4]) + ":"
+                            sibling = conn.execute(text(
+                                "SELECT di.mac_address FROM device_ips di "
+                                "JOIN devices d ON d.mac_address = di.mac_address "
+                                "WHERE di.ip LIKE :prefix AND d.mac_address NOT LIKE 'unknown_%' "
+                                "LIMIT 1"
+                            ), {"prefix": prefix + "%"}).fetchone()
+                            if sibling:
+                                target_mac = sibling[0]
+                                break
+                        except Exception:
+                            pass
+
+                if not target_mac:
                     continue
+
+                # Move IPs and delete placeholder
                 conn.execute(text(
                     "UPDATE device_ips SET mac_address = :real WHERE mac_address = :ph"
-                ), {"real": real[0], "ph": ph_mac})
+                ), {"real": target_mac, "ph": ph_mac})
                 conn.execute(text(
                     "DELETE FROM devices WHERE mac_address = :mac"
                 ), {"mac": ph_mac})
