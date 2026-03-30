@@ -815,22 +815,10 @@ async function refreshPrivacy() {
     if (recent.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">No trackers detected yet.</td></tr>';
     } else {
-      const trackerBadges = {
-        'google ads':'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
-        'google analytics':'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400',
-        'google telemetry':'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400',
-        'meta tracking':'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
-        'apple ads':'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
-        'microsoft ads':'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400',
-        'hotjar':'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
-        'datadog':'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
-      };
       tbody.innerHTML = recent.map(e => {
-        const svc = e.service.replace(/_/g, ' ');
-        const cls = trackerBadges[svc] || 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300';
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
           <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
-          <td class="py-2 px-3"><span class="text-[11px] px-2 py-0.5 rounded ${cls}">${svc}</span></td>
+          <td class="py-2 px-3">${badge(e.service)}</td>
           <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
           <td class="py-2 px-3 text-xs font-mono text-slate-500 dark:text-slate-400">${e.source_ip}</td>
         </tr>`;
