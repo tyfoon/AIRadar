@@ -236,20 +236,40 @@ function badge(s) {
 }
 
 // ================================================================
-// DEVICE MAP
+// DEVICE MAP  (keyed by MAC, with IP→MAC lookup)
 // ================================================================
-let deviceMap = {};
+let deviceMap = {};   // mac_address → device object
+let ipToMac = {};     // ip → mac_address (reverse lookup)
+
+function _deviceByIp(ip) {
+  const mac = ipToMac[ip];
+  return mac ? deviceMap[mac] : null;
+}
 
 function deviceName(ip) {
-  const d = deviceMap[ip];
-  return d ? (d.display_name || d.hostname || ip) : ip;
+  const d = _deviceByIp(ip);
+  if (!d) return ip;
+  return d.display_name || d.hostname || _latestIp(d);
 }
 
 function deviceLabel(ip) {
-  const d = deviceMap[ip];
-  const name = d ? (d.display_name || d.hostname || ip) : ip;
-  const vendor = d?.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">(${d.vendor})</span>` : '';
+  const d = _deviceByIp(ip);
+  if (!d) return ip;
+  const name = d.display_name || d.hostname || _latestIp(d);
+  const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">(${d.vendor})</span>` : '';
   return name + vendor;
+}
+
+function _latestIp(device) {
+  if (!device.ips || device.ips.length === 0) return device.mac_address;
+  return device.ips[0].ip;  // sorted by last_seen desc from API
+}
+
+function _ipSummary(device) {
+  if (!device.ips || device.ips.length === 0) return '';
+  const latest = device.ips[0].ip;
+  if (device.ips.length === 1) return latest;
+  return `${latest} <span class="text-[10px] text-slate-400 dark:text-slate-500">(+${device.ips.length - 1} other${device.ips.length > 2 ? 's' : ''})</span>`;
 }
 
 async function loadDevices() {
@@ -258,15 +278,22 @@ async function loadDevices() {
     if (!res.ok) return;
     const devices = await res.json();
     deviceMap = {};
-    devices.forEach(d => { deviceMap[d.ip] = d; });
+    ipToMac = {};
+    devices.forEach(d => {
+      deviceMap[d.mac_address] = d;
+      (d.ips || []).forEach(ipRec => { ipToMac[ipRec.ip] = d.mac_address; });
+    });
     // Populate device filter dropdowns (AI + Cloud)
+    // Filter value = comma-separated IPs so backend source_ip filter still works
     ['ai-filter-device', 'cloud-filter-device'].forEach(id => {
       const sel = document.getElementById(id);
       if (sel) {
         const cur = sel.value;
         sel.innerHTML = '<option value="">All devices</option>';
         devices.forEach(d => {
-          sel.innerHTML += `<option value="${d.ip}">${d.display_name || d.hostname || d.ip}</option>`;
+          const allIps = (d.ips || []).map(i => i.ip).join(',');
+          const label = d.display_name || d.hostname || _latestIp(d);
+          sel.innerHTML += `<option value="${allIps}">${label}</option>`;
         });
         sel.value = cur;
       }
@@ -274,15 +301,17 @@ async function loadDevices() {
   } catch(e) { console.error('loadDevices:', e); }
 }
 
-// Device rename handler
+// Device rename handler (now uses MAC address)
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('.device-name');
   if (!el) return;
-  const ip = el.dataset.ip;
-  const cur = deviceMap[ip]?.display_name || deviceMap[ip]?.hostname || ip;
-  const n = prompt(`Rename device (${ip}):`, cur);
+  const mac = el.dataset.mac;
+  if (!mac) return;
+  const d = deviceMap[mac];
+  const cur = d?.display_name || d?.hostname || mac;
+  const n = prompt(`Rename device:`, cur);
   if (n && n !== cur) {
-    await fetch(`/api/devices/${encodeURIComponent(ip)}`, {
+    await fetch(`/api/devices/${encodeURIComponent(mac)}`, {
       method: 'PUT', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({display_name: n}),
     });
