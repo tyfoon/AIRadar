@@ -1217,7 +1217,7 @@ function _renderDeviceMatrix() {
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
-      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold cursor-pointer" onclick="_showCellEvents('${mac}', null)">${total}${uploadBadge}</td>
+      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</td>
       ${cells}
     </tr>`;
   }).join('');
