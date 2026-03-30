@@ -4,7 +4,7 @@ Supports both AI and Cloud detection categories.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -38,16 +38,26 @@ class EventRead(EventCreate):
 # Device schemas
 # ---------------------------------------------------------------------------
 
+class DeviceIPRead(BaseModel):
+    """An IP address associated with a device."""
+
+    ip: str
+    first_seen: datetime
+    last_seen: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class DeviceRead(BaseModel):
     """Device record returned by GET /api/devices."""
 
-    ip: str
+    mac_address: str
     hostname: Optional[str] = None
-    mac_address: Optional[str] = None
     vendor: Optional[str] = None
     display_name: Optional[str] = None
     first_seen: datetime
     last_seen: datetime
+    ips: List[DeviceIPRead] = []
 
     model_config = {"from_attributes": True}
 
