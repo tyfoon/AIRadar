@@ -400,21 +400,17 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
                     mac = host_match.mac_address
             # 2) IPv6 /64 prefix match — same subnet = same device
             if not mac and ":" in payload.ip:
-                prefix = _ipv6_prefix64(payload.ip)
-                if prefix:
-                    sibling = db.query(DeviceIP).filter(
-                        DeviceIP.ip.like(prefix + "%"),
-                        ~DeviceIP.mac_address.startswith("unknown_"),
-                    ).first()
-                    if sibling:
-                        mac = sibling.mac_address
-                    else:
-                        # Also check placeholder siblings to group unknowns together
-                        sibling = db.query(DeviceIP).filter(
-                            DeviceIP.ip.like(prefix + "%"),
-                        ).first()
-                        if sibling:
-                            mac = sibling.mac_address
+                all_dev_ips = db.query(DeviceIP).all()
+                # Prefer real-MAC devices first, then placeholders
+                for prefer_real in [True, False]:
+                    for dip in all_dev_ips:
+                        if prefer_real and dip.mac_address.startswith("unknown_"):
+                            continue
+                        if _same_ipv6_subnet(payload.ip, dip.ip):
+                            mac = dip.mac_address
+                            break
+                    if mac:
+                        break
             if not mac:
                 mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
 
