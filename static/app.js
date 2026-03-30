@@ -870,7 +870,36 @@ async function refreshAI() {
 
   renderEventsTable(events, 'ai-tbody', 'ai-empty');
   updateCategoryCharts(events, timeline, 'ai-service-chart', 'ai-timeline-chart');
+  _lastAiEvents = events;
   renderAiAdoption(events);
+}
+
+let _lastAiEvents = [];
+let _currentAiTab = 'radar';
+
+function switchAiTab(tab) {
+  _currentAiTab = tab;
+  const radarDiv = document.getElementById('ai-tab-radar');
+  const adoptDiv = document.getElementById('ai-tab-adoption');
+  const btnRadar = document.getElementById('ai-tab-btn-radar');
+  const btnAdopt = document.getElementById('ai-tab-btn-adoption');
+
+  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+
+  if (tab === 'radar') {
+    radarDiv.classList.remove('hidden');
+    adoptDiv.classList.add('hidden');
+    btnRadar.className = `ai-tab-btn px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
+    btnAdopt.className = `ai-tab-btn px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
+  } else {
+    radarDiv.classList.add('hidden');
+    adoptDiv.classList.remove('hidden');
+    btnRadar.className = `ai-tab-btn px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
+    btnAdopt.className = `ai-tab-btn px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
+    // Re-render adoption with latest data
+    renderAiAdoption(_lastAiEvents);
+  }
 }
 
 function renderAiAdoption(events) {
