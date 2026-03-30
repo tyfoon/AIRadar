@@ -1128,6 +1128,89 @@ async function refreshPrivacy() {
       }).join('');
     }
   }
+
+  // VPN & Evasion Alerts
+  renderVpnAlerts(privRes.vpn_alerts || []);
+}
+
+// VPN alert rendering
+function _vpnTypeFromPort(port) {
+  const map = { 1194: 'OpenVPN', 51820: 'WireGuard', 500: 'IPsec/IKEv2', 4500: 'IPsec NAT-T', 443: 'QUIC VPN', 1723: 'PPTP', 1701: 'L2TP' };
+  return map[port] || 'Encrypted Tunnel';
+}
+
+function renderVpnAlerts(alerts) {
+  const body = document.getElementById('vpn-alerts-body');
+  const badge = document.getElementById('vpn-status-badge');
+  const card = document.getElementById('vpn-card');
+  if (!body) return;
+
+  if (!alerts || alerts.length === 0) {
+    // Safe — no VPNs
+    card.className = card.className.replace(/border-orange-\S+|border-red-\S+/g, '').trim();
+    if (!card.className.includes('border-slate-200')) card.className += ' border-slate-200 dark:border-white/[0.05]';
+    badge.textContent = 'No tunnels';
+    badge.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400';
+    body.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-8 text-center">
+        <div class="w-12 h-12 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center mb-3">
+          <svg class="w-6 h-6 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400">No active VPN tunnels detected</p>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Monitoring OpenVPN, WireGuard, IPsec &amp; more</p>
+      </div>`;
+    return;
+  }
+
+  // Active VPN alerts — warning theme
+  card.className = card.className
+    .replace(/border-slate-200\s*/g, '')
+    .replace(/dark:border-white\/\[0\.05\]/g, '');
+  if (!card.className.includes('border-orange')) {
+    card.className += ' border-orange-500/40 dark:border-orange-500/30';
+  }
+
+  badge.textContent = `${alerts.length} active`;
+  badge.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 animate-pulse';
+
+  body.innerHTML = `
+    <div class="overflow-x-auto max-h-64 overflow-y-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
+          <tr>
+            <th class="pb-2 px-3 font-medium">Device</th>
+            <th class="pb-2 px-3 font-medium">Type</th>
+            <th class="pb-2 px-3 font-medium">Data</th>
+            <th class="pb-2 px-3 font-medium">Events</th>
+            <th class="pb-2 px-3 font-medium">Last Seen</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-600 dark:text-slate-300">
+          ${alerts.map(a => {
+            const name = a.display_name || a.hostname || a.source_ip;
+            const dtTag = typeof deviceTypeTag === 'function' ? deviceTypeTag(a) : '';
+            const bytes = a.total_bytes >= 1048576
+              ? (a.total_bytes / 1048576).toFixed(1) + ' MB'
+              : (a.total_bytes / 1024).toFixed(0) + ' KB';
+            return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-orange-50/50 dark:hover:bg-orange-900/10">
+              <td class="py-2 px-3">
+                <div class="font-medium text-xs">${name}</div>
+                ${dtTag}
+                <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.source_ip}</span>
+              </td>
+              <td class="py-2 px-3">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
+                  🔒 Encrypted Tunnel
+                </span>
+              </td>
+              <td class="py-2 px-3 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
+              <td class="py-2 px-3 text-xs tabular-nums">${a.hits}</td>
+              <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(a.last_seen)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 // Blocked domains panel
