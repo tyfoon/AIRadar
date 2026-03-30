@@ -355,35 +355,58 @@ def list_devices(db: Session = Depends(get_db)):
 @app.post("/api/devices", response_model=DeviceRead, status_code=201)
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
-    device = db.query(Device).filter(Device.ip == payload.ip).first()
+    mac = payload.mac_address
+    # Generate a placeholder MAC for devices without one
+    if not mac:
+        mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
+
+    # Upsert Device by MAC address
+    device = db.query(Device).filter(Device.mac_address == mac).first()
     if device:
         if payload.hostname:
             device.hostname = payload.hostname
-        if payload.mac_address:
-            device.mac_address = payload.mac_address
-            # Resolve vendor if not already set or MAC changed
-            if not device.vendor or device.mac_address != payload.mac_address:
-                device.vendor = _resolve_vendor(payload.mac_address)
+        # Resolve vendor if not already set
+        if not device.vendor and payload.mac_address:
+            device.vendor = _resolve_vendor(payload.mac_address)
         device.last_seen = now
     else:
         vendor = _resolve_vendor(payload.mac_address)
         device = Device(
-            ip=payload.ip,
+            mac_address=mac,
             hostname=payload.hostname,
-            mac_address=payload.mac_address,
             vendor=vendor,
             first_seen=now,
             last_seen=now,
         )
         db.add(device)
+
+    # Upsert DeviceIP
+    dev_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
+    if dev_ip:
+        dev_ip.mac_address = mac  # IP may have moved to a different device
+        dev_ip.last_seen = now
+    else:
+        dev_ip = DeviceIP(
+            ip=payload.ip,
+            mac_address=mac,
+            first_seen=now,
+            last_seen=now,
+        )
+        db.add(dev_ip)
+
     db.commit()
     db.refresh(device)
     return device
 
 
-@app.put("/api/devices/{ip}", response_model=DeviceRead)
-def rename_device(ip: str, payload: DeviceUpdate, db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.ip == ip).first()
+@app.put("/api/devices/{mac_address:path}", response_model=DeviceRead)
+def rename_device(mac_address: str, payload: DeviceUpdate, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.mac_address == mac_address).first()
+    if not device:
+        # Fallback: try to find by IP (for backwards compat with old frontend)
+        dev_ip = db.query(DeviceIP).filter(DeviceIP.ip == mac_address).first()
+        if dev_ip:
+            device = db.query(Device).filter(Device.mac_address == dev_ip.mac_address).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     device.display_name = payload.display_name
