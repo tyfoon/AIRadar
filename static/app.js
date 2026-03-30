@@ -147,11 +147,23 @@ const SERVICE_NAMES = {
 
 // Domain mapping for Clearbit logos
 const SERVICE_LOGO_DOMAIN = {
+  // AI services
   openai:'openai.com', anthropic_claude:'anthropic.com', google_gemini:'google.com',
   microsoft_copilot:'microsoft.com', perplexity:'perplexity.ai', huggingface:'huggingface.co',
-  mistral:'mistral.ai', dropbox:'dropbox.com', wetransfer:'wetransfer.com',
-  google_drive:'google.com', onedrive:'microsoft.com', icloud:'apple.com',
-  box:'box.com', mega:'mega.nz',
+  mistral:'mistral.ai',
+  // Cloud services
+  dropbox:'dropbox.com', wetransfer:'wetransfer.com', google_drive:'google.com',
+  onedrive:'microsoft.com', icloud:'apple.com', box:'box.com', mega:'mega.nz',
+  // Trackers
+  google_ads:'google.com', google_analytics:'google.com', google_telemetry:'google.com',
+  meta_tracking:'meta.com', apple_ads:'apple.com', microsoft_ads:'microsoft.com',
+  hotjar:'hotjar.com', datadog:'datadoghq.com', facebook:'facebook.com',
+  instagram:'instagram.com', tiktok:'tiktok.com', twitter:'x.com',
+  snapchat:'snapchat.com', pinterest:'pinterest.com', linkedin:'linkedin.com',
+  reddit:'reddit.com', tumblr:'tumblr.com', steam:'steampowered.com',
+  epic_games:'epicgames.com', roblox:'roblox.com', twitch:'twitch.tv',
+  discord:'discord.com', nintendo:'nintendo.com', playstation:'playstation.com',
+  xbox_live:'xbox.com', signal:'signal.org', whatsapp:'whatsapp.com',
 };
 
 const SVC_BADGE_CLS = {
