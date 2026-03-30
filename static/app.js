@@ -1047,6 +1047,179 @@ function renderTrackerDetailsList() {
 }
 
 // --- DEVICES ---
+// Store events globally for drill-down
+let _devAllEvents = [];
+let _devMatrix = {};
+let _devExpandedGroups = new Set();
+
+const CATEGORY_GROUPS = [
+  { key: 'ai',       label: 'AI Services',   icon: '🤖', color: 'indigo' },
+  { key: 'cloud',    label: 'Cloud Storage',  icon: '☁️',  color: 'sky' },
+  { key: 'tracking', label: 'Privacy / Trackers', icon: '🛡️', color: 'amber' },
+];
+
+function _categorizeService(svc, svcCategoryMap) {
+  return svcCategoryMap[svc] || 'tracking';
+}
+
+function _heatCell(count, uploads, globalMax) {
+  if (!count) return `<span class="inline-block w-full py-1 rounded text-[10px] text-slate-300 dark:text-slate-600">—</span>`;
+  const intensity = count / globalMax;
+  let bg, text;
+  if (intensity < 0.15)      { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
+  else if (intensity < 0.4)  { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
+  else if (intensity < 0.7)  { bg = 'bg-orange-300 dark:bg-orange-700/60'; text = 'text-orange-900 dark:text-orange-100'; }
+  else                       { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
+  const uploadIcon = uploads > 0 ? ` <span class="text-orange-500" title="${uploads} upload(s)">▲</span>` : '';
+  return `<span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${count}${uploadIcon}</span>`;
+}
+
+function _toggleDevGroup(groupKey) {
+  if (_devExpandedGroups.has(groupKey)) _devExpandedGroups.delete(groupKey);
+  else _devExpandedGroups.add(groupKey);
+  _renderDeviceMatrix();
+}
+
+function _showCellEvents(mac, service) {
+  const panel = document.getElementById('dev-event-detail');
+  const title = document.getElementById('dev-event-detail-title');
+  const tbody = document.getElementById('dev-event-detail-body');
+
+  // Find matching device IPs
+  const dev = deviceMap[mac];
+  const devIps = new Set();
+  if (dev && dev.ips) dev.ips.forEach(ip => devIps.add(ip.ip));
+  else devIps.add(mac.replace('_ip_', ''));
+
+  // Filter events
+  let events;
+  if (service) {
+    events = _devAllEvents.filter(e => devIps.has(e.source_ip) && e.ai_service === service);
+  } else {
+    events = _devAllEvents.filter(e => devIps.has(e.source_ip));
+  }
+  events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+  const svcLabel = service ? svcDisplayName(service) : 'All Services';
+  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${service ? svcLogoName(service) : svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>`;
+
+  tbody.innerHTML = events.slice(0, 100).map(e => {
+    const up = e.possible_upload;
+    const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
+    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
+      <td class="py-2 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
+      <td class="py-2 px-4">${badge(e.ai_service)}</td>
+      <td class="py-2 px-4 text-xs">${e.event_type}${upBadge}</td>
+      <td class="py-2 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
+      <td class="py-2 px-4 text-xs text-right tabular-nums">${e.total_bytes ? e.total_bytes.toLocaleString() : '0'}</td>
+    </tr>`;
+  }).join('');
+
+  if (events.length > 100) {
+    tbody.innerHTML += `<tr><td colspan="5" class="py-3 text-center text-slate-400 dark:text-slate-500 text-xs">Showing first 100 of ${events.length} events</td></tr>`;
+  }
+
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Expose for onclick
+window._toggleDevGroup = _toggleDevGroup;
+window._showCellEvents = _showCellEvents;
+
+function _renderDeviceMatrix() {
+  const matrix = _devMatrix.matrix;
+  const svcCategoryMap = _devMatrix.svcCategoryMap;
+  const allServices = _devMatrix.allServices;
+  const deviceMacs = _devMatrix.deviceMacs;
+  const globalMax = _devMatrix.globalMax;
+
+  // Group services by category
+  const groups = CATEGORY_GROUPS.map(g => {
+    const svcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === g.key).sort();
+    // Compute group total per device
+    return { ...g, services: svcs };
+  }).filter(g => g.services.length > 0);
+
+  // Build header
+  const thead = document.getElementById('devices-matrix-head');
+  const expanded = _devExpandedGroups;
+
+  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">Device</th>
+    <th class="py-3 px-3 font-medium text-right min-w-[60px]">Total</th>`;
+
+  groups.forEach(g => {
+    const isExpanded = expanded.has(g.key);
+    const chevron = isExpanded ? '▾' : '▸';
+    headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[90px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06]"
+      onclick="_toggleDevGroup('${g.key}')" title="Click to ${isExpanded ? 'collapse' : 'expand'} ${g.label}">
+      <span class="inline-flex items-center gap-1 justify-center">${g.icon} ${g.label} <span class="text-[10px] opacity-60">${chevron}</span></span>
+    </th>`;
+    if (isExpanded) {
+      g.services.forEach(s => {
+        headerCells += `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}">
+          <span class="inline-flex items-center gap-1 justify-center">${svcLogo(s)} <span class="truncate max-w-[60px]">${svcDisplayName(s)}</span></span>
+        </th>`;
+      });
+    }
+  });
+
+  thead.innerHTML = `<tr>${headerCells}</tr>`;
+
+  // Render body
+  const tbody = document.getElementById('devices-matrix-body');
+  const colCount = 2 + groups.reduce((s, g) => s + 1 + (expanded.has(g.key) ? g.services.length : 0), 0);
+
+  if (deviceMacs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">No device activity detected in this period.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = deviceMacs.map(mac => {
+    const row = matrix[mac] || {};
+    const total = Object.values(row).reduce((s, v) => s + v.count, 0);
+    const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
+    const dev = deviceMap[mac] || null;
+    const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+    const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
+    const dtTag = deviceTypeTag(dev);
+
+    let cells = '';
+    groups.forEach(g => {
+      // Group total cell
+      const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
+      const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
+      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer" onclick="_showCellEvents('${mac}', null)">
+        ${_heatCell(groupCount, groupUploads, globalMax)}
+      </td>`;
+
+      if (expanded.has(g.key)) {
+        g.services.forEach(s => {
+          const v = row[s];
+          cells += `<td class="py-2.5 px-2 text-center cursor-pointer" onclick="_showCellEvents('${mac}', '${s}')">
+            ${_heatCell(v?.count || 0, v?.uploads || 0, globalMax)}
+          </td>`;
+        });
+      }
+    });
+
+    const uploadBadge = totalUploads > 0
+      ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
+      : '';
+
+    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+      <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
+        <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-mac="${dev ? dev.mac_address : ''}" title="${dn}">${dn}</span>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
+        ${dtTag}
+      </td>
+      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold cursor-pointer" onclick="_showCellEvents('${mac}', null)">${total}${uploadBadge}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+}
+
 async function refreshDevices() {
   const per = document.getElementById('dev-filter-period')?.value;
   const params = new URLSearchParams();
@@ -1060,10 +1233,20 @@ async function refreshDevices() {
     fetch('/api/events?category=tracking&' + params).then(r => r.json()),
   ]);
 
-  const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt];
+  // Tag events with their category
+  aiEvt.forEach(e => e._cat = 'ai');
+  cloudEvt.forEach(e => e._cat = 'cloud');
+  trackEvt.forEach(e => e._cat = 'tracking');
 
-  // Build device → service → {count, uploads} map, grouped by MAC
-  const matrix = {};       // mac → { svc → { count, uploads } }
+  const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt];
+  _devAllEvents = allEvents;
+
+  // Build service → category map from event data
+  const svcCategoryMap = {};
+  allEvents.forEach(e => { svcCategoryMap[e.ai_service] = e._cat; });
+
+  // Build device → service → {count, uploads} map
+  const matrix = {};
   const allServices = new Set();
 
   allEvents.forEach(e => {
@@ -1076,10 +1259,7 @@ async function refreshDevices() {
     allServices.add(e.ai_service);
   });
 
-  const services = [...allServices].sort();
   const deviceMacs = Object.keys(matrix);
-
-  // Sort devices by total event count (most active first)
   deviceMacs.sort((a, b) => {
     const totalA = Object.values(matrix[a]).reduce((s, v) => s + v.count, 0);
     const totalB = Object.values(matrix[b]).reduce((s, v) => s + v.count, 0);
@@ -1099,62 +1279,13 @@ async function refreshDevices() {
     Object.values(matrix[mac]).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
   });
 
-  // Render header
-  const thead = document.getElementById('devices-matrix-head');
-  thead.innerHTML = `<tr>
-    <th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">Device</th>
-    <th class="py-3 px-3 font-medium text-right min-w-[60px]">Total</th>
-    ${services.map(s => `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}"><span class="inline-flex items-center gap-1 justify-center">${svcLogo(s)} <span class="truncate max-w-[60px]">${svcDisplayName(s)}</span></span></th>`).join('')}
-  </tr>`;
+  // Store for rendering
+  _devMatrix = { matrix, svcCategoryMap, allServices, deviceMacs, globalMax };
 
-  // Render body
-  const tbody = document.getElementById('devices-matrix-body');
-  if (deviceMacs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="' + (services.length + 2) + '" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">No device activity detected in this period.</td></tr>';
-    return;
-  }
+  // Hide event detail panel on refresh
+  document.getElementById('dev-event-detail')?.classList.add('hidden');
 
-  tbody.innerHTML = deviceMacs.map(mac => {
-    const row = matrix[mac];
-    const total = Object.values(row).reduce((s, v) => s + v.count, 0);
-    const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
-    const dev = deviceMap[mac] || null;
-    const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
-    const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
-    const dtTag = deviceTypeTag(dev);
-
-    const cells = services.map(s => {
-      const v = row[s];
-      if (!v) return `<td class="py-2.5 px-2 text-center"><span class="inline-block w-full py-1 rounded text-[10px] text-slate-300 dark:text-slate-600">—</span></td>`;
-
-      const intensity = v.count / globalMax;
-      let bg, text;
-      if (intensity < 0.15)      { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
-      else if (intensity < 0.4)  { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
-      else if (intensity < 0.7)  { bg = 'bg-orange-300 dark:bg-orange-700/60'; text = 'text-orange-900 dark:text-orange-100'; }
-      else                       { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
-
-      const uploadIcon = v.uploads > 0 ? ' <span class="text-orange-500" title="' + v.uploads + ' upload(s)">▲</span>' : '';
-
-      return `<td class="py-2.5 px-2 text-center">
-        <span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${v.count}${uploadIcon}</span>
-      </td>`;
-    }).join('');
-
-    const uploadBadge = totalUploads > 0
-      ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
-      : '';
-
-    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-      <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
-        <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-mac="${dev ? dev.mac_address : ''}" title="${dn}">${dn}</span>
-        <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
-        ${dtTag}
-      </td>
-      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">${total}${uploadBadge}</td>
-      ${cells}
-    </tr>`;
-  }).join('');
+  _renderDeviceMatrix();
 }
 
 // --- RULES ---
