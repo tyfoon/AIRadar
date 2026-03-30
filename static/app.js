@@ -1022,10 +1022,10 @@ function styleFilterCard(id, active) {
   if (!card) return;
   if (active) {
     card.classList.add('border-red-300', 'dark:border-red-700/40', 'bg-red-50', 'dark:bg-red-900/10');
-    card.classList.remove('border-slate-200', 'dark:border-slate-700/50', 'bg-white', 'dark:bg-slate-800/50');
+    card.classList.remove('border-slate-200', 'dark:border-white/[0.05]', 'bg-white', 'dark:bg-white/[0.03]');
   } else {
     card.classList.remove('border-red-300', 'dark:border-red-700/40', 'bg-red-50', 'dark:bg-red-900/10');
-    card.classList.add('border-slate-200', 'dark:border-slate-700/50', 'bg-white', 'dark:bg-slate-800/50');
+    card.classList.add('border-slate-200', 'dark:border-white/[0.05]', 'bg-white', 'dark:bg-white/[0.03]');
   }
 }
 

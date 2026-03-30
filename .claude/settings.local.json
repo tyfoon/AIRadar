@@ -73,7 +73,8 @@
       "Bash(python3 -c \"import adguard_client; print\\(''''adguard_client.py imports OK''''\\)\")",
       "Bash(python3 -c \"import schemas; print\\(''''schemas.py imports OK''''\\)\")",
       "Bash(python3 -c \"import api; print\\(''API OK''\\)\")",
-      "Bash(pip3 list:*)"
+      "Bash(pip3 list:*)",
+      "Bash(python3 -c \"import api; import database; import schemas; print\\(''All imports OK''\\)\")"
     ]
   },
   "hooks": {
