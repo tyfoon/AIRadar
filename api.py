@@ -364,13 +364,12 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         # No MAC provided — try to find the device that already owns this IP
         existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
         if existing_ip and not existing_ip.mac_address.startswith("unknown_"):
-            # IP already belongs to a real-MAC device — use it
             mac = existing_ip.mac_address
         elif existing_ip:
-            # IP belongs to a placeholder device — keep using that placeholder
             mac = existing_ip.mac_address
         else:
-            # Brand new IP with no MAC — check if hostname matches an existing device
+            # Brand new IP — try multiple strategies to find the owning device
+            # 1) Hostname match
             if payload.hostname:
                 host_match = db.query(Device).filter(
                     Device.hostname == payload.hostname,
@@ -378,6 +377,23 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
                 ).first()
                 if host_match:
                     mac = host_match.mac_address
+            # 2) IPv6 /64 prefix match — same subnet = same device
+            if not mac and ":" in payload.ip:
+                prefix = _ipv6_prefix64(payload.ip)
+                if prefix:
+                    sibling = db.query(DeviceIP).filter(
+                        DeviceIP.ip.like(prefix + "%"),
+                        ~DeviceIP.mac_address.startswith("unknown_"),
+                    ).first()
+                    if sibling:
+                        mac = sibling.mac_address
+                    else:
+                        # Also check placeholder siblings to group unknowns together
+                        sibling = db.query(DeviceIP).filter(
+                            DeviceIP.ip.like(prefix + "%"),
+                        ).first()
+                        if sibling:
+                            mac = sibling.mac_address
             if not mac:
                 mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
 
