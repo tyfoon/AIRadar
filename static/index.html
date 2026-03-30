@@ -445,7 +445,7 @@
     <section id="page-privacy" class="page space-y-6">
 
       <!-- Stats row -->
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
           <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">DNS Queries</p>
           <p id="priv-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
@@ -465,10 +465,27 @@
           <p class="text-[11px] uppercase tracking-wider text-purple-500 dark:text-purple-400 font-medium">Unique Trackers</p>
           <p id="tracker-unique" class="text-2xl font-bold mt-2 tabular-nums text-purple-500 dark:text-purple-400">0</p>
         </div>
+        <div id="vpn-stat-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-all" onclick="toggleVpnDetail()">
+          <p class="text-[11px] uppercase tracking-wider text-orange-500 dark:text-orange-400 font-medium">VPN Tunnels <span class="normal-case text-slate-400 dark:text-slate-500">▾</span></p>
+          <p id="vpn-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
+          <p class="text-[10px] mt-1"><span id="vpn-stat-label" class="text-emerald-500 dark:text-emerald-400">No tunnels detected</span></p>
+        </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
           <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">AdGuard</p>
           <p id="priv-status" class="text-base font-semibold mt-2">--</p>
         </div>
+      </div>
+
+      <!-- VPN detail expandable -->
+      <div id="vpn-detail-panel" class="hidden bg-white dark:bg-orange-900/5 border border-slate-200 dark:border-orange-700/20 rounded-xl p-5 transition-all">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-orange-500 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-orange-500 dark:text-orange-400">VPN &amp; Evasion Alerts</h3>
+          </div>
+          <button onclick="toggleVpnDetail()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">&times; Close</button>
+        </div>
+        <div id="vpn-alerts-body"></div>
       </div>
 
       <!-- Blocked domains expandable -->
