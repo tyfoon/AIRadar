@@ -34,6 +34,30 @@ SENSOR_ID = socket.gethostname()
 UPLOAD_THRESHOLD_BYTES = 100_000  # 100 KB
 
 # ---------------------------------------------------------------------------
+# VPN detection — known VPN/tunnel ports
+# ---------------------------------------------------------------------------
+VPN_PORTS: dict[tuple[str, int], str] = {
+    # (protocol, port) → VPN type label
+    ("udp", 1194):  "OpenVPN",
+    ("tcp", 1194):  "OpenVPN",
+    ("udp", 51820): "WireGuard",
+    ("udp", 500):   "IPsec/IKEv2",
+    ("udp", 4500):  "IPsec NAT-T",
+    ("tcp", 443):   None,          # Skip — too common (HTTPS); only flagged via heuristic below
+    ("udp", 443):   "QUIC VPN",    # UDP/443 can indicate QUIC-based VPN tunnels
+    ("tcp", 1723):  "PPTP",
+    ("udp", 1701):  "L2TP",
+    ("tcp", 22):    None,           # SSH — skip, too common
+}
+
+# Only flag VPN if bytes exceed this threshold (filters handshakes / probes)
+VPN_BYTE_THRESHOLD = 50_000  # 50 KB
+
+# Dedup VPN events per (src_ip, dest_port) — avoid flooding dashboard
+VPN_DEDUP_SECONDS = 300  # 5-minute window
+_vpn_last_seen: dict[tuple[str, int], float] = {}  # (src_ip, resp_port) → ts
+
+# ---------------------------------------------------------------------------
 # Domain → service mapping (AI + Cloud)
 # ---------------------------------------------------------------------------
 
