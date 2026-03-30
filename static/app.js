@@ -646,6 +646,57 @@ async function refreshPage(page) {
   } catch(err) { console.error('Page refresh error:', err); }
 }
 
+// --- DASHBOARD HEALTH DETAIL ---
+let _lastHealthData = null;
+
+function toggleDashHealthDetail() {
+  const panel = document.getElementById('dash-health-panel');
+  if (!panel) return;
+  const hidden = panel.classList.contains('hidden');
+  if (hidden) {
+    panel.classList.remove('hidden');
+    renderDashHealthServices();
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+
+function renderDashHealthServices() {
+  const container = document.getElementById('dash-health-services');
+  if (!container || !_lastHealthData?.services) {
+    if (container) container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 py-4">No health data yet. Wait for next refresh.</p>';
+    return;
+  }
+  container.innerHTML = _lastHealthData.services.map(s => {
+    const isOk = s.status === 'ok';
+    const borderCls = isOk
+      ? 'border-emerald-500/20 dark:border-emerald-500/15'
+      : 'border-amber-500/30 dark:border-amber-500/20';
+    const dotCls = isOk
+      ? 'bg-emerald-500'
+      : 'bg-amber-500 animate-pulse';
+    const statusText = isOk
+      ? '<span class="text-emerald-600 dark:text-emerald-400">OK</span>'
+      : '<span class="text-amber-600 dark:text-amber-400">Issue</span>';
+    const respTime = s.response_ms > 0
+      ? `<span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${s.response_ms.toFixed(0)}ms</span>`
+      : '';
+    return `<div class="bg-slate-50 dark:bg-white/[0.02] border ${borderCls} rounded-lg px-4 py-3">
+      <div class="flex items-center justify-between mb-1">
+        <div class="flex items-center gap-2">
+          <span class="text-sm">${s.icon}</span>
+          <span class="text-xs font-medium text-slate-700 dark:text-slate-200">${s.service}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          ${respTime}
+          <span class="w-2 h-2 rounded-full ${dotCls}"></span>
+        </div>
+      </div>
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">${s.details || ''}</p>
+    </div>`;
+  }).join('');
+}
+
 // --- DASHBOARD ---
 async function refreshDashboard() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
