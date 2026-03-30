@@ -1224,9 +1224,10 @@ function renderVpnAlerts(alerts) {
                 <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.source_ip}</span>
               </td>
               <td class="py-2 px-3">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
-                  🔒 Encrypted Tunnel
-                </span>
+                ${a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active'
+                  ? badge(a.vpn_service)
+                  : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 Encrypted Tunnel</span>`
+                }
               </td>
               <td class="py-2 px-3 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
               <td class="py-2 px-3 text-xs tabular-nums">${a.hits}</td>
