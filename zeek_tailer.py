@@ -265,6 +265,16 @@ _outbound_bytes: dict[str, int] = {}
 _outbound_src: dict[str, str] = {}
 
 # ---------------------------------------------------------------------------
+# SNI deduplication — suppress heartbeat / keep-alive TLS handshakes
+# ---------------------------------------------------------------------------
+# ssl.log doesn't carry byte counts, so we can't tell a real query from a
+# keep-alive by size alone.  Instead we deduplicate: for each (service, src_ip)
+# pair we only emit one sni_hello event per window.  Actual data transfer is
+# still captured separately via conn.log → volumetric_upload events.
+SNI_DEDUP_SECONDS = 120  # 2-minute window per (service, device)
+_sni_last_seen: dict[tuple[str, str], float] = {}  # (service, src_ip) → timestamp
+
+# ---------------------------------------------------------------------------
 # Upload debounce / clustering
 # ---------------------------------------------------------------------------
 # When multiple connections to the same service fire within a short window
