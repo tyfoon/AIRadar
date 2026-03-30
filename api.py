@@ -359,9 +359,27 @@ def list_devices(db: Session = Depends(get_db)):
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     mac = payload.mac_address
-    # Generate a placeholder MAC for devices without one
+
     if not mac:
-        mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
+        # No MAC provided — try to find the device that already owns this IP
+        existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
+        if existing_ip and not existing_ip.mac_address.startswith("unknown_"):
+            # IP already belongs to a real-MAC device — use it
+            mac = existing_ip.mac_address
+        elif existing_ip:
+            # IP belongs to a placeholder device — keep using that placeholder
+            mac = existing_ip.mac_address
+        else:
+            # Brand new IP with no MAC — check if hostname matches an existing device
+            if payload.hostname:
+                host_match = db.query(Device).filter(
+                    Device.hostname == payload.hostname,
+                    ~Device.mac_address.startswith("unknown_"),
+                ).first()
+                if host_match:
+                    mac = host_match.mac_address
+            if not mac:
+                mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
 
     # Upsert Device by MAC address
     device = db.query(Device).filter(Device.mac_address == mac).first()
@@ -383,10 +401,12 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         )
         db.add(device)
 
-    # Upsert DeviceIP
+    # Upsert DeviceIP — never steal an IP from a real MAC to a placeholder
     dev_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
     if dev_ip:
-        dev_ip.mac_address = mac  # IP may have moved to a different device
+        # Only reassign if new MAC is real, or existing is also placeholder
+        if not mac.startswith("unknown_") or dev_ip.mac_address.startswith("unknown_"):
+            dev_ip.mac_address = mac
         dev_ip.last_seen = now
     else:
         dev_ip = DeviceIP(

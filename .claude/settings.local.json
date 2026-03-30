@@ -84,7 +84,8 @@
       "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" http://127.0.0.1:3001/control/status)",
       "Bash(curl -s -X POST -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" -H \"Content-Type: application/json\" http://127.0.0.1:3001/control/dns_config -d '{\"\"upstream_dns\"\":[\"\"https://dns10.quad9.net/dns-query\"\",\"\"https://1.1.1.1/dns-query\"\",\"\"https://8.8.8.8/dns-query\"\"]}')",
       "Bash(echo \"Status: $?\")",
-      "Bash(python3 -c \"import api\")"
+      "Bash(python3 -c \"import api\")",
+      "Bash(python3 -c \"from database import init_db; init_db\\(\\); print\\(''Migration OK''\\)\")"
     ]
   },
   "hooks": {
