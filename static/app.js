@@ -189,12 +189,20 @@ function svcColor(s) {
   return SERVICE_COLORS[s];
 }
 
+function svcDisplayName(s) {
+  return SERVICE_NAMES[s] || s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function svcLogo(s) {
   const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
   const color = svcColor(s);
-  const letter = (SERVICE_NAMES[s] || s).charAt(0);
+  const letter = svcDisplayName(s).charAt(0);
   return `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${s}" class="svc-logo"
     onerror="this.outerHTML='<span class=\\'svc-logo-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
+}
+
+function svcLogoName(s) {
+  return `<span class="inline-flex items-center gap-1.5">${svcLogo(s)} <span>${svcDisplayName(s)}</span></span>`;
 }
 
 function badge(s) {
