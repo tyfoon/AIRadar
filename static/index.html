@@ -240,6 +240,69 @@
         </div>
       </div>
 
+      <!-- AI Adoption Insights -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">AI Adoption Insights</h3>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+
+          <!-- Adoption Rate -->
+          <div class="text-center">
+            <div id="ai-adopt-rate" class="text-2xl font-bold tabular-nums text-indigo-500 dark:text-indigo-400">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Adoption Rate</p>
+            <p id="ai-adopt-rate-detail" class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">— of — devices</p>
+          </div>
+
+          <!-- Avg Queries / Device / Day -->
+          <div class="text-center">
+            <div id="ai-adopt-avg-queries" class="text-2xl font-bold tabular-nums">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Avg Queries / Device / Day</p>
+          </div>
+
+          <!-- Active Today -->
+          <div class="text-center">
+            <div id="ai-adopt-active-today" class="text-2xl font-bold tabular-nums text-emerald-500 dark:text-emerald-400">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Active Today</p>
+          </div>
+
+          <!-- Services per User -->
+          <div class="text-center">
+            <div id="ai-adopt-svc-per-user" class="text-2xl font-bold tabular-nums">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Avg Services / User</p>
+          </div>
+
+          <!-- Power Users -->
+          <div class="text-center">
+            <div id="ai-adopt-power" class="text-2xl font-bold tabular-nums text-amber-500 dark:text-amber-400">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Power Users</p>
+            <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">&gt;50 queries/day</p>
+          </div>
+
+          <!-- Top Service -->
+          <div class="text-center">
+            <div id="ai-adopt-top-svc" class="text-lg font-bold">—</div>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Most Popular</p>
+          </div>
+
+        </div>
+
+        <!-- Adoption bar -->
+        <div class="mt-4">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] text-slate-400 dark:text-slate-500">Organisation AI Adoption</span>
+            <span id="ai-adopt-bar-label" class="text-[10px] font-medium text-indigo-500 dark:text-indigo-400">—</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div id="ai-adopt-bar" class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Per-device breakdown -->
+        <div class="mt-4">
+          <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Per-device AI usage (queries in period)</p>
+          <div id="ai-adopt-devices" class="space-y-1.5 max-h-[200px] overflow-y-auto"></div>
+        </div>
+      </div>
+
       <!-- Filter bar -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
         <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Filters</span>
