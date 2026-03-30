@@ -40,6 +40,22 @@ def _resolve_vendor(mac: Optional[str] = None) -> Optional[str]:
         return _mac_lookup.lookup(mac)
     except Exception:
         return None
+
+
+def _ipv6_prefix64(addr: str) -> Optional[str]:
+    """Return the /64 prefix of an IPv6 address for subnet matching."""
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(addr)
+        if ip.version != 6:
+            return None
+        # Get first 64 bits as the network prefix
+        net = ipaddress.ip_network(f"{addr}/64", strict=False)
+        # Return the exploded prefix (first 4 groups) for LIKE matching
+        parts = net.network_address.exploded.split(":")
+        return ":".join(parts[:4]) + ":"
+    except Exception:
+        return None
 from schemas import (
     BlockRuleCreate,
     BlockRuleRead,
