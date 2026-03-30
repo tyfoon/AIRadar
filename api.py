@@ -476,11 +476,30 @@ def rename_device(mac_address: str, payload: DeviceUpdate, db: Session = Depends
 # GET /api/privacy/stats — AdGuard Home + Zeek tracking statistics
 # ---------------------------------------------------------------------------
 @app.get("/api/privacy/stats")
-async def privacy_stats(db: Session = Depends(get_db)):
+async def privacy_stats(
+    db: Session = Depends(get_db),
+    service: Optional[str] = None,
+    source_ip: Optional[str] = None,
+    start: Optional[str] = None,
+):
     """Fetch combined privacy stats: AdGuard blocking + Zeek tracker detection.
 
     Returns a safe fallback if AdGuard is not running yet.
+    Supports optional filters: service, source_ip, start (ISO timestamp).
     """
+    # Build base filter for tracker queries
+    tracker_filter = [DetectionEvent.category == "tracking"]
+    if service:
+        tracker_filter.append(DetectionEvent.ai_service == service)
+    if source_ip:
+        tracker_filter.append(DetectionEvent.source_ip == source_ip)
+    if start:
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            tracker_filter.append(DetectionEvent.timestamp >= start_dt)
+        except (ValueError, TypeError):
+            pass
+
     # 1) AdGuard stats
     try:
         adguard_stats = await adguard.get_stats()
