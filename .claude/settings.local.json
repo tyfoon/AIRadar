@@ -87,7 +87,11 @@
       "Bash(python3 -c \"import api\")",
       "Bash(python3 -c \"from database import init_db; init_db\\(\\); print\\(''Migration OK''\\)\")",
       "Bash(curl -s http://localhost:8000/)",
-      "Bash(python3 -c 'import api')"
+      "Bash(python3 -c 'import api')",
+      "Bash(sqlite3 airadar.db \"SELECT sni, orig_bytes, resp_bytes, ts FROM events WHERE sni LIKE ''%openai%'' OR sni LIKE ''%chatgpt%'' ORDER BY ts DESC LIMIT 10;\")",
+      "Bash(sqlite3 airadar.db \".tables\")",
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE ai_service LIKE ''%openai%'' OR ai_service LIKE ''%chatgpt%'' ORDER BY timestamp DESC LIMIT 10;\")",
+      "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, bytes_transferred, timestamp FROM detection_events ORDER BY timestamp DESC LIMIT 20;\")"
     ]
   },
   "hooks": {

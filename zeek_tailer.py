@@ -490,10 +490,6 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 except ValueError:
                     pass
 
-                # Skip zero-byte sni_hello events (TLS keep-alives / background pings)
-                if orig_bytes == 0:
-                    continue
-
                 await send_event(
                     client,
                     detection_type="sni_hello",
