@@ -845,7 +845,7 @@ function renderBlockedDomainsList() {
   const maxCount = _cachedTopBlocked[0]?.count || 1;
   container.innerHTML = _cachedTopBlocked.map((d, i) => {
     const pct = Math.max(5, (d.count / maxCount) * 100);
-    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.03] rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
       <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-mono text-slate-700 dark:text-slate-200 truncate" title="${d.domain}">${d.domain}</p>
@@ -880,7 +880,7 @@ function renderTrackerDetailsList() {
   container.innerHTML = _cachedTopTrackers.map((t, i) => {
     const pct = Math.max(5, (t.hits / maxHits) * 100);
     const name = t.service.replace(/_/g, ' ');
-    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
+    return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.03] rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
       <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-medium text-slate-700 dark:text-slate-200 truncate" title="${name}">${name}</p>
