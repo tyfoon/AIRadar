@@ -209,6 +209,7 @@ def init_db() -> None:
 
                 # Strategy 2: IPv6 /64 prefix match
                 if not target_mac:
+                    import ipaddress
                     ph_ips = conn.execute(text(
                         "SELECT ip FROM device_ips WHERE mac_address = :mac"
                     ), {"mac": ph_mac}).fetchall()
@@ -216,21 +217,27 @@ def init_db() -> None:
                         if ":" not in ph_ip:
                             continue
                         try:
-                            import ipaddress
-                            net = ipaddress.ip_network(f"{ph_ip}/64", strict=False)
-                            parts = net.network_address.exploded.split(":")
-                            prefix = ":".join(parts[:4]) + ":"
-                            sibling = conn.execute(text(
-                                "SELECT di.mac_address FROM device_ips di "
-                                "JOIN devices d ON d.mac_address = di.mac_address "
-                                "WHERE di.ip LIKE :prefix AND d.mac_address NOT LIKE 'unknown_%' "
-                                "LIMIT 1"
-                            ), {"prefix": prefix + "%"}).fetchone()
-                            if sibling:
-                                target_mac = sibling[0]
-                                break
+                            ph_net = ipaddress.ip_network(f"{ph_ip}/64", strict=False)
                         except Exception:
-                            pass
+                            continue
+                        # Find any real-MAC device with an IP in the same /64
+                        real_ips = conn.execute(text(
+                            "SELECT di.ip, di.mac_address FROM device_ips di "
+                            "JOIN devices d ON d.mac_address = di.mac_address "
+                            "WHERE d.mac_address NOT LIKE 'unknown_%'"
+                        )).fetchall()
+                        for (r_ip, r_mac) in real_ips:
+                            if ":" not in r_ip:
+                                continue
+                            try:
+                                r_net = ipaddress.ip_network(f"{r_ip}/64", strict=False)
+                                if r_net == ph_net:
+                                    target_mac = r_mac
+                                    break
+                            except Exception:
+                                continue
+                        if target_mac:
+                            break
 
                 if not target_mac:
                     continue
