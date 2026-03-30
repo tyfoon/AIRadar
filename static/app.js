@@ -421,7 +421,7 @@ function getFilterParams(cat) {
   const p = new URLSearchParams();
   p.set('category', cat);
   // All insight pages share the same filter pattern: service, device, period
-  const prefix = (cat === 'ai') ? 'ai' : (cat === 'cloud') ? 'cloud' : null;
+  const prefix = (cat === 'ai') ? 'ai' : (cat === 'cloud') ? 'cloud' : (cat === 'tracking') ? 'priv' : null;
   if (prefix) {
     const svc = document.getElementById(prefix + '-filter-service')?.value;
     const dev = document.getElementById(prefix + '-filter-device')?.value;
