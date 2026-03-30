@@ -272,6 +272,64 @@ function _ipSummary(device) {
   return `${latest} <span class="text-[10px] text-slate-400 dark:text-slate-500">(+${device.ips.length - 1} other${device.ips.length > 2 ? 's' : ''})</span>`;
 }
 
+// Device type detection from hostname + vendor
+const DEVICE_TYPES = [
+  { match: /macbook/i,            icon: '💻', type: 'MacBook' },
+  { match: /imac/i,               icon: '🖥️', type: 'iMac' },
+  { match: /mac[\s-]?pro/i,       icon: '🖥️', type: 'Mac Pro' },
+  { match: /mac[\s-]?mini/i,      icon: '🖥️', type: 'Mac mini' },
+  { match: /mac[\s-]?studio/i,    icon: '🖥️', type: 'Mac Studio' },
+  { match: /iphone/i,             icon: '📱', type: 'iPhone' },
+  { match: /ipad/i,               icon: '📱', type: 'iPad' },
+  { match: /apple[\s-]?tv/i,      icon: '📺', type: 'Apple TV' },
+  { match: /homepod/i,            icon: '🔊', type: 'HomePod' },
+  { match: /apple[\s-]?watch/i,   icon: '⌚', type: 'Apple Watch' },
+  { match: /galaxy|samsung/i,     icon: '📱', type: 'Samsung' },
+  { match: /pixel/i,              icon: '📱', type: 'Pixel' },
+  { match: /android/i,            icon: '📱', type: 'Android' },
+  { match: /surface/i,            icon: '💻', type: 'Surface' },
+  { match: /windows|desktop|pc/i, icon: '🖥️', type: 'PC' },
+  { match: /laptop|notebook/i,    icon: '💻', type: 'Laptop' },
+  { match: /ubiquiti|unifi|router|gateway/i, icon: '📡', type: 'Router' },
+  { match: /switch/i,             icon: '🔌', type: 'Switch' },
+  { match: /access[\s-]?point|ap\b/i, icon: '📶', type: 'Access Point' },
+  { match: /printer|epson|hp[\s-]?print|canon/i, icon: '🖨️', type: 'Printer' },
+  { match: /nest|thermostat|hue|smart[\s-]?home|iot/i, icon: '🏠', type: 'Smart Home' },
+  { match: /sonos|speaker/i,      icon: '🔊', type: 'Speaker' },
+  { match: /tv|television|chromecast|roku|fire[\s-]?stick/i, icon: '📺', type: 'TV/Media' },
+  { match: /playstation|ps[45]/i, icon: '🎮', type: 'PlayStation' },
+  { match: /xbox/i,               icon: '🎮', type: 'Xbox' },
+  { match: /nintendo|switch/i,    icon: '🎮', type: 'Nintendo' },
+  { match: /nas|synology|qnap/i,  icon: '💾', type: 'NAS' },
+  { match: /server/i,             icon: '🖥️', type: 'Server' },
+  { match: /camera|cam\b/i,       icon: '📷', type: 'Camera' },
+];
+
+function _detectDeviceType(device) {
+  if (!device) return { icon: '❓', type: 'Unknown' };
+  const haystack = [device.hostname, device.vendor, device.display_name].filter(Boolean).join(' ');
+  for (const dt of DEVICE_TYPES) {
+    if (dt.match.test(haystack)) return dt;
+  }
+  // Vendor-based fallback
+  if (device.vendor) {
+    const v = device.vendor.toLowerCase();
+    if (v.includes('apple'))     return { icon: '🍎', type: 'Apple Device' };
+    if (v.includes('samsung'))   return { icon: '📱', type: 'Samsung' };
+    if (v.includes('google'))    return { icon: '📱', type: 'Google Device' };
+    if (v.includes('microsoft')) return { icon: '💻', type: 'Microsoft' };
+    if (v.includes('intel') || v.includes('dell') || v.includes('lenovo') || v.includes('hp '))
+      return { icon: '💻', type: 'Computer' };
+  }
+  return { icon: '📟', type: 'Device' };
+}
+
+function deviceTypeTag(device) {
+  const dt = _detectDeviceType(device);
+  const vendorText = device?.vendor ? ` · ${device.vendor}` : '';
+  return `<span class="inline-flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">${dt.icon} ${dt.type}${vendorText}</span>`;
+}
+
 async function loadDevices() {
   try {
     const res = await fetch('/api/devices');
