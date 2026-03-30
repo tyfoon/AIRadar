@@ -58,6 +58,20 @@ VPN_DEDUP_SECONDS = 300  # 5-minute window
 _vpn_last_seen: dict[tuple[str, int], float] = {}  # (src_ip, resp_port) → ts
 
 # ---------------------------------------------------------------------------
+# Heuristic VPN detection — single-destination high-volume encrypted flows
+# ---------------------------------------------------------------------------
+# On a network bridge, a VPN client appears as a device sending huge amounts
+# of encrypted UDP (WireGuard/NordLynx) or TCP traffic to a single external IP,
+# often on port 443 to look like normal HTTPS.  We detect this by tracking
+# per-(src_ip, dest_ip) byte accumulation.  If a single destination receives
+# a disproportionate share of a device's traffic AND the traffic is not a
+# known service (not in _known_ips), flag it as a potential VPN tunnel.
+
+HEURISTIC_VPN_BYTE_THRESHOLD = 5_000_000  # 5 MB in one conn.log entry
+HEURISTIC_VPN_DEDUP_SECONDS = 600  # 10 min window
+_heuristic_vpn_seen: dict[tuple[str, str], float] = {}  # (src_ip, dest_ip) → ts
+
+# ---------------------------------------------------------------------------
 # Domain → service mapping (AI + Cloud)
 # ---------------------------------------------------------------------------
 
