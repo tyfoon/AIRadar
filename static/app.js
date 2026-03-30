@@ -598,7 +598,7 @@ function renderSankey(events) {
 
   events.forEach(e => {
     const dev = deviceName(e.source_ip);
-    const svc = SERVICE_NAMES[e.ai_service] || e.ai_service;
+    const svc = svcDisplayName(e.ai_service);
     deviceFlows[dev] = (deviceFlows[dev] || 0) + (e.bytes_transferred || 1);
     serviceFlows[svc] = (serviceFlows[svc] || 0) + (e.bytes_transferred || 1);
   });
@@ -607,7 +607,7 @@ function renderSankey(events) {
   const linkMap = {};
   events.forEach(e => {
     const dev = deviceName(e.source_ip);
-    const svc = SERVICE_NAMES[e.ai_service] || e.ai_service;
+    const svc = svcDisplayName(e.ai_service);
     const key = dev + '→' + svc;
     linkMap[key] = (linkMap[key] || 0) + (e.bytes_transferred || 1);
   });
