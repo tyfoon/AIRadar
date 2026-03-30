@@ -1095,14 +1095,17 @@ function _showCellEvents(mac, service, category) {
   let events;
   if (service) {
     events = _devAllEvents.filter(e => devIps.has(e.source_ip) && e.ai_service === service);
+  } else if (category) {
+    events = _devAllEvents.filter(e => devIps.has(e.source_ip) && e._cat === category);
   } else {
     events = _devAllEvents.filter(e => devIps.has(e.source_ip));
   }
   events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
-  const svcLabel = service ? svcDisplayName(service) : 'All Services';
-  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${service ? svcLogoName(service) : svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>`;
+  const catGroup = category ? CATEGORY_GROUPS.find(g => g.key === category) : null;
+  const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : 'All Services';
+  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>`;
 
   tbody.innerHTML = events.slice(0, 100).map(e => {
     const up = e.possible_upload;
