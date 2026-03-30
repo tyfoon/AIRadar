@@ -1113,9 +1113,9 @@ function _showCellEvents(mac, service, category) {
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
       <td class="py-2 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
       <td class="py-2 px-4">${badge(e.ai_service)}</td>
-      <td class="py-2 px-4 text-xs">${e.event_type}${upBadge}</td>
+      <td class="py-2 px-4 text-xs">${e.detection_type}${upBadge}</td>
       <td class="py-2 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
-      <td class="py-2 px-4 text-xs text-right tabular-nums">${e.total_bytes ? e.total_bytes.toLocaleString() : '0'}</td>
+      <td class="py-2 px-4 text-xs text-right tabular-nums">${e.bytes_transferred ? e.bytes_transferred.toLocaleString() : '0'}</td>
     </tr>`;
   }).join('');
 
