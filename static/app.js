@@ -546,9 +546,9 @@ function renderEventsTable(events, tbodyId, emptyId) {
     const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     const dn = deviceName(e.source_ip);
     const dev = _deviceByIp(e.source_ip);
-    const vendorTag = dev?.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 block">${dev.vendor}</span>` : '';
+    const dt = _detectDeviceType(dev);
     const macAttr = dev ? `data-mac="${dev.mac_address}"` : '';
-    const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" ${macAttr} title="${e.source_ip}">${dn}${vendorTag}</span>`;
+    const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" ${macAttr} title="${e.source_ip}">${dt.icon} ${dn}</span>`;
     return `<tr class="${rc} transition-colors">
       <td class="py-2 pr-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
       <td class="py-2 pr-4">${badge(e.ai_service)}</td>
