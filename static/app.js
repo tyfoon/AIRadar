@@ -1004,13 +1004,14 @@ async function refreshDevices() {
 
   const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt];
 
-  // Build device → service → {count, uploads} map
-  const matrix = {};       // ip → { svc → { count, uploads } }
+  // Build device → service → {count, uploads} map, grouped by MAC
+  const matrix = {};       // mac → { svc → { count, uploads } }
   const allServices = new Set();
 
   allEvents.forEach(e => {
-    if (!matrix[e.source_ip]) matrix[e.source_ip] = {};
-    const row = matrix[e.source_ip];
+    const mac = ipToMac[e.source_ip] || `_ip_${e.source_ip}`;
+    if (!matrix[mac]) matrix[mac] = {};
+    const row = matrix[mac];
     if (!row[e.ai_service]) row[e.ai_service] = { count: 0, uploads: 0 };
     row[e.ai_service].count++;
     if (e.possible_upload) row[e.ai_service].uploads++;
@@ -1018,10 +1019,10 @@ async function refreshDevices() {
   });
 
   const services = [...allServices].sort();
-  const deviceIPs = Object.keys(matrix);
+  const deviceMacs = Object.keys(matrix);
 
   // Sort devices by total event count (most active first)
-  deviceIPs.sort((a, b) => {
+  deviceMacs.sort((a, b) => {
     const totalA = Object.values(matrix[a]).reduce((s, v) => s + v.count, 0);
     const totalB = Object.values(matrix[b]).reduce((s, v) => s + v.count, 0);
     return totalB - totalA;
@@ -1029,15 +1030,15 @@ async function refreshDevices() {
 
   // Stats
   const totalUploads = allEvents.filter(e => e.possible_upload).length;
-  document.getElementById('dev-stat-total').textContent = Object.keys(deviceMap).length || deviceIPs.length;
-  document.getElementById('dev-stat-violators').textContent = deviceIPs.length;
+  document.getElementById('dev-stat-total').textContent = Object.keys(deviceMap).length || deviceMacs.length;
+  document.getElementById('dev-stat-violators').textContent = deviceMacs.length;
   document.getElementById('dev-stat-events').textContent = allEvents.length.toLocaleString();
   document.getElementById('dev-stat-uploads').textContent = totalUploads;
 
   // Find global max for heat intensity
   let globalMax = 1;
-  deviceIPs.forEach(ip => {
-    Object.values(matrix[ip]).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
+  deviceMacs.forEach(mac => {
+    Object.values(matrix[mac]).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
   });
 
   // Render header
@@ -1050,16 +1051,19 @@ async function refreshDevices() {
 
   // Render body
   const tbody = document.getElementById('devices-matrix-body');
-  if (deviceIPs.length === 0) {
+  if (deviceMacs.length === 0) {
     tbody.innerHTML = '<tr><td colspan="' + (services.length + 2) + '" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">No device activity detected in this period.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = deviceIPs.map(ip => {
-    const row = matrix[ip];
+  tbody.innerHTML = deviceMacs.map(mac => {
+    const row = matrix[mac];
     const total = Object.values(row).reduce((s, v) => s + v.count, 0);
     const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
-    const dn = deviceName(ip);
+    const dev = deviceMap[mac] || (mac.startsWith('_ip_') ? null : null);
+    const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+    const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
+    const vendorInfo = dev?.vendor ? ' · ' + dev.vendor : '';
 
     const cells = services.map(s => {
       const v = row[s];
