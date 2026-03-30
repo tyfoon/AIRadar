@@ -186,6 +186,28 @@ def init_db() -> None:
     # Create any remaining tables that don't exist yet
     Base.metadata.create_all(bind=engine)
 
+    # --- Merge placeholder devices into real-MAC devices by hostname ---
+    inspector = inspect(engine)
+    if "devices" in inspector.get_table_names() and "device_ips" in inspector.get_table_names():
+        with engine.begin() as conn:
+            placeholders = conn.execute(text(
+                "SELECT mac_address, hostname FROM devices "
+                "WHERE mac_address LIKE 'unknown_%' AND hostname IS NOT NULL"
+            )).fetchall()
+            for ph_mac, ph_host in placeholders:
+                real = conn.execute(text(
+                    "SELECT mac_address FROM devices "
+                    "WHERE hostname = :host AND mac_address NOT LIKE 'unknown_%' LIMIT 1"
+                ), {"host": ph_host}).fetchone()
+                if not real:
+                    continue
+                conn.execute(text(
+                    "UPDATE device_ips SET mac_address = :real WHERE mac_address = :ph"
+                ), {"real": real[0], "ph": ph_mac})
+                conn.execute(text(
+                    "DELETE FROM devices WHERE mac_address = :mac"
+                ), {"mac": ph_mac})
+
     # --- Ensure detection_events columns exist ---
     inspector = inspect(engine)
     if "detection_events" in inspector.get_table_names():
