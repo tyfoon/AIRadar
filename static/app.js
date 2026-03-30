@@ -571,10 +571,12 @@ async function refreshDashboard() {
   const aiDonut = getOrCreateChart('dash-ai-donut', makeDoughnutConfig());
   if (aiDonut) {
     const ac = {}; aiEvt.forEach(e => { ac[e.ai_service] = (ac[e.ai_service] || 0) + 1; });
-    aiDonut.data.labels = Object.keys(ac).map(k => svcDisplayName(k));
+    const aiKeys = Object.keys(ac);
+    aiDonut.data.labels = aiKeys.map(k => svcDisplayName(k));
     aiDonut.data.datasets[0].data = Object.values(ac);
-    aiDonut.data.datasets[0].backgroundColor = Object.keys(ac).map(k => svcColor(k));
+    aiDonut.data.datasets[0].backgroundColor = aiKeys.map(k => svcColor(k));
     aiDonut.update();
+    renderHtmlLegend('dash-ai-donut-legend', aiDonut, aiKeys);
   }
 
   const cloudDonut = getOrCreateChart('dash-cloud-donut', makeDoughnutConfig());
