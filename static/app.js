@@ -521,7 +521,7 @@ async function refreshDashboard() {
   const aiDonut = getOrCreateChart('dash-ai-donut', makeDoughnutConfig());
   if (aiDonut) {
     const ac = {}; aiEvt.forEach(e => { ac[e.ai_service] = (ac[e.ai_service] || 0) + 1; });
-    aiDonut.data.labels = Object.keys(ac).map(k => SERVICE_NAMES[k] || k);
+    aiDonut.data.labels = Object.keys(ac).map(k => svcDisplayName(k));
     aiDonut.data.datasets[0].data = Object.values(ac);
     aiDonut.data.datasets[0].backgroundColor = Object.keys(ac).map(k => svcColor(k));
     aiDonut.update();
