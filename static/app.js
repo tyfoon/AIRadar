@@ -213,6 +213,16 @@ const SVC_BADGE_CLS = {
   icloud:'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
   box:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
   mega:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  // VPN
+  vpn_active:'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
+  vpn_nordvpn:'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+  vpn_expressvpn:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  vpn_surfshark:'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300',
+  vpn_protonvpn:'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+  vpn_pia:'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
+  vpn_cyberghost:'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
+  vpn_mullvad:'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300',
+  vpn_cloudflare_warp:'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
   // Trackers
   google_ads:'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
   google_analytics:'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
