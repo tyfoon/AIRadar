@@ -438,7 +438,7 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
     const svcs = new Set();
     timeline.forEach(p => Object.keys(p.services).forEach(s => svcs.add(s)));
     const ds = [...svcs].sort().map(s => ({
-      label: SERVICE_NAMES[s] || s,
+      label: svcDisplayName(s),
       data: timeline.map(p => p.services[s] || 0),
       backgroundColor: svcColor(s),
       borderRadius: 3, stack: 's', yAxisID: 'y',
