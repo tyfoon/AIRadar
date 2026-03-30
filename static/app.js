@@ -1781,6 +1781,111 @@ async function confirmCustomBlock() {
 }
 
 // ================================================================
+// ABOUT & LEGAL
+// ================================================================
+
+const LEGAL_COMPONENTS = [
+  {
+    name: 'AI-Radar',
+    version: '1.0.0',
+    license: 'Proprietary',
+    description: 'Network intelligence appliance for AI & Cloud monitoring, privacy protection, and intrusion prevention.',
+    url: null,
+    icon: 'AR',
+    iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
+    iconColor: 'text-indigo-600 dark:text-indigo-400',
+  },
+  {
+    name: 'FastAPI',
+    version: null,
+    license: 'MIT License',
+    description: 'Modern, high-performance Python web framework for building APIs.',
+    url: 'https://fastapi.tiangolo.com',
+    icon: '⚡',
+    iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
+    iconColor: '',
+  },
+  {
+    name: 'Zeek Network Security Monitor',
+    version: null,
+    license: 'BSD License',
+    description: 'Passive network traffic analysis framework for security monitoring.',
+    url: 'https://zeek.org',
+    icon: '🔍',
+    iconBg: 'bg-sky-100 dark:bg-sky-900/30',
+    iconColor: '',
+  },
+  {
+    name: 'CrowdSec',
+    version: null,
+    license: 'MIT License',
+    description: 'Collaborative intrusion prevention system using crowd-sourced threat intelligence.',
+    url: 'https://crowdsec.net',
+    icon: '🛡️',
+    iconBg: 'bg-purple-100 dark:bg-purple-900/30',
+    iconColor: '',
+  },
+  {
+    name: 'AdGuard Home',
+    version: null,
+    license: 'GNU GPLv3',
+    description: 'Network-wide DNS-level ad and tracker blocking. AI-Radar communicates with an unmodified, independent instance via its official REST API.',
+    url: 'https://adguard.com/adguard-home.html',
+    icon: '🟢',
+    iconBg: 'bg-green-100 dark:bg-green-900/30',
+    iconColor: '',
+  },
+  {
+    name: 'Chart.js',
+    version: null,
+    license: 'MIT License',
+    description: 'Simple yet flexible JavaScript charting library for data visualization.',
+    url: 'https://www.chartjs.org',
+    icon: '📊',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
+    iconColor: '',
+  },
+  {
+    name: 'Apache ECharts',
+    version: null,
+    license: 'Apache License 2.0',
+    description: 'Powerful interactive charting and data visualization library.',
+    url: 'https://echarts.apache.org',
+    icon: '📈',
+    iconBg: 'bg-red-100 dark:bg-red-900/30',
+    iconColor: '',
+  },
+];
+
+function renderLegalComponents() {
+  const container = document.getElementById('legal-components');
+  if (!container) return;
+
+  container.innerHTML = LEGAL_COMPONENTS.map(c => {
+    const versionBadge = c.version ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-mono">v${c.version}</span>` : '';
+    const licenseBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${c.license}</span>`;
+    const link = c.url ? `<a href="${c.url}" target="_blank" rel="noopener" class="text-[10px] text-indigo-500 hover:underline ml-auto flex-shrink-0">${c.url.replace('https://', '')}</a>` : '';
+    const iconContent = c.icon.length <= 3 ? `<span class="font-bold text-xs ${c.iconColor}">${c.icon}</span>` : `<span class="text-sm">${c.icon}</span>`;
+
+    return `<div class="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-white/[0.03]">
+      <div class="w-8 h-8 rounded-lg ${c.iconBg} flex items-center justify-center flex-shrink-0">${iconContent}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${c.name}</span>
+          ${versionBadge}
+          ${licenseBadge}
+          ${link}
+        </div>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${c.description}</p>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Render on page load
+document.addEventListener('DOMContentLoaded', renderLegalComponents);
+
+// ================================================================
 // HEALTH CHECK
 // ================================================================
 async function runHealthCheck() {
