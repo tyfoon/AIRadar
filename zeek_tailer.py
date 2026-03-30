@@ -491,7 +491,20 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # Register the device if it's a local source
                 asyncio.create_task(register_device(client, src_ip))
 
-                # Parse bytes for the event
+                # --- SNI deduplication ---
+                # Suppress repeated TLS handshakes (heartbeats / keep-alives)
+                # for the same (service, device) within the dedup window.
+                # The first hit is always recorded; subsequent ones within
+                # SNI_DEDUP_SECONDS are silently dropped.  Real data transfer
+                # still shows up via conn.log → volumetric_upload events.
+                now = time.time()
+                dedup_key = (service, src_ip)
+                last = _sni_last_seen.get(dedup_key, 0)
+                if (now - last) < SNI_DEDUP_SECONDS:
+                    continue  # duplicate — skip
+                _sni_last_seen[dedup_key] = now
+
+                # Parse bytes for the event (ssl.log rarely has this)
                 orig_bytes = 0
                 try:
                     ob = record.get("orig_bytes", "0")
