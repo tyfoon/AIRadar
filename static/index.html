@@ -506,6 +506,21 @@
         <div id="tracker-details-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-64 overflow-y-auto"></div>
       </div>
 
+      <!-- Filter bar -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium">Filters</span>
+        <select id="priv-filter-service"><option value="">All trackers</option></select>
+        <select id="priv-filter-device"><option value="">All devices</option></select>
+        <select id="priv-filter-period">
+          <option value="">All time</option>
+          <option value="60" selected>Last hour</option>
+          <option value="1440">Last 24 h</option>
+          <option value="10080">Last 7 days</option>
+        </select>
+        <button onclick="refreshPage('privacy')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors">Apply</button>
+        <button onclick="exportCSV('tracking')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors">Export CSV</button>
+      </div>
+
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
