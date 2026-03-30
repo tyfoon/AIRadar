@@ -1190,7 +1190,7 @@ function _renderDeviceMatrix() {
       // Group total cell
       const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
       const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
-      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer" onclick="_showCellEvents('${mac}', null)">
+      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer" onclick="_showCellEvents('${mac}', null, '${g.key}')">
         ${_heatCell(groupCount, groupUploads, globalMax)}
       </td>`;
 
