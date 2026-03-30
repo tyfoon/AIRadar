@@ -577,6 +577,7 @@ async def privacy_stats(db: Session = Depends(get_db)):
             "last_seen": str(row.last_seen),
             "total_bytes": int(row.total_bytes or 0),
             "hits": row.hits,
+            "vpn_service": row.vpn_service,
             **device_info,
         })
 
