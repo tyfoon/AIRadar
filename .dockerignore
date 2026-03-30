@@ -1,0 +1,25 @@
+# Git & IDE
+.git
+.gitignore
+.claude/
+.vscode/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Data & logs (mounted as volumes)
+data/
+*.db
+*.log
+logs/
+
+# macOS
+.DS_Store
+__pycache__/
+*.pyc
+
+# Docs
+README.md
+LICENSE
