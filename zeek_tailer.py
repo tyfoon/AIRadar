@@ -602,13 +602,59 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 record = dict(zip(fields, parts))
 
-                # Check if destination IP is a known AI/Cloud service
+                src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
+                proto = record.get("proto", "").lower()
+                resp_port_str = record.get("id.resp_p", "0")
+                try:
+                    resp_port = int(resp_port_str) if resp_port_str != "-" else 0
+                except ValueError:
+                    resp_port = 0
+
+                # --- VPN / tunnel detection ---
+                vpn_key = (proto, resp_port)
+                vpn_type = VPN_PORTS.get(vpn_key)
+                if vpn_type and _is_local_ip(src_ip):
+                    # Check total bytes (orig + resp)
+                    try:
+                        ob = record.get("orig_bytes", "0")
+                        vpn_orig = int(ob) if ob and ob != "-" else 0
+                    except ValueError:
+                        vpn_orig = 0
+                    try:
+                        rb = record.get("resp_bytes", "0")
+                        vpn_resp = int(rb) if rb and rb != "-" else 0
+                    except ValueError:
+                        vpn_resp = 0
+                    vpn_total = vpn_orig + vpn_resp
+
+                    if vpn_total >= VPN_BYTE_THRESHOLD:
+                        # Dedup: only one VPN event per (src_ip, port) per window
+                        now = time.time()
+                        dedup_k = (src_ip, resp_port)
+                        last_vpn = _vpn_last_seen.get(dedup_k, 0)
+                        if (now - last_vpn) >= VPN_DEDUP_SECONDS:
+                            _vpn_last_seen[dedup_k] = now
+                            asyncio.create_task(register_device(client, src_ip))
+                            await send_event(
+                                client,
+                                detection_type="vpn_tunnel",
+                                ai_service="vpn_active",
+                                source_ip=src_ip,
+                                bytes_transferred=vpn_total,
+                                category="tracking",
+                            )
+                            print(
+                                f"    └─ VPN detected: {vpn_type} "
+                                f"({proto.upper()}/{resp_port}) "
+                                f"from {src_ip} — {vpn_total/1024:,.0f} KB"
+                            )
+
+                # Check if destination IP is a known AI/Cloud service
                 if resp_ip not in _known_ips:
                     continue
 
                 service, category = _known_ips[resp_ip]
-                src_ip = record.get("id.orig_h", "unknown")
 
                 # Check outbound bytes
                 try:
