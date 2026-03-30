@@ -434,7 +434,7 @@ function getFilterParams(cat) {
 }
 
 function getBucketSize(cat) {
-  const prefix = (cat === 'cloud') ? 'cloud' : 'ai';
+  const prefix = (cat === 'cloud') ? 'cloud' : (cat === 'tracking') ? 'priv' : 'ai';
   const per = document.getElementById(prefix + '-filter-period')?.value;
   if (!per) return 'hour';
   const m = parseInt(per);
