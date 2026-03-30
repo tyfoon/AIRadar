@@ -79,7 +79,7 @@ from schemas import (
 STATIC_DIR = Path(__file__).parent / "static"
 
 # AdGuard Home client (configure port as needed)
-adguard = AdGuardClient(base_url="http://127.0.0.1:3001")
+adguard = AdGuardClient(base_url=os.environ.get("ADGUARD_URL", "http://127.0.0.1:3001"))
 
 # ---------------------------------------------------------------------------
 # Data retention settings
