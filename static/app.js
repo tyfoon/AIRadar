@@ -348,15 +348,16 @@ function getOrCreateChart(id, config) {
   return charts[id];
 }
 
-// Custom HTML legend with logos
+// Custom HTML legend with logos + color dot
 function renderHtmlLegend(containerId, chart, serviceKeys) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const items = chart.data.labels.map((label, i) => {
     const color = chart.data.datasets[0].backgroundColor[i] || ACCENT_COLORS[i % ACCENT_COLORS.length];
     const key = serviceKeys ? serviceKeys[i] : null;
-    const logo = key ? svcLogo(key) : `<span class="svc-logo-fallback" style="background:${color}">${label.charAt(0)}</span>`;
-    return `<span class="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${logo} ${label}</span>`;
+    const logo = key ? svcLogo(key) : '';
+    const dot = `<span class="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style="background:${color}"></span>`;
+    return `<span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${dot}${logo} ${label}</span>`;
   });
   container.innerHTML = items.join('');
 }
@@ -365,10 +366,12 @@ function renderTimelineHtmlLegend(containerId, chart, serviceKeys) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const items = chart.data.datasets.map((ds, i) => {
-    if (ds._isUpload) return `<span class="inline-flex items-center gap-1 text-[11px] text-red-500 mr-3 mb-1"><span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span> Uploads</span>`;
+    if (ds._isUpload) return `<span class="inline-flex items-center gap-1.5 text-[11px] text-red-500 mr-3 mb-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block flex-shrink-0"></span> Uploads</span>`;
+    const color = ds.backgroundColor;
     const key = serviceKeys ? serviceKeys[i] : null;
-    const logo = key ? svcLogo(key) : `<span class="w-3 h-3 rounded inline-block" style="background:${ds.backgroundColor}"></span>`;
-    return `<span class="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${logo} ${ds.label}</span>`;
+    const logo = key ? svcLogo(key) : '';
+    const dot = `<span class="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style="background:${color}"></span>`;
+    return `<span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mr-3 mb-1">${dot}${logo} ${ds.label}</span>`;
   });
   container.innerHTML = items.join('');
 }
