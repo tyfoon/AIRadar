@@ -95,7 +95,8 @@
       "Bash(sqlite3 airadar.db \"SELECT COUNT\\(*\\) FROM detection_events WHERE detection_type=''sni_hello'' AND bytes_transferred=0;\")",
       "Bash(sqlite3 airadar.db \"SELECT COUNT\\(*\\) FROM detection_events;\")",
       "Bash(sqlite3 airadar.db \"DELETE FROM detection_events WHERE detection_type=''sni_hello'' AND bytes_transferred=0; SELECT ''Remaining: '' || COUNT\\(*\\) FROM detection_events;\")",
-      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/static/)"
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/static/)",
+      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/setup_n95.sh)"
     ]
   },
   "hooks": {

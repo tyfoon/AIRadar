@@ -25,7 +25,19 @@ quic_debug*.py
 # Zeek logs (generated at runtime)
 *.log
 
+# Environment secrets (.env.example IS committed)
+.env
+
+# Docker runtime data
+data/
+
 # AdGuard Home runtime data
+adguard/conf/
+adguard/work/
 adguard/data/
 adguard/AdGuardHome.yaml
 adguard/AdGuardHome/
+
+# CrowdSec runtime data
+crowdsec/conf/
+crowdsec/data/
