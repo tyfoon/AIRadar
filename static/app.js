@@ -156,6 +156,11 @@ const SERVICE_NAMES = {
   google_telemetry:'Google Telemetry', meta_tracking:'Meta Tracking',
   apple_ads:'Apple Ads', microsoft_ads:'Microsoft Ads',
   hotjar:'Hotjar', datadog:'Datadog',
+  // VPN services
+  vpn_active:'VPN Tunnel', vpn_nordvpn:'NordVPN', vpn_expressvpn:'ExpressVPN',
+  vpn_surfshark:'Surfshark', vpn_protonvpn:'ProtonVPN', vpn_pia:'Private Internet Access',
+  vpn_cyberghost:'CyberGhost', vpn_mullvad:'Mullvad', vpn_ipvanish:'IPVanish',
+  vpn_tunnelbear:'TunnelBear', vpn_windscribe:'Windscribe', vpn_cloudflare_warp:'Cloudflare WARP',
   // Social / Gaming (for Rules page)
   facebook:'Facebook', instagram:'Instagram', tiktok:'TikTok',
   twitter:'X (Twitter)', snapchat:'Snapchat', pinterest:'Pinterest',
