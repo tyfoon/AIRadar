@@ -147,6 +147,16 @@
     <!-- ============================================================= -->
     <section id="page-dashboard" class="page active space-y-6">
 
+      <!-- Killswitch warning banner (hidden by default) -->
+      <div id="ks-dashboard-banner" class="hidden flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-950/30 border-2 border-red-300 dark:border-red-700 animate-pulse cursor-pointer" onclick="navigate('settings')">
+        <span class="text-2xl">⚠️</span>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-red-700 dark:text-red-400">Killswitch Active — All Protection Disabled</p>
+          <p class="text-xs text-red-500 dark:text-red-500/70">DNS filtering, IPS, and block rules are bypassed. Click to go to Settings.</p>
+        </div>
+        <span class="text-xs font-mono text-red-400" id="ks-banner-since"></span>
+      </div>
+
       <!-- Metric cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer" onclick="toggleDashHealthDetail()">
