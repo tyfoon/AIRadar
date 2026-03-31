@@ -1216,7 +1216,7 @@ async def toggle_killswitch(payload: dict):
         # 3. Suspend all active block rules
         db = SessionLocal()
         try:
-            active_rules = db.query(BlockRule).filter(BlockRule.active == True).all()  # noqa: E712
+            active_rules = db.query(BlockRule).filter(BlockRule.is_active == True).all()  # noqa: E712
             suspended_count = 0
             for rule in active_rules:
                 try:
@@ -1259,7 +1259,7 @@ async def toggle_killswitch(payload: dict):
         # 3. Re-apply active block rules
         db = SessionLocal()
         try:
-            active_rules = db.query(BlockRule).filter(BlockRule.active == True).all()  # noqa: E712
+            active_rules = db.query(BlockRule).filter(BlockRule.is_active == True).all()  # noqa: E712
             restored_count = 0
             for rule in active_rules:
                 try:
