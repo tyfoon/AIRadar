@@ -222,3 +222,30 @@ class AdGuardClient:
                 return resp.json()
         except (httpx.HTTPError, Exception):
             return {"running": False}
+
+    async def set_protection(self, enabled: bool) -> bool:
+        """Enable or disable AdGuard DNS protection globally.
+
+        When disabled, AdGuard still runs as a DNS forwarder but stops
+        filtering/blocking — all DNS queries pass through untouched.
+        This is the key mechanism behind the killswitch: internet keeps
+        working, just without filtering.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self.base_url}/control/dns_config",
+                    json={"protection_enabled": enabled},
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                return True
+        except (httpx.HTTPError, Exception) as exc:
+            print(f"[adguard] Failed to {'enable' if enabled else 'disable'} protection: {exc}")
+            return False
+
+    async def is_protection_enabled(self) -> bool:
+        """Return True if DNS protection (filtering) is currently active."""
+        status = await self.get_status()
+        return status.get("protection_enabled", True)
