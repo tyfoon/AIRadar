@@ -221,8 +221,34 @@ async def _expire_block_rules():
 # Lifespan
 # ---------------------------------------------------------------------------
 @asynccontextmanager
+def _backfill_vendors():
+    """One-time vendor backfill for devices that are missing vendor info."""
+    db = SessionLocal()
+    try:
+        devices = db.query(Device).filter(
+            (Device.vendor == None) | (Device.vendor == "")  # noqa: E711
+        ).all()
+        updated = 0
+        for dev in devices:
+            vendor = _resolve_vendor(dev.mac_address, dev.hostname)
+            if vendor:
+                dev.vendor = vendor
+                updated += 1
+        if updated:
+            db.commit()
+            print(f"[backfill] Resolved vendor for {updated}/{len(devices)} devices")
+        else:
+            print(f"[backfill] No vendor updates needed ({len(devices)} devices checked)")
+    except Exception as exc:
+        print(f"[backfill] Error: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def lifespan(app: FastAPI):
     init_db()
+    _backfill_vendors()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
