@@ -421,11 +421,11 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         if payload.hostname:
             device.hostname = payload.hostname
         # Resolve vendor if not already set
-        if not device.vendor and payload.mac_address:
-            device.vendor = _resolve_vendor(payload.mac_address)
+        if not device.vendor:
+            device.vendor = _resolve_vendor(payload.mac_address) or _resolve_vendor(mac)
         device.last_seen = now
     else:
-        vendor = _resolve_vendor(payload.mac_address)
+        vendor = _resolve_vendor(payload.mac_address) or _resolve_vendor(mac)
         device = Device(
             mac_address=mac,
             hostname=payload.hostname,

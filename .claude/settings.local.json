@@ -113,7 +113,11 @@
       "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE detection_type=''vpn_tunnel'' OR ai_service LIKE ''vpn_%'' ORDER BY timestamp DESC;\")",
       "Bash(sqlite3 airadar.db \"SELECT ai_service, detection_type, source_ip, bytes_transferred, timestamp FROM detection_events WHERE ai_service LIKE ''%vpn%'' OR detection_type LIKE ''%vpn%'' ORDER BY timestamp DESC;\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''vpn_alerts''''\\), indent=2\\)\\)\")",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''VPN alerts:'''', len\\(d.get\\(''''vpn_alerts'''',[]\\)\\), d.get\\(''''vpn_alerts''''\\)\\)\")"
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''VPN alerts:'''', len\\(d.get\\(''''vpn_alerts'''',[]\\)\\), d.get\\(''''vpn_alerts''''\\)\\)\")",
+      "Bash(sqlite3 airadar.db \"SELECT d.mac_address, d.hostname, d.vendor, d.display_name, di.ip FROM devices d JOIN device_ips di ON d.mac_address = di.mac_address WHERE di.ip = ''192.168.1.177'';\")",
+      "Bash(sqlite3 airadar.db \"SELECT DISTINCT source_ip, ai_service, detection_type, COUNT\\(*\\) as cnt FROM detection_events WHERE source_ip=''192.168.1.177'' GROUP BY ai_service, detection_type ORDER BY cnt DESC;\")",
+      "Bash(sqlite3 airadar.db \"SELECT DISTINCT source_ip FROM detection_events WHERE source_ip NOT IN \\(SELECT ip FROM device_ips\\) ORDER BY source_ip;\")",
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, hostname, vendor, display_name FROM devices ORDER BY mac_address;\")"
     ]
   },
   "hooks": {
