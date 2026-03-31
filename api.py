@@ -7,6 +7,7 @@ managing discovered devices, analytics, and AdGuard Home privacy stats.
 import asyncio
 import csv
 import io
+import json
 import os
 from collections import OrderedDict
 from contextlib import asynccontextmanager
