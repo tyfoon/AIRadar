@@ -121,7 +121,9 @@
       "Bash(sqlite3 airadar.db \"SELECT mac_address, hostname, vendor FROM devices WHERE mac_address LIKE ''unknown%'' OR hostname LIKE ''ds-%'' OR mac_address LIKE ''24:%'';\")",
       "Bash(curl -s http://localhost:8000/api/devices)",
       "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices;\")",
-      "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices WHERE mac_address LIKE ''24:%'';\")"
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices WHERE mac_address LIKE ''24:%'';\")",
+      "Bash(sqlite3 data/airadar.db \":*)",
+      "Bash(sqlite3 data/airadar.db \"SELECT ip FROM device_ips WHERE mac_address=''a2:c0:6d:40:7:f7'';\")"
     ]
   },
   "hooks": {

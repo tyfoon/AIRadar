@@ -400,8 +400,18 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
         if existing_ip and not existing_ip.mac_address.startswith("unknown_"):
             mac = existing_ip.mac_address
-        elif existing_ip:
-            mac = existing_ip.mac_address
+        elif existing_ip and existing_ip.mac_address.startswith("unknown_"):
+            # Placeholder MAC — try to upgrade to a real device via /64 match
+            if ":" in payload.ip:
+                all_dev_ips = db.query(DeviceIP).all()
+                for dip in all_dev_ips:
+                    if not dip.mac_address.startswith("unknown_") and _same_ipv6_subnet(payload.ip, dip.ip):
+                        mac = dip.mac_address
+                        # Migrate the IP to the real device
+                        existing_ip.mac_address = mac
+                        break
+            if not mac:
+                mac = existing_ip.mac_address
         else:
             # Brand new IP — try multiple strategies to find the owning device
             # 1) Hostname match
