@@ -299,20 +299,29 @@ def _backfill_vendors():
         db.close()
 
 
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _backfill_vendors()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
+    watchdog_task = asyncio.create_task(_adguard_watchdog())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
     )
     print(f"[rules] Block rule expiry checker running every {RULE_EXPIRY_INTERVAL}s")
+    print(f"[watchdog] AdGuard auto-failsafe active (check every 30s, trigger after 3 failures)")
+    # Restore killswitch state from last run
+    ks = _read_killswitch_state()
+    if ks.get("active"):
+        print(f"[killswitch] ⚠️  Killswitch was active before restart — still active")
+        crowdsec.enabled = False
     yield
     cleanup_task.cancel()
     expiry_task.cancel()
+    watchdog_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
