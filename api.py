@@ -1186,6 +1186,65 @@ async def health_check(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# Service restart endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/services/zeek/restart")
+async def restart_zeek():
+    """Kill and restart Zeek packet capture on en0."""
+    import subprocess, time as _t
+
+    # Kill existing Zeek processes
+    subprocess.run(["sudo", "pkill", "-9", "-f", "zeek.*-i"], capture_output=True, timeout=5)
+    _t.sleep(1)
+
+    # Determine log directory (same dir as the running app)
+    log_dir = str(Path(".").resolve())
+
+    # Restart Zeek
+    proc = subprocess.Popen(
+        ["sudo", "zeek", "-i", "en0", "-C", "LogAscii::use_json=F"],
+        cwd=log_dir,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    _t.sleep(2)
+
+    # Verify it started
+    check = subprocess.run(["pgrep", "-f", "zeek.*-i"], capture_output=True, timeout=5)
+    if check.returncode == 0:
+        pid = check.stdout.decode().strip().split('\n')[0]
+        return {"status": "ok", "message": f"Zeek restarted (PID {pid})"}
+    return {"status": "error", "message": "Zeek failed to start — check sudo permissions"}
+
+
+@app.post("/api/services/tailer/restart")
+async def restart_tailer():
+    """Kill and restart the zeek_tailer.py process."""
+    import subprocess, time as _t
+
+    # Kill existing tailer
+    subprocess.run(["pkill", "-9", "-f", "zeek_tailer"], capture_output=True, timeout=5)
+    _t.sleep(1)
+
+    # Restart tailer
+    log_dir = str(Path(".").resolve())
+    proc = subprocess.Popen(
+        ["python3", "zeek_tailer.py", "--zeek-log-dir", "."],
+        cwd=log_dir,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    _t.sleep(2)
+
+    # Verify
+    check = subprocess.run(["pgrep", "-f", "zeek_tailer"], capture_output=True, timeout=5)
+    if check.returncode == 0:
+        pid = check.stdout.decode().strip().split('\n')[0]
+        return {"status": "ok", "message": f"Zeek Tailer restarted (PID {pid})"}
+    return {"status": "error", "message": "Tailer failed to start"}
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
