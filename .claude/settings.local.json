@@ -125,7 +125,9 @@
       "Bash(sqlite3 data/airadar.db \":*)",
       "Bash(sqlite3 data/airadar.db \"SELECT ip FROM device_ips WHERE mac_address=''a2:c0:6d:40:7:f7'';\")",
       "Bash(curl -s http://localhost:8000/api/health)",
-      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:3001/control/blocked_services/all\")"
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:3001/control/blocked_services/all\")",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''zeek_tailer.py'', doraise=True\\); py_compile.compile\\(''api.py'', doraise=True\\); print\\(''✓ All OK''\\)\")",
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/*.sh /Users/goswijnthijssen/AIRadar/Dockerfile /Users/goswijnthijssen/AIRadar/docker-compose.yml /Users/goswijnthijssen/AIRadar/.env.example)"
     ]
   },
   "hooks": {
