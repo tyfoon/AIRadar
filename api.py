@@ -592,7 +592,9 @@ async def privacy_stats(
         )
         .filter(
             (DetectionEvent.detection_type == "vpn_tunnel")
+            | (DetectionEvent.detection_type == "stealth_vpn_tunnel")
             | (DetectionEvent.ai_service.like("vpn_%"))
+            | (DetectionEvent.ai_service.like("tor_%"))
         )
         .group_by(DetectionEvent.source_ip)
         .having(func.max(DetectionEvent.timestamp) >= vpn_active_cutoff)
