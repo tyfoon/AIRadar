@@ -1631,17 +1631,29 @@ async function refreshDevices() {
     allServices.add(e.ai_service);
   });
 
-  const deviceMacs = Object.keys(matrix);
+  // Include ALL known devices (even those with 0 events)
+  const allKnownMacs = new Set(Object.keys(matrix));
+  Object.keys(deviceMap).forEach(mac => allKnownMacs.add(mac));
+
+  const deviceMacs = [...allKnownMacs];
   deviceMacs.sort((a, b) => {
-    const totalA = Object.values(matrix[a]).reduce((s, v) => s + v.count, 0);
-    const totalB = Object.values(matrix[b]).reduce((s, v) => s + v.count, 0);
+    const totalA = Object.values(matrix[a] || {}).reduce((s, v) => s + v.count, 0);
+    const totalB = Object.values(matrix[b] || {}).reduce((s, v) => s + v.count, 0);
+    // Devices with events first (sorted by count desc), then devices without events (sorted by name)
+    if (totalA === 0 && totalB === 0) {
+      const nameA = deviceMap[a]?.display_name || deviceMap[a]?.hostname || a;
+      const nameB = deviceMap[b]?.display_name || deviceMap[b]?.hostname || b;
+      return nameA.localeCompare(nameB);
+    }
     return totalB - totalA;
   });
 
+  const activeMacs = Object.keys(matrix).length;
+
   // Stats
   const totalUploads = allEvents.filter(e => e.possible_upload).length;
-  document.getElementById('dev-stat-total').textContent = Object.keys(deviceMap).length || deviceMacs.length;
-  document.getElementById('dev-stat-violators').textContent = deviceMacs.length;
+  document.getElementById('dev-stat-total').textContent = deviceMacs.length;
+  document.getElementById('dev-stat-violators').textContent = activeMacs;
   document.getElementById('dev-stat-events').textContent = allEvents.length.toLocaleString();
   document.getElementById('dev-stat-uploads').textContent = totalUploads;
 
