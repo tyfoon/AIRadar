@@ -1580,13 +1580,19 @@ function _renderDeviceMatrix() {
       ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
       : '';
 
-    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+    const isQuiet = total === 0;
+    const rowOpacity = isQuiet ? 'opacity-60' : '';
+    const totalDisplay = isQuiet
+      ? `<span class="text-xs text-slate-300 dark:text-slate-600">—</span>`
+      : `<span class="cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</span>`;
+
+    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${rowOpacity}">
       <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
         <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-mac="${dev ? dev.mac_address : ''}" title="${dn}">${dn}</span>
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
-      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</td>
+      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">${totalDisplay}</td>
       ${cells}
     </tr>`;
   }).join('');
