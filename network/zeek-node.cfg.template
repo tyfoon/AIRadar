@@ -1,0 +1,8 @@
+# ──────────────────────────────────────────────────────────────
+# Zeek — Node Configuration for AI-Radar Bridge
+# Deployed to: /etc/zeek/node.cfg (or /opt/zeek/etc/node.cfg)
+# ──────────────────────────────────────────────────────────────
+[zeek]
+type=standalone
+host=localhost
+interface=br0
