@@ -33,14 +33,27 @@ except Exception:
     _mac_lookup = None
 
 
-def _resolve_vendor(mac: Optional[str] = None) -> Optional[str]:
-    """Look up the hardware vendor from a MAC address."""
-    if not mac or not _mac_lookup:
-        return None
-    try:
-        return _mac_lookup.lookup(mac)
-    except Exception:
-        return None
+def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
+    """Look up the hardware vendor from a MAC address, with hostname fallback."""
+    if mac and _mac_lookup:
+        try:
+            return _mac_lookup.lookup(mac)
+        except Exception:
+            pass
+    # Fallback: infer vendor from hostname patterns (e.g. Apple LAA MACs)
+    if hostname:
+        hn = hostname.lower()
+        if any(k in hn for k in ("macbook", "imac", "iphone", "ipad", "apple", "airpods")):
+            return "Apple Inc."
+        if any(k in hn for k in ("ubiquiti", "unifi")):
+            return "Ubiquiti Inc"
+        if any(k in hn for k in ("samsung",)):
+            return "Samsung Electronics"
+        if any(k in hn for k in ("ds-2cd", "hikvision")):
+            return "Hikvision"
+        if any(k in hn for k in ("android", "pixel")):
+            return "Google Inc."
+    return None
 
 
 def _ipv6_network64(addr: str):
