@@ -26,8 +26,8 @@ import httpx
 # Configuration
 # ---------------------------------------------------------------------------
 
-API_URL = "http://localhost:8000/api/ingest"
-DEVICE_API_URL = "http://localhost:8000/api/devices"
+API_URL = os.environ.get("AIRADAR_API_URL", "http://localhost:8000/api/ingest")
+DEVICE_API_URL = os.environ.get("AIRADAR_DEVICE_API_URL", "http://localhost:8000/api/devices")
 SENSOR_ID = socket.gethostname()
 
 # Volumetric upload threshold (bytes)
