@@ -2188,6 +2188,36 @@ async function runHealthCheck() {
 }
 
 // ================================================================
+// SERVICE RESTART
+// ================================================================
+async function restartService(service, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Restarting...';
+  btn.className = btn.className.replace(/bg-\S+/g, 'bg-slate-500').replace(/hover:\S+/g, '');
+
+  try {
+    const res = await fetch(`/api/services/${service}/restart`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      btn.textContent = '✓ ' + data.message;
+      btn.className = btn.className.replace(/bg-slate-500/g, 'bg-emerald-600');
+      // Re-run health check after a moment
+      setTimeout(() => runHealthCheck(), 2000);
+    } else {
+      btn.textContent = '✗ ' + data.message;
+      btn.className = btn.className.replace(/bg-slate-500/g, 'bg-red-600');
+      btn.disabled = false;
+    }
+  } catch (err) {
+    btn.textContent = '✗ Failed: ' + err.message;
+    btn.className = btn.className.replace(/bg-slate-500/g, 'bg-red-600');
+    btn.disabled = false;
+  }
+}
+
+// ================================================================
 // MANUAL REFRESH
 // ================================================================
 function updateRefreshTimestamp() {
