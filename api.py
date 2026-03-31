@@ -274,7 +274,6 @@ async def _expire_block_rules():
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
-@asynccontextmanager
 def _backfill_vendors():
     """One-time vendor backfill for devices that are missing vendor info."""
     db = SessionLocal()
