@@ -328,7 +328,8 @@ const DEVICE_TYPES = [
   { match: /nintendo|switch/i,    icon: '🎮', type: 'Nintendo' },
   { match: /nas|synology|qnap/i,  icon: '💾', type: 'NAS' },
   { match: /server/i,             icon: '🖥️', type: 'Server' },
-  { match: /camera|cam\b/i,       icon: '📷', type: 'Camera' },
+  { match: /camera|cam\b|hikvision|ds-2cd/i, icon: '📹', type: 'IP Camera' },
+  { match: /espressif/i,          icon: '🔌', type: 'IoT Device' },
 ];
 
 function _detectDeviceType(device) {

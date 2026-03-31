@@ -117,7 +117,11 @@
       "Bash(sqlite3 airadar.db \"SELECT d.mac_address, d.hostname, d.vendor, d.display_name, di.ip FROM devices d JOIN device_ips di ON d.mac_address = di.mac_address WHERE di.ip = ''192.168.1.177'';\")",
       "Bash(sqlite3 airadar.db \"SELECT DISTINCT source_ip, ai_service, detection_type, COUNT\\(*\\) as cnt FROM detection_events WHERE source_ip=''192.168.1.177'' GROUP BY ai_service, detection_type ORDER BY cnt DESC;\")",
       "Bash(sqlite3 airadar.db \"SELECT DISTINCT source_ip FROM detection_events WHERE source_ip NOT IN \\(SELECT ip FROM device_ips\\) ORDER BY source_ip;\")",
-      "Bash(sqlite3 airadar.db \"SELECT mac_address, hostname, vendor, display_name FROM devices ORDER BY mac_address;\")"
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, hostname, vendor, display_name FROM devices ORDER BY mac_address;\")",
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, hostname, vendor FROM devices WHERE mac_address LIKE ''unknown%'' OR hostname LIKE ''ds-%'' OR mac_address LIKE ''24:%'';\")",
+      "Bash(curl -s http://localhost:8000/api/devices)",
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices;\")",
+      "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices WHERE mac_address LIKE ''24:%'';\")"
     ]
   },
   "hooks": {
