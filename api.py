@@ -41,8 +41,75 @@ except Exception as exc:
     print(f"[vendor] Could not load OUI database: {exc}")
 
 
+# ── Hostname → vendor mapping ──────────────────────────────────────────────
+# Loaded from a JSON file so users can extend it without touching code.
+# Falls back to a built-in default if the file doesn't exist yet.
+_HOSTNAME_VENDORS_FILE = os.path.join(os.path.dirname(__file__), "data", "hostname_vendors.json")
+
+_HOSTNAME_VENDORS_DEFAULT: list[dict] = [
+    {"keywords": ["macbook", "imac", "iphone", "ipad", "apple", "airpods"], "vendor": "Apple Inc."},
+    {"keywords": ["ubiquiti", "unifi"], "vendor": "Ubiquiti Inc"},
+    {"keywords": ["samsung", "galaxy"], "vendor": "Samsung Electronics"},
+    {"keywords": ["ds-2cd", "hikvision"], "vendor": "Hikvision"},
+    {"keywords": ["android", "pixel"], "vendor": "Google Inc."},
+    {"keywords": ["kobo"], "vendor": "Kobo Inc."},
+    {"keywords": ["smartgateway", "watermeter"], "vendor": "Smart Gateways B.V."},
+    {"keywords": ["sonos"], "vendor": "Sonos Inc."},
+    {"keywords": ["philips", "hue"], "vendor": "Signify (Philips)"},
+    {"keywords": ["ring", "doorbell"], "vendor": "Ring LLC"},
+    {"keywords": ["nest"], "vendor": "Google Nest"},
+    {"keywords": ["tplink", "tp-link", "tapo", "kasa"], "vendor": "TP-Link"},
+    {"keywords": ["synology", "diskstation"], "vendor": "Synology Inc."},
+    {"keywords": ["qnap"], "vendor": "QNAP Systems"},
+    {"keywords": ["roku"], "vendor": "Roku Inc."},
+    {"keywords": ["chromecast"], "vendor": "Google Inc."},
+    {"keywords": ["xbox"], "vendor": "Microsoft"},
+    {"keywords": ["playstation", "ps5", "ps4"], "vendor": "Sony Interactive"},
+    {"keywords": ["nintendo", "switch"], "vendor": "Nintendo"},
+    {"keywords": ["ecobee", "tado"], "vendor": "Smart Thermostat"},
+    {"keywords": ["roomba", "irobot"], "vendor": "iRobot"},
+    {"keywords": ["dyson"], "vendor": "Dyson"},
+    {"keywords": ["tesla", "teslafi"], "vendor": "Tesla Inc."},
+    {"keywords": ["brother", "hl-", "mfc-", "dcp-"], "vendor": "Brother Industries"},
+    {"keywords": ["hp-", "hpprinter", "envy", "officejet", "laserjet"], "vendor": "HP Inc."},
+    {"keywords": ["canon", "pixma"], "vendor": "Canon Inc."},
+    {"keywords": ["epson"], "vendor": "Seiko Epson"},
+    {"keywords": ["daikin"], "vendor": "Daikin"},
+    {"keywords": ["shelly"], "vendor": "Shelly (Allterco)"},
+    {"keywords": ["tuya", "smartlife"], "vendor": "Tuya Inc."},
+    {"keywords": ["ikea", "tradfri", "dirigera"], "vendor": "IKEA"},
+    {"keywords": ["fritz", "fritzbox"], "vendor": "AVM GmbH (Fritz!)"},
+    {"keywords": ["netgear", "orbi"], "vendor": "Netgear"},
+    {"keywords": ["asus", "rt-ax", "rt-ac"], "vendor": "ASUSTeK"},
+    {"keywords": ["linksys", "velop"], "vendor": "Linksys (Belkin)"},
+]
+
+def _load_hostname_vendors() -> list[dict]:
+    """Load hostname→vendor mappings from JSON file, or create it from defaults."""
+    try:
+        if os.path.exists(_HOSTNAME_VENDORS_FILE):
+            with open(_HOSTNAME_VENDORS_FILE) as f:
+                data = json.load(f)
+                if isinstance(data, list) and data:
+                    return data
+    except Exception:
+        pass
+    # Write default file so user can edit it
+    try:
+        os.makedirs(os.path.dirname(_HOSTNAME_VENDORS_FILE), exist_ok=True)
+        with open(_HOSTNAME_VENDORS_FILE, "w") as f:
+            json.dump(_HOSTNAME_VENDORS_DEFAULT, f, indent=2)
+        print(f"[vendor] Created editable hostname map: {_HOSTNAME_VENDORS_FILE}")
+    except Exception:
+        pass
+    return _HOSTNAME_VENDORS_DEFAULT
+
+_hostname_vendors: list[dict] = _load_hostname_vendors()
+
+
 def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
     """Look up the hardware vendor from a MAC address, with hostname fallback."""
+    # Layer 1: OUI database (39k+ manufacturers by MAC prefix)
     if mac and _oui_db and not mac.startswith("unknown_"):
         try:
             clean = mac.upper().replace(":", "").replace("-", "").replace(".", "")
@@ -51,33 +118,12 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
                 return vendor
         except Exception:
             pass
-    # Fallback: infer vendor from hostname patterns (e.g. Apple LAA MACs)
+    # Layer 2: hostname keyword matching (user-editable JSON file)
     if hostname:
         hn = hostname.lower()
-        if any(k in hn for k in ("macbook", "imac", "iphone", "ipad", "apple", "airpods")):
-            return "Apple Inc."
-        if any(k in hn for k in ("ubiquiti", "unifi")):
-            return "Ubiquiti Inc"
-        if any(k in hn for k in ("samsung",)):
-            return "Samsung Electronics"
-        if any(k in hn for k in ("ds-2cd", "hikvision")):
-            return "Hikvision"
-        if any(k in hn for k in ("android", "pixel")):
-            return "Google Inc."
-        if any(k in hn for k in ("kobo",)):
-            return "Kobo Inc."
-        if any(k in hn for k in ("smartgateway", "watermeter")):
-            return "Smart Gateways B.V."
-        if any(k in hn for k in ("sonos",)):
-            return "Sonos Inc."
-        if any(k in hn for k in ("philips", "hue")):
-            return "Signify (Philips)"
-        if any(k in hn for k in ("ring", "doorbell")):
-            return "Ring LLC"
-        if any(k in hn for k in ("nest",)):
-            return "Google Nest"
-        if any(k in hn for k in ("tplink", "tp-link", "tapo", "kasa")):
-            return "TP-Link"
+        for entry in _hostname_vendors:
+            if any(kw in hn for kw in entry.get("keywords", [])):
+                return entry["vendor"]
     return None
 
 
