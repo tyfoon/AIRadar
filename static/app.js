@@ -341,10 +341,15 @@ function _detectDeviceType(device) {
   // Vendor-based fallback
   if (device.vendor) {
     const v = device.vendor.toLowerCase();
-    if (v.includes('apple'))     return { icon: '🍎', type: 'Apple Device' };
-    if (v.includes('samsung'))   return { icon: '📱', type: 'Samsung' };
-    if (v.includes('google'))    return { icon: '📱', type: 'Google Device' };
-    if (v.includes('microsoft')) return { icon: '💻', type: 'Microsoft' };
+    if (v.includes('espressif'))  return { icon: '🔌', type: 'IoT Device' };
+    if (v.includes('hikvision'))  return { icon: '📹', type: 'IP Camera' };
+    if (v.includes('apple'))      return { icon: '🍎', type: 'Apple Device' };
+    if (v.includes('samsung'))    return { icon: '📱', type: 'Samsung' };
+    if (v.includes('google'))     return { icon: '📱', type: 'Google Device' };
+    if (v.includes('microsoft'))  return { icon: '💻', type: 'Microsoft' };
+    if (v.includes('sonos'))      return { icon: '🔊', type: 'Speaker' };
+    if (v.includes('ring'))       return { icon: '🔔', type: 'Doorbell' };
+    if (v.includes('tp-link') || v.includes('tplink'))  return { icon: '📡', type: 'Network' };
     if (v.includes('intel') || v.includes('dell') || v.includes('lenovo') || v.includes('hp '))
       return { icon: '💻', type: 'Computer' };
   }
