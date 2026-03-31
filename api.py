@@ -1124,6 +1124,203 @@ def get_known_services(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# KILLSWITCH — Emergency bypass for all protection systems
+# ---------------------------------------------------------------------------
+# State file persists across restarts so killswitch survives a reboot
+_KILLSWITCH_FILE = os.path.join(os.path.dirname(__file__), "data", "killswitch.json")
+
+
+def _read_killswitch_state() -> dict:
+    """Read killswitch state from disk."""
+    try:
+        if os.path.exists(_KILLSWITCH_FILE):
+            with open(_KILLSWITCH_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"active": False, "activated_at": None, "activated_by": "system"}
+
+
+def _write_killswitch_state(state: dict):
+    """Persist killswitch state to disk."""
+    try:
+        os.makedirs(os.path.dirname(_KILLSWITCH_FILE), exist_ok=True)
+        with open(_KILLSWITCH_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as exc:
+        print(f"[killswitch] Failed to write state: {exc}")
+
+
+@app.get("/api/killswitch")
+async def get_killswitch():
+    """Return current killswitch status."""
+    state = _read_killswitch_state()
+    # Also check live AdGuard protection status
+    adguard_protection = await adguard.is_protection_enabled()
+    return {
+        **state,
+        "adguard_protection": adguard_protection,
+    }
+
+
+@app.post("/api/killswitch")
+async def toggle_killswitch(payload: dict):
+    """Activate or deactivate the killswitch.
+
+    Body: {"active": true/false}
+
+    When ACTIVATED (active=true):
+      1. AdGuard protection → disabled (DNS keeps forwarding, no filtering)
+      2. All AI-Radar block rules → suspended
+      3. IPS (CrowdSec) → disabled
+      4. New detections still logged but no blocking actions taken
+
+    When DEACTIVATED (active=false):
+      1. AdGuard protection → re-enabled
+      2. Block rules → re-activated
+      3. IPS → re-enabled
+    """
+    active = payload.get("active", False)
+    now = datetime.utcnow().isoformat()
+    results = {"actions": []}
+
+    if active:
+        # ── ACTIVATE KILLSWITCH ──
+        # 1. Disable AdGuard DNS protection (keeps DNS forwarding alive!)
+        adguard_ok = await adguard.set_protection(False)
+        results["actions"].append({
+            "service": "AdGuard Home",
+            "action": "protection_disabled",
+            "success": adguard_ok,
+            "detail": "DNS forwarding active, filtering off" if adguard_ok else "Failed — may need manual intervention",
+        })
+
+        # 2. Disable IPS
+        crowdsec.enabled = False
+        results["actions"].append({
+            "service": "CrowdSec IPS",
+            "action": "disabled",
+            "success": True,
+            "detail": "Intrusion prevention paused",
+        })
+
+        # 3. Suspend all active block rules
+        db = SessionLocal()
+        try:
+            active_rules = db.query(BlockRule).filter(BlockRule.active == True).all()  # noqa: E712
+            suspended_count = 0
+            for rule in active_rules:
+                try:
+                    await adguard.unblock_domain(rule.domain)
+                    suspended_count += 1
+                except Exception:
+                    pass
+            results["actions"].append({
+                "service": "Block Rules",
+                "action": "suspended",
+                "success": True,
+                "detail": f"{suspended_count} rules suspended in AdGuard (DB rules preserved)",
+            })
+        finally:
+            db.close()
+
+        state = {"active": True, "activated_at": now, "activated_by": "user"}
+        print(f"[KILLSWITCH] ⚠️  ACTIVATED — all protection disabled")
+
+    else:
+        # ── DEACTIVATE KILLSWITCH ──
+        # 1. Re-enable AdGuard DNS protection
+        adguard_ok = await adguard.set_protection(True)
+        results["actions"].append({
+            "service": "AdGuard Home",
+            "action": "protection_enabled",
+            "success": adguard_ok,
+            "detail": "DNS filtering re-enabled" if adguard_ok else "Failed — re-enable manually in AdGuard UI",
+        })
+
+        # 2. Re-enable IPS
+        crowdsec.enabled = True
+        results["actions"].append({
+            "service": "CrowdSec IPS",
+            "action": "enabled",
+            "success": True,
+            "detail": "Intrusion prevention active",
+        })
+
+        # 3. Re-apply active block rules
+        db = SessionLocal()
+        try:
+            active_rules = db.query(BlockRule).filter(BlockRule.active == True).all()  # noqa: E712
+            restored_count = 0
+            for rule in active_rules:
+                try:
+                    await adguard.block_domain(rule.domain)
+                    restored_count += 1
+                except Exception:
+                    pass
+            results["actions"].append({
+                "service": "Block Rules",
+                "action": "restored",
+                "success": True,
+                "detail": f"{restored_count} rules re-applied to AdGuard",
+            })
+        finally:
+            db.close()
+
+        state = {"active": False, "activated_at": None, "activated_by": "system"}
+        print(f"[KILLSWITCH] ✅ DEACTIVATED — all protection re-enabled")
+
+    _write_killswitch_state(state)
+    return {"killswitch": state, **results}
+
+
+# ── Auto-failsafe: monitor AdGuard and activate killswitch if it crashes ──
+async def _adguard_watchdog():
+    """Background task that monitors AdGuard availability.
+
+    If AdGuard is unreachable for 3 consecutive checks (90s), it
+    automatically activates the killswitch to prevent DNS blackhole.
+    When AdGuard recovers, it notifies but does NOT auto-deactivate
+    (that requires explicit user action for safety).
+    """
+    fail_count = 0
+    max_failures = 3
+    auto_activated = False
+
+    while True:
+        await asyncio.sleep(30)
+        try:
+            status = await adguard.get_status()
+            is_running = status.get("running", False)
+
+            if is_running:
+                if fail_count > 0:
+                    print(f"[watchdog] AdGuard recovered (was failing for {fail_count} checks)")
+                fail_count = 0
+                if auto_activated:
+                    print(f"[watchdog] ℹ️  AdGuard is back — killswitch still active, deactivate manually when ready")
+            else:
+                fail_count += 1
+                print(f"[watchdog] ⚠️  AdGuard unreachable ({fail_count}/{max_failures})")
+
+                if fail_count >= max_failures and not auto_activated:
+                    # Emergency: activate killswitch
+                    state = {
+                        "active": True,
+                        "activated_at": datetime.utcnow().isoformat(),
+                        "activated_by": "auto_failsafe",
+                    }
+                    _write_killswitch_state(state)
+                    auto_activated = True
+                    crowdsec.enabled = False
+                    print(f"[watchdog] 🚨 AUTO-FAILSAFE: Killswitch activated — AdGuard down for {max_failures} checks")
+
+        except Exception as exc:
+            fail_count += 1
+            print(f"[watchdog] Error checking AdGuard: {exc}")
+
+
 # GET /api/health — system health check for all services
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
