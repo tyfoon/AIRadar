@@ -2137,6 +2137,19 @@ async function runHealthCheck() {
 
     cards.innerHTML = banner + services.map(s => {
       const c = statusMap[s.status] || statusMap.error;
+      // Determine if this service can be restarted
+      let restartBtn = '';
+      if (s.service === 'Zeek (Packet Capture)') {
+        restartBtn = `<button onclick="restartService('zeek', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+          ${s.status !== 'ok' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
+          ${s.status !== 'ok' ? '⚡ Restart Zeek' : '↻ Restart'}</button>`;
+      } else if (s.service === 'Zeek Tailer') {
+        restartBtn = `<button onclick="restartService('tailer', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
+          ${s.status !== 'ok' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
+          ${s.status !== 'ok' ? '⚡ Restart Tailer' : '↻ Restart'}</button>`;
+      } else if (s.service.startsWith('Zeek ') && s.service.endsWith('.log') && s.status !== 'ok') {
+        restartBtn = `<button onclick="restartService('zeek', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors">⚡ Restart Zeek</button>`;
+      }
       return `<div class="${c.bg} border ${c.border} rounded-xl p-4">
         <div class="flex items-center justify-between mb-2">
           <span class="text-lg">${s.icon}</span>
@@ -2145,6 +2158,7 @@ async function runHealthCheck() {
         <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${s.service}</p>
         <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">${s.details}</p>
         ${s.response_ms > 0 ? `<p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${s.response_ms}ms</p>` : ''}
+        ${restartBtn}
       </div>`;
     }).join('');
 
