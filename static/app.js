@@ -2115,6 +2115,161 @@ function renderLegalComponents() {
 document.addEventListener('DOMContentLoaded', renderLegalComponents);
 
 // ================================================================
+// KILLSWITCH
+// ================================================================
+let _killswitchActive = false;
+
+async function loadKillswitchState() {
+  try {
+    const res = await fetch('/api/killswitch');
+    if (!res.ok) return;
+    const data = await res.json();
+    _killswitchActive = data.active;
+    renderKillswitchUI(data);
+  } catch (e) {
+    console.warn('[killswitch] Could not load state:', e);
+  }
+}
+
+function renderKillswitchUI(data) {
+  const card = document.getElementById('killswitch-card');
+  const btn = document.getElementById('ks-toggle-btn');
+  const icon = document.getElementById('ks-icon');
+  const subtitle = document.getElementById('ks-subtitle');
+  const failsafeInfo = document.getElementById('ks-failsafe-info');
+  if (!card || !btn) return;
+
+  const active = data.active;
+  _killswitchActive = active;
+
+  if (active) {
+    // KILLSWITCH IS ON — red danger state
+    card.className = card.className
+      .replace('border-slate-200 dark:border-white/[0.05]', '')
+      .replace('border-emerald-400 dark:border-emerald-600', '');
+    card.classList.add('border-red-400', 'dark:border-red-600');
+    card.style.background = ''; // reset
+    card.classList.add('bg-red-50', 'dark:bg-red-950/20');
+
+    icon.className = 'w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center transition-colors';
+    icon.innerHTML = '<span class="text-xl">⚠️</span>';
+
+    const since = data.activated_at ? new Date(data.activated_at + 'Z').toLocaleTimeString() : '?';
+    const by = data.activated_by === 'auto_failsafe' ? 'auto-failsafe' : 'manual';
+    subtitle.textContent = `Active since ${since} (${by})`;
+    subtitle.classList.remove('text-slate-400', 'dark:text-slate-500');
+    subtitle.classList.add('text-red-500', 'dark:text-red-400');
+
+    btn.textContent = 'Deactivate Killswitch';
+    btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20';
+
+    // Status dots → red
+    setKsDot('adguard', 'red', 'passthrough');
+    setKsDot('ips', 'red', 'disabled');
+    setKsDot('rules', 'red', 'suspended');
+
+    // Show failsafe banner if auto-activated
+    if (data.activated_by === 'auto_failsafe') {
+      failsafeInfo.classList.remove('hidden');
+    } else {
+      failsafeInfo.classList.add('hidden');
+    }
+
+  } else {
+    // KILLSWITCH IS OFF — normal green state
+    card.classList.remove('bg-red-50', 'dark:bg-red-950/20', 'border-red-400', 'dark:border-red-600');
+    card.classList.add('border-slate-200', 'dark:border-white/[0.05]');
+    card.style.background = '';
+
+    icon.className = 'w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center transition-colors';
+    icon.innerHTML = '<span class="text-xl">🛡️</span>';
+
+    subtitle.textContent = 'All systems operational';
+    subtitle.classList.remove('text-red-500', 'dark:text-red-400');
+    subtitle.classList.add('text-slate-400', 'dark:text-slate-500');
+
+    btn.textContent = 'Activate Killswitch';
+    btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20';
+
+    setKsDot('adguard', 'green', 'filtering');
+    setKsDot('ips', 'green', 'active');
+    setKsDot('rules', 'green', 'enforced');
+
+    failsafeInfo.classList.add('hidden');
+  }
+}
+
+function setKsDot(name, color, label) {
+  const dot = document.getElementById(`ks-dot-${name}`);
+  const lbl = document.getElementById(`ks-label-${name}`);
+  if (dot) {
+    dot.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500');
+    dot.classList.add(color === 'green' ? 'bg-emerald-500' : color === 'red' ? 'bg-red-500' : 'bg-amber-500');
+  }
+  if (lbl) {
+    lbl.textContent = label;
+    lbl.classList.remove('text-emerald-600', 'dark:text-emerald-400', 'text-red-600', 'dark:text-red-400');
+    if (color === 'green') {
+      lbl.classList.add('text-emerald-600', 'dark:text-emerald-400');
+    } else {
+      lbl.classList.add('text-red-600', 'dark:text-red-400');
+    }
+  }
+}
+
+async function toggleKillswitch() {
+  const newState = !_killswitchActive;
+  const action = newState ? 'ACTIVATE' : 'DEACTIVATE';
+
+  // Confirm before activating
+  if (newState) {
+    if (!confirm(
+      '⚠️ ACTIVATE KILLSWITCH?\n\n' +
+      'This will:\n' +
+      '• Disable AdGuard DNS filtering\n' +
+      '• Suspend all block rules\n' +
+      '• Disable intrusion prevention\n\n' +
+      'Internet traffic will flow unfiltered.\n' +
+      'Use this only in emergencies.'
+    )) return;
+  }
+
+  const btn = document.getElementById('ks-toggle-btn');
+  const log = document.getElementById('ks-log');
+  btn.disabled = true;
+  btn.textContent = newState ? 'Activating…' : 'Deactivating…';
+
+  // Show log
+  log.classList.remove('hidden');
+  log.innerHTML = `<div class="text-amber-400">▸ ${action} killswitch…</div>`;
+
+  try {
+    const res = await fetch('/api/killswitch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active: newState}),
+    });
+    const data = await res.json();
+
+    // Render action log
+    let logHtml = '';
+    for (const a of (data.actions || [])) {
+      const icon = a.success ? '<span class="text-emerald-400">✓</span>' : '<span class="text-red-400">✗</span>';
+      logHtml += `<div>${icon} ${a.service}: ${a.detail}</div>`;
+    }
+    log.innerHTML = logHtml;
+
+    // Update UI state
+    renderKillswitchUI(data.killswitch || {active: newState});
+
+  } catch (e) {
+    log.innerHTML = `<div class="text-red-400">✗ Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ================================================================
 // HEALTH CHECK
 // ================================================================
 async function runHealthCheck() {
