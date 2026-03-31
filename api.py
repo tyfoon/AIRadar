@@ -24,24 +24,31 @@ from sqlalchemy.orm import Session
 from adguard_client import AdGuardClient
 from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, init_db
 
-# MAC Vendor lookup — keep built-in DB even if update_vendors() fails
-_mac_lookup = None
+# MAC Vendor lookup — sync dict-based OUI lookup (avoids async issues with MacLookup)
+_oui_db: dict[str, str] = {}
 try:
-    from mac_vendor_lookup import MacLookup
-    _mac_lookup = MacLookup()
-    try:
-        _mac_lookup.update_vendors()  # optional: refresh OUI database
-    except Exception:
-        pass  # built-in DB is good enough
-except ImportError:
-    _mac_lookup = None
+    from mac_vendor_lookup import BaseMacLookup
+    _vendor_file = BaseMacLookup().find_vendors_list()
+    if _vendor_file:
+        with open(_vendor_file) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and ":" in _line:
+                    _prefix, _vendor = _line.split(":", 1)
+                    _oui_db[_prefix.strip().upper()] = _vendor.strip()
+        print(f"[vendor] Loaded {len(_oui_db):,} OUI entries")
+except Exception as exc:
+    print(f"[vendor] Could not load OUI database: {exc}")
 
 
 def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
     """Look up the hardware vendor from a MAC address, with hostname fallback."""
-    if mac and _mac_lookup and not mac.startswith("unknown_"):
+    if mac and _oui_db and not mac.startswith("unknown_"):
         try:
-            return _mac_lookup.lookup(mac)
+            clean = mac.upper().replace(":", "").replace("-", "").replace(".", "")
+            vendor = _oui_db.get(clean[:6])
+            if vendor:
+                return vendor
         except Exception:
             pass
     # Fallback: infer vendor from hostname patterns (e.g. Apple LAA MACs)
