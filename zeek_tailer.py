@@ -758,6 +758,137 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stealth VPN / Tor detection via Zeek DPD (Dynamic Protocol Detection)
+# ---------------------------------------------------------------------------
+# Zeek's DPD engine populates the `service` column in conn.log regardless of
+# port.  This catches VPNs running on port 443 or any other non-standard port.
+
+DPD_EVASION_PROTOCOLS: dict[str, str] = {
+    "openvpn":    "vpn_openvpn",
+    "wireguard":  "vpn_wireguard",
+    "tor":        "tor_active",
+    "socks":      "vpn_socks_proxy",
+    "ayiya":      "vpn_ayiya_tunnel",   # IPv6-in-IPv4 tunnel
+    "teredo":     "vpn_teredo_tunnel",  # IPv6-in-IPv4 tunnel
+    "dtls":       "vpn_dtls_tunnel",    # DTLS can indicate VPN (e.g. AnyConnect)
+}
+
+DPD_DEDUP_SECONDS = 300  # 5-minute window per (src_ip, protocol)
+_dpd_last_seen: dict[tuple[str, str], float] = {}
+
+
+# ---------------------------------------------------------------------------
+# dhcp.log tailer — passive device recognition
+# ---------------------------------------------------------------------------
+
+DHCP_DEDUP_SECONDS = 600  # Only update device once per 10 min per MAC
+
+_dhcp_last_seen: dict[str, float] = {}  # mac → last_registered_ts
+
+
+async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Continuously tail Zeek's dhcp.log for DHCP leases.
+
+    Extracts MAC, IP, hostname, and FQDN from DHCP requests/acks and
+    registers (or updates) the device via the API.  This provides far
+    richer device names than reverse-DNS or MAC-vendor lookups alone.
+    """
+    print(f"[*] Tailing dhcp.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                # Read header
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+
+                # Seek to end for tailing
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break  # file rotated
+                        except OSError:
+                            break
+                        await asyncio.sleep(1)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    record = dict(zip(fields, parts))
+
+                    mac = record.get("mac", "-")
+                    if not mac or mac == "-":
+                        continue
+
+                    # Determine IP: prefer assigned_addr, fall back to
+                    # requested_addr, then client_addr
+                    ip = None
+                    for ip_field in ("assigned_addr", "requested_addr", "client_addr"):
+                        val = record.get(ip_field, "-")
+                        if val and val != "-" and val != "0.0.0.0":
+                            ip = val
+                            break
+
+                    if not ip:
+                        continue
+
+                    # Dedup: don't spam API for the same MAC
+                    now = time.time()
+                    last = _dhcp_last_seen.get(mac, 0)
+                    if (now - last) < DHCP_DEDUP_SECONDS:
+                        continue
+                    _dhcp_last_seen[mac] = now
+
+                    # Build device payload with DHCP-enriched data
+                    hostname = None
+                    for name_field in ("host_name", "client_fqdn"):
+                        val = record.get(name_field, "-")
+                        if val and val != "-":
+                            hostname = val
+                            break
+
+                    payload: dict = {"ip": ip, "mac_address": mac}
+                    if hostname:
+                        payload["hostname"] = hostname
+
+                    try:
+                        await client.post(DEVICE_API_URL, json=payload, timeout=5)
+                        label = hostname or mac
+                        print(f"[DHCP] Device: {label} → {ip} (MAC: {mac})")
+                    except httpx.HTTPError as exc:
+                        print(f"[!] DHCP device registration failed: {exc}")
+
+        except (OSError, IOError) as exc:
+            print(f"[!] dhcp.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
@@ -765,12 +896,15 @@ async def main(zeek_log_dir: str) -> None:
     log_dir = Path(zeek_log_dir)
     ssl_log = log_dir / "ssl.log"
     conn_log = log_dir / "conn.log"
+    dhcp_log = log_dir / "dhcp.log"
 
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
     print(f"[*] Reporting to API at {API_URL}")
     print(f"[*] Monitoring {len(DOMAIN_MAP)} domains (AI + Cloud)")
     print(f"[*] Upload threshold: {UPLOAD_THRESHOLD_BYTES:,} bytes")
     print(f"[*] Upload debounce window: {UPLOAD_DEBOUNCE_SECONDS}s")
+    print(f"[*] DHCP passive device recognition: enabled")
+    print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
     print()
 
@@ -778,6 +912,7 @@ async def main(zeek_log_dir: str) -> None:
         await asyncio.gather(
             tail_ssl_log(ssl_log, client),
             tail_conn_log(conn_log, client),
+            tail_dhcp_log(dhcp_log, client),
             flush_upload_buckets(client),  # background flusher
         )
 

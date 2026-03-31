@@ -123,7 +123,9 @@
       "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices;\")",
       "Bash(sqlite3 airadar.db \"SELECT mac_address, vendor FROM devices WHERE mac_address LIKE ''24:%'';\")",
       "Bash(sqlite3 data/airadar.db \":*)",
-      "Bash(sqlite3 data/airadar.db \"SELECT ip FROM device_ips WHERE mac_address=''a2:c0:6d:40:7:f7'';\")"
+      "Bash(sqlite3 data/airadar.db \"SELECT ip FROM device_ips WHERE mac_address=''a2:c0:6d:40:7:f7'';\")",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:3001/control/blocked_services/all\")"
     ]
   },
   "hooks": {
