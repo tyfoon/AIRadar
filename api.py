@@ -612,6 +612,39 @@ def rename_device(mac_address: str, payload: DeviceUpdate, db: Session = Depends
 
 
 # ---------------------------------------------------------------------------
+# GET/PUT /api/hostname-vendors — user-editable hostname → vendor mapping
+# ---------------------------------------------------------------------------
+@app.get("/api/hostname-vendors")
+def get_hostname_vendors():
+    """Return the current hostname→vendor mapping list."""
+    return _hostname_vendors
+
+
+@app.put("/api/hostname-vendors")
+def update_hostname_vendors(entries: list[dict]):
+    """Replace the hostname→vendor mapping. Persists to disk.
+
+    Body: [{"keywords": ["kobo"], "vendor": "Kobo Inc."}, ...]
+    """
+    global _hostname_vendors
+    # Validate
+    for entry in entries:
+        if "keywords" not in entry or "vendor" not in entry:
+            raise HTTPException(400, "Each entry needs 'keywords' (list) and 'vendor' (str)")
+        if not isinstance(entry["keywords"], list):
+            raise HTTPException(400, "'keywords' must be a list of strings")
+    # Save
+    try:
+        os.makedirs(os.path.dirname(_HOSTNAME_VENDORS_FILE), exist_ok=True)
+        with open(_HOSTNAME_VENDORS_FILE, "w") as f:
+            json.dump(entries, f, indent=2)
+    except Exception as exc:
+        raise HTTPException(500, f"Could not save: {exc}")
+    _hostname_vendors = entries
+    return {"status": "ok", "count": len(entries)}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/privacy/stats — AdGuard Home + Zeek tracking statistics
 # ---------------------------------------------------------------------------
 @app.get("/api/privacy/stats")
