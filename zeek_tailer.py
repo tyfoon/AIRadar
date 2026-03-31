@@ -694,6 +694,53 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 f"from {src_ip} — {vpn_total/1024:,.0f} KB"
                             )
 
+                # --- DPD-based stealth VPN/Tor detection ---
+                # Zeek's Dynamic Protocol Detection identifies protocols
+                # regardless of port.  This catches VPNs on port 443, etc.
+                service_field = record.get("service", "-")
+                if service_field and service_field != "-" and _is_local_ip(src_ip):
+                    # service can be comma-separated (e.g. "quic,ssl,ayiya")
+                    detected_svcs = [s.strip().lower() for s in service_field.split(",")]
+                    for dpd_proto in detected_svcs:
+                        evasion_svc = DPD_EVASION_PROTOCOLS.get(dpd_proto)
+                        if not evasion_svc:
+                            continue
+                        # Dedup per (src_ip, protocol)
+                        now_dpd = time.time()
+                        dpd_key = (src_ip, dpd_proto)
+                        dpd_last = _dpd_last_seen.get(dpd_key, 0)
+                        if (now_dpd - dpd_last) < DPD_DEDUP_SECONDS:
+                            continue
+                        _dpd_last_seen[dpd_key] = now_dpd
+
+                        # Calculate bytes
+                        try:
+                            dpd_ob = record.get("orig_bytes", "0")
+                            dpd_orig = int(dpd_ob) if dpd_ob and dpd_ob != "-" else 0
+                        except ValueError:
+                            dpd_orig = 0
+                        try:
+                            dpd_rb = record.get("resp_bytes", "0")
+                            dpd_resp = int(dpd_rb) if dpd_rb and dpd_rb != "-" else 0
+                        except ValueError:
+                            dpd_resp = 0
+                        dpd_total = dpd_orig + dpd_resp
+
+                        asyncio.create_task(register_device(client, src_ip))
+                        await send_event(
+                            client,
+                            detection_type="stealth_vpn_tunnel",
+                            ai_service=evasion_svc,
+                            source_ip=src_ip,
+                            bytes_transferred=dpd_total,
+                            category="tracking",
+                        )
+                        print(
+                            f"    └─ DPD stealth detection: {dpd_proto.upper()} "
+                            f"on port {resp_port} ({proto.upper()}) "
+                            f"from {src_ip} — {dpd_total/1024:,.0f} KB"
+                        )
+
                 # --- Heuristic VPN detection ---
                 # Large single-connection to an unknown external IP (not a known
                 # AI/Cloud service) hints at an encrypted tunnel.
