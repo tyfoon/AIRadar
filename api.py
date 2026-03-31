@@ -456,17 +456,35 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
             if not mac:
                 mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
 
+    # ── Merge unknown_ placeholder into real MAC device ──────────────
+    # When DHCP provides a real MAC for an IP that previously had a placeholder,
+    # migrate all IPs from the placeholder device to the real MAC device and
+    # delete the placeholder.
+    if not mac.startswith("unknown_"):
+        placeholder_key = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
+        placeholder_dev = db.query(Device).filter(Device.mac_address == placeholder_key).first()
+        if placeholder_dev:
+            # Migrate all IPs owned by the placeholder to the real MAC
+            db.query(DeviceIP).filter(DeviceIP.mac_address == placeholder_key).update(
+                {DeviceIP.mac_address: mac}, synchronize_session="fetch"
+            )
+            db.delete(placeholder_dev)
+            db.flush()
+
     # Upsert Device by MAC address
     device = db.query(Device).filter(Device.mac_address == mac).first()
     if device:
-        if payload.hostname:
+        if payload.hostname and not device.hostname:
+            device.hostname = payload.hostname
+        elif payload.hostname and payload.hostname != device.hostname:
+            # DHCP hostname is usually more accurate than reverse DNS
             device.hostname = payload.hostname
         # Resolve vendor if not already set
         if not device.vendor:
-            device.vendor = _resolve_vendor(payload.mac_address, payload.hostname) or _resolve_vendor(mac, payload.hostname)
+            device.vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         device.last_seen = now
     else:
-        vendor = _resolve_vendor(payload.mac_address, payload.hostname) or _resolve_vendor(mac, payload.hostname)
+        vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         device = Device(
             mac_address=mac,
             hostname=payload.hostname,
