@@ -127,7 +127,13 @@
       "Bash(curl -s http://localhost:8000/api/health)",
       "Bash(curl -s -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" \"http://127.0.0.1:3001/control/blocked_services/all\")",
       "Bash(python3 -c \"import py_compile; py_compile.compile\\(''zeek_tailer.py'', doraise=True\\); py_compile.compile\\(''api.py'', doraise=True\\); print\\(''✓ All OK''\\)\")",
-      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/*.sh /Users/goswijnthijssen/AIRadar/Dockerfile /Users/goswijnthijssen/AIRadar/docker-compose.yml /Users/goswijnthijssen/AIRadar/.env.example)"
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py /Users/goswijnthijssen/AIRadar/*.sh /Users/goswijnthijssen/AIRadar/Dockerfile /Users/goswijnthijssen/AIRadar/docker-compose.yml /Users/goswijnthijssen/AIRadar/.env.example)",
+      "Bash(find /Users/goswijnthijssen -name network-engineer* -maxdepth 4)",
+      "Bash(grep -n \"import.*logging\\\\|logger\\\\|import.*Log\" /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(grep -r \"backup\\\\|sqlite3\\\\|dump\\\\|HTTPS\\\\|https\\\\|TLS\\\\|tls\\\\|ssl\\\\|SSL\\\\|cert\" /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(find /Users/goswijnthijssen/AIRadar -type f \\\\\\(-name *netplan* -o -name *networkd* -o -name *.yaml -o -name *.yml \\\\\\))",
+      "Bash(grep -r \"DNSSEC\\\\|DNS.*HTTPS\\\\|DNS.*TLS\\\\|DoH\\\\|DoT\\\\|dns\\\\|secure\" /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(grep -n \"import.*logging\\\\|import.*Logger\\\\|from.*logging\" /Users/goswijnthijssen/AIRadar/*.py)"
     ]
   },
   "hooks": {

@@ -5,6 +5,8 @@ Fetches blocking statistics from a local AdGuard Home instance.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 
 
@@ -13,12 +15,14 @@ class AdGuardClient:
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:80",
-        username: str = "goswijn@goswijn.com",
-        password: str = "3xvBqkA5vYKUW7z",
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ):
-        self.base_url = base_url.rstrip("/")
-        self.auth = (username, password) if username else None
+        self.base_url = (base_url or os.environ.get("ADGUARD_URL", "http://127.0.0.1:80")).rstrip("/")
+        _user = username or os.environ.get("ADGUARD_USER", "")
+        _pass = password or os.environ.get("ADGUARD_PASS", "")
+        self.auth = (_user, _pass) if _user else None
 
     async def get_stats(self) -> dict:
         """Fetch aggregated statistics from AdGuard Home.
