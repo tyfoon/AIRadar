@@ -18,15 +18,18 @@ services:
     environment:
       # Container-internal overrides (paths inside the container)
       - AIRADAR_DB_PATH=/app/data/airadar.db
+      - ZEEK_LOG_DIR=/app/logs
       - PYTHONUNBUFFERED=1
     volumes:
       # Persistent database — survives container restarts
       - ./data:/app/data
       # Read-only access to Zeek logs on the host
-      - ${ZEEK_LOG_DIR:-/opt/zeek/logs}:/app/logs:ro
+      - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/app/logs:ro
     depends_on:
-      - adguardhome
-      - crowdsec
+      adguardhome:
+        condition: service_healthy
+      crowdsec:
+        condition: service_started
 
   # ── AdGuard Home — DNS-level ad/tracker blocking ──────────
   # Web UI: http://<bridge-ip>:3000 (first run) → :80 (after setup)
@@ -39,6 +42,12 @@ services:
     volumes:
       - ./adguard/conf:/opt/adguardhome/conf
       - ./adguard/work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
   # ── CrowdSec — Intrusion Prevention (IPS) ─────────────────
   # LAPI: http://localhost:8080
@@ -54,4 +63,10 @@ services:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
       # Same Zeek logs as our app — CrowdSec parses them for threats
-      - ${ZEEK_LOG_DIR:-/opt/zeek/logs}:/var/log/zeek:ro
+      - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/var/log/zeek:ro
+    healthcheck:
+      test: ["CMD", "cscli", "version"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
