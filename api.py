@@ -9,6 +9,13 @@ import csv
 import io
 import json
 import os
+
+# Auto-load .env so credentials work regardless of how the server is started
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass  # python-dotenv not installed; rely on shell-sourced env vars
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta

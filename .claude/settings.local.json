@@ -140,7 +140,10 @@
       "Bash(echo find:*)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://localhost:3001/control/status)",
       "Bash(sudo cat:*)",
-      "Bash(__NEW_LINE_f4d34ea4dbaef7e8__ echo:*)"
+      "Bash(__NEW_LINE_f4d34ea4dbaef7e8__ echo:*)",
+      "Bash(git status:*)",
+      "Bash(python3 -c \"import dotenv; print\\(''dotenv OK''\\)\")",
+      "Bash(python3 -c \"import dotenv; print\\(''OK''\\)\")"
     ]
   },
   "hooks": {
