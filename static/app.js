@@ -1666,7 +1666,7 @@ async function refreshDevices() {
   // Find global max for heat intensity
   let globalMax = 1;
   deviceMacs.forEach(mac => {
-    Object.values(matrix[mac]).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
+    Object.values(matrix[mac] || {}).forEach(v => { if (v.count > globalMax) globalMax = v.count; });
   });
 
   // Store for rendering
