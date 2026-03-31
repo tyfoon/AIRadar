@@ -133,7 +133,8 @@
       "Bash(grep -r \"backup\\\\|sqlite3\\\\|dump\\\\|HTTPS\\\\|https\\\\|TLS\\\\|tls\\\\|ssl\\\\|SSL\\\\|cert\" /Users/goswijnthijssen/AIRadar/*.py)",
       "Bash(find /Users/goswijnthijssen/AIRadar -type f \\\\\\(-name *netplan* -o -name *networkd* -o -name *.yaml -o -name *.yml \\\\\\))",
       "Bash(grep -r \"DNSSEC\\\\|DNS.*HTTPS\\\\|DNS.*TLS\\\\|DoH\\\\|DoT\\\\|dns\\\\|secure\" /Users/goswijnthijssen/AIRadar/*.py)",
-      "Bash(grep -n \"import.*logging\\\\|import.*Logger\\\\|from.*logging\" /Users/goswijnthijssen/AIRadar/*.py)"
+      "Bash(grep -n \"import.*logging\\\\|import.*Logger\\\\|from.*logging\" /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(chmod +x /Users/goswijnthijssen/AIRadar/setup_n95.sh /Users/goswijnthijssen/AIRadar/entrypoint.sh)"
     ]
   },
   "hooks": {

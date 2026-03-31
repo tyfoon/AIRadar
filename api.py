@@ -24,18 +24,22 @@ from sqlalchemy.orm import Session
 from adguard_client import AdGuardClient
 from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, init_db
 
-# MAC Vendor lookup
+# MAC Vendor lookup — keep built-in DB even if update_vendors() fails
+_mac_lookup = None
 try:
     from mac_vendor_lookup import MacLookup
     _mac_lookup = MacLookup()
-    _mac_lookup.update_vendors()  # download OUI database on startup
-except Exception:
+    try:
+        _mac_lookup.update_vendors()  # optional: refresh OUI database
+    except Exception:
+        pass  # built-in DB is good enough
+except ImportError:
     _mac_lookup = None
 
 
 def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
     """Look up the hardware vendor from a MAC address, with hostname fallback."""
-    if mac and _mac_lookup:
+    if mac and _mac_lookup and not mac.startswith("unknown_"):
         try:
             return _mac_lookup.lookup(mac)
         except Exception:
@@ -53,6 +57,20 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
             return "Hikvision"
         if any(k in hn for k in ("android", "pixel")):
             return "Google Inc."
+        if any(k in hn for k in ("kobo",)):
+            return "Kobo Inc."
+        if any(k in hn for k in ("smartgateway", "watermeter")):
+            return "Smart Gateways B.V."
+        if any(k in hn for k in ("sonos",)):
+            return "Sonos Inc."
+        if any(k in hn for k in ("philips", "hue")):
+            return "Signify (Philips)"
+        if any(k in hn for k in ("ring", "doorbell")):
+            return "Ring LLC"
+        if any(k in hn for k in ("nest",)):
+            return "Google Nest"
+        if any(k in hn for k in ("tplink", "tp-link", "tapo", "kasa")):
+            return "TP-Link"
     return None
 
 
