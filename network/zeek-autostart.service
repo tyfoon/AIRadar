@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────────
+# Zeek — Systemd Service for AI-Radar
+# Ensures Zeek starts on boot and restarts after failures.
+# Deploy to: /etc/systemd/system/zeek-airadar.service
+# ──────────────────────────────────────────────────────────────
+[Unit]
+Description=Zeek Network Monitor (AI-Radar)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/opt/zeek/bin/zeekctl deploy
+ExecStop=/opt/zeek/bin/zeekctl stop
+ExecReload=/opt/zeek/bin/zeekctl restart
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
