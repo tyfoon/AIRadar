@@ -381,6 +381,11 @@ const TRANSLATIONS = {
     'sched.sun':           'Sun',
 
     // Settings page — Killswitch
+    // Settings tabs
+    'settings.tabProtection':'Protection',
+    'settings.tabSystem':  'System',
+    'settings.tabAbout':   'About',
+    'settings.ksExplainer':'The Emergency Killswitch immediately disables all network filtering and protection. Use this if the network stops working correctly.',
     'settings.killswitch': 'Emergency Killswitch',
     'settings.ksOperational':'All systems operational',
     'settings.ksActivate': 'Activate Killswitch',
