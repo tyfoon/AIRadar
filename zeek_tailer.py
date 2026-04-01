@@ -792,17 +792,12 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 f"from {src_ip} — {h_total/1024/1024:,.1f} MB"
                             )
 
-                # Check if destination IP is a known AI/Cloud service (with TTL)
+                # Check if destination IP is a known AI/Cloud service
+                # (stale mappings were already evicted above)
                 if resp_ip not in _known_ips:
                     continue
 
-                service, category, learned_at = _known_ips[resp_ip]
-                ip_age = time.time() - learned_at
-                if ip_age > IP_TTL_SECONDS:
-                    # Stale mapping — IP may now serve a different service
-                    # (common with Google, Amazon, Cloudflare shared IPs)
-                    del _known_ips[resp_ip]
-                    continue
+                service, category, _ts = _known_ips[resp_ip]
 
                 # Check outbound bytes
                 try:
