@@ -2641,4 +2641,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Set language selector to current locale
   const localeSel = document.getElementById('locale-select');
   if (localeSel) localeSel.value = getLocale();
+
+  // Load killswitch + IPS state for nav badges
+  loadKillswitchState();
+  fetch('/api/ips/status').then(r => r.ok ? r.json() : null).then(d => {
+    if (d) { _navIpsCount = d.active_threats_blocked || 0; updateNavBadges(); }
+  }).catch(() => {});
 });
