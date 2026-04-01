@@ -1964,10 +1964,10 @@ function _updateIpsStats(data) {
   const engineEl = document.getElementById('ips-engine-status');
   if (engineEl) {
     if (data.crowdsec_running) {
-      engineEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 dark:bg-emerald-500 inline-block"></span> Online';
+      engineEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 dark:bg-emerald-500 inline-block"></span> ${t('ips.online')}`;
       engineEl.className = 'inline-flex items-center gap-1.5 text-sm font-medium text-emerald-500 dark:text-emerald-400';
     } else {
-      engineEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> Offline';
+      engineEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> ${t('ips.offline')}`;
       engineEl.className = 'inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 dark:text-slate-500';
     }
   }
