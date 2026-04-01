@@ -2515,8 +2515,10 @@ async function refreshDevices() {
   // Store for rendering
   _devMatrix = { matrix, svcCategoryMap, allServices, deviceMacs, globalMax };
 
-  // Hide event detail panel on refresh
-  document.getElementById('dev-event-detail')?.classList.add('hidden');
+  // Close device drawer on data refresh (if open)
+  if (document.getElementById('drawer-panel')?.classList.contains('open')) {
+    closeDeviceDrawer();
+  }
 
   _renderDeviceMatrix();
 }
