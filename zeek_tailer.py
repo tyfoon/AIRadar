@@ -285,7 +285,7 @@ def _resolve_mac(ip: str) -> str | None:
                     if ":" in mac and mac != "(incomplete)":
                         return _normalize_mac(mac)
                 if p == "ether" and i + 1 < len(parts):
-                    return parts[i + 1].lower()
+                    return _normalize_mac(parts[i + 1])
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
     return None
