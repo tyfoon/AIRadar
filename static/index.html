@@ -184,7 +184,7 @@
       <!-- Health detail expandable panel -->
       <div id="dash-health-panel" class="hidden bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 transition-all">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400" data-i18n="dash.healthDetails">System Health Details</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="dash.healthDetails">System Health Details</h3>
           <button onclick="toggleDashHealthDetail()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">&times; Close</button>
         </div>
         <div id="dash-health-services" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
@@ -192,7 +192,7 @@
 
       <!-- Sankey Data Flow Diagram -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.dataFlow">Network Data Flow</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.dataFlow">Network Data Flow</h3>
         <div id="sankey-chart"></div>
         <p id="sankey-empty" class="text-slate-400 dark:text-slate-500 text-center py-12 text-sm hidden" data-i18n="dash.noTraffic">No traffic data to visualize yet.</p>
       </div>
@@ -200,17 +200,17 @@
       <!-- Three donuts -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.aiTraffic">AI Traffic</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.aiTraffic">AI Traffic</h3>
           <canvas id="dash-ai-donut" height="200"></canvas>
           <div id="dash-ai-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.cloudTraffic">Cloud Traffic</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.cloudTraffic">Cloud Traffic</h3>
           <canvas id="dash-cloud-donut" height="200"></canvas>
           <div id="dash-cloud-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
           <canvas id="dash-priv-donut" height="200"></canvas>
           <div id="dash-priv-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -218,7 +218,7 @@
 
       <!-- Latest Alarms -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.latestAlarms">Latest Alarms</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.latestAlarms">Latest Alarms</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-sm text-left">
             <thead>
@@ -289,7 +289,7 @@
 
       <!-- Timeline -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="ai.timeline">Activity Timeline</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="ai.timeline">Activity Timeline</h3>
         <canvas id="ai-timeline-chart" height="90"></canvas>
         <div id="ai-timeline-chart-legend" class="flex flex-wrap mt-2"></div>
       </div>
@@ -297,12 +297,12 @@
       <!-- Doughnut + Table -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="ai.byService">By Service</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="ai.byService">By Service</h3>
           <canvas id="ai-service-chart" height="260"></canvas>
           <div id="ai-service-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-2 overflow-x-auto">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1" data-i18n="ai.latestEvents">Latest Events</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="ai.latestEvents">Latest Events</h3>
           <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3" data-i18n="ai.uploadHint">Orange rows indicate possible file uploads (&gt;100 KB outbound).</p>
           <table class="w-full text-sm text-left">
             <thead>
@@ -325,7 +325,7 @@
 
         <!-- Adoption Metrics -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="adopt.overview">AI Adoption Overview</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="adopt.overview">AI Adoption Overview</h3>
           <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div class="text-center">
               <div id="ai-adopt-rate" class="text-2xl font-bold tabular-nums text-indigo-500 dark:text-indigo-400">—</div>
@@ -369,14 +369,14 @@
 
         <!-- Per-device breakdown -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="adopt.perDevice">Per-Device AI Usage</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="adopt.perDevice">Per-Device AI Usage</h3>
           <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3" data-i18n="adopt.perDeviceHint">Queries in selected period. Bars show relative usage intensity.</p>
           <div id="ai-adopt-devices" class="space-y-1.5 max-h-[400px] overflow-y-auto"></div>
         </div>
 
         <!-- AI Service Popularity (reuse period from radar tab) -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="adopt.svcPopularity">Service Popularity</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="adopt.svcPopularity">Service Popularity</h3>
           <div id="ai-adopt-svc-breakdown" class="space-y-2"></div>
         </div>
 
@@ -424,19 +424,19 @@
       </div>
 
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="cloud.timeline">Activity Timeline</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="cloud.timeline">Activity Timeline</h3>
         <canvas id="cloud-timeline-chart" height="90"></canvas>
         <div id="cloud-timeline-chart-legend" class="flex flex-wrap mt-2"></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="cloud.byService">By Service</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="cloud.byService">By Service</h3>
           <canvas id="cloud-service-chart" height="260"></canvas>
           <div id="cloud-service-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-2 overflow-x-auto">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1" data-i18n="cloud.latestEvents">Latest Events</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="cloud.latestEvents">Latest Events</h3>
           <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-3" data-i18n="cloud.eventsHint">Cloud storage events (Dropbox, WeTransfer, Google Drive, etc.).</p>
           <table class="w-full text-sm text-left">
             <thead>
@@ -538,13 +538,13 @@
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.topBlocked">Top Blocked (AdGuard)</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="priv.topBlocked">Top Blocked (AdGuard)</h3>
           <div id="priv-chart-container"><canvas id="priv-chart" height="220"></canvas>
           <div id="priv-chart-legend" class="flex flex-wrap mt-2"></div></div>
           <p id="priv-unavailable" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm" data-i18n="priv.adguardInactive">AdGuard Home not active on DNS yet.</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.trackerBreakdown">Tracker Breakdown (Zeek)</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="priv.trackerBreakdown">Tracker Breakdown (Zeek)</h3>
           <canvas id="tracker-chart" height="220"></canvas>
           <div id="tracker-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -552,7 +552,7 @@
 
       <!-- Tracker table -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.recentTrackers">Recent Tracker Activity</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="priv.recentTrackers">Recent Tracker Activity</h3>
         <div class="overflow-x-auto max-h-72 overflow-y-auto">
           <table class="w-full text-sm text-left">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
@@ -813,7 +813,7 @@
 
         <!-- Global Filters -->
         <div>
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="rules.globalFilters">Global Office Filters</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.globalFilters">Global Office Filters</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
             <div id="filter-parental-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
@@ -870,14 +870,14 @@
 
         <!-- Granular App Control -->
         <div>
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="rules.aiServices">AI Services</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.aiServices">AI Services</h3>
           <div id="access-control-ai" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
           </div>
         </div>
 
         <div>
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="rules.cloudServices">Cloud Services</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.cloudServices">Cloud Services</h3>
           <div id="access-control-cloud" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
           </div>
@@ -890,7 +890,7 @@
 
         <!-- CrowdSec IPS toggle -->
         <div>
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="rules.ipsTitle">Intrusion Prevention (CrowdSec)</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.ipsTitle">Intrusion Prevention (CrowdSec)</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
             <div id="filter-ips-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
@@ -926,7 +926,7 @@
 
         <!-- Threat Intelligence Sources -->
         <div>
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="rules.threatSources">Threat Intelligence Sources</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.threatSources">Threat Intelligence Sources</h3>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
               <div class="flex items-center gap-2 mb-2">
@@ -1015,7 +1015,7 @@
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400" data-i18n="settings.language">Language</h3>
+            <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="settings.language">Language</h3>
             <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="settings.langDesc">Choose your preferred language</p>
           </div>
           <select id="locale-select" onchange="setLocale(this.value)" class="text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5">
@@ -1028,7 +1028,7 @@
       <!-- Health Check -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400" data-i18n="settings.health">System Health</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="settings.health">System Health</h3>
           <button id="health-run-btn" onclick="runHealthCheck()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors active:scale-95" data-i18n="settings.runCheck">Run Check</button>
         </div>
         <div id="health-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1038,7 +1038,7 @@
 
       <!-- Health details table -->
       <div id="health-details" class="hidden bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="settings.detailedResults">Detailed Results</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="settings.detailedResults">Detailed Results</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-sm text-left">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05]">
@@ -1052,7 +1052,7 @@
       <!-- Appliance Config -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="settings.network">Network Configuration</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="settings.network">Network Configuration</h3>
           <div class="space-y-3 text-sm">
             <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
               <span class="text-slate-500 dark:text-slate-400" data-i18n="settings.dnsServer">DNS Server</span>
@@ -1074,7 +1074,7 @@
         </div>
 
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="settings.dataRetention">Data Retention</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="settings.dataRetention">Data Retention</h3>
           <div class="space-y-3 text-sm">
             <div class="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-700/30">
               <span class="text-slate-500 dark:text-slate-400" data-i18n="settings.retentionPeriod">Retention Period</span>
