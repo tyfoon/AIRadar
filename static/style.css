@@ -101,6 +101,37 @@ select {
 }
 #sidebar.collapsed .nav-label { opacity: 0; width: 0; }
 #sidebar.collapsed .logo-text { opacity: 0; width: 0; overflow: hidden; }
+#sidebar.collapsed .nav-group-label { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
+#sidebar.collapsed #sidebar-utils { flex-direction: column; gap: 4px; padding-top: 8px; padding-bottom: 8px; }
+
+/* Collapsed sidebar tooltip on nav items */
+#sidebar.collapsed .nav-item .nav-tooltip {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  padding: 4px 10px;
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.dark #sidebar.collapsed .nav-item .nav-tooltip {
+  background: #334155;
+  color: #e2e8f0;
+}
+#sidebar.collapsed .nav-item:hover .nav-tooltip { display: block; }
+
+/* Collapsed badge repositioning: move to icon area */
+#sidebar.collapsed .nav-badge { top: 2px; right: 8px; }
+#sidebar.collapsed .nav-badge.nav-badge-dot { top: 4px; right: 10px; }
 
 /* Active nav glow */
 .nav-item.active-glow {
