@@ -70,6 +70,49 @@ function toggleMobileSidebar() {
 }
 
 // ================================================================
+// MOBILE NAV — Overflow panel + badges
+// ================================================================
+function toggleMobOverflow() {
+  const panel = document.getElementById('mob-overflow');
+  if (panel) panel.classList.toggle('hidden');
+}
+
+function closeMobOverflow() {
+  const panel = document.getElementById('mob-overflow');
+  if (panel) panel.classList.add('hidden');
+}
+
+function _updateMobileBadges() {
+  // IPS badge in overflow
+  const mobIps = document.getElementById('mob-badge-ips');
+  if (mobIps) {
+    if (_navIpsCount > 0) {
+      mobIps.textContent = _navIpsCount > 99 ? '99+' : String(_navIpsCount);
+      mobIps.classList.remove('hidden');
+    } else {
+      mobIps.classList.add('hidden');
+    }
+  }
+
+  // Settings badge in overflow
+  const mobSettings = document.getElementById('mob-badge-settings');
+  if (mobSettings) {
+    if (_killswitchActive) {
+      mobSettings.classList.remove('hidden');
+    } else {
+      mobSettings.classList.add('hidden');
+    }
+  }
+
+  // "More" button dot: show if any overflow item has a badge
+  const mobMore = document.getElementById('mob-badge-more');
+  if (mobMore) {
+    const hasAny = _navIpsCount > 0 || _killswitchActive;
+    mobMore.classList.toggle('hidden', !hasAny);
+  }
+}
+
+// ================================================================
 // TREND INDICATOR — ready for backend comparison data
 // ================================================================
 // TODO: The backend does not yet provide historical comparison data.
