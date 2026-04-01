@@ -180,11 +180,10 @@ const TRANSLATIONS = {
 
     // Privacy page
     'priv.dnsQueries':     'DNS Lookups',
-    'priv.viaAdguard':     'via AdGuard Home',
     'priv.dnsBlocked':     'Threats Blocked',
-    'priv.blockRate':      'block rate',
+    'priv.ofAllTraffic':   'of all traffic',
     'priv.trackers':       'Trackers Found',
-    'priv.viaZeek':        '',
+    'priv.dnsQuery':       'DNS Query',
     'priv.uniqueTrackers': 'Tracker Companies',
     'priv.vpnTunnels':     'VPN Connections',
     'priv.noTunnels':      'No tunnels detected',
