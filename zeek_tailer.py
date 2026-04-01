@@ -975,15 +975,33 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] DHCP passive device recognition: enabled")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
+
+    # Start p0f passive OS fingerprinting
+    p0f_task = None
+    try:
+        from p0f_tailer import start_p0f_tailer
+        p0f_task = start_p0f_tailer()
+        print(f"[*] p0f passive OS fingerprinting: enabled")
+    except ImportError:
+        print(f"[*] p0f passive OS fingerprinting: disabled (p0f_tailer not found)")
+    except Exception as exc:
+        print(f"[*] p0f passive OS fingerprinting: disabled ({exc})")
+
     print()
 
-    async with httpx.AsyncClient() as client:
-        await asyncio.gather(
-            tail_ssl_log(ssl_log, client),
-            tail_conn_log(conn_log, client),
-            tail_dhcp_log(dhcp_log, client),
-            flush_upload_buckets(client),  # background flusher
-        )
+    tasks = [
+        tail_ssl_log(ssl_log, client := httpx.AsyncClient()),
+        tail_conn_log(conn_log, client),
+        tail_dhcp_log(dhcp_log, client),
+        flush_upload_buckets(client),  # background flusher
+    ]
+    if p0f_task is not None:
+        tasks.append(p0f_task)
+
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        await client.aclose()
 
 
 if __name__ == "__main__":
