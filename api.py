@@ -503,6 +503,132 @@ def list_devices(db: Session = Depends(get_db)):
     return db.query(Device).order_by(Device.last_seen.desc()).all()
 
 
+# ---------------------------------------------------------------------------
+# GET /api/devices/{mac}/report — AI-powered device activity recap (Gemini)
+# ---------------------------------------------------------------------------
+@app.get("/api/devices/{mac_address}/report")
+async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
+    """Generate a human-readable AI recap of a device's last 24h activity."""
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_key:
+        raise HTTPException(
+            status_code=400,
+            detail="GEMINI_API_KEY is niet geconfigureerd. "
+                   "Voeg je API-sleutel toe aan .env (krijg er een op https://aistudio.google.com/app/apikey).",
+        )
+
+    # 1. Find device + associated IPs
+    device = db.query(Device).filter(Device.mac_address == mac_address).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Apparaat niet gevonden.")
+
+    device_ips = [dip.ip for dip in device.ips]
+    if not device_ips:
+        raise HTTPException(status_code=404, detail="Geen IP-adressen gekoppeld aan dit apparaat.")
+
+    device_label = device.display_name or device.hostname or device_ips[0]
+
+    # 2. Fetch detection events (last 24h)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    events = (
+        db.query(DetectionEvent)
+        .filter(
+            DetectionEvent.source_ip.in_(device_ips),
+            DetectionEvent.timestamp >= cutoff,
+        )
+        .order_by(DetectionEvent.timestamp.asc())
+        .all()
+    )
+
+    # Summarize events by service + type
+    event_summary_lines = []
+    svc_totals: dict[str, dict] = {}
+    for e in events:
+        svc = e.ai_service
+        if svc not in svc_totals:
+            svc_totals[svc] = {"count": 0, "bytes": 0, "uploads": 0, "category": e.category, "first": e.timestamp, "last": e.timestamp}
+        svc_totals[svc]["count"] += 1
+        svc_totals[svc]["bytes"] += e.bytes_transferred or 0
+        if e.possible_upload:
+            svc_totals[svc]["uploads"] += 1
+        svc_totals[svc]["last"] = e.timestamp
+
+    for svc, t in sorted(svc_totals.items(), key=lambda x: -x[1]["bytes"]):
+        kb = t["bytes"] / 1024
+        line = f"- {svc} ({t['category']}): {t['count']} events, {kb:,.0f} KB totaal"
+        if t["uploads"] > 0:
+            line += f", {t['uploads']} uploads"
+        line += f" | actief {t['first'].strftime('%H:%M')}–{t['last'].strftime('%H:%M')} UTC"
+        event_summary_lines.append(line)
+
+    # Upload timeline
+    upload_timeline = []
+    for e in events:
+        if e.possible_upload and e.bytes_transferred and e.bytes_transferred > 0:
+            kb = e.bytes_transferred / 1024
+            upload_timeline.append(
+                f"- {e.timestamp.strftime('%H:%M')} UTC: {e.ai_service} upload ({kb:,.0f} KB)"
+            )
+
+    # 3. Fetch DNS queries from AdGuard
+    dns_domains = await adguard.get_recent_dns_queries(device_ips, hours=24)
+    dns_lines = []
+    for domain, count in list(dns_domains.items())[:30]:
+        dns_lines.append(f"- {domain}: {count}x")
+
+    # 4. Build the data block for the LLM
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    data_block = f"""=== APPARAAT INFO ===
+Naam: {device_label}
+MAC: {mac_address}
+Vendor: {device.vendor or 'Onbekend'}
+IP-adressen: {', '.join(device_ips)}
+Rapport gegenereerd: {now_str}
+
+=== AI/CLOUD ACTIVITEIT (afgelopen 24u) ===
+Totaal events: {len(events)}
+Totaal uploads: {sum(1 for e in events if e.possible_upload)}
+
+Per service:
+{chr(10).join(event_summary_lines) if event_summary_lines else '- Geen activiteit gedetecteerd'}
+
+Upload tijdlijn:
+{chr(10).join(upload_timeline) if upload_timeline else '- Geen uploads gedetecteerd'}
+
+=== DNS VERZOEKEN (top domeinen, afgelopen 24u) ===
+{chr(10).join(dns_lines) if dns_lines else '- Geen DNS-data beschikbaar (AdGuard querylog leeg of niet bereikbaar)'}
+"""
+
+    # 5. Call Gemini
+    system_prompt = (
+        "Je bent een professionele netwerkanalist. Hier is de netwerkdata "
+        "(DNS bezoeken en AI/Cloud uploads) van één apparaat over de afgelopen 24 uur. "
+        "Schrijf een vloeiend, begrijpelijk verslag in het Nederlands. "
+        "Geef een chronologische inschatting van de dag (bijv. ochtend, middag), "
+        "noem actieve en inactieve periodes, en sluit af met het kopje "
+        "'Opvallende gebeurtenissen' waarin je 3 specifieke zaken uitlicht "
+        "(zoals uploads of opvallend surfgedrag). Gebruik markdown."
+    )
+
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=gemini_key)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=f"{system_prompt}\n\n{data_block}",
+        )
+        report_md = response.text
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gemini API-fout: {exc}",
+        )
+
+    return {"device": device_label, "mac": mac_address, "report": report_md}
+
+
 @app.post("/api/devices", response_model=DeviceRead, status_code=201)
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
