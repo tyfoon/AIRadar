@@ -1554,7 +1554,9 @@ async function refreshAI() {
   document.getElementById('ai-stat-total').textContent = events.length;
   document.getElementById('ai-stat-services').textContent = new Set(events.map(e => e.ai_service)).size;
   document.getElementById('ai-stat-sources').textContent = Object.keys(deviceMap).length || new Set(events.map(e => e.source_ip)).size || 0;
-  document.getElementById('ai-stat-uploads').textContent = events.filter(e => e.possible_upload).length;
+  const aiUploadCount = events.filter(e => e.possible_upload).length;
+  document.getElementById('ai-stat-uploads').textContent = aiUploadCount;
+  _styleUploadCard('ai', aiUploadCount);
 
   // Populate service filter
   const svcSel = document.getElementById('ai-filter-service');
