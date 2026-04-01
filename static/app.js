@@ -1596,7 +1596,7 @@ async function generateDeviceReport(macParam) {
     reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${t('dev.networkError', { msg: err.message })}</div>`;
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<span class="text-sm">&#10024;</span> Genereer AI Rapport (24u)';
+    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.generateReport')}`;
     btn.classList.remove('opacity-70', 'cursor-wait');
   }
 }
