@@ -560,7 +560,7 @@ const TRANSLATIONS = {
     'priv.vpnAlerts':      'VPN & ontwijkingswaarschuwingen',
     'priv.noVpnTunnels':   'Geen actieve VPN-tunnels gedetecteerd',
     'priv.vpnMonitoring':  'Bewaakt OpenVPN, WireGuard, IPsec en meer',
-    'priv.deviceUsingVpn': '{n} apparaa{s} gebruikt VPN',
+    'priv.deviceUsingVpn': '{n} {device} gebruikt VPN',
     'priv.blockedDomains': 'Geblokkeerde domeinen',
     'priv.detectedTrackers':'Gedetecteerde trackers',
     'priv.filters':        'Filters',
