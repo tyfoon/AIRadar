@@ -192,7 +192,7 @@
 
       <!-- Sankey Data Flow Diagram -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="dash.dataFlow">Network Data Flow</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.dataFlow">Network Data Flow</h3>
         <div id="sankey-chart"></div>
         <p id="sankey-empty" class="text-slate-400 dark:text-slate-500 text-center py-12 text-sm hidden" data-i18n="dash.noTraffic">No traffic data to visualize yet.</p>
       </div>
@@ -200,17 +200,17 @@
       <!-- Three donuts -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="dash.aiTraffic">AI Traffic</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.aiTraffic">AI Traffic</h3>
           <canvas id="dash-ai-donut" height="200"></canvas>
           <div id="dash-ai-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="dash.cloudTraffic">Cloud Traffic</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.cloudTraffic">Cloud Traffic</h3>
           <canvas id="dash-cloud-donut" height="200"></canvas>
           <div id="dash-cloud-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
           <canvas id="dash-priv-donut" height="200"></canvas>
           <div id="dash-priv-donut-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -289,7 +289,7 @@
 
       <!-- Timeline -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="ai.timeline">Activity Timeline</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="ai.timeline">Activity Timeline</h3>
         <canvas id="ai-timeline-chart" height="90"></canvas>
         <div id="ai-timeline-chart-legend" class="flex flex-wrap mt-2"></div>
       </div>
@@ -297,7 +297,7 @@
       <!-- Doughnut + Table -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="ai.byService">By Service</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="ai.byService">By Service</h3>
           <canvas id="ai-service-chart" height="260"></canvas>
           <div id="ai-service-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -369,14 +369,14 @@
 
         <!-- Per-device breakdown -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="adopt.perDevice">Per-Device AI Usage</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="adopt.perDevice">Per-Device AI Usage</h3>
           <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3" data-i18n="adopt.perDeviceHint">Queries in selected period. Bars show relative usage intensity.</p>
           <div id="ai-adopt-devices" class="space-y-1.5 max-h-[400px] overflow-y-auto"></div>
         </div>
 
         <!-- AI Service Popularity (reuse period from radar tab) -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="adopt.svcPopularity">Service Popularity</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="adopt.svcPopularity">Service Popularity</h3>
           <div id="ai-adopt-svc-breakdown" class="space-y-2"></div>
         </div>
 
@@ -424,14 +424,14 @@
       </div>
 
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="cloud.timeline">Activity Timeline</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="cloud.timeline">Activity Timeline</h3>
         <canvas id="cloud-timeline-chart" height="90"></canvas>
         <div id="cloud-timeline-chart-legend" class="flex flex-wrap mt-2"></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="cloud.byService">By Service</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="cloud.byService">By Service</h3>
           <canvas id="cloud-service-chart" height="260"></canvas>
           <div id="cloud-service-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -538,13 +538,13 @@
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="priv.topBlocked">Top Blocked (AdGuard)</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.topBlocked">Top Blocked (AdGuard)</h3>
           <div id="priv-chart-container"><canvas id="priv-chart" height="220"></canvas>
           <div id="priv-chart-legend" class="flex flex-wrap mt-2"></div></div>
           <p id="priv-unavailable" class="text-slate-400 dark:text-slate-500 text-center py-8 hidden text-sm" data-i18n="priv.adguardInactive">AdGuard Home not active on DNS yet.</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="priv.trackerBreakdown">Tracker Breakdown (Zeek)</h3>
+          <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.trackerBreakdown">Tracker Breakdown (Zeek)</h3>
           <canvas id="tracker-chart" height="220"></canvas>
           <div id="tracker-chart-legend" class="flex flex-wrap mt-2"></div>
         </div>
@@ -552,7 +552,7 @@
 
       <!-- Tracker table -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="priv.recentTrackers">Recent Tracker Activity</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="priv.recentTrackers">Recent Tracker Activity</h3>
         <div class="overflow-x-auto max-h-72 overflow-y-auto">
           <table class="w-full text-sm text-left">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
@@ -1038,7 +1038,7 @@
 
       <!-- Health details table -->
       <div id="health-details" class="hidden bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3" data-i18n="settings.detailedResults">Detailed Results</h3>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4" data-i18n="settings.detailedResults">Detailed Results</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-sm text-left">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05]">
