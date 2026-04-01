@@ -1515,7 +1515,7 @@ function _showCellEvents(mac, service, category) {
   }).join('');
 
   if (events.length > 100) {
-    tbody.innerHTML += `<tr><td colspan="5" class="py-3 text-center text-slate-400 dark:text-slate-500 text-xs">Showing first 100 of ${events.length} events</td></tr>`;
+    tbody.innerHTML += `<tr><td colspan="5" class="py-3 text-center text-slate-400 dark:text-slate-500 text-xs">${t('dev.showingFirst', { n: events.length })}</td></tr>`;
   }
 
   // Store current MAC for the AI report button
