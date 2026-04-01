@@ -2402,15 +2402,7 @@ async function toggleKillswitch() {
 
   // Confirm before activating
   if (newState) {
-    if (!confirm(
-      '⚠️ ACTIVATE KILLSWITCH?\n\n' +
-      'This will:\n' +
-      '• Disable AdGuard DNS filtering\n' +
-      '• Suspend all block rules\n' +
-      '• Disable intrusion prevention\n\n' +
-      'Internet traffic will flow unfiltered.\n' +
-      'Use this only in emergencies.'
-    )) return;
+    if (!confirm(t('settings.ksConfirm'))) return;
   }
 
   const btn = document.getElementById('ks-toggle-btn');
