@@ -910,9 +910,13 @@ const TRANSLATIONS = {
     'settings.legalIntro': 'AI-Radar integreert de volgende onafhankelijke open-source componenten via hun offici\u00eble API\'s. Geen broncode van deze projecten is gewijzigd of herverdeeld.',
     'settings.legalFooter':'Alle handelsmerken en geregistreerde handelsmerken zijn eigendom van hun respectievelijke eigenaars. Deze software wordt geleverd "zoals het is" zonder enige garantie.',
 
-    // Instellingen — Taal
+    // Instellingen — Voorkeuren
     'settings.language':   'Taal',
     'settings.langDesc':   'Kies uw voorkeurstaal',
+    'settings.theme':      'Thema',
+    'settings.themeDesc':  'Kies uw gewenste weergave',
+    'settings.themeDark':  'Donker',
+    'settings.themeLight': 'Licht',
 
     // Modaal
     'modal.customDuration':'Aangepaste blokkeerduur',
