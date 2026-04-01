@@ -777,7 +777,7 @@ async function refreshDashboard() {
       txt.textContent = t('dash.issuesDetected', { n: issues, s: issues > 1 ? 's' : '' });
       txt.className = 'text-lg font-semibold text-amber-600 dark:text-amber-400';
       topDot.className = 'w-2 h-2 rounded-full bg-amber-500';
-      topTxt.textContent = t('topbar.issues', { n: issues, s: issues > 1 ? 's' : '' });
+      topTxt.textContent = t('topbar.issues', { n: issues, problem: getLocale() === 'nl' ? (issues > 1 ? 'problemen' : 'probleem') : (issues > 1 ? 'Issues' : 'Issue') });
     }
     // Store health data for detail panel
     _lastHealthData = healthRes;
@@ -2596,7 +2596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       const issues = h.summary.total - h.summary.ok;
       dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-      txt.textContent = t('topbar.issues', { n: issues, s: issues > 1 ? 's' : '' });
+      txt.textContent = t('topbar.issues', { n: issues, problem: getLocale() === 'nl' ? (issues > 1 ? 'problemen' : 'probleem') : (issues > 1 ? 'Issues' : 'Issue') });
     }
   } catch(e) {
     document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
