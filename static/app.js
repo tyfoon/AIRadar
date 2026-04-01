@@ -2089,13 +2089,13 @@ function renderServiceCard(svc) {
       <div class="mb-2">${seenTag}</div>
       <div class="flex items-center gap-2">
         <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
-          <option value="0">Always</option>
-          <option value="60">1 Hour</option>
-          <option value="120">2 Hours</option>
-          <option value="240">4 Hours</option>
-          <option value="360">6 Hours</option>
-          <option value="480">8 Hours</option>
-          <option value="custom">Custom...</option>
+          <option value="0">${t('svc.always')}</option>
+          <option value="60">${t('svc.1hour')}</option>
+          <option value="120">${t('svc.2hours')}</option>
+          <option value="240">${t('svc.4hours')}</option>
+          <option value="360">${t('svc.6hours')}</option>
+          <option value="480">${t('svc.8hours')}</option>
+          <option value="custom">${t('svc.custom')}</option>
         </select>
         ${svc.is_blocked
           ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">${permLabel}</span>`
