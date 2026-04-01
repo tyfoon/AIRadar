@@ -985,8 +985,8 @@ function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
       <td class="py-3 px-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
       <td class="py-3 px-4">${badge(e.ai_service)}</td>
       <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${_eventDescription(e)}</td>
-      <td class="py-3 px-4 text-xs">${dc}</td>
-      <td class="py-3 px-4 text-right tabular-nums text-xs">${_fmtSize(e.bytes_transferred)}</td>
+      <td class="py-3 px-4 text-xs hidden sm:table-cell">${dc}</td>
+      <td class="py-3 px-4 text-right tabular-nums text-xs hidden sm:table-cell">${_fmtSize(e.bytes_transferred)}</td>
     </tr>`;
   }).join('');
 }
