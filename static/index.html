@@ -1160,6 +1160,67 @@
 </div>
 
 <!-- ============================================================= -->
+<!-- DEVICE DETAIL DRAWER (global overlay)                          -->
+<!-- ============================================================= -->
+<div id="drawer-backdrop" class="drawer-backdrop" onclick="closeDeviceDrawer()"></div>
+<div id="drawer-panel" class="drawer-panel">
+  <!-- Header -->
+  <div class="flex-shrink-0 border-b border-slate-200 dark:border-white/[0.05] px-5 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <span id="drawer-dev-icon" class="text-2xl flex-shrink-0"></span>
+        <div class="min-w-0">
+          <h2 id="drawer-dev-name" class="text-base font-semibold truncate"></h2>
+          <p id="drawer-dev-meta" class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button id="drawer-btn-ai-report" onclick="generateDeviceReport()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md flex items-center gap-1.5">
+          <span class="text-sm">&#10024;</span> <span data-i18n="dev.generateReport">Generate AI Report (24h)</span>
+        </button>
+        <button onclick="closeDeviceDrawer()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg">&times;</button>
+      </div>
+    </div>
+    <!-- p0f OS fingerprint line -->
+    <div id="drawer-dev-os" class="hidden text-[10px] text-indigo-500 dark:text-indigo-400 mt-1.5 pl-9"></div>
+  </div>
+  <!-- Tab bar -->
+  <div class="flex-shrink-0 px-5 py-2.5 border-b border-slate-200 dark:border-white/[0.05] flex items-center gap-2 overflow-x-auto">
+    <div id="drawer-tabs" class="flex items-center gap-1.5"></div>
+    <div class="ml-auto flex-shrink-0 text-[11px] text-slate-400 dark:text-slate-500" id="drawer-event-count"></div>
+  </div>
+  <!-- Event table (scrollable body) -->
+  <div class="flex-1 overflow-y-auto overflow-x-auto" id="drawer-scroll">
+    <table class="w-full text-sm text-left">
+      <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10] sticky top-0">
+        <tr>
+          <th class="py-3 px-4 font-medium" data-i18n="dev.thTime">Time</th>
+          <th class="py-3 px-4 font-medium" data-i18n="dev.thService">Service</th>
+          <th class="py-3 px-4 font-medium" data-i18n="dev.thType">Type</th>
+          <th class="py-3 px-4 font-medium" data-i18n="dev.thSourceIp">Source IP</th>
+          <th class="py-2 px-4 font-medium text-right" data-i18n="dev.thBytes">Bytes</th>
+        </tr>
+      </thead>
+      <tbody id="drawer-event-body" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
+    </table>
+    <!-- Load more button -->
+    <div id="drawer-load-more" class="hidden py-3 text-center border-t border-slate-100 dark:border-white/[0.04]">
+      <button onclick="drawerLoadMore()" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dev.loadMore">Load more</button>
+    </div>
+  </div>
+  <!-- AI Recap report (hidden by default) -->
+  <div id="drawer-ai-report" class="hidden flex-shrink-0 mx-4 my-4 p-5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-500/20">
+    <div class="flex items-center justify-between mb-3">
+      <h4 class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+        <span>&#10024;</span> <span data-i18n="dev.aiRecap">AI Network Recap</span>
+      </h4>
+      <button onclick="document.getElementById('drawer-ai-report').classList.add('hidden')" class="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-sm">&times;</button>
+    </div>
+    <div id="drawer-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"></div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
 <!-- CUSTOM BLOCK DURATION MODAL                                    -->
 <!-- ============================================================= -->
 <div id="modal-backdrop" class="fixed inset-0 z-50 hidden flex items-center justify-center">
