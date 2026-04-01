@@ -2343,9 +2343,9 @@ function renderKillswitchUI(data) {
     btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20';
 
     // Status dots → red
-    setKsDot('adguard', 'red', 'passthrough');
-    setKsDot('ips', 'red', 'disabled');
-    setKsDot('rules', 'red', 'suspended');
+    setKsDot('adguard', 'red', t('settings.ksPassthrough'));
+    setKsDot('ips', 'red', t('settings.ksDisabled'));
+    setKsDot('rules', 'red', t('settings.ksSuspended'));
 
     // Show failsafe banner if auto-activated
     if (data.activated_by === 'auto_failsafe') {
