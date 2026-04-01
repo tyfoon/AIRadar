@@ -923,6 +923,39 @@ function _fmtSize(bytes) {
   return _fmtBytes(bytes);
 }
 
+function _styleUploadCard(prefix, count) {
+  const card = document.getElementById(prefix + '-upload-card');
+  const label = document.getElementById(prefix + '-upload-label');
+  const value = document.getElementById(prefix + '-stat-uploads');
+  if (!card) return;
+
+  // Reset classes
+  const neutralBorder = 'border-slate-200 dark:border-white/[0.05]';
+  const greenBorder = 'border-emerald-300 dark:border-emerald-700/40';
+  const orangeBorder = 'border-orange-300 dark:border-orange-700/40';
+  const redBorder = 'border-red-300 dark:border-red-700/40';
+  const allBorders = [neutralBorder, greenBorder, orangeBorder, redBorder].join(' ').split(' ');
+
+  allBorders.forEach(c => card.classList.remove(c));
+
+  if (count === 0) {
+    // Neutral/green — no uploads
+    greenBorder.split(' ').forEach(c => card.classList.add(c));
+    if (label) { label.className = 'text-xs text-emerald-500 dark:text-emerald-400 font-medium'; }
+    if (value) { value.className = 'text-2xl font-bold mt-2 tabular-nums text-emerald-500 dark:text-emerald-400'; }
+  } else if (count > 10) {
+    // Red — high upload activity
+    redBorder.split(' ').forEach(c => card.classList.add(c));
+    if (label) { label.className = 'text-xs text-red-500 dark:text-red-400 font-medium'; }
+    if (value) { value.className = 'text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400'; }
+  } else {
+    // Orange — some uploads
+    orangeBorder.split(' ').forEach(c => card.classList.add(c));
+    if (label) { label.className = 'text-xs text-orange-500 dark:text-orange-400 font-medium'; }
+    if (value) { value.className = 'text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400'; }
+  }
+}
+
 function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
   const tbody = document.getElementById(tbodyId);
   const empty = document.getElementById(emptyId);
