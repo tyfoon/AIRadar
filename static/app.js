@@ -1241,7 +1241,7 @@ async function refreshPrivacy() {
   const recent = tk.recent || [];
   if (tbody) {
     if (recent.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">No trackers detected yet.</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">${t('priv.noTrackers')}</td></tr>`;
     } else {
       tbody.innerHTML = recent.map(e => {
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
