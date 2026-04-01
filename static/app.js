@@ -202,6 +202,9 @@ function navigate(page) {
   if (!VALID_PAGES.includes(page)) page = 'dashboard';
   currentPage = page;
 
+  // Close mobile overflow panel if open
+  closeMobOverflow();
+
   // Update page visibility
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const el = document.getElementById('page-' + page);
