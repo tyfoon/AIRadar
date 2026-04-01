@@ -885,6 +885,7 @@ const TRANSLATIONS = {
     'settings.restart':    'Herstarten',
 
     // Instellingen — Netwerk
+    'settings.readOnly':   'Alleen-lezen',
     'settings.network':    'Netwerkconfiguratie',
     'settings.dnsServer':  'DNS-server',
     'settings.adguardHome':'AdGuard Home',
