@@ -1537,7 +1537,23 @@ async function generateDeviceReport() {
     }
 
     // Render markdown (simple parser for bold, italic, headers, lists, code)
-    reportContent.innerHTML = renderSimpleMarkdown(data.report);
+    let html = renderSimpleMarkdown(data.report);
+
+    // Token usage footer
+    if (data.tokens) {
+      const t = data.tokens;
+      const costIn = (t.prompt_tokens || 0) * 0.15 / 1e6;
+      const costOut = (t.response_tokens || 0) * 0.60 / 1e6;
+      const costThink = (t.thinking_tokens || 0) * 3.50 / 1e6;
+      const totalCost = costIn + costOut + costThink;
+      const cents = (totalCost * 100).toFixed(2);
+      html += `<div class="mt-4 pt-3 border-t border-indigo-200/30 dark:border-indigo-700/20 flex items-center justify-between text-[10px] text-indigo-400/70 dark:text-indigo-500/50">
+        <span>Gemini 2.5 Flash &middot; ${(t.total_tokens || 0).toLocaleString()} tokens</span>
+        <span>${cents}&cent; per report</span>
+      </div>`;
+    }
+
+    reportContent.innerHTML = html;
 
   } catch (err) {
     reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">Netwerk-fout: ${err.message}</div>`;
