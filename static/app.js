@@ -2343,7 +2343,9 @@ function openDeviceDrawer(mac, service, category) {
 
   // --- Open drawer ---
   document.getElementById('drawer-backdrop').classList.add('open');
-  document.getElementById('drawer-panel').classList.add('open');
+  const drawerEl = document.getElementById('drawer-panel');
+  drawerEl.style.transform = '';  // Reset any swipe transform
+  drawerEl.classList.add('open');
   document.body.classList.add('overflow-hidden');
 
   // Push history state for back-button support
