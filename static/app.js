@@ -2025,7 +2025,7 @@ async function toggleIps(checkbox) {
   } catch(err) {
     console.error('toggleIps:', err);
     checkbox.checked = !checkbox.checked;
-    alert('Failed to toggle Active Protect: ' + err.message);
+    alert(t('ips.toggleFailed', { msg: err.message }));
   } finally { checkbox.disabled = false; }
 }
 
