@@ -253,6 +253,7 @@ const TRANSLATIONS = {
     'dev.connection':      'Connection',
     'dev.loadMore':        'Load more',
     'dev.showingOfEvents': 'Showing {visible} of {total}',
+    'dev.drawerAllTab':    'All',
     'dev.renameDevice':    'Rename device:',
     'dev.hop':             'hop',
     'dev.hops':            'hops',
