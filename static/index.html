@@ -650,6 +650,24 @@
         <button onclick="refreshPage('devices')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors" data-i18n="dev.apply">Apply</button>
       </div>
 
+      <!-- Search bar + Device type filter chips + Hide inactive toggle -->
+      <div class="space-y-3">
+        <!-- Search -->
+        <div class="relative w-full md:w-1/2">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input id="dev-search" type="text" class="w-full pl-9 pr-8 py-2 text-sm rounded-lg" data-i18n-placeholder="dev.searchPlaceholder" placeholder="Search devices by name, IP, or type..." oninput="onDevSearchInput()">
+          <button id="dev-search-clear" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-sm leading-none" onclick="clearDevSearch()">&times;</button>
+        </div>
+        <!-- Device type chips + Hide inactive -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div id="dev-type-chips" class="flex flex-wrap gap-1.5"></div>
+          <label class="ml-auto inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+            <input type="checkbox" id="dev-hide-inactive" class="rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" onchange="onDevFilterChange()">
+            <span data-i18n="dev.hideInactive">Hide inactive devices</span>
+          </label>
+        </div>
+      </div>
+
       <!-- Legend -->
       <div class="flex flex-wrap items-center gap-3 text-[10px]">
         <span class="text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider" data-i18n="dev.intensity">Intensity</span>
