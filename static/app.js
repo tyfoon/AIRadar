@@ -1209,7 +1209,7 @@ async function refreshPrivacy() {
     const panel = document.getElementById('blocked-domains-panel');
     if (panel && !panel.classList.contains('hidden')) renderBlockedDomainsList();
   } else {
-    statusEl.textContent = '● Offline';
+    statusEl.textContent = '● ' + t('priv.offline');
     statusEl.className = 'text-base font-semibold mt-2 text-red-500 dark:text-red-400';
     if (chartC) chartC.classList.add('hidden');
     if (unavail) unavail.classList.remove('hidden');
