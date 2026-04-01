@@ -160,6 +160,17 @@
     </div>
   </header>
 
+  <!-- Global Killswitch Warning Banner (visible on ALL pages when active) -->
+  <div id="ks-global-banner" class="hidden items-center gap-3 px-4 py-3 mx-4 sm:mx-6 mt-3 rounded-xl bg-red-50 dark:bg-red-950/30 border-2 border-red-300 dark:border-red-700 ks-border-pulse max-w-[1600px] lg:mx-auto">
+    <span class="text-2xl flex-shrink-0">⚠️</span>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-semibold text-red-700 dark:text-red-400" data-i18n="ks.bannerTitle">Killswitch Active — All Protection Disabled</p>
+      <p class="text-xs text-red-500 dark:text-red-500/70" data-i18n="ks.bannerSubtitle">Your network protection is currently paused. All traffic is unfiltered.</p>
+    </div>
+    <span class="text-xs font-mono text-red-400 flex-shrink-0" id="ks-banner-since"></span>
+    <button onclick="restoreProtection()" class="flex-shrink-0 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-all active:scale-95 shadow-sm" data-i18n="ks.restoreBtn">Restore Protection</button>
+  </div>
+
   <!-- Page Content -->
   <main class="p-4 sm:p-6 max-w-[1600px] mx-auto">
 
