@@ -249,22 +249,32 @@
 
       <!-- Latest Alarms -->
       <div id="dash-alarms-section" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.latestAlarms">Latest Alarms</h3>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="dash.latestAlarms">Latest Alarms</h3>
+          <span id="dash-alarms-count" class="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums"></span>
+        </div>
+        <!-- Severity filter chips (shown only when mixed severities) -->
+        <div id="dash-alarms-filters" class="hidden flex flex-wrap gap-1.5 mb-3"></div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm text-left">
-            <thead>
+            <thead id="dash-alarms-thead">
               <tr class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05]">
                 <th class="py-3 px-4 font-medium" data-i18n="dash.alarmTime">Time</th>
-                <th class="py-3 px-4 font-medium" data-i18n="dash.alarmSeverity">Severity</th>
+                <th class="py-3 px-4 font-medium" id="dash-alarms-sev-th" data-i18n="dash.alarmSeverity">Severity</th>
                 <th class="py-3 px-4 font-medium" data-i18n="dash.alarmEvent">Event</th>
                 <th class="py-3 px-4 font-medium" data-i18n="dash.alarmService">Service</th>
                 <th class="py-3 px-4 font-medium" data-i18n="dash.alarmDevice">Device</th>
+                <th class="w-8"></th>
               </tr>
             </thead>
             <tbody id="dash-alarms-body" class="text-slate-600 dark:text-slate-300">
-              <tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm" data-i18n="dash.loadingAlarms">Loading alarms...</td></tr>
+              <tr><td colspan="6" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm" data-i18n="dash.loadingAlarms">Loading alarms...</td></tr>
             </tbody>
           </table>
+        </div>
+        <!-- Show more button -->
+        <div id="dash-alarms-more-wrap" class="hidden flex justify-center mt-3">
+          <button id="dash-alarms-more-btn" onclick="showMoreAlarms()" class="px-4 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dash.showMore">Show more</button>
         </div>
       </div>
     </section>
