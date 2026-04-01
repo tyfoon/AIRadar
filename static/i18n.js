@@ -676,6 +676,13 @@ const TRANSLATIONS = {
     'dev.renameDevice':    'Apparaat hernoemen:',
     'dev.hop':             'hop',
     'dev.hops':            'hops',
+    'dev.searchPlaceholder': 'Zoek apparaten op naam, IP of type...',
+    'dev.filterAll':       'Alle',
+    'dev.hideInactive':    'Inactieve apparaten verbergen',
+    'dev.editName':        'Apparaatnaam bewerken',
+    'dev.saveName':        'Opslaan',
+    'dev.cancelEdit':      'Annuleren',
+    'dev.originalName':    'Origineel:',
 
     // Aanvallen (IPS) pagina
     'ips.attackPrevention':'Aanvalspreventie',
