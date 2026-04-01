@@ -52,7 +52,7 @@ const TRANSLATIONS = {
     'topbar.checking':     'Checking...',
     'topbar.refresh':      'Refresh',
     'topbar.allOk':        'All Systems Operational',
-    'topbar.issues':       '{n} Issue{s}',
+    'topbar.issues':       '{n} {problem}',
     'topbar.connError':    'Connection Error',
 
     // Dashboard
