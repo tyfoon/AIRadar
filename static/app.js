@@ -1660,8 +1660,8 @@ function _renderDeviceMatrix() {
   const thead = document.getElementById('devices-matrix-head');
   const expanded = _devExpandedGroups;
 
-  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">Device</th>
-    <th class="py-3 px-3 font-medium text-right min-w-[60px]">Total</th>`;
+  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">${t('dev.device')}</th>
+    <th class="py-3 px-3 font-medium text-right min-w-[60px]">${t('dev.total')}</th>`;
 
   groups.forEach(g => {
     const isExpanded = expanded.has(g.key);
