@@ -169,7 +169,7 @@ const TRANSLATIONS = {
     'priv.vpnAlerts':      'VPN & Evasion Alerts',
     'priv.noVpnTunnels':   'No active VPN tunnels detected',
     'priv.vpnMonitoring':  'Monitoring OpenVPN, WireGuard, IPsec & more',
-    'priv.deviceUsingVpn': '{n} device{s} using VPN',
+    'priv.deviceUsingVpn': '{n} {device} using VPN',
     'priv.blockedDomains': 'Blocked Domains',
     'priv.detectedTrackers':'Detected Trackers',
     'priv.filters':        'Filters',
