@@ -1218,7 +1218,7 @@ async function refreshPrivacy() {
   // Zeek tracker section
   const tk = privRes.trackers || {};
   _cachedTopTrackers = tk.top_trackers || [];
-  document.getElementById('tracker-total').textContent = (tk.total_detected || 0).toLocaleString();
+  document.getElementById('tracker-total').textContent = formatNumber(tk.total_detected || 0);
   document.getElementById('tracker-unique').textContent = _cachedTopTrackers.length;
 
   // Update tracker details panel if already open
