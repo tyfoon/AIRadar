@@ -1138,7 +1138,7 @@ function renderAiAdoption(events) {
       <span class="w-[120px] flex-shrink-0">${svcLogoName(svc)}</span>
       <div class="flex-1 h-5 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
         <div class="h-full rounded bg-gradient-to-r from-indigo-500/70 to-purple-500/70" style="width:${pct}%"></div>
-        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} queries · ${share}% share · ${usersCount} user${usersCount !== 1 ? 's' : ''}</span>
+        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} ${t('adopt.queries')} · ${share}% ${t('adopt.share')} · ${usersCount} ${usersCount !== 1 ? t('adopt.users') : t('adopt.user')}</span>
       </div>
     </div>`;
   }).join('');
