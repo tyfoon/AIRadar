@@ -1327,13 +1327,13 @@ function renderVpnAlerts(alerts) {
   if (body) body.innerHTML = `
     <div class="overflow-x-auto max-h-64 overflow-y-auto">
       <table class="w-full text-sm text-left">
-        <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
+        <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
           <tr>
-            <th class="pb-2 px-3 font-medium">${t('priv.thDevice')}</th>
-            <th class="pb-2 px-3 font-medium">${t('priv.thVpnService')}</th>
-            <th class="pb-2 px-3 font-medium">${t('priv.thData')}</th>
-            <th class="pb-2 px-3 font-medium">${t('priv.thEvents')}</th>
-            <th class="pb-2 px-3 font-medium">${t('priv.thLastSeen')}</th>
+            <th class="py-3 px-4 font-medium">${t('priv.thDevice')}</th>
+            <th class="py-3 px-4 font-medium">${t('priv.thVpnService')}</th>
+            <th class="py-3 px-4 font-medium">${t('priv.thData')}</th>
+            <th class="py-3 px-4 font-medium">${t('priv.thEvents')}</th>
+            <th class="py-3 px-4 font-medium">${t('priv.thLastSeen')}</th>
           </tr>
         </thead>
         <tbody class="text-slate-600 dark:text-slate-300">
