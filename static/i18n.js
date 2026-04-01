@@ -422,6 +422,9 @@ const TRANSLATIONS = {
     'nav.settings':        'Instellingen',
     'nav.toggleTheme':     'Thema wisselen',
     'nav.collapse':        'Inklappen',
+    'nav.groupMonitor':    'Monitor',
+    'nav.groupProtect':    'Bescherm',
+    'nav.groupManage':     'Beheer',
 
     // Mobiel
     'mob.home':            'Home',
