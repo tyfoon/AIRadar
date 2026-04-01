@@ -2908,18 +2908,32 @@ function remainingTime(expiresAt) {
 
 function renderServiceCard(svc) {
   const name = SERVICE_NAMES[svc.service_name] || svc.service_name;
-  const badgeCls = SVC_BADGE_CLS[svc.service_name] || 'bg-slate-100 dark:bg-slate-700/40 text-slate-600 dark:text-slate-300';
   const isAllowed = !svc.is_blocked;
   const blockedClass = svc.is_blocked ? 'blocked' : '';
   const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
   const permLabel = svc.is_blocked ? (svc.is_permanent ? t('svc.permanent') : remaining || t('svc.temporary')) : '';
   const logo = svcLogo(svc.service_name);
 
-  const seenTag = svc.seen
-    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● ${t('svc.active')} (${formatNumber(svc.hit_count)})</span>`
-    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="No traffic detected">○ ${t('svc.preventive')}</span>`;
+  // Status badge with tooltip
+  const lastSeenFmt = svc.last_seen ? fmtTime(svc.last_seen) : '';
+  const activeTooltip = svc.seen ? t('svc.activeTooltip', { count: formatNumber(svc.hit_count), time: lastSeenFmt }) : '';
+  const preventiveTooltip = t('svc.preventiveTip');
 
-  const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : t('svc.noTraffic');
+  const seenTag = svc.seen
+    ? `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${activeTooltip}"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span> ${t('svc.active')} (${formatNumber(svc.hit_count)})</span>`
+    : `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="${preventiveTooltip}"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> ${t('svc.preventive')}</span>`;
+
+  const lastSeenText = svc.seen && svc.last_seen ? `Last: ${lastSeenFmt}` : t('svc.noTraffic');
+
+  // Toggle on/off label
+  const toggleLabel = isAllowed
+    ? `<span class="text-xs font-medium text-emerald-500">${t('svc.on')}</span>`
+    : `<span class="text-xs font-medium text-slate-400">${t('svc.off')}</span>`;
+
+  // Status line: allowed or blocked
+  const statusLine = svc.is_blocked
+    ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">&times; ${t('svc.blocked')}${permLabel ? ' · ' + permLabel : ''}</span>`
+    : `<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">&check; ${t('svc.allowed')}</span>`;
 
   return `
     <div class="svc-card bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ${blockedClass}">
@@ -2928,26 +2942,28 @@ function renderServiceCard(svc) {
           ${logo}
           <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${name}</span>
         </div>
-        <label class="toggle" title="${isAllowed ? t('svc.allowedToBlock') : t('svc.blockedToAllow')}">
-          <input type="checkbox" ${isAllowed ? 'checked' : ''}
-                 onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
-          <span class="slider"></span>
-        </label>
+        <div class="flex items-center gap-2">
+          ${toggleLabel}
+          <label class="toggle" title="${isAllowed ? t('svc.allowedToBlock') : t('svc.blockedToAllow')}">
+            <input type="checkbox" ${isAllowed ? 'checked' : ''}
+                   onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
       <div class="mb-2">${seenTag}</div>
       <div class="flex items-center gap-2">
         <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
-          <option value="0">${t('svc.always')}</option>
+          <option value="0">${t('svc.alwaysAllow')}</option>
           <option value="60">${t('svc.1hour')}</option>
           <option value="120">${t('svc.2hours')}</option>
           <option value="240">${t('svc.4hours')}</option>
           <option value="360">${t('svc.6hours')}</option>
           <option value="480">${t('svc.8hours')}</option>
           <option value="custom">${t('svc.custom')}</option>
+          <option value="scheduled" disabled title="${t('svc.comingSoon')}">${t('svc.scheduled')} (${t('svc.comingSoon')})</option>
         </select>
-        ${svc.is_blocked
-          ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">${permLabel}</span>`
-          : `<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ ${t('svc.allowed')}</span>`}
+        ${statusLine}
       </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2">${lastSeenText}</p>
     </div>`;
