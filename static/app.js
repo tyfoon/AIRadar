@@ -770,11 +770,30 @@ async function refreshDashboard() {
   updateGlobalKsBanner(ksState);
 
   // Metrics
-  document.getElementById('dash-devices').textContent = Object.keys(deviceMap).length || 0;
-  document.getElementById('dash-events-today').textContent = formatNumber(aiEvt.length + cloudEvt.length);
+  const deviceCount = Object.keys(deviceMap).length || 0;
+  document.getElementById('dash-devices').textContent = formatNumber(deviceCount);
+  const devSub = document.getElementById('dash-devices-subtitle');
+  if (devSub) devSub.textContent = t('dash.onNetwork', { count: formatNumber(deviceCount) });
+
+  const evtCount = aiEvt.length + cloudEvt.length;
+  document.getElementById('dash-events-today').textContent = formatNumber(evtCount);
 
   const ag = privRes?.adguard || {};
   document.getElementById('dash-blocked').textContent = formatNumber(ag.blocked_queries || 0);
+  // Show block rate percentage if available
+  const rateEl = document.getElementById('dash-blocked-rate');
+  if (rateEl && ag.total_queries && ag.total_queries > 0) {
+    const pct = ((ag.blocked_queries / ag.total_queries) * 100).toFixed(1);
+    rateEl.textContent = t('dash.blockRate', { pct });
+  }
+
+  // TODO: Trend indicators — render when API provides yesterday's comparison data.
+  // The API would need to return e.g. { devices_yesterday, events_yesterday, blocked_yesterday }
+  // in the /api/privacy/stats or a new /api/stats/comparison endpoint.
+  // Example usage:
+  //   renderTrend('dash-devices-trend', deviceCount, data.devices_yesterday, false);
+  //   renderTrend('dash-events-trend', evtCount, data.events_yesterday, false);
+  //   renderTrend('dash-blocked-trend', ag.blocked_queries, data.blocked_yesterday, true);
 
   // Health status
   if (healthRes) {
