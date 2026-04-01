@@ -2328,6 +2328,7 @@ async function loadKillswitchState() {
     const data = await res.json();
     _killswitchActive = data.active;
     renderKillswitchUI(data);
+    updateGlobalKsBanner(data);
   } catch (e) {
     console.warn('[killswitch] Could not load state:', e);
   }
