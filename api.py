@@ -645,9 +645,22 @@ Upload tijdlijn:
 
 
 @app.post("/api/devices", response_model=DeviceRead, status_code=201)
+def _normalize_mac(mac: str) -> str:
+    """Normalize MAC to consistent lowercase format without leading zeros.
+    e.g. 'A2:C0:6D:40:07:F7' → 'a2:c0:6d:40:7:f7'
+    """
+    if not mac:
+        return mac
+    try:
+        parts = mac.lower().replace("-", ":").split(":")
+        return ":".join(str(int(p, 16)) if len(p) <= 2 else p for p in parts)
+    except (ValueError, AttributeError):
+        return mac.lower()
+
+
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
-    mac = payload.mac_address
+    mac = _normalize_mac(payload.mac_address)
 
     if not mac:
         # No MAC provided — try to find the device that already owns this IP
