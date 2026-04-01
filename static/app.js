@@ -2752,6 +2752,147 @@ async function toggleGlobalFilter(type, checkbox) {
   } finally { checkbox.disabled = false; }
 }
 
+// ---------------------------------------------------------------------------
+// Scheduling — localStorage-backed schedule for global filters
+// ---------------------------------------------------------------------------
+const SCHED_STORAGE_KEY = 'airadar-filter-schedules';
+let _schedFilterKey = null; // which filter we're editing
+
+function _loadSchedules() {
+  try { return JSON.parse(localStorage.getItem(SCHED_STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function _saveSchedules(schedules) {
+  localStorage.setItem(SCHED_STORAGE_KEY, JSON.stringify(schedules));
+}
+
+const FILTER_NAMES = { parental: 'rules.safeWork', social: 'rules.blockSocial', gaming: 'rules.blockGaming' };
+const DAY_KEYS = ['mon','tue','wed','thu','fri','sat','sun'];
+
+function openScheduleModal(filterKey) {
+  _schedFilterKey = filterKey;
+  const modal = document.getElementById('schedule-modal-backdrop');
+  const title = document.getElementById('schedule-modal-title');
+  title.textContent = t('sched.title', { name: t(FILTER_NAMES[filterKey]) });
+
+  // Populate time dropdowns
+  ['sched-start', 'sched-end'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (sel.options.length > 0) return; // already populated
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const val = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        const label = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        sel.innerHTML += `<option value="${val}">${label}</option>`;
+      }
+    }
+  });
+
+  // Populate day checkboxes
+  const daysContainer = document.getElementById('sched-days');
+  if (!daysContainer.children.length) {
+    daysContainer.innerHTML = DAY_KEYS.map(d =>
+      `<label class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 dark:bg-white/[0.04] cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+        <input type="checkbox" value="${d}" class="accent-indigo-500 w-3 h-3" checked>
+        <span class="text-[11px] text-slate-600 dark:text-slate-300">${t('sched.' + d)}</span>
+      </label>`
+    ).join('');
+  }
+
+  // Load existing schedule
+  const schedules = _loadSchedules();
+  const existing = schedules[filterKey];
+
+  if (existing && existing.mode === 'custom') {
+    document.querySelector('input[name="sched-mode"][value="custom"]').checked = true;
+    document.getElementById('schedule-custom-fields').classList.remove('hidden');
+    document.getElementById('sched-start').value = existing.start || '15:00';
+    document.getElementById('sched-end').value = existing.end || '18:00';
+    // Set day checkboxes
+    daysContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.checked = (existing.days || DAY_KEYS.slice(0, 5)).includes(cb.value);
+    });
+  } else {
+    document.querySelector('input[name="sched-mode"][value="always"]').checked = true;
+    document.getElementById('schedule-custom-fields').classList.add('hidden');
+    document.getElementById('sched-start').value = '15:00';
+    document.getElementById('sched-end').value = '18:00';
+    daysContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.checked = DAY_KEYS.slice(0, 5).includes(cb.value); // Mon-Fri default
+    });
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeScheduleModal() {
+  document.getElementById('schedule-modal-backdrop').classList.add('hidden');
+  _schedFilterKey = null;
+}
+
+function onScheduleModeChange() {
+  const mode = document.querySelector('input[name="sched-mode"]:checked')?.value;
+  document.getElementById('schedule-custom-fields').classList.toggle('hidden', mode !== 'custom');
+}
+
+function saveSchedule() {
+  if (!_schedFilterKey) return;
+  const mode = document.querySelector('input[name="sched-mode"]:checked')?.value;
+  const schedules = _loadSchedules();
+
+  if (mode === 'custom') {
+    const start = document.getElementById('sched-start').value;
+    const end = document.getElementById('sched-end').value;
+    const days = [...document.querySelectorAll('#sched-days input[type="checkbox"]:checked')].map(cb => cb.value);
+    schedules[_schedFilterKey] = { mode: 'custom', start, end, days };
+  } else {
+    delete schedules[_schedFilterKey];
+  }
+
+  _saveSchedules(schedules);
+  _renderAllScheduleBadges();
+  closeScheduleModal();
+}
+
+function _renderAllScheduleBadges() {
+  const schedules = _loadSchedules();
+  ['parental', 'social', 'gaming'].forEach(key => {
+    const el = document.getElementById(`filter-${key}-schedule`);
+    const textEl = document.getElementById(`filter-${key}-schedule-text`);
+    if (!el || !textEl) return;
+
+    const sched = schedules[key];
+    if (sched && sched.mode === 'custom') {
+      const dayLabels = (sched.days || []).map(d => t('sched.' + d));
+      // Compact day range: if Mon-Fri, show "Mon–Fri"
+      let dayStr;
+      const weekdays = DAY_KEYS.slice(0, 5);
+      const weekend = DAY_KEYS.slice(5);
+      if (sched.days.length === 7) dayStr = t('sched.mon') + '–' + t('sched.sun');
+      else if (JSON.stringify(sched.days.sort()) === JSON.stringify(weekdays)) dayStr = t('sched.mon') + '–' + t('sched.fri');
+      else if (JSON.stringify(sched.days.sort()) === JSON.stringify(weekend)) dayStr = t('sched.sat') + '–' + t('sched.sun');
+      else dayStr = dayLabels.join(', ');
+
+      // Format times nicely
+      const fmtT = (v) => {
+        const [h, m] = v.split(':').map(Number);
+        return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      };
+      textEl.textContent = `${dayStr}, ${fmtT(sched.start)} – ${fmtT(sched.end)}`;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  });
+}
+
+// Expose scheduling functions
+window.openScheduleModal = openScheduleModal;
+window.closeScheduleModal = closeScheduleModal;
+window.onScheduleModeChange = onScheduleModeChange;
+window.saveSchedule = saveSchedule;
+
 // --- Active Protect (IPS) ---
 async function refreshIps() {
   await loadIpsStatus();
