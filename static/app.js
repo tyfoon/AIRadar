@@ -1181,8 +1181,8 @@ async function refreshPrivacy() {
 
   // AdGuard section
   const ag = privRes.adguard || {};
-  document.getElementById('priv-total').textContent = (ag.total_queries || 0).toLocaleString();
-  document.getElementById('priv-blocked').textContent = (ag.blocked_queries || 0).toLocaleString();
+  document.getElementById('priv-total').textContent = formatNumber(ag.total_queries || 0);
+  document.getElementById('priv-blocked').textContent = formatNumber(ag.blocked_queries || 0);
   document.getElementById('priv-pct').textContent = (ag.block_percentage || 0) + '%';
 
   const statusEl = document.getElementById('priv-status');
