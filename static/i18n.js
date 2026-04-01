@@ -512,6 +512,8 @@ const TRANSLATIONS = {
     'mob.devices':         'Apparaten',
     'mob.rules':           'Regels',
     'mob.settings':        'Instellingen',
+    'mob.more':            'Meer',
+    'mob.ips':             'Bescherm',
 
     // Paginatitels
     'page.dashboard':      'Dashboard',
