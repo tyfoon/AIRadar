@@ -1552,7 +1552,7 @@ async function generateDeviceReport(macParam) {
 
   // Loading state
   btn.disabled = true;
-  btn.innerHTML = '<span class="inline-block animate-pulse">&#10024;</span> Generating AI report\u2026';
+  btn.innerHTML = `<span class="inline-block animate-pulse">&#10024;</span> ${t('dev.generatingReport')}`;
   btn.classList.add('opacity-70', 'cursor-wait');
   reportBox.classList.remove('hidden');
   reportContent.innerHTML = `
