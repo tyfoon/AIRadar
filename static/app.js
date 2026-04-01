@@ -1839,6 +1839,66 @@ function renderTrackerDetailsList() {
 let _devAllEvents = [];
 let _devMatrix = {};
 let _devExpandedGroups = new Set();
+let _devSearchQuery = '';
+let _devTypeFilter = 'all';
+let _devHideInactive = false;
+
+// --- Friendly device names (localStorage fallback) ---
+const _FRIENDLY_NAMES_KEY = 'airadar-friendly-names';
+
+function _loadFriendlyNames() {
+  try { return JSON.parse(localStorage.getItem(_FRIENDLY_NAMES_KEY) || '{}'); } catch { return {}; }
+}
+
+function _saveFriendlyName(mac, name) {
+  const names = _loadFriendlyNames();
+  if (name) { names[mac] = name; } else { delete names[mac]; }
+  localStorage.setItem(_FRIENDLY_NAMES_KEY, JSON.stringify(names));
+}
+
+function _getFriendlyName(mac) {
+  return _loadFriendlyNames()[mac] || null;
+}
+
+// Get the best display name for a device (friendly > display_name > hostname > IP)
+function _bestDeviceName(mac, device) {
+  const friendly = _getFriendlyName(mac);
+  if (friendly) return friendly;
+  if (device?.display_name) return device.display_name;
+  if (device?.hostname) return device.hostname;
+  return device ? _latestIp(device) : mac.replace('_ip_', '');
+}
+
+function _originalDeviceName(device) {
+  return device?.hostname || (device ? _latestIp(device) : '');
+}
+
+// --- Device search/filter ---
+function onDevSearchInput() {
+  const input = document.getElementById('dev-search');
+  const clearBtn = document.getElementById('dev-search-clear');
+  _devSearchQuery = (input?.value || '').toLowerCase().trim();
+  if (clearBtn) clearBtn.classList.toggle('hidden', !_devSearchQuery);
+  _renderDeviceMatrix();
+}
+
+function clearDevSearch() {
+  const input = document.getElementById('dev-search');
+  if (input) input.value = '';
+  _devSearchQuery = '';
+  document.getElementById('dev-search-clear')?.classList.add('hidden');
+  _renderDeviceMatrix();
+}
+
+function setDevTypeFilter(type) {
+  _devTypeFilter = type;
+  _renderDeviceMatrix();
+}
+
+function onDevFilterChange() {
+  _devHideInactive = document.getElementById('dev-hide-inactive')?.checked || false;
+  _renderDeviceMatrix();
+}
 
 function getCategoryGroups() {
   return [
