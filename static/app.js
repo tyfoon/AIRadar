@@ -2709,6 +2709,7 @@ async function loadGlobalFilterStatus() {
     styleFilterCard('filter-parental-card', data.parental_enabled);
     styleFilterCard('filter-social-card', data.social_media_blocked);
     styleFilterCard('filter-gaming-card', data.gaming_blocked);
+    _renderAllScheduleBadges();
   } catch(e) { console.error('loadGlobalFilterStatus:', e); }
 }
 
