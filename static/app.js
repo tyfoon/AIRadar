@@ -53,6 +53,12 @@ function toggleSidebar() {
     icon.style.transform = '';
   }
   localStorage.setItem('airadar-sidebar', sidebarCollapsed ? 'collapsed' : 'expanded');
+
+  // Resize all charts after sidebar transition completes (250ms CSS transition)
+  setTimeout(() => {
+    Object.values(charts).forEach(c => c.resize());
+    if (sankeyInstance) sankeyInstance.resize();
+  }, 300);
 }
 
 function initSidebar() {
