@@ -1490,7 +1490,7 @@ function _showCellEvents(mac, service, category) {
   events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
-  const catGroup = category ? CATEGORY_GROUPS.find(g => g.key === category) : null;
+  const catGroup = category ? getCategoryGroups().find(g => g.key === category) : null;
   const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : 'All Services';
   // OS fingerprint info line
   let osLine = '';
@@ -1650,7 +1650,7 @@ function _renderDeviceMatrix() {
   const globalMax = _devMatrix.globalMax;
 
   // Group services by category
-  const groups = CATEGORY_GROUPS.map(g => {
+  const groups = getCategoryGroups().map(g => {
     const svcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === g.key).sort();
     // Compute group total per device
     return { ...g, services: svcs };
