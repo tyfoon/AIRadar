@@ -686,6 +686,10 @@ const TRANSLATIONS = {
     'dev.saveName':        'Opslaan',
     'dev.cancelEdit':      'Annuleren',
     'dev.originalName':    'Origineel:',
+    'dev.connection':      'Verbinding',
+    'dev.loadMore':        'Meer laden',
+    'dev.showingOfEvents': '{visible} van {total} weergegeven',
+    'dev.drawerAllTab':    'Alles',
 
     // Aanvallen (IPS) pagina
     'ips.attackPrevention':'Aanvalspreventie',
