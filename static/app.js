@@ -1411,7 +1411,7 @@ function renderTrackerDetailsList() {
   const container = document.getElementById('tracker-details-list');
   if (!container) return;
   if (!_cachedTopTrackers?.length) {
-    container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">No tracker data available.</p>';
+    container.innerHTML = `<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">${t('priv.noTrackerData')}</p>`;
     return;
   }
   const maxHits = _cachedTopTrackers[0]?.hits || 1;
