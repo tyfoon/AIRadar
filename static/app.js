@@ -1714,6 +1714,7 @@ async function refreshCloud() {
 
 // --- PRIVACY ---
 let _cachedTopBlocked = [];
+let _cachedAggregatedBlocked = [];
 
 async function refreshPrivacy() {
   // Build filter params for tracker events
