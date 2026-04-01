@@ -174,6 +174,20 @@ def _infer_device_class(os_full: str, os_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Local IP filter — only fingerprint devices on our network
+# ---------------------------------------------------------------------------
+
+def _is_local_ip(ip: str) -> bool:
+    """Return True if the IP is a private / link-local address."""
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(ip)
+        return addr.is_private or addr.is_link_local
+    except ValueError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # API updater
 # ---------------------------------------------------------------------------
 
@@ -182,6 +196,10 @@ async def _update_device_fingerprint(
 ) -> None:
     """POST fingerprint data to the API."""
     ip = data["ip"]
+
+    # Only fingerprint local devices, not remote servers
+    if not _is_local_ip(ip):
+        return
 
     # Dedup check
     now = time.time()

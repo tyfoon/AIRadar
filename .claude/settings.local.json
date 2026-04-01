@@ -152,7 +152,10 @@
       "Bash(curl -s -X POST http://localhost:8000/api/devices -H \"Content-Type: application/json\" -d '{\"\"ip\"\": \"\"192.168.1.155\"\", \"\"mac_address\"\": \"\"a2:c0:6d:40:07:f7\"\"}')",
       "Bash(p0f -h)",
       "Bash(ifconfig -l)",
-      "Bash(route get:*)"
+      "Bash(route get:*)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''p0f_tailer.py''\\).read\\(\\)\\); print\\(''p0f_tailer.py: OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''zeek_tailer.py''\\).read\\(\\)\\); print\\(''zeek_tailer.py: OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''api.py''\\).read\\(\\)\\); print\\(''api.py: OK''\\)\")"
     ]
   },
   "hooks": {
