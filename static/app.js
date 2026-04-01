@@ -1978,13 +1978,13 @@ function _updateIpsStats(data) {
     dot.classList.remove('bg-emerald-400', 'dark:bg-emerald-500', 'bg-amber-400', 'dark:bg-amber-500', 'bg-slate-300', 'dark:bg-slate-600');
     if (data.crowdsec_running) {
       dot.classList.add('bg-emerald-400', 'dark:bg-emerald-500');
-      dot.title = 'CrowdSec online';
+      dot.title = t('ips.crowdsecOnline');
     } else if (data.enabled) {
       dot.classList.add('bg-amber-400', 'dark:bg-amber-500');
-      dot.title = 'CrowdSec not reachable';
+      dot.title = t('ips.crowdsecUnreachable');
     } else {
       dot.classList.add('bg-slate-300', 'dark:bg-slate-600');
-      dot.title = 'CrowdSec offline';
+      dot.title = t('ips.crowdsecOffline');
     }
   }
 
