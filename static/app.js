@@ -840,7 +840,7 @@ async function refreshDashboard() {
           <td class="py-3 px-4">${severity}</td>
           <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
           <td class="py-3 px-4">${badge(e.ai_service)}</td>
-          <td class="py-2.5 text-xs">${_detectDeviceType(_deviceByIp(e.source_ip)).icon} ${deviceName(e.source_ip)}</td>
+          <td class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e.source_ip)).icon} ${deviceName(e.source_ip)}</td>
         </tr>`;
       }).join('');
     }
