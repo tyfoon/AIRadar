@@ -1312,8 +1312,7 @@ function renderSankey(events) {
       textStyle: { color: dark ? '#e2e8f0' : '#1e293b', fontSize: 12, fontFamily: 'Inter' },
       formatter: (params) => {
         if (params.dataType === 'edge') {
-          const kb = (params.value / 1024).toFixed(1);
-          return `${params.data.source} → ${params.data.target}<br/><b>${kb} KB</b>`;
+          return `${params.data.source} → ${params.data.target}<br/><b>${_fmtBytes(params.value)}</b>`;
         }
         return params.name;
       }
