@@ -2344,6 +2344,7 @@ function renderKillswitchUI(data) {
   const active = data.active;
   _killswitchActive = active;
   updateNavBadges();
+  updateGlobalKsBanner(data);
 
   if (active) {
     // KILLSWITCH IS ON — red danger state
