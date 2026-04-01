@@ -591,7 +591,7 @@ function renderEventsTable(events, tbodyId, emptyId) {
     const rc = up
       ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50 dark:bg-orange-900/10'
       : 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20';
-    const ub = up ? '<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
+    const ub = up ? `<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">${t('ai.upload')}</span>` : '';
     const dn = deviceName(e.source_ip);
     const dev = _deviceByIp(e.source_ip);
     const dt = _detectDeviceType(dev);
