@@ -1732,7 +1732,9 @@ async function refreshCloud() {
   document.getElementById('cloud-stat-total').textContent = events.length;
   document.getElementById('cloud-stat-services').textContent = new Set(events.map(e => e.ai_service)).size;
   document.getElementById('cloud-stat-sources').textContent = Object.keys(deviceMap).length || new Set(events.map(e => e.source_ip)).size || 0;
-  document.getElementById('cloud-stat-uploads').textContent = events.filter(e => e.possible_upload).length;
+  const cloudUploadCount = events.filter(e => e.possible_upload).length;
+  document.getElementById('cloud-stat-uploads').textContent = cloudUploadCount;
+  _styleUploadCard('cloud', cloudUploadCount);
 
   // Populate service filter
   const svcSel = document.getElementById('cloud-filter-service');
