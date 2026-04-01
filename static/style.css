@@ -104,7 +104,8 @@ select {
 #sidebar.collapsed .nav-group-label { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
 #sidebar.collapsed #sidebar-utils { flex-direction: column; gap: 4px; padding-top: 8px; padding-bottom: 8px; }
 
-/* Collapsed sidebar tooltip on nav items */
+/* Nav tooltips: hidden in expanded state, shown on hover in collapsed state */
+.nav-tooltip { display: none; }
 #sidebar.collapsed .nav-item .nav-tooltip {
   display: none;
   position: absolute;
