@@ -967,36 +967,45 @@ async function refreshDashboard() {
     if (hp && !hp.classList.contains('hidden')) renderDashHealthServices();
   }
 
-  // Mini donuts
+  // Mini donuts with center text
   const aiDonut = getOrCreateChart('dash-ai-donut', makeDoughnutConfig());
   if (aiDonut) {
     const ac = {}; aiEvt.forEach(e => { ac[e.ai_service] = (ac[e.ai_service] || 0) + 1; });
     const aiKeys = Object.keys(ac);
+    const aiTotal = Object.values(ac).reduce((s, v) => s + v, 0);
     aiDonut.data.labels = aiKeys.map(k => svcDisplayName(k));
     aiDonut.data.datasets[0].data = Object.values(ac);
     aiDonut.data.datasets[0].backgroundColor = aiKeys.map(k => svcColor(k));
+    aiDonut.options.plugins.doughnutCenterText = { text: formatNumber(aiTotal), subText: t('dash.events') };
     aiDonut.update();
-    renderHtmlLegend('dash-ai-donut-legend', aiDonut, aiKeys);
+    renderHtmlLegend('dash-ai-donut-legend', aiDonut, aiKeys, 4);
   }
 
   const cloudDonut = getOrCreateChart('dash-cloud-donut', makeDoughnutConfig());
   if (cloudDonut) {
     const cc = {}; cloudEvt.forEach(e => { cc[e.ai_service] = (cc[e.ai_service] || 0) + 1; });
     const cloudKeys = Object.keys(cc);
+    const cloudTotal = Object.values(cc).reduce((s, v) => s + v, 0);
     cloudDonut.data.labels = cloudKeys.map(k => svcDisplayName(k));
     cloudDonut.data.datasets[0].data = Object.values(cc);
     cloudDonut.data.datasets[0].backgroundColor = cloudKeys.map(k => svcColor(k));
+    cloudDonut.options.plugins.doughnutCenterText = { text: formatNumber(cloudTotal), subText: t('dash.events') };
     cloudDonut.update();
-    renderHtmlLegend('dash-cloud-donut-legend', cloudDonut, cloudKeys);
+    renderHtmlLegend('dash-cloud-donut-legend', cloudDonut, cloudKeys, 4);
   }
 
   const privDonut = getOrCreateChart('dash-priv-donut', makeDoughnutConfig());
   if (privDonut && ag.top_blocked?.length) {
-    const top5 = ag.top_blocked.slice(0, 5);
-    privDonut.data.labels = top5.map(d => d.domain?.length > 20 ? d.domain.slice(0, 18) + '...' : d.domain);
-    privDonut.data.datasets[0].data = top5.map(d => d.count);
+    // Group raw domains into tracker categories
+    const grouped = groupBlockedByCategory(ag.top_blocked);
+    const topGrouped = grouped.slice(0, 6);
+    const privTotal = topGrouped.reduce((s, g) => s + g.count, 0);
+    privDonut.data.labels = topGrouped.map(g => g.label);
+    privDonut.data.datasets[0].data = topGrouped.map(g => g.count);
+    privDonut.data.datasets[0].backgroundColor = topGrouped.map((_, i) => ACCENT_COLORS[i % ACCENT_COLORS.length]);
+    privDonut.options.plugins.doughnutCenterText = { text: formatNumber(privTotal), subText: t('dash.events') };
     privDonut.update();
-    renderHtmlLegend('dash-priv-donut-legend', privDonut, null);
+    renderHtmlLegend('dash-priv-donut-legend', privDonut, null, 4);
   }
 
   // Alarms — grouping, pagination, severity filter
