@@ -1315,7 +1315,7 @@ function renderVpnAlerts(alerts) {
   }
 
   // Active alerts — orange warning
-  statLabel.textContent = count === 1 ? '1 device using VPN' : `${count} devices using VPN`;
+  statLabel.textContent = t('priv.deviceUsingVpn', { n: count, s: count === 1 ? '' : 's' });
   statLabel.className = 'text-orange-500 dark:text-orange-400';
   statCard.className = statCard.className
     .replace(/border-slate-200\s*/g, '').replace(/dark:border-white\/\[0\.05\]/g, '');
