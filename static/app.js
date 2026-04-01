@@ -2099,7 +2099,7 @@ function renderServiceCard(svc) {
         </select>
         ${svc.is_blocked
           ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">${permLabel}</span>`
-          : '<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ Allowed</span>'}
+          : `<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ ${t('svc.allowed')}</span>`}
       </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2">${lastSeenText}</p>
     </div>`;
