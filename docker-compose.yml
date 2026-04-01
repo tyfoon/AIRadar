@@ -19,6 +19,7 @@ services:
       # Container-internal overrides (paths inside the container)
       - AIRADAR_DB_PATH=/app/data/airadar.db
       - ZEEK_LOG_DIR=/app/logs
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - PYTHONUNBUFFERED=1
     volumes:
       # Persistent database — survives container restarts
