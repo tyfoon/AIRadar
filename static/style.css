@@ -101,6 +101,7 @@ select {
 }
 #sidebar.collapsed .nav-label { opacity: 0; width: 0; }
 #sidebar.collapsed .logo-text { opacity: 0; width: 0; overflow: hidden; }
+.nav-group-label { transition: opacity 0.2s, height 0.2s, margin 0.2s, padding 0.2s; }
 #sidebar.collapsed .nav-group-label { opacity: 0; height: 0; margin: 0; padding: 0; overflow: hidden; }
 #sidebar.collapsed #sidebar-utils { flex-direction: column; gap: 4px; padding-top: 8px; padding-bottom: 8px; }
 
