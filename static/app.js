@@ -774,7 +774,7 @@ async function refreshDashboard() {
     } else {
       const issues = healthRes.summary.total - healthRes.summary.ok;
       dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
-      txt.textContent = t('dash.issuesDetected', { n: issues, s: issues > 1 ? 's' : '' });
+      txt.textContent = t('dash.issuesDetected', { n: issues, problem: getLocale() === 'nl' ? (issues > 1 ? 'problemen' : 'probleem') : (issues > 1 ? 'Issues' : 'Issue') });
       txt.className = 'text-lg font-semibold text-amber-600 dark:text-amber-400';
       topDot.className = 'w-2 h-2 rounded-full bg-amber-500';
       topTxt.textContent = t('topbar.issues', { n: issues, problem: getLocale() === 'nl' ? (issues > 1 ? 'problemen' : 'probleem') : (issues > 1 ? 'Issues' : 'Issue') });
