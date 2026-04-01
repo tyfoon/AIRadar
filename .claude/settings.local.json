@@ -144,7 +144,9 @@
       "Bash(git status:*)",
       "Bash(python3 -c \"import dotenv; print\\(''dotenv OK''\\)\")",
       "Bash(python3 -c \"import dotenv; print\\(''OK''\\)\")",
-      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py)"
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(python3 -c \"import google.generativeai; print\\(''OK''\\)\")",
+      "Bash(tail -3 python3 -c \"from google import genai; print\\(''''OK''''\\)\")"
     ]
   },
   "hooks": {
