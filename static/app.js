@@ -646,14 +646,14 @@ function getOrCreateChart(id, config) {
 }
 
 // Custom HTML legend using same badge() style as tables
-// maxItems: limit legend to N items + a "+X more" overflow badge
+// maxItems: limit legend to N items + a "+X more" overflow badge (0 = unlimited)
 function renderHtmlLegend(containerId, chart, serviceKeys, maxItems) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  const limit = maxItems || 4;
+  const limit = maxItems || 0;
   const labels = chart.data.labels || [];
   const total = labels.length;
-  const showLabels = labels.slice(0, limit);
+  const showLabels = limit > 0 ? labels.slice(0, limit) : labels;
 
   const items = showLabels.map((label, i) => {
     const key = serviceKeys ? serviceKeys[i] : null;
