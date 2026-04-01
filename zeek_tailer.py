@@ -555,9 +555,9 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 service, category, _domain = match
                 resp_ip = record.get("id.resp_h", "")
 
-                # Learn this destination IP for conn.log correlation
+                # Learn this destination IP for conn.log correlation (with TTL)
                 if resp_ip and resp_ip != "-":
-                    _known_ips[resp_ip] = (service, category)
+                    _known_ips[resp_ip] = (service, category, time.time())
 
                 # Register the device if it's a local source
                 asyncio.create_task(register_device(client, src_ip))
