@@ -489,7 +489,8 @@ const TRANSLATIONS = {
 
     // Killswitch banner
     'ks.bannerTitle':      'Killswitch actief — Alle bescherming uitgeschakeld',
-    'ks.bannerSubtitle':   'DNS-filtering, IPS en blokkeerregels worden omzeild. Klik om naar Instellingen te gaan.',
+    'ks.bannerSubtitle':   'Je netwerkbescherming is momenteel gepauzeerd. Al het verkeer is ongefilterd.',
+    'ks.restoreBtn':       'Bescherming herstellen',
 
     // AI Radar pagina
     'ai.tabRadar':         'AI Radar',
