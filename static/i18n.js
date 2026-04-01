@@ -844,6 +844,11 @@ const TRANSLATIONS = {
     'sched.sun':           'Zo',
 
     // Instellingen — Killswitch
+    // Instellingen tabbladen
+    'settings.tabProtection':'Bescherming',
+    'settings.tabSystem':  'Systeem',
+    'settings.tabAbout':   'Over',
+    'settings.ksExplainer':'De noodschakelaar schakelt onmiddellijk alle netwerkfiltering en -bescherming uit. Gebruik dit als het netwerk niet meer goed werkt.',
     'settings.killswitch': 'Noodschakelaar',
     'settings.ksOperational':'Alle systemen operationeel',
     'settings.ksActivate': 'Killswitch activeren',
