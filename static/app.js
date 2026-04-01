@@ -1950,15 +1950,15 @@ function _updateIpsBanner(data) {
 function _updateIpsStats(data) {
   // Threats blocked count
   const blockedEl = document.getElementById('ips-stat-blocked');
-  if (blockedEl) blockedEl.textContent = data.active_threats_blocked.toLocaleString();
+  if (blockedEl) blockedEl.textContent = formatNumber(data.active_threats_blocked);
 
   // Decisions count
   const decisionsEl = document.getElementById('ips-stat-decisions');
-  if (decisionsEl) decisionsEl.textContent = data.active_threats_blocked.toLocaleString();
+  if (decisionsEl) decisionsEl.textContent = formatNumber(data.active_threats_blocked);
 
   // Rules card badge
   const countEl = document.getElementById('ips-threats-count');
-  if (countEl) countEl.textContent = data.active_threats_blocked.toLocaleString();
+  if (countEl) countEl.textContent = formatNumber(data.active_threats_blocked);
 
   // Engine status
   const engineEl = document.getElementById('ips-engine-status');
