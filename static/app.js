@@ -1491,7 +1491,7 @@ function _showCellEvents(mac, service, category) {
 
   const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
   const catGroup = category ? getCategoryGroups().find(g => g.key === category) : null;
-  const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : 'All Services';
+  const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : t('dev.allServices');
   // OS fingerprint info line
   let osLine = '';
   if (dev?.os_name) {
