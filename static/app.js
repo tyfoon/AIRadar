@@ -994,7 +994,7 @@ async function refreshPage(page) {
     else if (page === 'devices') await refreshDevices();
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
-    else if (page === 'settings') await loadKillswitchState();
+    else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
 
