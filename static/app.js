@@ -2420,6 +2420,39 @@ function setKsDot(name, color, label) {
   }
 }
 
+function updateGlobalKsBanner(ksState) {
+  const banner = document.getElementById('ks-global-banner');
+  if (!banner) return;
+  if (ksState && ksState.active) {
+    banner.classList.remove('hidden');
+    banner.classList.add('flex');
+    const since = ksState.activated_at ? new Date(ksState.activated_at + 'Z').toLocaleTimeString() : '';
+    const sinceEl = document.getElementById('ks-banner-since');
+    if (sinceEl) sinceEl.textContent = since ? t('dash.since', { time: since }) : '';
+  } else {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }
+}
+
+async function restoreProtection() {
+  // Deactivate the killswitch directly
+  try {
+    const res = await fetch('/api/killswitch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active: false}),
+    });
+    const data = await res.json();
+    renderKillswitchUI(data.killswitch || {active: false});
+    updateGlobalKsBanner({active: false});
+    // Refresh current page to update any page-specific state
+    await refreshPage(currentPage);
+  } catch (e) {
+    console.error('[killswitch] Restore failed:', e);
+  }
+}
+
 async function toggleKillswitch() {
   const newState = !_killswitchActive;
   const action = newState ? 'ACTIVATE' : 'DEACTIVATE';
