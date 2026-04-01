@@ -1267,7 +1267,7 @@ async function refreshPrivacy() {
   if (privDevSel) {
     const cur = privDevSel.value;
     const allDevs = [...new Set(recent.map(e => e.source_ip))].sort();
-    privDevSel.innerHTML = '<option value="">All devices</option>';
+    privDevSel.innerHTML = `<option value="">${t('priv.allDevices')}</option>`;
     allDevs.forEach(ip => {
       const name = deviceName(ip);
       privDevSel.innerHTML += `<option value="${ip}">${name !== ip ? name + ' (' + ip + ')' : ip}</option>`;
