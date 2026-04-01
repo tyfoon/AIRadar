@@ -1569,7 +1569,7 @@ async function generateDeviceReport(macParam) {
     const data = await resp.json();
 
     if (!resp.ok) {
-      reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${data.detail || 'Fout bij het genereren van het rapport.'}</div>`;
+      reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${data.detail || t('dev.reportError')}</div>`;
       return;
     }
 
