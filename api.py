@@ -620,13 +620,28 @@ Upload tijdlijn:
             contents=f"{system_prompt}\n\n{data_block}",
         )
         report_md = response.text
+
+        # Extract token usage for cost transparency
+        usage = response.usage_metadata
+        token_info = {
+            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
+            "response_tokens": getattr(usage, "candidates_token_count", 0),
+            "thinking_tokens": getattr(usage, "thoughts_token_count", 0),
+            "total_tokens": getattr(usage, "total_token_count", 0),
+        }
+        print(f"[gemini] Report for {mac_address}: {token_info}")
     except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=f"Gemini API-fout: {exc}",
         )
 
-    return {"device": device_label, "mac": mac_address, "report": report_md}
+    return {
+        "device": device_label,
+        "mac": mac_address,
+        "report": report_md,
+        "tokens": token_info,
+    }
 
 
 @app.post("/api/devices", response_model=DeviceRead, status_code=201)
