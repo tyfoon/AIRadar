@@ -1927,7 +1927,7 @@ function _updateIpsBanner(data) {
   if (!banner) return;
 
   if (data.enabled && data.crowdsec_running) {
-    statusText.textContent = 'Active — protecting your network';
+    statusText.textContent = t('ips.active');
     statusText.className = 'text-sm text-emerald-500 dark:text-emerald-400';
     banner.classList.remove('border-slate-200', 'dark:border-white/[0.05]');
     banner.classList.add('border-emerald-300', 'dark:border-emerald-700/40');
