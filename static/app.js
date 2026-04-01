@@ -1041,7 +1041,7 @@ function renderAiAdoption(events) {
   // Adoption rate
   const adoptionPct = totalDevices > 0 ? Math.round((aiDeviceCount / totalDevices) * 100) : 0;
   document.getElementById('ai-adopt-rate').textContent = adoptionPct + '%';
-  document.getElementById('ai-adopt-rate-detail').textContent = `${aiDeviceCount} of ${totalDevices} devices`;
+  document.getElementById('ai-adopt-rate-detail').textContent = t('adopt.rateDetail', { ai: aiDeviceCount, total: totalDevices });
   document.getElementById('ai-adopt-bar').style.width = adoptionPct + '%';
   document.getElementById('ai-adopt-bar-label').textContent = adoptionPct + '%';
 
