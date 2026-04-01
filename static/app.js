@@ -1507,10 +1507,18 @@ function _showCellEvents(mac, service, category) {
 // ---------------------------------------------------------------------------
 let _reportAbort = null;
 
-async function generateDeviceReport() {
+async function generateDeviceReport(macParam) {
+  // MAC can come from parameter (matrix button) or from the detail panel
   const panel = document.getElementById('dev-event-detail');
-  const mac = panel.dataset.mac;
+  const mac = macParam || panel?.dataset?.mac;
   if (!mac) return;
+
+  // If called from matrix row, open the detail panel first so the report has a place to render
+  if (macParam && panel.classList.contains('hidden')) {
+    _showCellEvents(mac, null, null);
+  }
+  // Ensure panel stores the MAC
+  panel.dataset.mac = mac;
 
   const btn = document.getElementById('btn-ai-report');
   const reportBox = document.getElementById('dev-ai-report');
@@ -1518,14 +1526,17 @@ async function generateDeviceReport() {
 
   // Loading state
   btn.disabled = true;
-  btn.innerHTML = '<span class="inline-block animate-pulse">&#10024;</span> AI is het netwerk aan het analyseren\u2026';
+  btn.innerHTML = '<span class="inline-block animate-pulse">&#10024;</span> Generating AI report\u2026';
   btn.classList.add('opacity-70', 'cursor-wait');
   reportBox.classList.remove('hidden');
   reportContent.innerHTML = `
     <div class="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 py-4">
       <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-      <span>Gemini analyseert de netwerkactiviteit van de afgelopen 24 uur\u2026</span>
+      <span>Gemini is analyzing the past 24 hours of network activity\u2026</span>
     </div>`;
+
+  // Scroll the report into view
+  reportBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   try {
     const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report`);
