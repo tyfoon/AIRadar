@@ -453,7 +453,7 @@ const TRANSLATIONS = {
     'dash.dnsBlocked':     'Bedreigingen geblokkeerd',
     'dash.checking':       'Controleren...',
     'dash.allOk':          'Alle systemen OK',
-    'dash.issuesDetected': '{n} probleem{s} gedetecteerd',
+    'dash.issuesDetected': '{n} {problem} gedetecteerd',
     'dash.healthDetails':  'Systeemgezondheid details',
     'dash.close':          'Sluiten',
     'dash.noHealthData':   'Nog geen gezondheidsdata. Wacht op de volgende vernieuwing.',
