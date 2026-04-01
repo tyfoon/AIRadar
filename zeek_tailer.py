@@ -67,9 +67,17 @@ _vpn_last_seen: dict[tuple[str, int], float] = {}  # (src_ip, resp_port) → ts
 # a disproportionate share of a device's traffic AND the traffic is not a
 # known service (not in _known_ips), flag it as a potential VPN tunnel.
 
-HEURISTIC_VPN_BYTE_THRESHOLD = 5_000_000  # 5 MB in one conn.log entry
+HEURISTIC_VPN_BYTE_THRESHOLD = 20_000_000  # 20 MB in one conn.log entry (was 5 MB — too aggressive)
 HEURISTIC_VPN_DEDUP_SECONDS = 600  # 10 min window
 _heuristic_vpn_seen: dict[tuple[str, str], float] = {}  # (src_ip, dest_ip) → ts
+
+# Zeek DPD service labels that indicate normal (non-VPN) traffic.
+# If conn.log's `service` field contains any of these, do NOT flag as heuristic VPN.
+HEURISTIC_VPN_SAFE_SERVICES = frozenset({
+    "ssl", "http", "dns", "quic", "ntp", "dhcp", "krb", "dce_rpc",
+    "smb", "smtp", "imap", "pop3", "ftp", "ssh", "rdp", "mysql",
+    "ntlm", "gssapi", "ldap", "snmp", "sip", "stun", "mqtt",
+})
 
 # ---------------------------------------------------------------------------
 # Domain → service mapping (AI + Cloud)
