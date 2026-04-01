@@ -2906,6 +2906,8 @@ window.openScheduleModal = openScheduleModal;
 window.closeScheduleModal = closeScheduleModal;
 window.onScheduleModeChange = onScheduleModeChange;
 window.saveSchedule = saveSchedule;
+window.switchSettingsTab = switchSettingsTab;
+window.setThemeFromSelect = setThemeFromSelect;
 
 // --- Active Protect (IPS) ---
 async function refreshIps() {
