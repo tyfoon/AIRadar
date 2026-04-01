@@ -2591,14 +2591,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const txt = document.getElementById('status-text');
     if (h.summary?.all_ok) {
       dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
-      txt.textContent = 'All Systems Operational';
+      txt.textContent = t('topbar.allOk');
     } else {
       const issues = h.summary.total - h.summary.ok;
       dot.className = 'w-2 h-2 rounded-full bg-amber-500';
-      txt.textContent = `${issues} Issue${issues > 1 ? 's' : ''}`;
+      txt.textContent = t('topbar.issues', { n: issues, s: issues > 1 ? 's' : '' });
     }
   } catch(e) {
     document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
-    document.getElementById('status-text').textContent = 'Connection Error';
+    document.getElementById('status-text').textContent = t('topbar.connError');
   }
+
+  applyTranslations();
+
+  // Set language selector to current locale
+  const localeSel = document.getElementById('locale-select');
+  if (localeSel) localeSel.value = getLocale();
 });
