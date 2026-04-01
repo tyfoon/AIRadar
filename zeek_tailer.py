@@ -280,6 +280,11 @@ def _normalize_mac(mac: str) -> str:
 
 
 def _resolve_mac(ip: str) -> str | None:
+    """Resolve an IP address to a MAC via ARP (IPv4) or NDP (IPv6)."""
+    # --- IPv6: use ndp -a (macOS) or ip neigh (Linux) ---
+    if ":" in ip:
+        return _resolve_mac_ipv6(ip)
+    # --- IPv4: use arp ---
     try:
         result = subprocess.run(
             ["arp", "-n", ip],
@@ -297,6 +302,80 @@ def _resolve_mac(ip: str) -> str | None:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
     return None
+
+
+# Cache NDP table to avoid running ndp -a for every single IPv6 address
+_ndp_cache: dict[str, str] = {}   # normalized IPv6 → MAC
+_ndp_cache_ts: float = 0.0
+_NDP_CACHE_TTL = 60  # refresh every 60s
+
+
+def _refresh_ndp_cache() -> None:
+    """Parse the full NDP neighbor table into a lookup dict."""
+    global _ndp_cache, _ndp_cache_ts
+    now = time.time()
+    if now - _ndp_cache_ts < _NDP_CACHE_TTL:
+        return
+    _ndp_cache_ts = now
+    new_cache: dict[str, str] = {}
+    try:
+        # macOS: ndp -a
+        result = subprocess.run(
+            ["ndp", "-a"], capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            # Format: "2a02-a447-...-8cfc.host.net a2:c0:6d:40:7:f7 en0 permanent R"
+            parts = line.split()
+            if len(parts) >= 2 and ":" in parts[1] and parts[1] != "(incomplete)":
+                # The hostname field encodes the IPv6 as dashes — resolve via column 0
+                # But we need the actual IPv6. Try parsing it from the hostname.
+                host = parts[0]
+                mac = _normalize_mac(parts[1])
+                # Convert dashed hostname back to IPv6
+                # "2a02-a447-d50b-0-e15b-602c-c763-8cfc.fixed6.kpn.net"
+                #  → "2a02:a447:d50b:0:e15b:602c:c763:8cfc"
+                ip_part = host.split(".")[0]  # strip domain
+                candidate = ip_part.replace("-", ":")
+                try:
+                    import ipaddress
+                    addr = ipaddress.ip_address(candidate)
+                    new_cache[str(addr)] = mac
+                except ValueError:
+                    pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # Linux fallback: ip -6 neigh
+        try:
+            result = subprocess.run(
+                ["ip", "-6", "neigh"], capture_output=True, text=True, timeout=5,
+            )
+            for line in result.stdout.splitlines():
+                # Format: "2a02:a447:... dev eth0 lladdr a2:c0:6d:40:07:f7 REACHABLE"
+                parts = line.split()
+                if "lladdr" in parts:
+                    idx = parts.index("lladdr")
+                    if idx + 1 < len(parts):
+                        ip6 = parts[0]
+                        mac = _normalize_mac(parts[idx + 1])
+                        try:
+                            import ipaddress
+                            addr = ipaddress.ip_address(ip6)
+                            new_cache[str(addr)] = mac
+                        except ValueError:
+                            pass
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            pass
+    _ndp_cache = new_cache
+
+
+def _resolve_mac_ipv6(ip: str) -> str | None:
+    """Resolve an IPv6 address to MAC via the NDP neighbor cache."""
+    _refresh_ndp_cache()
+    try:
+        import ipaddress
+        normalized = str(ipaddress.ip_address(ip))
+        return _ndp_cache.get(normalized)
+    except ValueError:
+        return _ndp_cache.get(ip)
 
 
 def _is_local_ip(ip: str) -> bool:

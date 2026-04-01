@@ -182,7 +182,8 @@
       "Bash(sudo grep:*)",
       "Bash(python3 -c \"from dotenv import load_dotenv; print\\(''dotenv OK''\\)\")",
       "Bash(curl -s -w \"\\\\n%{http_code}\" -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" http://127.0.0.1:3001/control/status)",
-      "Bash(/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -c \":*)"
+      "Bash(/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -c \":*)",
+      "Bash(sqlite3 /Users/goswijnthijssen/AIRadar/data/airadar.db \":*)"
     ]
   },
   "hooks": {
