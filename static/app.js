@@ -64,6 +64,54 @@ function toggleMobileSidebar() {
 }
 
 // ================================================================
+// TREND INDICATOR — ready for backend comparison data
+// ================================================================
+// TODO: The backend does not yet provide historical comparison data.
+// When available (e.g. via /api/stats/comparison returning { devices_yesterday,
+// events_yesterday, blocked_yesterday }), call renderTrend() to populate
+// the trend indicator divs on the dashboard stat cards.
+//
+// Parameters:
+//   elementId      – the ID of the trend <div> container (e.g. 'dash-devices-trend')
+//   current        – today's value
+//   previous       – yesterday's value (null/undefined to skip)
+//   higherIsBetter – true if an increase is positive (e.g. blocked threats),
+//                    false if an increase is concerning (e.g. events/attacks)
+function renderTrend(elementId, current, previous, higherIsBetter) {
+  const el = document.getElementById(elementId);
+  if (!el || previous == null || previous === undefined) return;
+
+  const diff = current - previous;
+  if (diff === 0) {
+    el.innerHTML = `<span class="text-[11px] text-slate-400 dark:text-slate-500">${t('dash.trendFlat')}</span>`;
+    el.classList.remove('hidden');
+    return;
+  }
+
+  const pct = previous > 0 ? Math.abs((diff / previous) * 100).toFixed(1) : 0;
+  const isUp = diff > 0;
+  const isPositive = (isUp && higherIsBetter) || (!isUp && !higherIsBetter);
+  const colorClass = isPositive
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : 'text-red-600 dark:text-red-400';
+  const key = isUp ? 'dash.trendUp' : 'dash.trendDown';
+
+  el.innerHTML = `<span class="text-[11px] font-medium ${colorClass}">${t(key, { pct })}</span>`;
+  el.classList.remove('hidden');
+}
+
+// Scroll to the Latest Alarms section on the dashboard
+function scrollToAlarms() {
+  const section = document.getElementById('dash-alarms-section');
+  if (section) {
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Brief highlight flash
+    section.classList.add('ring-2', 'ring-indigo-400/50');
+    setTimeout(() => section.classList.remove('ring-2', 'ring-indigo-400/50'), 1500);
+  }
+}
+
+// ================================================================
 // NAV BADGES
 // ================================================================
 let _navIpsCount = 0;
