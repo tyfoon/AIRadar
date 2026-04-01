@@ -2068,7 +2068,7 @@ function renderServiceCard(svc) {
   const logo = svcLogo(svc.service_name);
 
   const seenTag = svc.seen
-    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● Active (${svc.hit_count.toLocaleString()})</span>`
+    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● ${t('svc.active')} (${formatNumber(svc.hit_count)})</span>`
     : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="No traffic detected">○ Preventive</span>`;
 
   const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : 'No traffic detected';
