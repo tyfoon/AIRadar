@@ -55,6 +55,11 @@ class DeviceRead(BaseModel):
     hostname: Optional[str] = None
     vendor: Optional[str] = None
     display_name: Optional[str] = None
+    os_name: Optional[str] = None          # e.g. "macOS", "Windows", "Linux"
+    os_version: Optional[str] = None       # e.g. "14.x", "11"
+    os_full: Optional[str] = None          # Full p0f label
+    device_class: Optional[str] = None     # e.g. "laptop", "phone", "iot"
+    network_distance: Optional[int] = None # Hops
     first_seen: datetime
     last_seen: datetime
     ips: List[DeviceIPRead] = []
