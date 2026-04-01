@@ -359,7 +359,22 @@ function _detectDeviceType(device) {
 function deviceTypeTag(device) {
   const dt = _detectDeviceType(device);
   const vendorText = device?.vendor ? ` · ${device.vendor}` : '';
-  return `<span class="inline-flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">${dt.icon} ${dt.type}${vendorText}</span>`;
+
+  // p0f OS fingerprint badge
+  let osBadge = '';
+  if (device?.os_name) {
+    const osIcons = {
+      'macOS': '🍎', 'iOS': '📱', 'iPadOS': '📱',
+      'Windows': '🪟', 'Linux': '🐧', 'Android': '🤖',
+      'FreeBSD': '😈', 'OpenBSD': '🐡',
+    };
+    const osIcon = osIcons[device.os_name] || '💻';
+    const osLabel = device.os_version ? `${device.os_name} ${device.os_version}` : device.os_name;
+    const distText = device.network_distance != null ? ` · ${device.network_distance} hop${device.network_distance !== 1 ? 's' : ''}` : '';
+    osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
+  }
+
+  return `<span class="inline-flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500">${dt.icon} ${dt.type}${vendorText}</span>${osBadge}`;
 }
 
 async function loadDevices() {
