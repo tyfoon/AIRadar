@@ -494,24 +494,54 @@ async function loadDevices() {
   } catch(e) { console.error('loadDevices:', e); }
 }
 
-// Device rename handler (now uses MAC address)
-document.addEventListener('click', async (e) => {
-  const el = e.target.closest('.device-name');
-  if (!el) return;
-  const mac = el.dataset.mac;
-  if (!mac) return;
-  const d = deviceMap[mac];
-  const cur = d?.display_name || d?.hostname || mac;
-  const n = prompt(t('dev.renameDevice'), cur);
-  if (n && n !== cur) {
+// Inline device rename — opens an input field in-place
+function _startDeviceRename(mac) {
+  const safeMac = mac.replace(/[^a-zA-Z0-9]/g, '_');
+  const container = document.getElementById('dev-name-row-' + safeMac);
+  if (!container) return;
+  const dev = deviceMap[mac] || null;
+  const currentName = _bestDeviceName(mac, dev);
+
+  // Replace content with inline edit form
+  container.innerHTML = `
+    <form onsubmit="event.preventDefault();_saveDeviceRename('${mac}')" class="flex items-center gap-1.5 w-full">
+      <input type="text" id="dev-rename-input-${safeMac}" value="${currentName.replace(/"/g, '&quot;')}" class="flex-1 min-w-0 text-sm py-0.5 px-1.5 rounded border border-indigo-300 dark:border-indigo-600 focus:ring-2 focus:ring-indigo-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200" autofocus>
+      <button type="submit" class="px-2 py-0.5 text-[10px] font-semibold rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dev.saveName')}</button>
+      <button type="button" onclick="_cancelDeviceRename()" class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">${t('dev.cancelEdit')}</button>
+    </form>`;
+
+  // Focus and select all text
+  const input = document.getElementById('dev-rename-input-' + safeMac);
+  if (input) { input.focus(); input.select(); }
+}
+
+async function _saveDeviceRename(mac) {
+  const safeMac = mac.replace(/[^a-zA-Z0-9]/g, '_');
+  const input = document.getElementById('dev-rename-input-' + safeMac);
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName) { _cancelDeviceRename(); return; }
+
+  // Save to localStorage
+  _saveFriendlyName(mac, newName);
+
+  // Also try to save to API
+  try {
     await fetch(`/api/devices/${encodeURIComponent(mac)}`, {
       method: 'PUT', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({display_name: n}),
+      body: JSON.stringify({display_name: newName}),
     });
     await loadDevices();
-    refreshPage(currentPage);
+  } catch (e) {
+    console.warn('[devices] API rename failed, using localStorage only:', e);
   }
-});
+
+  _renderDeviceMatrix();
+}
+
+function _cancelDeviceRename() {
+  _renderDeviceMatrix();
+}
 
 // ================================================================
 // HELPERS
