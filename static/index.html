@@ -223,27 +223,31 @@
 
       <!-- Sankey Data Flow Diagram -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.dataFlow">Network Data Flow</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="dash.dataFlow">Network Data Flow</h3>
+        <p class="text-xs text-slate-400 dark:text-slate-500 italic mb-4" data-i18n="dash.dataFlowDesc">How data flows between your devices and online services</p>
         <div id="sankey-chart"></div>
         <p id="sankey-empty" class="text-slate-400 dark:text-slate-500 text-center py-12 text-sm hidden" data-i18n="dash.noTraffic">No traffic data to visualize yet.</p>
+        <div class="flex justify-end mt-2">
+          <a href="#/devices" class="text-xs text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium transition-colors"><span data-i18n="dash.viewAllDevices">View all devices</span> →</a>
+        </div>
       </div>
 
       <!-- Three donuts -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('ai')">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.aiTraffic">AI Traffic</h3>
           <canvas id="dash-ai-donut" height="200"></canvas>
-          <div id="dash-ai-donut-legend" class="flex flex-wrap mt-2"></div>
+          <div id="dash-ai-donut-legend" class="flex flex-wrap gap-1.5 mt-3"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('cloud')">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.cloudTraffic">Cloud Traffic</h3>
           <canvas id="dash-cloud-donut" height="200"></canvas>
-          <div id="dash-cloud-donut-legend" class="flex flex-wrap mt-2"></div>
+          <div id="dash-cloud-donut-legend" class="flex flex-wrap gap-1.5 mt-3"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('privacy')">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
           <canvas id="dash-priv-donut" height="200"></canvas>
-          <div id="dash-priv-donut-legend" class="flex flex-wrap mt-2"></div>
+          <div id="dash-priv-donut-legend" class="flex flex-wrap gap-1.5 mt-3"></div>
         </div>
       </div>
 
