@@ -2148,6 +2148,13 @@ window.addEventListener('popstate', function(e) {
   }
 });
 
+// Close drawer on Escape key
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('drawer-panel').classList.contains('open')) {
+    closeDeviceDrawer();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // AI Recap — generate device report via Gemini
 // ---------------------------------------------------------------------------
