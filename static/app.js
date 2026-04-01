@@ -1807,7 +1807,7 @@ async function refreshDevices() {
   const totalUploads = allEvents.filter(e => e.possible_upload).length;
   document.getElementById('dev-stat-total').textContent = deviceMacs.length;
   document.getElementById('dev-stat-violators').textContent = activeMacs;
-  document.getElementById('dev-stat-events').textContent = allEvents.length.toLocaleString();
+  document.getElementById('dev-stat-events').textContent = formatNumber(allEvents.length);
   document.getElementById('dev-stat-uploads').textContent = totalUploads;
 
   // Find global max for heat intensity
