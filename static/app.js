@@ -2363,7 +2363,7 @@ function renderKillswitchUI(data) {
     icon.className = 'w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center transition-colors';
     icon.innerHTML = '<span class="text-xl">🛡️</span>';
 
-    subtitle.textContent = 'All systems operational';
+    subtitle.textContent = t('settings.ksOperational');
     subtitle.classList.remove('text-red-500', 'dark:text-red-400');
     subtitle.classList.add('text-slate-400', 'dark:text-slate-500');
 
