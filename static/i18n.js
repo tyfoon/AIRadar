@@ -422,6 +422,7 @@ const TRANSLATIONS = {
     'settings.restart':    'Restart',
 
     // Settings — Network
+    'settings.readOnly':   'Read-only',
     'settings.network':    'Network Configuration',
     'settings.dnsServer':  'DNS Server',
     'settings.adguardHome':'AdGuard Home',
