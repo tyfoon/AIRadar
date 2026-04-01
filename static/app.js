@@ -2310,8 +2310,8 @@ function _renderDrawerEvents(reset) {
       <td class="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
       <td class="py-2.5 px-4">${badge(e.ai_service)}</td>
       <td class="py-2.5 px-4 text-xs">${typeLabel}${upBadge}</td>
-      <td class="py-2.5 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
-      <td class="py-2.5 px-4 text-xs text-right tabular-nums">${bytesStr}</td>
+      <td class="py-2.5 px-4 text-xs font-mono text-slate-400 dark:text-slate-500 hidden sm:table-cell">${e.source_ip}</td>
+      <td class="py-2.5 px-4 text-xs text-right tabular-nums hidden sm:table-cell">${bytesStr}</td>
     </tr>`;
   }).join('');
 
