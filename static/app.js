@@ -1740,7 +1740,7 @@ function _renderDeviceMatrix() {
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
-      <td class="py-2.5 px-3 text-right tabular-nums text-sm font-semibold">${totalDisplay}</td>
+      <td class="py-3 px-4 text-right tabular-nums text-sm font-semibold">${totalDisplay}</td>
       ${cells}
     </tr>`;
   }).join('');
@@ -2502,10 +2502,10 @@ async function runHealthCheck() {
     tbody.innerHTML = services.map(s => {
       const c = statusMap[s.status] || statusMap.error;
       return `<tr class="border-b border-slate-100 dark:border-white/[0.04]">
-        <td class="py-2.5 px-3 text-sm"><span class="mr-2">${s.icon}</span>${s.service}</td>
-        <td class="py-2.5 px-3"><span class="text-[10px] px-2 py-0.5 rounded ${c.bg} ${c.text} font-semibold">${c.label}</span></td>
-        <td class="py-2.5 px-3 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
-        <td class="py-2.5 px-3 text-xs text-slate-500 dark:text-slate-400">${s.details}</td>
+        <td class="py-3 px-4 text-sm"><span class="mr-2">${s.icon}</span>${s.service}</td>
+        <td class="py-3 px-4"><span class="text-[10px] px-2 py-0.5 rounded ${c.bg} ${c.text} font-semibold">${c.label}</span></td>
+        <td class="py-3 px-4 text-xs tabular-nums text-slate-400">${s.response_ms > 0 ? s.response_ms + ' ms' : '—'}</td>
+        <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${s.details}</td>
       </tr>`;
     }).join('');
 
