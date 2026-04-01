@@ -915,6 +915,231 @@ async function refreshDashboard() {
   renderSankey([...sankeyAi, ...sankeyCloud]);
 }
 
+// --- DASHBOARD ALARMS: grouping, pagination, severity filter, interactivity ---
+let _dashAlarms = [];
+let _dashAlarmsVisible = 10;
+let _dashAlarmsSevFilter = 'all';
+
+function _alarmSeverity(e) {
+  return e.possible_upload ? 'high' : 'medium';
+}
+
+function _severityBadge(sev) {
+  if (sev === 'critical') return '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">CRITICAL</span>';
+  if (sev === 'high')     return '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">HIGH</span>';
+  if (sev === 'low')      return '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">LOW</span>';
+  return '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">MED</span>';
+}
+
+function _fmtBytes(bytes) {
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1024).toFixed(0) + ' KB';
+}
+
+function _groupAlarms(alarms) {
+  // Group consecutive alarms with same type + service + device
+  const groups = [];
+  let cur = null;
+
+  for (const e of alarms) {
+    const key = _alarmSeverity(e) + '|' + (e.ai_service || '') + '|' + (e.source_ip || '');
+    if (cur && cur.key === key) {
+      cur.events.push(e);
+      cur.totalBytes += (e.bytes_transferred || 0);
+    } else {
+      cur = { key, events: [e], totalBytes: (e.bytes_transferred || 0) };
+      groups.push(cur);
+    }
+  }
+  return groups;
+}
+
+function _navigateToDevice(ip) {
+  // Navigate to the Devices page — the device detail view
+  const mac = ipToMac[ip];
+  navigate('devices');
+  // If there's a device detail function, trigger it after navigation
+  if (mac && typeof showDeviceDetail === 'function') {
+    setTimeout(() => showDeviceDetail(mac), 100);
+  }
+}
+
+function showMoreAlarms() {
+  _dashAlarmsVisible += 10;
+  renderDashAlarms();
+}
+
+function setAlarmSevFilter(sev) {
+  _dashAlarmsSevFilter = sev;
+  _dashAlarmsVisible = 10;
+  renderDashAlarms();
+}
+
+function toggleAlarmGroup(groupIdx) {
+  const rows = document.querySelectorAll(`.alarm-group-${groupIdx}-child`);
+  const chevron = document.getElementById(`alarm-chevron-${groupIdx}`);
+  if (!rows.length) return;
+  const isHidden = rows[0].classList.contains('hidden');
+  rows.forEach(r => r.classList.toggle('hidden', !isHidden));
+  if (chevron) chevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+}
+
+function renderDashAlarms() {
+  const body = document.getElementById('dash-alarms-body');
+  const countEl = document.getElementById('dash-alarms-count');
+  const moreWrap = document.getElementById('dash-alarms-more-wrap');
+  const filtersEl = document.getElementById('dash-alarms-filters');
+  const sevTh = document.getElementById('dash-alarms-sev-th');
+  if (!body) return;
+
+  const colSpan = 6; // time + sev + event + service + device + arrow
+
+  // --- Empty state ---
+  if (_dashAlarms.length === 0) {
+    body.innerHTML = `<tr><td colspan="${colSpan}" class="py-12 text-center">
+      <div class="flex flex-col items-center gap-2">
+        <svg class="w-10 h-10 text-emerald-400 dark:text-emerald-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        <span class="text-sm text-slate-400 dark:text-slate-500">${t('dash.noAlarms')}</span>
+      </div>
+    </td></tr>`;
+    if (countEl) countEl.textContent = '';
+    if (moreWrap) moreWrap.classList.add('hidden');
+    if (filtersEl) filtersEl.classList.add('hidden');
+    return;
+  }
+
+  // --- Determine if all severities are the same ---
+  const sevSet = new Set(_dashAlarms.map(e => _alarmSeverity(e)));
+  const allSameSev = sevSet.size <= 1;
+  const showSevCol = !allSameSev;
+
+  // Hide/show severity column header
+  if (sevTh) sevTh.classList.toggle('hidden', !showSevCol);
+
+  // --- Severity filter chips ---
+  if (filtersEl) {
+    if (showSevCol) {
+      const sevList = ['all', ...Array.from(sevSet).sort()];
+      const labelMap = { all: 'dash.filterAll', critical: 'dash.filterCritical', high: 'dash.filterHigh', medium: 'dash.filterMedium', low: 'dash.filterLow' };
+      filtersEl.innerHTML = sevList.map(s => {
+        const active = _dashAlarmsSevFilter === s;
+        const cls = active
+          ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-600'
+          : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]';
+        return `<button onclick="setAlarmSevFilter('${s}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${cls}">${t(labelMap[s] || 'dash.filterAll')}</button>`;
+      }).join('');
+      filtersEl.classList.remove('hidden');
+      filtersEl.classList.add('flex');
+    } else {
+      filtersEl.classList.add('hidden');
+      filtersEl.classList.remove('flex');
+    }
+  }
+
+  // --- Filter by severity ---
+  let filtered = _dashAlarms;
+  if (_dashAlarmsSevFilter !== 'all') {
+    filtered = _dashAlarms.filter(e => _alarmSeverity(e) === _dashAlarmsSevFilter);
+  }
+
+  const totalCount = filtered.length;
+
+  // --- Group consecutive alarms ---
+  const groups = _groupAlarms(filtered);
+
+  // --- Pagination: count groups (each group counts as 1 visible item) ---
+  let visibleCount = 0;
+  let renderedGroups = [];
+  for (const g of groups) {
+    if (visibleCount >= _dashAlarmsVisible) break;
+    renderedGroups.push(g);
+    visibleCount++;
+  }
+
+  // Count total individual alarms shown (for the "Showing X of Y" label)
+  const totalIndividualShown = renderedGroups.reduce((sum, g) => sum + g.events.length, 0);
+
+  // --- Update count label ---
+  if (countEl) {
+    countEl.textContent = t('dash.showingOf', {
+      visible: Math.min(totalIndividualShown, totalCount),
+      total: totalCount
+    });
+  }
+
+  // --- Show/hide "Show more" button ---
+  if (moreWrap) {
+    moreWrap.classList.toggle('hidden', renderedGroups.length >= groups.length);
+  }
+
+  // --- Render rows ---
+  const adjustedColSpan = showSevCol ? colSpan : colSpan - 1;
+  let html = '';
+
+  renderedGroups.forEach((group, gi) => {
+    const e0 = group.events[0]; // representative event (most recent in group)
+    const isGrouped = group.events.length > 1;
+    const sev = _alarmSeverity(e0);
+    const isUpload = e0.possible_upload;
+
+    if (isGrouped) {
+      // --- Grouped row ---
+      const firstTime = fmtTime(group.events[group.events.length - 1].timestamp);
+      const lastTime = fmtTime(e0.timestamp);
+      const timeRange = firstTime + ' — ' + lastTime;
+      const desc = isUpload
+        ? t('dash.groupUploads', { n: group.events.length, size: _fmtBytes(group.totalBytes) })
+        : t('dash.groupHighVol', { n: group.events.length, size: _fmtBytes(group.totalBytes) });
+
+      html += `<tr class="border-b border-slate-100 dark:border-white/[0.04] border-l-2 border-l-orange-400 bg-orange-50/40 dark:bg-orange-950/10 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer" onclick="toggleAlarmGroup(${gi})">
+        <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">
+          <span class="inline-flex items-center gap-1.5">
+            <svg id="alarm-chevron-${gi}" class="w-3 h-3 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+            ${timeRange}
+          </span>
+        </td>
+        ${showSevCol ? `<td class="py-3 px-4">${_severityBadge(sev)}</td>` : ''}
+        <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300 font-medium">${desc}</td>
+        <td class="py-3 px-4">${badge(e0.ai_service)}</td>
+        <td class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e0.source_ip)).icon} ${deviceName(e0.source_ip)}</td>
+        <td class="w-8"></td>
+      </tr>`;
+
+      // --- Child rows (hidden by default) ---
+      group.events.forEach(ce => {
+        const cDesc = ce.possible_upload
+          ? t('dash.uploadDetected', { kb: (ce.bytes_transferred / 1024).toFixed(0) })
+          : t('dash.highVolume', { kb: (ce.bytes_transferred / 1024).toFixed(0) });
+        html += `<tr class="alarm-group-${gi}-child hidden border-b border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.01] hover:bg-slate-100 dark:hover:bg-slate-700/20 transition-colors cursor-pointer group" onclick="_navigateToDevice('${ce.source_ip}')">
+          <td class="py-2.5 px-4 pl-10 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(ce.timestamp)}</td>
+          ${showSevCol ? `<td class="py-2.5 px-4">${_severityBadge(_alarmSeverity(ce))}</td>` : ''}
+          <td class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400">${cDesc}</td>
+          <td class="py-2.5 px-4">${badge(ce.ai_service)}</td>
+          <td class="py-2.5 px-4 text-xs">${_detectDeviceType(_deviceByIp(ce.source_ip)).icon} ${deviceName(ce.source_ip)}</td>
+          <td class="w-8 text-right pr-3"><span class="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 transition-opacity text-xs">→</span></td>
+        </tr>`;
+      });
+
+    } else {
+      // --- Single row ---
+      const desc = isUpload
+        ? t('dash.uploadDetected', { kb: (e0.bytes_transferred / 1024).toFixed(0) })
+        : t('dash.highVolume', { kb: (e0.bytes_transferred / 1024).toFixed(0) });
+
+      html += `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer group" onclick="_navigateToDevice('${e0.source_ip}')">
+        <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e0.timestamp)}</td>
+        ${showSevCol ? `<td class="py-3 px-4">${_severityBadge(sev)}</td>` : ''}
+        <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
+        <td class="py-3 px-4">${badge(e0.ai_service)}</td>
+        <td class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e0.source_ip)).icon} ${deviceName(e0.source_ip)}</td>
+        <td class="w-8 text-right pr-3"><span class="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 transition-opacity text-xs">→</span></td>
+      </tr>`;
+    }
+  });
+
+  body.innerHTML = html;
+}
+
 // --- SANKEY DIAGRAM ---
 let sankeyInstance = null;
 
