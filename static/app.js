@@ -2411,6 +2411,37 @@ window.addEventListener('keydown', function(e) {
   }
 });
 
+// Swipe-to-close: swipe right on the drawer panel to close (mobile)
+(function() {
+  let _swipeStartX = 0;
+  let _swiping = false;
+  const panel = document.getElementById('drawer-panel');
+  if (!panel) return;
+  panel.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      _swipeStartX = e.touches[0].clientX;
+      _swiping = true;
+    }
+  }, { passive: true });
+  panel.addEventListener('touchmove', function(e) {
+    if (!_swiping) return;
+    const dx = e.touches[0].clientX - _swipeStartX;
+    if (dx > 60) {
+      // Translate drawer right as user swipes
+      panel.style.transform = `translateX(${Math.min(dx - 60, 200)}px)`;
+    }
+  }, { passive: true });
+  panel.addEventListener('touchend', function(e) {
+    if (!_swiping) return;
+    _swiping = false;
+    const dx = (e.changedTouches[0]?.clientX || 0) - _swipeStartX;
+    if (dx > 120) {
+      closeDeviceDrawer();
+    }
+    panel.style.transform = '';
+  }, { passive: true });
+})();
+
 // ---------------------------------------------------------------------------
 // AI Recap — generate device report via Gemini
 // ---------------------------------------------------------------------------
