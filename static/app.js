@@ -2339,7 +2339,7 @@ function renderKillswitchUI(data) {
     subtitle.classList.remove('text-slate-400', 'dark:text-slate-500');
     subtitle.classList.add('text-red-500', 'dark:text-red-400');
 
-    btn.textContent = 'Deactivate Killswitch';
+    btn.textContent = t('settings.ksDeactivate');
     btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20';
 
     // Status dots → red
