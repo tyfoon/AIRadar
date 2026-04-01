@@ -2064,7 +2064,7 @@ function renderServiceCard(svc) {
   const isAllowed = !svc.is_blocked;
   const blockedClass = svc.is_blocked ? 'blocked' : '';
   const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
-  const permLabel = svc.is_blocked ? (svc.is_permanent ? 'Permanent' : remaining || 'Temporary') : '';
+  const permLabel = svc.is_blocked ? (svc.is_permanent ? t('svc.permanent') : remaining || t('svc.temporary')) : '';
   const logo = svcLogo(svc.service_name);
 
   const seenTag = svc.seen
