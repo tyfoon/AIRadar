@@ -764,6 +764,44 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     return device
 
 
+@app.post("/api/devices/fingerprint")
+def update_device_fingerprint(payload: dict, db: Session = Depends(get_db)):
+    """Update a device's OS fingerprint from p0f data.
+
+    Expects: {ip, os_name, os_version, os_full, device_class, network_distance}
+    Looks up the device by IP → DeviceIP → Device.
+    """
+    ip = payload.get("ip")
+    if not ip:
+        raise HTTPException(status_code=400, detail="Missing 'ip' field")
+
+    # Find device owning this IP
+    dev_ip = db.query(DeviceIP).filter(DeviceIP.ip == ip).first()
+    if not dev_ip:
+        raise HTTPException(status_code=404, detail=f"No device found for IP {ip}")
+
+    device = db.query(Device).filter(Device.mac_address == dev_ip.mac_address).first()
+    if not device:
+        raise HTTPException(status_code=404, detail=f"Device record missing for MAC {dev_ip.mac_address}")
+
+    # Update fingerprint fields
+    if payload.get("os_name"):
+        device.os_name = payload["os_name"]
+    if payload.get("os_version"):
+        device.os_version = payload["os_version"]
+    if payload.get("os_full"):
+        device.os_full = payload["os_full"]
+    if payload.get("device_class") and payload["device_class"] != "unknown":
+        device.device_class = payload["device_class"]
+    if payload.get("network_distance") is not None:
+        device.network_distance = payload["network_distance"]
+    device.p0f_last_seen = datetime.utcnow()
+
+    db.commit()
+    db.refresh(device)
+    return {"status": "ok", "mac": device.mac_address, "os": device.os_full}
+
+
 @app.put("/api/devices/{mac_address:path}", response_model=DeviceRead)
 def rename_device(mac_address: str, payload: DeviceUpdate, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.mac_address == mac_address).first()
