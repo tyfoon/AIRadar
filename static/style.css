@@ -290,3 +290,44 @@ tr:hover .dev-edit-btn { opacity: 1; }
   color: #818cf8;
   border-color: rgba(99,102,241,0.25);
 }
+
+/* --- Sankey chart responsive height --- */
+@media (max-width: 640px) {
+  #sankey-chart { min-height: 280px; }
+}
+@media (min-width: 641px) and (max-width: 1023px) {
+  #sankey-chart { min-height: 320px; }
+}
+
+/* --- Mobile overflow panel transition --- */
+#mob-overflow {
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+
+/* --- Focus ring for keyboard accessibility --- */
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible,
+.toggle input:focus-visible + .slider,
+.drawer-tab:focus-visible,
+.nav-item:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* --- Stat cards: prevent text overflow on small screens --- */
+.stat-grid p { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .stat-grid > * { min-height: 80px; padding: 0.75rem !important; }
+  .stat-grid .text-2xl { font-size: 1.25rem; }
+}
+
+/* --- Skeleton loading animation --- */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse { animation: skeleton-pulse 1.5s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+/* --- Mobile nav overflow items --- */
+@media (max-width: 767px) {
+  .mob-nav.mob-extra:active { background: rgba(99,102,241,0.08); }
+}
