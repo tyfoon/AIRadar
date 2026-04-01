@@ -1328,11 +1328,11 @@ function renderVpnAlerts(alerts) {
       <table class="w-full text-sm text-left">
         <thead class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
           <tr>
-            <th class="pb-2 px-3 font-medium">Device</th>
-            <th class="pb-2 px-3 font-medium">VPN Service</th>
-            <th class="pb-2 px-3 font-medium">Data</th>
-            <th class="pb-2 px-3 font-medium">Events</th>
-            <th class="pb-2 px-3 font-medium">Last Seen</th>
+            <th class="pb-2 px-3 font-medium">${t('priv.thDevice')}</th>
+            <th class="pb-2 px-3 font-medium">${t('priv.thVpnService')}</th>
+            <th class="pb-2 px-3 font-medium">${t('priv.thData')}</th>
+            <th class="pb-2 px-3 font-medium">${t('priv.thEvents')}</th>
+            <th class="pb-2 px-3 font-medium">${t('priv.thLastSeen')}</th>
           </tr>
         </thead>
         <tbody class="text-slate-600 dark:text-slate-300">
