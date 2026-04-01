@@ -1162,7 +1162,7 @@ async function refreshCloud() {
   if (svcSel) {
     const cur = svcSel.value;
     const allSvcs = [...new Set(events.map(e => e.ai_service))].sort();
-    svcSel.innerHTML = '<option value="">All services</option>';
+    svcSel.innerHTML = `<option value="">${t('cloud.allServices')}</option>`;
     allSvcs.forEach(s => { svcSel.innerHTML += `<option value="${s}">${svcDisplayName(s)}</option>`; });
     svcSel.value = cur;
   }
