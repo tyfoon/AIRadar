@@ -2080,7 +2080,7 @@ function renderServiceCard(svc) {
           ${logo}
           <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${name}</span>
         </div>
-        <label class="toggle" title="${isAllowed ? 'Allowed — click to block' : 'Blocked — click to allow'}">
+        <label class="toggle" title="${isAllowed ? t('svc.allowedToBlock') : t('svc.blockedToAllow')}">
           <input type="checkbox" ${isAllowed ? 'checked' : ''}
                  onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
           <span class="slider"></span>
