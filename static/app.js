@@ -2370,9 +2370,9 @@ function renderKillswitchUI(data) {
     btn.textContent = t('settings.ksActivate');
     btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20';
 
-    setKsDot('adguard', 'green', 'filtering');
-    setKsDot('ips', 'green', 'active');
-    setKsDot('rules', 'green', 'enforced');
+    setKsDot('adguard', 'green', t('settings.ksFiltering'));
+    setKsDot('ips', 'green', t('settings.ksActive'));
+    setKsDot('rules', 'green', t('settings.ksEnforced'));
 
     failsafeInfo.classList.add('hidden');
   }
