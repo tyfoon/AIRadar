@@ -260,6 +260,17 @@ def _resolve_hostname(ip: str) -> str | None:
         return None
 
 
+def _normalize_mac(mac: str) -> str:
+    """Normalize MAC: lowercase, strip leading zeros per octet.
+    e.g. 'A2:C0:6D:40:07:F7' → 'a2:c0:6d:40:7:f7'
+    """
+    try:
+        parts = mac.lower().replace("-", ":").split(":")
+        return ":".join(str(int(p, 16)) for p in parts)
+    except (ValueError, AttributeError):
+        return mac.lower()
+
+
 def _resolve_mac(ip: str) -> str | None:
     try:
         result = subprocess.run(
