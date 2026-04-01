@@ -40,6 +40,8 @@ const TRANSLATIONS = {
     'mob.devices':         'Devices',
     'mob.rules':           'Rules',
     'mob.settings':        'Settings',
+    'mob.more':            'More',
+    'mob.ips':             'Protect',
 
     // Page titles
     'page.dashboard':      'Dashboard',
