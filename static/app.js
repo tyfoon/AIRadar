@@ -64,6 +64,34 @@ function toggleMobileSidebar() {
 }
 
 // ================================================================
+// NAV BADGES
+// ================================================================
+let _navIpsCount = 0;
+
+function updateNavBadges() {
+  // Attacks badge: show count when threats blocked > 0
+  const ipsBadge = document.getElementById('nav-badge-ips');
+  if (ipsBadge) {
+    if (_navIpsCount > 0) {
+      ipsBadge.textContent = _navIpsCount > 99 ? '99+' : String(_navIpsCount);
+      ipsBadge.classList.remove('hidden');
+    } else {
+      ipsBadge.classList.add('hidden');
+    }
+  }
+
+  // Settings badge: red dot when killswitch is active
+  const settingsBadge = document.getElementById('nav-badge-settings');
+  if (settingsBadge) {
+    if (_killswitchActive) {
+      settingsBadge.classList.remove('hidden');
+    } else {
+      settingsBadge.classList.add('hidden');
+    }
+  }
+}
+
+// ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
 const VALID_PAGES = ['dashboard','ai','cloud','privacy','devices','ips','rules','settings'];
