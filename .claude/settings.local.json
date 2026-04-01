@@ -167,7 +167,22 @@
       "Bash(grep -l \"zeek\\\\|DPD\\\\|protocol\" /Users/goswijnthijssen/AIRadar/*.py)",
       "Bash(find /Users/goswijnthijssen/AIRadar -name *.sh)",
       "Bash(grep -l \"local.zeek\\\\|zeek.*script\\\\|zeek.*config\" /Users/goswijnthijssen/AIRadar/*.sh)",
-      "Bash(grep -r \"@load\\\\|__load__\\\\|dpd\\\\|DPD\" /Users/goswijnthijssen/AIRadar --include=*.py --include=*.zeek)"
+      "Bash(grep -r \"@load\\\\|__load__\\\\|dpd\\\\|DPD\" /Users/goswijnthijssen/AIRadar --include=*.py --include=*.zeek)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''/Users/goswijnthijssen/AIRadar/zeek_tailer.py'', doraise=True\\)\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git -C /Users/goswijnthijssen/AIRadar diff -- zeek_tailer.py)",
+      "Bash(git -C /Users/goswijnthijssen/AIRadar status --short)",
+      "Bash(git -C /Users/goswijnthijssen/AIRadar diff HEAD -- zeek_tailer.py)",
+      "Bash(md5 /Users/goswijnthijssen/AIRadar/zeek_tailer.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3001/control/status)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3000/control/status)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:80/control/status)",
+      "Bash(curl -s -w \"\\\\n%{http_code}\" -u \"admin:admin\" http://127.0.0.1:3001/control/status)",
+      "Bash(curl -v http://127.0.0.1:3001/control/status)",
+      "Bash(sudo grep:*)",
+      "Bash(python3 -c \"from dotenv import load_dotenv; print\\(''dotenv OK''\\)\")",
+      "Bash(curl -s -w \"\\\\n%{http_code}\" -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" http://127.0.0.1:3001/control/status)",
+      "Bash(/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -c \":*)"
     ]
   },
   "hooks": {

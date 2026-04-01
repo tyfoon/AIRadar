@@ -10,12 +10,25 @@ import io
 import json
 import os
 
-# Auto-load .env so credentials work regardless of how the server is started
+# Auto-load .env so credentials work regardless of how the server is started.
+# First try python-dotenv; if not installed, fall back to a simple manual parser.
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(_env_path)
 except ImportError:
-    pass  # python-dotenv not installed; rely on shell-sourced env vars
+    # python-dotenv not available (e.g. system Python 3.9) — parse .env manually
+    if os.path.isfile(_env_path):
+        with open(_env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _key, _, _val = _line.partition("=")
+                _key = _key.strip()
+                _val = _val.strip().strip('"').strip("'")
+                if _key and _key not in os.environ:  # don't overwrite explicit env
+                    os.environ[_key] = _val
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
