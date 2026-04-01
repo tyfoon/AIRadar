@@ -2515,7 +2515,7 @@ async function runHealthCheck() {
       <p class="text-sm text-slate-500 mt-1">${err.message}</p>
     </div>`;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run Check'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('settings.runCheck'); }
   }
 }
 
