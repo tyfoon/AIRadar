@@ -745,7 +745,7 @@ async function refreshDashboard() {
       ksBanner.classList.remove('hidden');
       const since = ksState.activated_at ? new Date(ksState.activated_at + 'Z').toLocaleTimeString() : '';
       const sinceEl = document.getElementById('ks-banner-since');
-      if (sinceEl) sinceEl.textContent = since ? `since ${since}` : '';
+      if (sinceEl) sinceEl.textContent = since ? t('dash.since', { time: since }) : '';
     } else {
       ksBanner.classList.add('hidden');
     }
