@@ -1377,7 +1377,7 @@ function renderBlockedDomainsList() {
   const container = document.getElementById('blocked-domains-list');
   if (!container) return;
   if (!_cachedTopBlocked?.length) {
-    container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">No blocked domains data available.</p>';
+    container.innerHTML = `<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-4">${t('priv.noBlockedData')}</p>`;
     return;
   }
   const maxCount = _cachedTopBlocked[0]?.count || 1;
