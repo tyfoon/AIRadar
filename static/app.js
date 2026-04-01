@@ -756,7 +756,7 @@ async function refreshDashboard() {
   document.getElementById('dash-events-today').textContent = formatNumber(aiEvt.length + cloudEvt.length);
 
   const ag = privRes?.adguard || {};
-  document.getElementById('dash-blocked').textContent = (ag.blocked_queries || 0).toLocaleString();
+  document.getElementById('dash-blocked').textContent = formatNumber(ag.blocked_queries || 0);
 
   // Health status
   if (healthRes) {
