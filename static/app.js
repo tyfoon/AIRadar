@@ -1335,7 +1335,7 @@ function renderSankey(events) {
         },
         label: {
           color: textColor,
-          fontSize: 11,
+          fontSize: 12,
           fontFamily: 'Inter',
         }
       })),
@@ -1348,7 +1348,7 @@ function renderSankey(events) {
       label: {
         position: 'right',
         color: textColor,
-        fontSize: 11,
+        fontSize: 12,
         fontFamily: 'Inter',
       },
       left: 40, right: 120, top: 10, bottom: 10,
