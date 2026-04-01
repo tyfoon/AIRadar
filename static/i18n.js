@@ -608,12 +608,16 @@ const TRANSLATIONS = {
     'ai.uploadHint':       'Oranje rijen duiden op mogelijke bestandsuploads (>100 KB uitgaand).',
     'ai.thTime':           'Tijd',
     'ai.thService':        'Service',
-    'ai.thType':           'Type',
+    'ai.thDesc':           'Beschrijving',
     'ai.thDevice':         'Apparaat',
-    'ai.thBytes':          'Bytes',
+    'ai.thSize':           'Grootte',
     'ai.noEvents':         'Nog geen AI-gebeurtenissen vastgelegd.',
     'ai.upload':           'UPLOAD',
     'ai.uploadsLegend':    'Uploads',
+    'ai.lowActivity':      'Weinig activiteit in deze periode. Dit is normaal tijdens rustige periodes.',
+    'ev.connection':       'Verbinding gedetecteerd',
+    'ev.upload':           'Bestandsupload ({size})',
+    'ev.dnsLookup':        'DNS-lookup',
 
     // AI Adoptie
     'adopt.overview':      'AI Adoptie overzicht',
