@@ -903,33 +903,13 @@ async function refreshDashboard() {
     renderHtmlLegend('dash-priv-donut-legend', privDonut, null);
   }
 
-  // Alarms
+  // Alarms — grouping, pagination, severity filter
   const allEvt = [...aiEvt, ...cloudEvt].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  const alarms = allEvt.filter(e => e.possible_upload || e.bytes_transferred > 100000).slice(0, 15);
-
-  const alarmsBody = document.getElementById('dash-alarms-body');
-  if (alarmsBody) {
-    if (alarms.length === 0) {
-      alarmsBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">${t('dash.noAlarms')}</td></tr>`;
-    } else {
-      alarmsBody.innerHTML = alarms.map(e => {
-        const isUpload = e.possible_upload;
-        const severity = isUpload
-          ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">HIGH</span>'
-          : '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">MED</span>';
-        const desc = isUpload
-          ? t('dash.uploadDetected', { kb: (e.bytes_transferred / 1024).toFixed(0) })
-          : t('dash.highVolume', { kb: (e.bytes_transferred / 1024).toFixed(0) });
-        return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
-          <td class="py-3 px-4">${severity}</td>
-          <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
-          <td class="py-3 px-4">${badge(e.ai_service)}</td>
-          <td class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e.source_ip)).icon} ${deviceName(e.source_ip)}</td>
-        </tr>`;
-      }).join('');
-    }
-  }
+  const alarms = allEvt.filter(e => e.possible_upload || e.bytes_transferred > 100000);
+  _dashAlarms = alarms;
+  _dashAlarmsVisible = 10;
+  _dashAlarmsSevFilter = 'all';
+  renderDashAlarms();
 
   // Sankey Data Flow Diagram
   renderSankey([...sankeyAi, ...sankeyCloud]);
