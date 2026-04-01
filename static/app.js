@@ -667,7 +667,7 @@ function renderHtmlLegend(containerId, chart, serviceKeys, maxItems) {
   });
 
   // "+N more" overflow
-  if (total > limit) {
+  if (limit > 0 && total > limit) {
     items.push(`<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500">${t('dash.nMore', { n: total - limit })}</span>`);
   }
 
