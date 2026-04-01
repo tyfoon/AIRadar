@@ -2154,21 +2154,19 @@ window.addEventListener('popstate', function(e) {
 let _reportAbort = null;
 
 async function generateDeviceReport(macParam) {
-  // MAC can come from parameter (matrix button) or from the detail panel
-  const panel = document.getElementById('dev-event-detail');
-  const mac = macParam || panel?.dataset?.mac;
+  // MAC can come from parameter or from the drawer
+  const mac = macParam || _drawerMac;
   if (!mac) return;
 
-  // If called from matrix row, open the detail panel first so the report has a place to render
-  if (macParam && panel.classList.contains('hidden')) {
-    _showCellEvents(mac, null, null);
+  // If drawer isn't open, open it first so the report has a place to render
+  if (!document.getElementById('drawer-panel').classList.contains('open')) {
+    openDeviceDrawer(mac, null, null);
   }
-  // Ensure panel stores the MAC
-  panel.dataset.mac = mac;
+  _drawerMac = mac;
 
-  const btn = document.getElementById('btn-ai-report');
-  const reportBox = document.getElementById('dev-ai-report');
-  const reportContent = document.getElementById('dev-ai-report-content');
+  const btn = document.getElementById('drawer-btn-ai-report');
+  const reportBox = document.getElementById('drawer-ai-report');
+  const reportContent = document.getElementById('drawer-ai-report-content');
 
   // Loading state
   btn.disabled = true;
