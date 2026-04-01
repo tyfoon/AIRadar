@@ -621,55 +621,159 @@ const doughnutCenterTextPlugin = {
 // Register plugin globally
 if (typeof Chart !== 'undefined') Chart.register(doughnutCenterTextPlugin);
 
-// Tracker domain → category mapping for Privacy Blocks donut
-const TRACKER_CATEGORY_MAP = [
-  { patterns: ['doubleclick', 'googleads', 'google-analytics', 'googletag', 'googletagmanager', 'googlesyndication', 'googleadservices'], category: 'Google Advertising' },
-  { patterns: ['whatsapp', 'facebook', 'meta', 'instagram', 'fbcdn', 'fbsbx'], category: 'Meta Tracking' },
-  { patterns: ['datadoghq', 'datadog'], category: 'Datadog Analytics' },
-  { patterns: ['sentry'], category: 'Sentry Monitoring' },
-  { patterns: ['applytics'], category: 'App Analytics' },
-  { patterns: ['hotjar'], category: 'Hotjar Analytics' },
-  { patterns: ['amplitude'], category: 'Amplitude Analytics' },
-  { patterns: ['mixpanel'], category: 'Mixpanel Analytics' },
-  { patterns: ['segment'], category: 'Segment Analytics' },
-  { patterns: ['tiktok', 'bytedance'], category: 'TikTok Tracking' },
-  { patterns: ['twitter', 'twimg'], category: 'X (Twitter) Tracking' },
-  { patterns: ['amazon-adsystem', 'amazonaws.com/ads'], category: 'Amazon Ads' },
-  { patterns: ['microsoft', 'msads', 'bing.com/ads', 'clarity.ms'], category: 'Microsoft Ads' },
+// ---------------------------------------------------------------------------
+// Tracker Knowledge Base — domain patterns → company + category
+// ---------------------------------------------------------------------------
+const TRACKER_KB = [
+  // Google
+  { patterns: ['doubleclick', 'googleads', 'googlesyndication', 'googleadservices', 'googletag', 'googletagmanager', 'adservice.google', 'pagead'], company: 'Google', category: 'Advertising' },
+  { patterns: ['google-analytics', 'googleanalytics', 'analytics.google'], company: 'Google', category: 'Analytics' },
+  { patterns: ['crashlytics', 'firebase', 'firebaseio', 'gstatic.com/firebasejs'], company: 'Google', category: 'App Analytics' },
+  // Meta
+  { patterns: ['facebook.com', 'facebook.net', 'fbcdn', 'fbsbx', 'connect.facebook'], company: 'Meta', category: 'Social Tracking' },
+  { patterns: ['instagram.com', 'cdninstagram'], company: 'Meta (Instagram)', category: 'Social Tracking' },
+  { patterns: ['whatsapp.net', 'whatsapp.com'], company: 'Meta (WhatsApp)', category: 'Messaging Analytics' },
+  // Microsoft
+  { patterns: ['msads', 'bing.com/ads', 'bingads'], company: 'Microsoft', category: 'Advertising' },
+  { patterns: ['clarity.ms'], company: 'Microsoft', category: 'Analytics' },
+  { patterns: ['appcenter.ms', 'in.appcenter'], company: 'Microsoft', category: 'App Analytics' },
+  // Apple
+  { patterns: ['iadsdk.apple.com', 'iads.apple.com', 'searchads.apple.com'], company: 'Apple', category: 'Advertising' },
+  { patterns: ['metrics.apple.com', 'xp.apple.com', 'idiagnostics.apple.com'], company: 'Apple', category: 'Analytics' },
+  // Amazon
+  { patterns: ['amazon-adsystem', 'aax.amazon', 'assoc-amazon'], company: 'Amazon', category: 'Advertising' },
+  // TikTok / ByteDance
+  { patterns: ['tiktok', 'bytedance', 'musical.ly', 'tiktokv.com', 'byteoversea'], company: 'TikTok', category: 'Social Tracking' },
+  // X (Twitter)
+  { patterns: ['twitter.com/i/ads', 'ads-twitter', 'ads.twitter', 'analytics.twitter'], company: 'X (Twitter)', category: 'Advertising' },
+  { patterns: ['twitter', 'twimg', 't.co'], company: 'X (Twitter)', category: 'Social Tracking' },
+  // Reddit
+  { patterns: ['reddit.com', 'redditmedia', 'redditstatic'], company: 'Reddit', category: 'Social Tracking' },
+  { patterns: ['events.reddit', 'alb.reddit'], company: 'Reddit', category: 'Analytics' },
+  // Snap
+  { patterns: ['snapchat', 'snap.com', 'sc-static', 'snapkit'], company: 'Snapchat', category: 'Social Tracking' },
+  // LinkedIn
+  { patterns: ['linkedin', 'licdn.com'], company: 'LinkedIn', category: 'Social Tracking' },
+  // Analytics platforms
+  { patterns: ['datadoghq', 'datadog-'], company: 'Datadog', category: 'App Monitoring' },
+  { patterns: ['sentry.io', 'sentry-cdn'], company: 'Sentry', category: 'Error Tracking' },
+  { patterns: ['hotjar'], company: 'Hotjar', category: 'Analytics' },
+  { patterns: ['amplitude'], company: 'Amplitude', category: 'Analytics' },
+  { patterns: ['mixpanel'], company: 'Mixpanel', category: 'Analytics' },
+  { patterns: ['segment.com', 'segment.io'], company: 'Segment', category: 'Analytics' },
+  { patterns: ['heap.io', 'heapanalytics'], company: 'Heap', category: 'Analytics' },
+  { patterns: ['fullstory', 'fullstory.com'], company: 'FullStory', category: 'Analytics' },
+  { patterns: ['applytics'], company: 'Applytics', category: 'App Analytics' },
+  { patterns: ['newrelic', 'nr-data'], company: 'New Relic', category: 'App Monitoring' },
+  { patterns: ['bugsnag'], company: 'Bugsnag', category: 'Error Tracking' },
+  { patterns: ['rollbar.com'], company: 'Rollbar', category: 'Error Tracking' },
+  // Ad networks
+  { patterns: ['criteo', 'criteo.com'], company: 'Criteo', category: 'Advertising' },
+  { patterns: ['taboola'], company: 'Taboola', category: 'Advertising' },
+  { patterns: ['outbrain'], company: 'Outbrain', category: 'Advertising' },
+  { patterns: ['adnxs', 'appnexus'], company: 'Xandr', category: 'Advertising' },
+  { patterns: ['rubiconproject', 'rubicon'], company: 'Rubicon', category: 'Advertising' },
+  { patterns: ['pubmatic'], company: 'PubMatic', category: 'Advertising' },
+  { patterns: ['openx.net'], company: 'OpenX', category: 'Advertising' },
+  { patterns: ['moat.com', 'moatads'], company: 'Oracle (Moat)', category: 'Ad Verification' },
+  { patterns: ['chartbeat'], company: 'Chartbeat', category: 'Analytics' },
+  { patterns: ['quantserve', 'quantcast'], company: 'Quantcast', category: 'Advertising' },
+  { patterns: ['scorecardresearch', 'comscore'], company: 'Comscore', category: 'Analytics' },
+  // Privacy / consent
+  { patterns: ['onetrust', 'cookielaw'], company: 'OneTrust', category: 'Consent Management' },
+  { patterns: ['cookiebot'], company: 'Cookiebot', category: 'Consent Management' },
+  // Misc
+  { patterns: ['adjust.com', 'adjust.io'], company: 'Adjust', category: 'Mobile Attribution' },
+  { patterns: ['branch.io'], company: 'Branch', category: 'Mobile Attribution' },
+  { patterns: ['appsflyer'], company: 'AppsFlyer', category: 'Mobile Attribution' },
+  { patterns: ['intercom.io', 'intercom.com'], company: 'Intercom', category: 'Customer Support' },
+  { patterns: ['zendesk'], company: 'Zendesk', category: 'Customer Support' },
+  { patterns: ['hubspot'], company: 'HubSpot', category: 'Marketing' },
+  { patterns: ['marketo'], company: 'Marketo', category: 'Marketing' },
+  { patterns: ['salesforce', 'force.com', 'exacttarget'], company: 'Salesforce', category: 'Marketing' },
+  { patterns: ['optimizely'], company: 'Optimizely', category: 'A/B Testing' },
+  { patterns: ['crazyegg'], company: 'Crazy Egg', category: 'Analytics' },
+  { patterns: ['mouseflow'], company: 'Mouseflow', category: 'Analytics' },
 ];
 
-function classifyTrackerDomain(domain) {
+/**
+ * Resolve a domain to tracker info: { company, category } or null.
+ */
+function resolveTracker(domain) {
   const lower = (domain || '').toLowerCase();
-  for (const entry of TRACKER_CATEGORY_MAP) {
-    if (entry.patterns.some(p => lower.includes(p))) return entry.category;
+  for (const entry of TRACKER_KB) {
+    if (entry.patterns.some(p => lower.includes(p))) {
+      return { company: entry.company, category: entry.category };
+    }
   }
-  return null; // unknown — show domain as-is
+  return null;
 }
 
-// Group blocked domains by tracker category
-function groupBlockedByCategory(topBlocked) {
-  const catMap = {}; // category → total count
-  const uncategorized = []; // {domain, count} for unknown domains
+/**
+ * Legacy alias for dashboard donut grouping — returns category string.
+ */
+function classifyTrackerDomain(domain) {
+  const info = resolveTracker(domain);
+  return info ? `${info.company} ${info.category}` : null;
+}
+
+/**
+ * Extract a readable name from an unknown domain.
+ * "browser-intake-us5-datadoghq.com" → "Datadoghq"
+ * "applytics.os4work.com" → "Os4work"
+ */
+function _readableDomain(domain) {
+  if (!domain) return domain;
+  const parts = domain.replace(/\.$/, '').split('.');
+  // Get the main domain (second to last part, or first if only two parts)
+  if (parts.length >= 2) {
+    const main = parts[parts.length - 2];
+    return main.charAt(0).toUpperCase() + main.slice(1);
+  }
+  return domain;
+}
+
+/**
+ * Get a display label for a blocked domain: "Google (Advertising)" or "Os4work" for unknowns.
+ */
+function trackerDisplayLabel(domain) {
+  const info = resolveTracker(domain);
+  if (info) return `${info.company} (${info.category})`;
+  return _readableDomain(domain);
+}
+
+// Group blocked domains by company + category for bar chart aggregation
+function groupBlockedByCompany(topBlocked) {
+  const grouped = {}; // "Company (Category)" → { count, domains[] }
+  const unknown = [];
 
   for (const item of topBlocked) {
-    const cat = classifyTrackerDomain(item.domain);
-    if (cat) {
-      catMap[cat] = (catMap[cat] || 0) + item.count;
+    const info = resolveTracker(item.domain);
+    if (info) {
+      const key = `${info.company} (${info.category})`;
+      if (!grouped[key]) grouped[key] = { count: 0, domains: [] };
+      grouped[key].count += item.count;
+      grouped[key].domains.push(item.domain);
     } else {
-      uncategorized.push(item);
+      unknown.push(item);
     }
   }
 
-  // Build combined list sorted by count descending
   const result = [];
-  for (const [cat, count] of Object.entries(catMap)) {
-    result.push({ label: cat, count, isCategory: true });
+  for (const [label, data] of Object.entries(grouped)) {
+    result.push({ label, count: data.count, domains: data.domains, isCompany: true });
   }
-  for (const item of uncategorized) {
-    result.push({ label: item.domain, count: item.count, isCategory: false, fullDomain: item.domain });
+  // Add unknown domains individually with readable names
+  for (const item of unknown) {
+    result.push({ label: _readableDomain(item.domain), count: item.count, domains: [item.domain], isCompany: false });
   }
   result.sort((a, b) => b.count - a.count);
   return result;
+}
+
+// Legacy alias used by dashboard donut
+function groupBlockedByCategory(topBlocked) {
+  return groupBlockedByCompany(topBlocked);
 }
 
 function getOrCreateChart(id, config) {
