@@ -1568,7 +1568,7 @@ async function refreshAI() {
     svcSel.value = cur;
   }
 
-  renderEventsTable(events, 'ai-tbody', 'ai-empty');
+  renderEventsTable(events, 'ai-tbody', 'ai-empty', 'ai-low-activity');
   updateCategoryCharts(events, timeline, 'ai-service-chart', 'ai-timeline-chart');
   _lastAiEvents = events;
   renderAiAdoption(events);
