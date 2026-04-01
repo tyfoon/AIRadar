@@ -2722,6 +2722,15 @@ function styleFilterCard(id, active) {
     card.classList.remove('border-red-300', 'dark:border-red-700/40', 'bg-red-50', 'dark:bg-red-900/10');
     card.classList.add('border-slate-200', 'dark:border-white/[0.05]', 'bg-white', 'dark:bg-white/[0.03]');
   }
+  // Update on/off label
+  const filterType = id.replace('filter-', '').replace('-card', '');
+  const stateEl = document.getElementById(`filter-${filterType}-state`);
+  if (stateEl) {
+    stateEl.textContent = active ? t('svc.on') : t('svc.off');
+    stateEl.className = active
+      ? 'text-xs font-medium text-emerald-500'
+      : 'text-xs font-medium text-slate-400';
+  }
 }
 
 async function toggleGlobalFilter(type, checkbox) {
