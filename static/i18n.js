@@ -181,6 +181,9 @@ const TRANSLATIONS = {
     'cloud.latestEvents':  'Latest Events',
     'cloud.eventsHint':    'Cloud storage events (Dropbox, WeTransfer, Google Drive, etc.).',
     'cloud.noEvents':      'No cloud events captured yet.',
+    'cloud.thDesc':        'Description',
+    'cloud.thSize':        'Size',
+    'cloud.lowActivity':   'Low activity detected in this time period. This is normal during quiet periods.',
 
     // Privacy page
     'priv.dnsQueries':     'DNS Lookups',
