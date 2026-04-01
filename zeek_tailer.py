@@ -325,8 +325,11 @@ async def register_device(client: httpx.AsyncClient, ip: str) -> None:
 # Known AI IP tracking (for volumetric upload detection via conn.log)
 # ---------------------------------------------------------------------------
 
-# Maps destination IP → (service, category) — learned from ssl.log SNI
-_known_ips: dict[str, tuple[str, str]] = {}
+# Maps destination IP → (service, category, timestamp) — learned from ssl.log SNI
+# IPs expire after IP_TTL_SECONDS to prevent false positives from shared IP ranges
+# (e.g. Google reuses the same IPs for Gemini, Drive, Gmail, Chrome sync, etc.)
+IP_TTL_SECONDS = 600  # 10 minutes — after this, the IP→service mapping is stale
+_known_ips: dict[str, tuple[str, str, float]] = {}  # ip → (service, category, time.time())
 
 # Tracks cumulative outbound bytes per service
 _outbound_bytes: dict[str, int] = {}

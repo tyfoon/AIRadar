@@ -143,7 +143,8 @@
       "Bash(__NEW_LINE_f4d34ea4dbaef7e8__ echo:*)",
       "Bash(git status:*)",
       "Bash(python3 -c \"import dotenv; print\\(''dotenv OK''\\)\")",
-      "Bash(python3 -c \"import dotenv; print\\(''OK''\\)\")"
+      "Bash(python3 -c \"import dotenv; print\\(''OK''\\)\")",
+      "Bash(ls /Users/goswijnthijssen/AIRadar/*.py)"
     ]
   },
   "hooks": {
