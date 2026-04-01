@@ -2445,7 +2445,7 @@ async function toggleKillswitch() {
 // ================================================================
 async function runHealthCheck() {
   const btn = document.getElementById('health-run-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('settings.checking'); }
 
   try {
     const res = await fetch('/api/health');
