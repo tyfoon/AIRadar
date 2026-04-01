@@ -2525,7 +2525,7 @@ async function runHealthCheck() {
 async function restartService(service, btn) {
   const origText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Restarting...';
+  btn.textContent = '⏳ ' + t('settings.restarting');
   btn.className = btn.className.replace(/bg-\S+/g, 'bg-slate-500').replace(/hover:\S+/g, '');
 
   try {
