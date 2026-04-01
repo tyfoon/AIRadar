@@ -367,13 +367,46 @@ def _refresh_ndp_cache() -> None:
     _ndp_cache = new_cache
 
 
+def _eui64_to_mac(ipv6_str: str) -> str | None:
+    """Extract MAC address from an EUI-64 encoded IPv6 address (link-local or global).
+
+    EUI-64 embeds the MAC with ff:fe in the middle and flips bit 6 of byte 0.
+    e.g. fe80::fa4d:fcff:feda:7058 → f8:4d:fc:da:70:58
+    """
+    try:
+        import ipaddress
+        addr = ipaddress.ip_address(ipv6_str)
+        if addr.version != 6:
+            return None
+        iid = int(addr) & 0xFFFFFFFFFFFFFFFF
+        eui = iid.to_bytes(8, "big")
+        # Verify ff:fe sentinel in bytes 3-4
+        if eui[3] != 0xFF or eui[4] != 0xFE:
+            return None
+        mac_bytes = bytearray(6)
+        mac_bytes[0] = eui[0] ^ 0x02  # flip universal/local bit
+        mac_bytes[1] = eui[1]
+        mac_bytes[2] = eui[2]
+        mac_bytes[3] = eui[5]
+        mac_bytes[4] = eui[6]
+        mac_bytes[5] = eui[7]
+        return _normalize_mac(":".join(f"{b:02x}" for b in mac_bytes))
+    except (ValueError, IndexError):
+        return None
+
+
 def _resolve_mac_ipv6(ip: str) -> str | None:
-    """Resolve an IPv6 address to MAC via the NDP neighbor cache."""
+    """Resolve an IPv6 address to MAC via the NDP neighbor cache,
+    falling back to EUI-64 extraction for link-local addresses."""
     _refresh_ndp_cache()
     try:
         import ipaddress
         normalized = str(ipaddress.ip_address(ip))
-        return _ndp_cache.get(normalized)
+        mac = _ndp_cache.get(normalized)
+        if mac:
+            return mac
+        # Fallback: extract MAC from EUI-64 encoded addresses
+        return _eui64_to_mac(normalized)
     except ValueError:
         return _ndp_cache.get(ip)
 
