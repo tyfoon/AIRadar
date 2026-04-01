@@ -378,6 +378,21 @@ async def start_p0f_tailer(
 
 
 # ---------------------------------------------------------------------------
+# Lightweight log-only tailer (for embedding in zeek_tailer.py)
+# ---------------------------------------------------------------------------
+
+async def tail_p0f_standalone(log_path: Path) -> None:
+    """Tail an existing p0f log file (p0f started externally with sudo).
+
+    This is a simpler version of start_p0f_tailer that doesn't try to
+    start the p0f process itself — it just watches the log file.
+    """
+    print(f"[p0f] Watching for p0f log at: {log_path}")
+    async with httpx.AsyncClient() as client:
+        await _tail_p0f_log(log_path, client)
+
+
+# ---------------------------------------------------------------------------
 # Standalone entrypoint
 # ---------------------------------------------------------------------------
 
