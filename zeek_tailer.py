@@ -772,11 +772,15 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # --- Heuristic VPN detection ---
                 # Large single-connection to an unknown external IP (not a known
                 # AI/Cloud service) hints at an encrypted tunnel.
+                # Skip if Zeek's DPD already identified a known safe protocol.
+                h_services = {s.strip().lower() for s in service_field.split(",")} if service_field and service_field != "-" else set()
+                h_has_safe_svc = bool(h_services & HEURISTIC_VPN_SAFE_SERVICES)
                 if (
                     _is_local_ip(src_ip)
                     and resp_ip
                     and resp_ip not in _known_ips
                     and not _is_local_ip(resp_ip)
+                    and not h_has_safe_svc  # DPD says it's a known protocol → not a VPN
                 ):
                     try:
                         h_ob = record.get("orig_bytes", "0")
