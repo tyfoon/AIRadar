@@ -833,8 +833,8 @@ async function refreshDashboard() {
           ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">HIGH</span>'
           : '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">MED</span>';
         const desc = isUpload
-          ? `Upload detected (${(e.bytes_transferred / 1024).toFixed(0)} KB)`
-          : `High volume traffic (${(e.bytes_transferred / 1024).toFixed(0)} KB)`;
+          ? t('dash.uploadDetected', { kb: (e.bytes_transferred / 1024).toFixed(0) })
+          : t('dash.highVolume', { kb: (e.bytes_transferred / 1024).toFixed(0) });
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
           <td class="py-2.5 pr-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
           <td class="py-2.5 pr-4">${severity}</td>
