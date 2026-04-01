@@ -1686,7 +1686,7 @@ function _renderDeviceMatrix() {
   const colCount = 2 + groups.reduce((s, g) => s + 1 + (expanded.has(g.key) ? g.services.length : 0), 0);
 
   if (deviceMacs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${colCount}" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">No device activity detected in this period.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">${t('dev.noActivity')}</td></tr>`;
     return;
   }
 
