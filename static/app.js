@@ -766,18 +766,8 @@ async function refreshDashboard() {
     fetch('/api/killswitch').then(r => r.json()).catch(() => ({ active: false })),
   ]);
 
-  // Killswitch dashboard banner
-  const ksBanner = document.getElementById('ks-dashboard-banner');
-  if (ksBanner) {
-    if (ksState.active) {
-      ksBanner.classList.remove('hidden');
-      const since = ksState.activated_at ? new Date(ksState.activated_at + 'Z').toLocaleTimeString() : '';
-      const sinceEl = document.getElementById('ks-banner-since');
-      if (sinceEl) sinceEl.textContent = since ? t('dash.since', { time: since }) : '';
-    } else {
-      ksBanner.classList.add('hidden');
-    }
-  }
+  // Update global killswitch banner
+  updateGlobalKsBanner(ksState);
 
   // Metrics
   document.getElementById('dash-devices').textContent = Object.keys(deviceMap).length || 0;
