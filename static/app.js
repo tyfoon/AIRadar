@@ -640,17 +640,32 @@ function getOrCreateChart(id, config) {
 }
 
 // Custom HTML legend using same badge() style as tables
-function renderHtmlLegend(containerId, chart, serviceKeys) {
+// maxItems: limit legend to N items + a "+X more" overflow badge
+function renderHtmlLegend(containerId, chart, serviceKeys, maxItems) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  const items = chart.data.labels.map((label, i) => {
+  const limit = maxItems || 4;
+  const labels = chart.data.labels || [];
+  const total = labels.length;
+  const showLabels = labels.slice(0, limit);
+
+  const items = showLabels.map((label, i) => {
     const key = serviceKeys ? serviceKeys[i] : null;
     if (key) return badge(key);
-    // Fallback for non-service labels (e.g. domain names)
+    // Fallback for non-service labels (e.g. domain names, category names)
     const color = chart.data.datasets[0].backgroundColor[i] || ACCENT_COLORS[i % ACCENT_COLORS.length];
-    return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"><span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>${label}</span>`;
+    // Use title attr for full text on truncated labels
+    const displayLabel = label.length > 22 ? label.slice(0, 20) + '...' : label;
+    const titleAttr = label.length > 22 ? ` title="${label}"` : '';
+    return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"${titleAttr}><span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>${displayLabel}</span>`;
   });
-  container.innerHTML = items.join(' ');
+
+  // "+N more" overflow
+  if (total > limit) {
+    items.push(`<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500">${t('dash.nMore', { n: total - limit })}</span>`);
+  }
+
+  container.innerHTML = items.join('');
 }
 
 function renderTimelineHtmlLegend(containerId, chart, serviceKeys) {
