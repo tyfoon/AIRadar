@@ -2463,8 +2463,8 @@ async function runHealthCheck() {
     const allOk = summary.all_ok;
     const bannerBg = allOk ? 'bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200 dark:border-emerald-700/40' : 'bg-amber-50 dark:bg-amber-900/15 border-amber-200 dark:border-amber-700/40';
     const bannerText = allOk
-      ? `<span class="text-emerald-600 dark:text-emerald-400 font-medium">All ${summary.total} services healthy</span>`
-      : `<span class="text-amber-600 dark:text-amber-400 font-medium">${summary.ok}/${summary.total} healthy</span>`;
+      ? `<span class="text-emerald-600 dark:text-emerald-400 font-medium">${t('settings.allHealthy', { n: summary.total })}</span>`
+      : `<span class="text-amber-600 dark:text-amber-400 font-medium">${t('settings.nHealthy', { ok: summary.ok, total: summary.total })}</span>`;
     const banner = `<div class="col-span-full ${bannerBg} border rounded-xl p-3 text-center text-sm">${bannerText} — ${new Date().toLocaleTimeString()}</div>`;
 
     cards.innerHTML = banner + services.map(s => {
