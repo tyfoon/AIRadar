@@ -838,51 +838,75 @@
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
             <div id="filter-parental-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-              <div class="flex items-center justify-between mb-2">
-                <div>
-                  <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.safeWork">Safe Work Environment</p>
-                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="rules.safeWorkDesc">NSFW, gambling, SafeSearch</p>
+              <div class="flex items-center justify-between mb-1">
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.safeWork">Safe Work Environment</p>
+                <div class="flex items-center gap-2">
+                  <span id="filter-parental-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
+                  <label class="toggle"><input type="checkbox" id="toggle-parental" onchange="toggleGlobalFilter('parental',this)"><span class="slider"></span></label>
                 </div>
-                <label class="toggle"><input type="checkbox" id="toggle-parental" onchange="toggleGlobalFilter('parental',this)"><span class="slider"></span></label>
               </div>
-              <div class="flex flex-wrap gap-1 mt-2">
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.safeWorkDesc">Blocks NSFW content, gambling sites, and enables SafeSearch</p>
+              <div class="flex flex-wrap items-center gap-1">
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">NSFW</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">Gambling</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">SafeSearch</span>
+                <button onclick="openScheduleModal('parental')" class="ml-auto p-1 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-indigo-500 transition-colors" title="Schedule">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </button>
+              </div>
+              <div id="filter-parental-schedule" class="hidden mt-2 text-[10px] text-indigo-500 dark:text-indigo-400 flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span id="filter-parental-schedule-text"></span>
               </div>
             </div>
 
             <div id="filter-social-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-              <div class="flex items-center justify-between mb-2">
-                <div>
-                  <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.blockSocial">Block Social Media</p>
-                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="rules.blockSocialDesc">Meta, TikTok, X, Snapchat &amp; more</p>
+              <div class="flex items-center justify-between mb-1">
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.blockSocial">Block Social Media</p>
+                <div class="flex items-center gap-2">
+                  <span id="filter-social-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
+                  <label class="toggle"><input type="checkbox" id="toggle-social" onchange="toggleGlobalFilter('social',this)"><span class="slider"></span></label>
                 </div>
-                <label class="toggle"><input type="checkbox" id="toggle-social" onchange="toggleGlobalFilter('social',this)"><span class="slider"></span></label>
               </div>
-              <div class="flex flex-wrap gap-1 mt-2">
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.blockSocialDesc">Blocks Facebook, Instagram, TikTok, X, and Snapchat for all devices</p>
+              <div class="flex flex-wrap items-center gap-1">
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Facebook</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400">Instagram</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">TikTok</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400">X</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400">Snapchat</span>
+                <button onclick="openScheduleModal('social')" class="ml-auto p-1 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-indigo-500 transition-colors" title="Schedule">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </button>
+              </div>
+              <div id="filter-social-schedule" class="hidden mt-2 text-[10px] text-indigo-500 dark:text-indigo-400 flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span id="filter-social-schedule-text"></span>
               </div>
             </div>
 
             <div id="filter-gaming-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-              <div class="flex items-center justify-between mb-2">
-                <div>
-                  <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.blockGaming">Block Gaming</p>
-                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="rules.blockGamingDesc">Steam, Epic, Roblox, Twitch, Discord</p>
+              <div class="flex items-center justify-between mb-1">
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.blockGaming">Block Gaming</p>
+                <div class="flex items-center gap-2">
+                  <span id="filter-gaming-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
+                  <label class="toggle"><input type="checkbox" id="toggle-gaming" onchange="toggleGlobalFilter('gaming',this)"><span class="slider"></span></label>
                 </div>
-                <label class="toggle"><input type="checkbox" id="toggle-gaming" onchange="toggleGlobalFilter('gaming',this)"><span class="slider"></span></label>
               </div>
-              <div class="flex flex-wrap gap-1 mt-2">
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.blockGamingDesc">Blocks Steam, Epic Games, Roblox, Twitch, and Discord for all devices</p>
+              <div class="flex flex-wrap items-center gap-1">
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">Steam</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300">Epic</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">Roblox</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">Twitch</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">Discord</span>
+                <button onclick="openScheduleModal('gaming')" class="ml-auto p-1 rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-indigo-500 transition-colors" title="Schedule">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </button>
+              </div>
+              <div id="filter-gaming-schedule" class="hidden mt-2 text-[10px] text-indigo-500 dark:text-indigo-400 flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span id="filter-gaming-schedule-text"></span>
               </div>
             </div>
 
@@ -891,14 +915,16 @@
 
         <!-- Granular App Control -->
         <div>
-          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.aiServices">AI Services</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.aiServices">AI Services</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.aiServicesDesc">Control which AI platforms can be accessed from your network.</p>
           <div id="access-control-ai" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
           </div>
         </div>
 
         <div>
-          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.cloudServices">Cloud Services</h3>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.cloudServices">Cloud Services</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.cloudServicesDesc">Control which cloud storage services can be accessed from your network.</p>
           <div id="access-control-cloud" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">Loading...</p>
           </div>
