@@ -2623,17 +2623,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const h = await fetch('/api/health').then(r => r.json());
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
+    const statusWrap = document.getElementById('system-status');
     if (h.summary?.all_ok) {
       dot.className = 'w-2 h-2 rounded-full bg-emerald-500';
       txt.textContent = t('topbar.allOk');
+      txt.className = 'text-emerald-600 dark:text-emerald-400';
+      if (statusWrap) statusWrap.className = statusWrap.className.replace(/text-slate-500 dark:text-slate-400/, 'text-emerald-600 dark:text-emerald-400');
     } else {
       const issues = h.summary.total - h.summary.ok;
       dot.className = 'w-2 h-2 rounded-full bg-amber-500';
       txt.textContent = t('topbar.issues', { n: issues, problem: getLocale() === 'nl' ? (issues > 1 ? 'problemen' : 'probleem') : (issues > 1 ? 'Issues' : 'Issue') });
+      txt.className = 'text-amber-600 dark:text-amber-400';
+      if (statusWrap) statusWrap.className = statusWrap.className.replace(/text-slate-500 dark:text-slate-400/, 'text-amber-600 dark:text-amber-400');
     }
   } catch(e) {
     document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
-    document.getElementById('status-text').textContent = t('topbar.connError');
+    const errTxt = document.getElementById('status-text');
+    errTxt.textContent = t('topbar.connError');
+    errTxt.className = 'text-red-600 dark:text-red-400';
+    const statusWrap = document.getElementById('system-status');
+    if (statusWrap) statusWrap.className = statusWrap.className.replace(/text-slate-500 dark:text-slate-400/, 'text-red-600 dark:text-red-400');
   }
 
   applyTranslations();
