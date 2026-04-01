@@ -2020,6 +2020,10 @@ function _updateIpsStats(data) {
   // Show/hide setup guide
   const guide = document.getElementById('ips-setup-guide');
   if (guide) guide.classList.toggle('hidden', data.crowdsec_running);
+
+  // Update nav badge
+  _navIpsCount = data.active_threats_blocked || 0;
+  updateNavBadges();
 }
 
 function styleIpsCard(active) {
