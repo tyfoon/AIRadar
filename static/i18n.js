@@ -57,6 +57,7 @@ const TRANSLATIONS = {
     'topbar.allOk':        'All Systems Operational',
     'topbar.issues':       '{n} {problem}',
     'topbar.connError':    'Connection Error',
+    'topbar.lastUpdated':  'Last updated:',
 
     // Dashboard
     'dash.system':         'System',
