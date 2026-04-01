@@ -616,7 +616,7 @@ Upload tijdlijn:
 
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=f"{system_prompt}\n\n{data_block}",
         )
         report_md = response.text
