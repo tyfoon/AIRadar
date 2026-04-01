@@ -1011,10 +1011,24 @@
         </div>
       </div>
 
+      <!-- Language -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500" data-i18n="settings.language">Language</h3>
+            <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="settings.langDesc">Choose your preferred language</p>
+          </div>
+          <select id="locale-select" onchange="setLocale(this.value)" class="text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5">
+            <option value="en">English</option>
+            <option value="nl">Nederlands</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Health Check -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">System Health</h3>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500" data-i18n="settings.health">System Health</h3>
           <button id="health-run-btn" onclick="runHealthCheck()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors active:scale-95">Run Check</button>
         </div>
         <div id="health-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
