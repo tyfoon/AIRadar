@@ -744,6 +744,12 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             f"from {src_ip} — {dpd_total/1024:,.0f} KB"
                         )
 
+                # --- Evict stale IP mappings before further checks ---
+                if resp_ip in _known_ips:
+                    _, _, _learned = _known_ips[resp_ip]
+                    if (time.time() - _learned) > IP_TTL_SECONDS:
+                        del _known_ips[resp_ip]
+
                 # --- Heuristic VPN detection ---
                 # Large single-connection to an unknown external IP (not a known
                 # AI/Cloud service) hints at an encrypted tunnel.
