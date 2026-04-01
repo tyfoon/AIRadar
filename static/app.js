@@ -1492,9 +1492,98 @@ function _showCellEvents(mac, service, category) {
     tbody.innerHTML += `<tr><td colspan="5" class="py-3 text-center text-slate-400 dark:text-slate-500 text-xs">Showing first 100 of ${events.length} events</td></tr>`;
   }
 
+  // Store current MAC for the AI report button
+  panel.dataset.mac = mac;
+
+  // Hide any previous report
+  document.getElementById('dev-ai-report').classList.add('hidden');
+
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+// ---------------------------------------------------------------------------
+// AI Recap — generate device report via Gemini
+// ---------------------------------------------------------------------------
+let _reportAbort = null;
+
+async function generateDeviceReport() {
+  const panel = document.getElementById('dev-event-detail');
+  const mac = panel.dataset.mac;
+  if (!mac) return;
+
+  const btn = document.getElementById('btn-ai-report');
+  const reportBox = document.getElementById('dev-ai-report');
+  const reportContent = document.getElementById('dev-ai-report-content');
+
+  // Loading state
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block animate-pulse">&#10024;</span> AI is het netwerk aan het analyseren\u2026';
+  btn.classList.add('opacity-70', 'cursor-wait');
+  reportBox.classList.remove('hidden');
+  reportContent.innerHTML = `
+    <div class="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 py-4">
+      <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+      <span>Gemini analyseert de netwerkactiviteit van de afgelopen 24 uur\u2026</span>
+    </div>`;
+
+  try {
+    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report`);
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${data.detail || 'Fout bij het genereren van het rapport.'}</div>`;
+      return;
+    }
+
+    // Render markdown (simple parser for bold, italic, headers, lists, code)
+    reportContent.innerHTML = renderSimpleMarkdown(data.report);
+
+  } catch (err) {
+    reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">Netwerk-fout: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="text-sm">&#10024;</span> Genereer AI Rapport (24u)';
+    btn.classList.remove('opacity-70', 'cursor-wait');
+  }
+}
+
+function renderSimpleMarkdown(md) {
+  if (!md) return '';
+  let html = md
+    // Escape HTML entities
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Headers (### → h4, ## → h3, # → h2)
+    .replace(/^### (.+)$/gm, '<h4 class="text-sm font-semibold mt-4 mb-1 text-slate-800 dark:text-slate-200">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="text-base font-semibold mt-5 mb-2 text-slate-800 dark:text-slate-200">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 class="text-lg font-bold mt-5 mb-2 text-slate-800 dark:text-slate-200">$1</h2>')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-slate-800 dark:text-slate-100">$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/50 text-xs font-mono">$1</code>')
+    // Unordered lists
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-[13px] leading-relaxed">$1</li>')
+    .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc text-[13px] leading-relaxed">$1</li>')
+    // Horizontal rule
+    .replace(/^---$/gm, '<hr class="my-3 border-indigo-200/50 dark:border-indigo-700/30">')
+    // Paragraphs (double newline)
+    .replace(/\n\n/g, '</p><p class="mb-2">')
+    // Single newlines within text
+    .replace(/\n/g, '<br>');
+
+  // Wrap consecutive <li> items in <ul>
+  html = html.replace(/(<li[^>]*>.*?<\/li>(?:\s*<br>?\s*<li[^>]*>.*?<\/li>)*)/gs, '<ul class="my-2 space-y-0.5">$1</ul>');
+  // Clean up stray <br> inside <ul>
+  html = html.replace(/<ul([^>]*)>([\s\S]*?)<\/ul>/g, (m, attrs, inner) => {
+    return `<ul${attrs}>${inner.replace(/<br>/g, '')}</ul>`;
+  });
+
+  return `<p class="mb-2">${html}</p>`;
+}
+
+window.generateDeviceReport = generateDeviceReport;
 
 // Expose for onclick
 window._toggleDevGroup = _toggleDevGroup;
