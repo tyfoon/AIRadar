@@ -338,6 +338,16 @@ function _detectDeviceType(device) {
   for (const dt of DEVICE_TYPES) {
     if (dt.match.test(haystack)) return dt;
   }
+  // p0f device_class fallback
+  if (device.device_class) {
+    const dc = device.device_class.toLowerCase();
+    if (dc === 'phone')    return { icon: '📱', type: 'Phone' };
+    if (dc === 'tablet')   return { icon: '📱', type: 'Tablet' };
+    if (dc === 'laptop')   return { icon: '💻', type: 'Laptop' };
+    if (dc === 'computer') return { icon: '💻', type: 'Computer' };
+    if (dc === 'server')   return { icon: '🖥️', type: 'Server' };
+    if (dc === 'iot')      return { icon: '🔌', type: 'IoT Device' };
+  }
   // Vendor-based fallback
   if (device.vendor) {
     const v = device.vendor.toLowerCase();
