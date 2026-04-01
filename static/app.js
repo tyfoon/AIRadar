@@ -1190,7 +1190,7 @@ async function refreshPrivacy() {
   const chartC = document.getElementById('priv-chart-container');
 
   if (ag.status === 'ok') {
-    statusEl.textContent = '● Connected';
+    statusEl.textContent = '● ' + t('priv.connected');
     statusEl.className = 'text-base font-semibold mt-2 text-emerald-600 dark:text-emerald-400';
     if (unavail) unavail.classList.add('hidden');
     if (chartC) chartC.classList.remove('hidden');
