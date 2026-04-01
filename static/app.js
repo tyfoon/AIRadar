@@ -906,10 +906,32 @@ function updateChartsTheme() {
 // ================================================================
 // RENDER HELPERS
 // ================================================================
-function renderEventsTable(events, tbodyId, emptyId) {
+function _eventDescription(e) {
+  const type = e.detection_type;
+  if (type === 'sni_hello') return t('ev.connection');
+  if (type === 'upload_detected' || e.possible_upload) {
+    const size = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '';
+    return '<span class="text-orange-500 dark:text-orange-400">↑</span> ' + t('ev.upload', { size });
+  }
+  if (type === 'dns_query') return t('ev.dnsLookup');
+  // Unknown type → code badge
+  return `<span class="px-1.5 py-0.5 rounded font-mono text-[10px] bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">${type}</span>`;
+}
+
+function _fmtSize(bytes) {
+  if (!bytes || bytes === 0) return '<span class="text-slate-300 dark:text-slate-600">—</span>';
+  return _fmtBytes(bytes);
+}
+
+function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
   const tbody = document.getElementById(tbodyId);
   const empty = document.getElementById(emptyId);
+  const lowAct = lowActivityId ? document.getElementById(lowActivityId) : null;
   if (!tbody) return;
+
+  // Low-activity callout
+  if (lowAct) lowAct.classList.toggle('hidden', events.length === 0 || events.length >= 3);
+
   if (!events.length) {
     tbody.innerHTML = '';
     if (empty) empty.classList.remove('hidden');
@@ -919,9 +941,8 @@ function renderEventsTable(events, tbodyId, emptyId) {
   tbody.innerHTML = events.map(e => {
     const up = e.possible_upload;
     const rc = up
-      ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50 dark:bg-orange-900/10'
+      ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50/30 dark:bg-orange-900/10 border-l-[3px] border-l-orange-400'
       : 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20';
-    const ub = up ? `<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">${t('ai.upload')}</span>` : '';
     const dn = deviceName(e.source_ip);
     const dev = _deviceByIp(e.source_ip);
     const dt = _detectDeviceType(dev);
@@ -930,9 +951,9 @@ function renderEventsTable(events, tbodyId, emptyId) {
     return `<tr class="${rc} transition-colors">
       <td class="py-3 px-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
       <td class="py-3 px-4">${badge(e.ai_service)}</td>
-      <td class="py-3 px-4 font-mono text-xs text-slate-600 dark:text-slate-300">${e.detection_type}${ub}</td>
+      <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${_eventDescription(e)}</td>
       <td class="py-3 px-4 text-xs">${dc}</td>
-      <td class="py-3 px-4 text-right tabular-nums text-xs">${formatNumber(e.bytes_transferred)}</td>
+      <td class="py-3 px-4 text-right tabular-nums text-xs">${_fmtSize(e.bytes_transferred)}</td>
     </tr>`;
   }).join('');
 }
