@@ -1746,7 +1746,7 @@ async function refreshCloud() {
     svcSel.value = cur;
   }
 
-  renderEventsTable(events, 'cloud-tbody', 'cloud-empty');
+  renderEventsTable(events, 'cloud-tbody', 'cloud-empty', 'cloud-low-activity');
   updateCategoryCharts(events, timeline, 'cloud-service-chart', 'cloud-timeline-chart');
 }
 
