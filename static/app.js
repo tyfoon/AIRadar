@@ -66,16 +66,7 @@ function toggleMobileSidebar() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const PAGE_TITLES = {
-  dashboard: 'Dashboard',
-  ai: 'AI Radar',
-  cloud: 'Cloud Storage',
-  privacy: 'Privacy',
-  devices: 'Devices',
-  ips: 'Attacks',
-  rules: 'Rules & Access Control',
-  settings: 'Settings',
-};
+const VALID_PAGES = ['dashboard','ai','cloud','privacy','devices','ips','rules','settings'];
 
 let currentPage = 'dashboard';
 
