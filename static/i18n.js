@@ -361,6 +361,24 @@ const TRANSLATIONS = {
     'svc.allowedToBlock':  'Allowed — click to block',
     'svc.blockedToAllow':  'Blocked — click to allow',
     'svc.lastSeen':        'Last: {time}',
+    'svc.activeTooltip':   '{count} connections detected. Last seen: {time}',
+
+    // Scheduling
+    'sched.title':         'Schedule: {name}',
+    'sched.alwaysActive':  'Always active',
+    'sched.customSchedule':'Custom schedule',
+    'sched.startTime':     'Start time',
+    'sched.endTime':       'End time',
+    'sched.days':          'Days',
+    'sched.save':          'Save',
+    'sched.cancel':        'Cancel',
+    'sched.mon':           'Mon',
+    'sched.tue':           'Tue',
+    'sched.wed':           'Wed',
+    'sched.thu':           'Thu',
+    'sched.fri':           'Fri',
+    'sched.sat':           'Sat',
+    'sched.sun':           'Sun',
 
     // Settings page — Killswitch
     'settings.killswitch': 'Emergency Killswitch',
