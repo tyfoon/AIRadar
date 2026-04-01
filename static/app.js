@@ -2259,6 +2259,10 @@ window.generateDeviceReport = generateDeviceReport;
 // Expose for onclick
 window._toggleDevGroup = _toggleDevGroup;
 window._showCellEvents = _showCellEvents;
+window.openDeviceDrawer = openDeviceDrawer;
+window.closeDeviceDrawer = closeDeviceDrawer;
+window.setDrawerTab = setDrawerTab;
+window.drawerLoadMore = drawerLoadMore;
 
 function _renderDeviceMatrix() {
   if (!_devMatrix.deviceMacs) return;
