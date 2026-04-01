@@ -140,6 +140,9 @@ select {
   box-shadow: 0 0 0 1px rgba(99,102,241,0.1), 0 4px 24px rgba(0,0,0,0.3);
 }
 
+/* --- Stat card minimum height for consistent grid --- */
+.stat-card { min-height: 100px; }
+
 /* --- Metric card pulse on update --- */
 @keyframes pulse-once { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 .pulse { animation: pulse-once 0.4s ease; }
