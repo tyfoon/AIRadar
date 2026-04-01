@@ -2511,7 +2511,7 @@ async function runHealthCheck() {
   } catch(err) {
     const cards = document.getElementById('health-cards');
     cards.innerHTML = `<div class="col-span-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-xl p-6 text-center">
-      <p class="text-red-600 dark:text-red-400 font-medium">Health check failed</p>
+      <p class="text-red-600 dark:text-red-400 font-medium">${t('settings.hcFailed')}</p>
       <p class="text-sm text-slate-500 mt-1">${err.message}</p>
     </div>`;
   } finally {
