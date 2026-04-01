@@ -3074,6 +3074,8 @@ window.onScheduleModeChange = onScheduleModeChange;
 window.saveSchedule = saveSchedule;
 window.switchSettingsTab = switchSettingsTab;
 window.setThemeFromSelect = setThemeFromSelect;
+window.toggleMobOverflow = toggleMobOverflow;
+window.closeMobOverflow = closeMobOverflow;
 
 // --- Active Protect (IPS) ---
 async function refreshIps() {
