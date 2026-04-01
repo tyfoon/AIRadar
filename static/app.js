@@ -1259,7 +1259,7 @@ async function refreshPrivacy() {
   if (privSvcSel) {
     const cur = privSvcSel.value;
     const allSvcs = [...new Set((tk.top_trackers || []).map(t => t.service))].sort();
-    privSvcSel.innerHTML = '<option value="">All trackers</option>';
+    privSvcSel.innerHTML = `<option value="">${t('priv.allTrackers')}</option>`;
     allSvcs.forEach(s => { privSvcSel.innerHTML += `<option value="${s}">${svcDisplayName(s)}</option>`; });
     privSvcSel.value = cur;
   }
