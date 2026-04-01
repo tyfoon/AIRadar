@@ -209,6 +209,92 @@ class AdGuardClient:
         except (httpx.HTTPError, Exception):
             return []
 
+    # Background noise domains to exclude from AI reports
+    _NOISE_DOMAINS = {
+        "time.apple.com", "time.google.com", "time.windows.com",
+        "ntp.ubuntu.com", "pool.ntp.org",
+        "captive.apple.com", "connectivitycheck.gstatic.com",
+        "detectportal.firefox.com", "nmcheck.gnome.org",
+        "msftconnecttest.com", "www.msftconnecttest.com",
+        "dns.msftncsi.com", "ipv4only.arpa",
+        "ocsp.apple.com", "ocsp2.apple.com", "ocsp.digicert.com",
+        "crl.apple.com", "crl3.digicert.com", "crl4.digicert.com",
+        "gateway.icloud.com", "gsa.apple.com",
+        "xp.apple.com", "identity.apple.com",
+        "localhost", "local", "broadcasthost",
+    }
+
+    async def get_recent_dns_queries(
+        self, ips: list[str], hours: int = 24
+    ) -> dict[str, int]:
+        """Fetch aggregated DNS query counts for specific client IPs.
+
+        Returns a dict of {domain: hit_count} for the top 50 domains,
+        filtered to remove background noise (NTP, captive portal, OCSP, etc.).
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                # AdGuard querylog API — fetch recent entries
+                # The API paginates; we request a large limit to cover 24h
+                resp = await client.get(
+                    f"{self.base_url}/control/querylog",
+                    params={"limit": 5000, "offset": 0},
+                    auth=self.auth,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            ip_set = set(ips)
+            domain_counts: dict[str, int] = {}
+
+            entries = data.get("data", data.get("oldest", []))
+            if isinstance(data, dict) and "data" in data:
+                entries = data["data"]
+            elif isinstance(data, list):
+                entries = data
+
+            for entry in entries:
+                # Filter by client IP
+                client_ip = entry.get("client", "")
+                if client_ip not in ip_set:
+                    continue
+
+                # Filter by time
+                ts_str = entry.get("time", "")
+                if ts_str:
+                    try:
+                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        if ts < cutoff:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+                # Extract queried domain
+                question = entry.get("question", {})
+                domain = question.get("name", "").rstrip(".")
+                if not domain:
+                    continue
+
+                # Skip noise
+                if domain in self._NOISE_DOMAINS:
+                    continue
+                # Skip subdomains of noise
+                if any(domain.endswith(f".{nd}") for nd in self._NOISE_DOMAINS):
+                    continue
+
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+            # Return top 50 by hit count
+            sorted_domains = sorted(domain_counts.items(), key=lambda x: -x[1])
+            return dict(sorted_domains[:50])
+
+        except (httpx.HTTPError, Exception) as exc:
+            print(f"[adguard] Failed to fetch query log: {exc}")
+            return {}
+
     async def get_status(self) -> dict:
         """Check if AdGuard Home is running and protection is enabled."""
         try:
