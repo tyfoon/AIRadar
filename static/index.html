@@ -181,24 +181,34 @@
 
       <!-- Metric cards -->
       <div class="stat-grid grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer" onclick="toggleDashHealthDetail()">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="toggleDashHealthDetail()">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium"><span data-i18n="dash.system">System</span> <span class="text-slate-400 dark:text-slate-500">▾</span></p>
           <div class="flex items-center gap-2 mt-2">
             <span id="dash-health-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
             <p id="dash-health" class="text-lg font-semibold">Checking...</p>
           </div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('devices')">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.devices">Devices</p>
           <p id="dash-devices" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+          <p id="dash-devices-subtitle" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1"></p>
+          <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
+          <div id="dash-devices-trend" class="hidden mt-1"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="scrollToAlarms()">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.eventsToday">Events Today</p>
           <p id="dash-events-today" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+          <p id="dash-events-subtitle" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="dash.eventsSubtitle">network events detected</p>
+          <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
+          <div id="dash-events-trend" class="hidden mt-1"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('privacy')">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.dnsBlocked">Threats Blocked</p>
           <p id="dash-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500">0</p>
+          <p id="dash-blocked-subtitle" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="dash.adsTrackers">ads & trackers stopped</p>
+          <p id="dash-blocked-rate" class="text-[11px] text-slate-400 dark:text-slate-500"></p>
+          <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
+          <div id="dash-blocked-trend" class="hidden mt-1"></div>
         </div>
       </div>
 
