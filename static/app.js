@@ -1507,11 +1507,11 @@ function _showCellEvents(mac, service, category) {
     const up = e.possible_upload;
     const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
-      <td class="py-2 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
-      <td class="py-2 px-4">${badge(e.ai_service)}</td>
-      <td class="py-2 px-4 text-xs">${e.detection_type}${upBadge}</td>
-      <td class="py-2 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
-      <td class="py-2 px-4 text-xs text-right tabular-nums">${e.bytes_transferred ? formatNumber(e.bytes_transferred) : '0'}</td>
+      <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
+      <td class="py-3 px-4">${badge(e.ai_service)}</td>
+      <td class="py-3 px-4 text-xs">${e.detection_type}${upBadge}</td>
+      <td class="py-3 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
+      <td class="py-3 px-4 text-xs text-right tabular-nums">${e.bytes_transferred ? formatNumber(e.bytes_transferred) : '0'}</td>
     </tr>`;
   }).join('');
 
