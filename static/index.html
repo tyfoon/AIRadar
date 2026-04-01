@@ -693,42 +693,6 @@
         </div>
       </div>
 
-      <!-- Event detail panel (shown when clicking a matrix cell) -->
-      <div id="dev-event-detail" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover hidden">
-        <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-white/[0.05]">
-          <h3 id="dev-event-detail-title" class="text-sm font-semibold"></h3>
-          <div class="flex items-center gap-3">
-            <button id="btn-ai-report" onclick="generateDeviceReport()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md flex items-center gap-1.5">
-              <span class="text-sm">&#10024;</span> <span data-i18n="dev.generateReport">Generate AI Report (24h)</span>
-            </button>
-            <button onclick="document.getElementById('dev-event-detail').classList.add('hidden');document.getElementById('dev-ai-report').classList.add('hidden');" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg leading-none">&times;</button>
-          </div>
-        </div>
-        <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
-          <table class="w-full text-sm text-left">
-            <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10] sticky top-0">
-              <tr>
-                <th class="py-3 px-4 font-medium" data-i18n="dev.thTime">Time</th>
-                <th class="py-3 px-4 font-medium" data-i18n="dev.thService">Service</th>
-                <th class="py-3 px-4 font-medium" data-i18n="dev.thType">Type</th>
-                <th class="py-3 px-4 font-medium" data-i18n="dev.thSourceIp">Source IP</th>
-                <th class="py-2 px-4 font-medium text-right" data-i18n="dev.thBytes">Bytes</th>
-              </tr>
-            </thead>
-            <tbody id="dev-event-detail-body" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
-          </table>
-        </div>
-        <!-- AI Recap report (hidden by default) -->
-        <div id="dev-ai-report" class="hidden mx-4 my-4 p-5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-500/20">
-          <div class="flex items-center justify-between mb-3">
-            <h4 class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-              <span>&#10024;</span> <span data-i18n="dev.aiRecap">AI Network Recap</span>
-            </h4>
-            <button onclick="document.getElementById('dev-ai-report').classList.add('hidden')" class="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-sm">&times;</button>
-          </div>
-          <div id="dev-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"></div>
-        </div>
-      </div>
     </section>
 
     <!-- ============================================================= -->
