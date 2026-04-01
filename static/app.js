@@ -415,7 +415,7 @@ document.addEventListener('click', async (e) => {
   if (!mac) return;
   const d = deviceMap[mac];
   const cur = d?.display_name || d?.hostname || mac;
-  const n = prompt(`Rename device:`, cur);
+  const n = prompt(t('dev.renameDevice'), cur);
   if (n && n !== cur) {
     await fetch(`/api/devices/${encodeURIComponent(mac)}`, {
       method: 'PUT', headers: {'Content-Type':'application/json'},
