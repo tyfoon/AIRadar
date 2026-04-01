@@ -606,11 +606,10 @@ const TRANSLATIONS = {
 
     // Privacy pagina
     'priv.dnsQueries':     'DNS-lookups',
-    'priv.viaAdguard':     'via AdGuard Home',
     'priv.dnsBlocked':     'Bedreigingen geblokkeerd',
-    'priv.blockRate':      'blokkeerpercentage',
+    'priv.ofAllTraffic':   'van al het verkeer',
     'priv.trackers':       'Trackers gevonden',
-    'priv.viaZeek':        '',
+    'priv.dnsQuery':       'DNS-verzoek',
     'priv.uniqueTrackers': 'Trackerbedrijven',
     'priv.vpnTunnels':     'VPN-verbindingen',
     'priv.noTunnels':      'Geen tunnels gedetecteerd',
