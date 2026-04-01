@@ -774,10 +774,10 @@ async function refreshDashboard() {
     } else {
       const issues = healthRes.summary.total - healthRes.summary.ok;
       dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
-      txt.textContent = `${issues} Issue${issues > 1 ? 's' : ''} Detected`;
+      txt.textContent = t('dash.issuesDetected', { n: issues, s: issues > 1 ? 's' : '' });
       txt.className = 'text-lg font-semibold text-amber-600 dark:text-amber-400';
       topDot.className = 'w-2 h-2 rounded-full bg-amber-500';
-      topTxt.textContent = `${issues} Issue${issues > 1 ? 's' : ''}`;
+      topTxt.textContent = t('topbar.issues', { n: issues, s: issues > 1 ? 's' : '' });
     }
     // Store health data for detail panel
     _lastHealthData = healthRes;
