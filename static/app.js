@@ -1315,7 +1315,8 @@ function renderVpnAlerts(alerts) {
   }
 
   // Active alerts — orange warning
-  statLabel.textContent = t('priv.deviceUsingVpn', { n: count, s: count === 1 ? '' : 's' });
+  const deviceWord = getLocale() === 'nl' ? (count === 1 ? 'apparaat' : 'apparaten') : (count === 1 ? 'device' : 'devices');
+  statLabel.textContent = t('priv.deviceUsingVpn', { n: count, device: deviceWord });
   statLabel.className = 'text-orange-500 dark:text-orange-400';
   statCard.className = statCard.className
     .replace(/border-slate-200\s*/g, '').replace(/dark:border-white\/\[0\.05\]/g, '');
