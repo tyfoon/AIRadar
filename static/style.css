@@ -143,6 +143,10 @@ select {
 /* --- Stat card minimum height for consistent grid --- */
 .stat-grid > * { min-height: 100px; }
 
+/* --- Alternating row backgrounds for long tables --- */
+.striped-rows tr:nth-child(even) { background: rgba(248,250,252,0.5); }
+.dark .striped-rows tr:nth-child(even) { background: rgba(30,41,59,0.2); }
+
 /* --- Metric card pulse on update --- */
 @keyframes pulse-once { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 .pulse { animation: pulse-once 0.4s ease; }
