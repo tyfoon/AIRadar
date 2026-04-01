@@ -71,7 +71,7 @@ const VALID_PAGES = ['dashboard','ai','cloud','privacy','devices','ips','rules',
 let currentPage = 'dashboard';
 
 function navigate(page) {
-  if (!PAGE_TITLES[page]) page = 'dashboard';
+  if (!VALID_PAGES.includes(page)) page = 'dashboard';
   currentPage = page;
 
   // Update page visibility
