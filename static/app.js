@@ -395,7 +395,7 @@ async function loadDevices() {
       const sel = document.getElementById(id);
       if (sel) {
         const cur = sel.value;
-        sel.innerHTML = '<option value="">All devices</option>';
+        sel.innerHTML = `<option value="">${t('ai.allDevices')}</option>`;
         devices.forEach(d => {
           const allIps = (d.ips || []).map(i => i.ip).join(',');
           const label = d.display_name || d.hostname || _latestIp(d);
