@@ -501,7 +501,7 @@ function renderTimelineHtmlLegend(containerId, chart, serviceKeys) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const items = chart.data.datasets.map((ds, i) => {
-    if (ds._isUpload) return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"><span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>Uploads</span>`;
+    if (ds._isUpload) return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300"><span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>${t('ai.uploadsLegend')}</span>`;
     const key = serviceKeys ? serviceKeys[i] : null;
     if (key) return badge(key);
     return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"><span class="w-3 h-3 rounded inline-block" style="background:${ds.backgroundColor}"></span>${ds.label}</span>`;
