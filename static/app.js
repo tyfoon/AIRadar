@@ -551,6 +551,86 @@ function exportCSV(cat) {
 // ================================================================
 const charts = {};
 
+// Chart.js plugin: draw total count + label in doughnut center
+const doughnutCenterTextPlugin = {
+  id: 'doughnutCenterText',
+  afterDraw(chart) {
+    if (chart.config.type !== 'doughnut') return;
+    const meta = chart.options.plugins.doughnutCenterText;
+    if (!meta || !meta.text) return;
+
+    const { ctx, chartArea: { left, right, top, bottom } } = chart;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+
+    ctx.save();
+    // Main number
+    ctx.font = `700 20px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#f1f5f9' : '#0f172a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(meta.text, cx, cy - 8);
+    // Sub-label
+    ctx.font = `400 11px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#64748b' : '#94a3b8';
+    ctx.fillText(meta.subText || '', cx, cy + 10);
+    ctx.restore();
+  }
+};
+// Register plugin globally
+if (typeof Chart !== 'undefined') Chart.register(doughnutCenterTextPlugin);
+
+// Tracker domain → category mapping for Privacy Blocks donut
+const TRACKER_CATEGORY_MAP = [
+  { patterns: ['doubleclick', 'googleads', 'google-analytics', 'googletag', 'googletagmanager', 'googlesyndication', 'googleadservices'], category: 'Google Advertising' },
+  { patterns: ['whatsapp', 'facebook', 'meta', 'instagram', 'fbcdn', 'fbsbx'], category: 'Meta Tracking' },
+  { patterns: ['datadoghq', 'datadog'], category: 'Datadog Analytics' },
+  { patterns: ['sentry'], category: 'Sentry Monitoring' },
+  { patterns: ['applytics'], category: 'App Analytics' },
+  { patterns: ['hotjar'], category: 'Hotjar Analytics' },
+  { patterns: ['amplitude'], category: 'Amplitude Analytics' },
+  { patterns: ['mixpanel'], category: 'Mixpanel Analytics' },
+  { patterns: ['segment'], category: 'Segment Analytics' },
+  { patterns: ['tiktok', 'bytedance'], category: 'TikTok Tracking' },
+  { patterns: ['twitter', 'twimg'], category: 'X (Twitter) Tracking' },
+  { patterns: ['amazon-adsystem', 'amazonaws.com/ads'], category: 'Amazon Ads' },
+  { patterns: ['microsoft', 'msads', 'bing.com/ads', 'clarity.ms'], category: 'Microsoft Ads' },
+];
+
+function classifyTrackerDomain(domain) {
+  const lower = (domain || '').toLowerCase();
+  for (const entry of TRACKER_CATEGORY_MAP) {
+    if (entry.patterns.some(p => lower.includes(p))) return entry.category;
+  }
+  return null; // unknown — show domain as-is
+}
+
+// Group blocked domains by tracker category
+function groupBlockedByCategory(topBlocked) {
+  const catMap = {}; // category → total count
+  const uncategorized = []; // {domain, count} for unknown domains
+
+  for (const item of topBlocked) {
+    const cat = classifyTrackerDomain(item.domain);
+    if (cat) {
+      catMap[cat] = (catMap[cat] || 0) + item.count;
+    } else {
+      uncategorized.push(item);
+    }
+  }
+
+  // Build combined list sorted by count descending
+  const result = [];
+  for (const [cat, count] of Object.entries(catMap)) {
+    result.push({ label: cat, count, isCategory: true });
+  }
+  for (const item of uncategorized) {
+    result.push({ label: item.domain, count: item.count, isCategory: false, fullDomain: item.domain });
+  }
+  result.sort((a, b) => b.count - a.count);
+  return result;
+}
+
 function getOrCreateChart(id, config) {
   if (charts[id]) return charts[id];
   const canvas = document.getElementById(id);
