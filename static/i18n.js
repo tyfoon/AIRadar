@@ -62,7 +62,7 @@ const TRANSLATIONS = {
     'dash.dnsBlocked':     'Threats Blocked',
     'dash.checking':       'Checking...',
     'dash.allOk':          'All Systems OK',
-    'dash.issuesDetected': '{n} Issue{s} Detected',
+    'dash.issuesDetected': '{n} {problem} Detected',
     'dash.healthDetails':  'System Health Details',
     'dash.close':          'Close',
     'dash.noHealthData':   'No health data yet. Wait for next refresh.',
