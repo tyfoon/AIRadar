@@ -237,3 +237,7 @@ canvas { max-width: 100%; }
 @media (min-width: 768px) {
   #mobile-nav { display: none !important; }
 }
+
+/* --- Device row edit button: show on row hover --- */
+.dev-edit-btn { opacity: 0; transition: opacity 0.15s; }
+tr:hover .dev-edit-btn { opacity: 1; }
