@@ -1500,7 +1500,7 @@ function _showCellEvents(mac, service, category) {
     const dcText = dev.device_class ? ` · ${dev.device_class}` : '';
     osLine = `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">🔍 p0f: ${osLabel}${dcText}${distText}</div>`;
   }
-  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>${osLine}`;
+  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} ${t('dev.events')})</span>${osLine}`;
 
   tbody.innerHTML = events.slice(0, 100).map(e => {
     const up = e.possible_upload;
