@@ -976,12 +976,14 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
-    # Start p0f passive OS fingerprinting
+    # p0f passive OS fingerprinting — tail existing p0f log file
     p0f_task = None
     try:
-        from p0f_tailer import start_p0f_tailer
-        p0f_task = start_p0f_tailer()
-        print(f"[*] p0f passive OS fingerprinting: enabled")
+        from p0f_tailer import tail_p0f_standalone, P0F_LOG_FILE
+        p0f_log = Path(P0F_LOG_FILE)
+        p0f_task = tail_p0f_standalone(p0f_log)
+        print(f"[*] p0f passive OS fingerprinting: enabled (tailing {p0f_log})")
+        print(f"[*]   Start p0f separately: sudo p0f -i en0 -f /opt/homebrew/etc/p0f/p0f.fp -o {p0f_log} -p")
     except ImportError:
         print(f"[*] p0f passive OS fingerprinting: disabled (p0f_tailer not found)")
     except Exception as exc:
