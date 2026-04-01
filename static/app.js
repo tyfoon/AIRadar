@@ -1965,66 +1965,188 @@ function _toggleDevGroup(groupKey) {
   _renderDeviceMatrix();
 }
 
-function _showCellEvents(mac, service, category) {
-  const panel = document.getElementById('dev-event-detail');
-  const title = document.getElementById('dev-event-detail-title');
-  const tbody = document.getElementById('dev-event-detail-body');
+// ---------------------------------------------------------------------------
+// Device detail drawer state
+// ---------------------------------------------------------------------------
+let _drawerMac = null;
+let _drawerEvents = [];       // all events for current device
+let _drawerFiltered = [];     // events filtered by active tab
+let _drawerVisible = 0;       // how many rows currently rendered
+let _drawerActiveTab = 'all'; // current tab key
+const DRAWER_PAGE_SIZE = 50;
 
-  // Find matching device IPs
+function _showCellEvents(mac, service, category) {
+  openDeviceDrawer(mac, service, category);
+}
+
+function openDeviceDrawer(mac, service, category) {
+  _drawerMac = mac;
   const dev = deviceMap[mac];
   const devIps = new Set();
   if (dev && dev.ips) dev.ips.forEach(ip => devIps.add(ip.ip));
   else devIps.add(mac.replace('_ip_', ''));
 
-  // Filter events
-  let events;
-  if (service) {
-    events = _devAllEvents.filter(e => devIps.has(e.source_ip) && e.ai_service === service);
-  } else if (category) {
-    events = _devAllEvents.filter(e => devIps.has(e.source_ip) && e._cat === category);
-  } else {
-    events = _devAllEvents.filter(e => devIps.has(e.source_ip));
-  }
-  events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // Collect ALL events for this device
+  _drawerEvents = _devAllEvents.filter(e => devIps.has(e.source_ip));
+  _drawerEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
-  const catGroup = category ? getCategoryGroups().find(g => g.key === category) : null;
-  const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : t('dev.allServices');
-  // OS fingerprint info line
-  let osLine = '';
+  // --- Populate header ---
+  const dt = _detectDeviceType(dev);
+  const dn = _bestDeviceName(mac, dev);
+  document.getElementById('drawer-dev-icon').textContent = dt.icon;
+  document.getElementById('drawer-dev-name').textContent = dn;
+
+  // Meta line: type · IP · vendor
+  const parts = [dt.type];
+  if (dev) {
+    const ip = _latestIp(dev);
+    if (ip) parts.push(ip);
+    if (dev.vendor) parts.push(dev.vendor);
+  }
+  document.getElementById('drawer-dev-meta').textContent = parts.join(' · ');
+
+  // OS fingerprint
+  const osEl = document.getElementById('drawer-dev-os');
   if (dev?.os_name) {
     const osLabel = dev.os_version ? `${dev.os_name} ${dev.os_version}` : dev.os_name;
     const distText = dev.network_distance != null ? ` · ${dev.network_distance} ${dev.network_distance !== 1 ? t('dev.hops') : t('dev.hop')}` : '';
     const dcText = dev.device_class ? ` · ${dev.device_class}` : '';
-    osLine = `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">🔍 p0f: ${osLabel}${dcText}${distText}</div>`;
+    osEl.innerHTML = `🔍 p0f: ${osLabel}${dcText}${distText}`;
+    osEl.classList.remove('hidden');
+  } else {
+    osEl.classList.add('hidden');
   }
-  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} ${t('dev.events')})</span>${osLine}`;
 
-  tbody.innerHTML = events.slice(0, 100).map(e => {
+  // --- Build tab bar ---
+  const cats = getCategoryGroups();
+  const tabCounts = { all: _drawerEvents.length };
+  cats.forEach(c => {
+    tabCounts[c.key] = _drawerEvents.filter(e => e._cat === c.key).length;
+  });
+
+  // Determine initial active tab
+  if (service) {
+    // Find which category this service belongs to
+    const matchCat = cats.find(c => _drawerEvents.some(e => e.ai_service === service && e._cat === c.key));
+    _drawerActiveTab = matchCat ? matchCat.key : 'all';
+  } else if (category) {
+    _drawerActiveTab = category;
+  } else {
+    _drawerActiveTab = 'all';
+  }
+
+  const tabsHtml = [
+    `<button class="drawer-tab ${_drawerActiveTab === 'all' ? 'active' : ''}" onclick="setDrawerTab('all')">${t('dev.drawerAllTab')} <span class="ml-1 text-[10px] opacity-60">${tabCounts.all}</span></button>`
+  ];
+  cats.forEach(c => {
+    if (tabCounts[c.key] > 0) {
+      tabsHtml.push(`<button class="drawer-tab ${_drawerActiveTab === c.key ? 'active' : ''}" onclick="setDrawerTab('${c.key}')">${c.icon} ${c.label} <span class="ml-1 text-[10px] opacity-60">${tabCounts[c.key]}</span></button>`);
+    }
+  });
+  document.getElementById('drawer-tabs').innerHTML = tabsHtml.join('');
+
+  // --- Filter events for active tab and optional service ---
+  _applyDrawerFilter(service);
+
+  // --- Hide previous AI report ---
+  document.getElementById('drawer-ai-report').classList.add('hidden');
+
+  // --- Open drawer ---
+  document.getElementById('drawer-backdrop').classList.add('open');
+  document.getElementById('drawer-panel').classList.add('open');
+  document.body.classList.add('overflow-hidden');
+
+  // Push history state for back-button support
+  if (!history.state || history.state.drawer !== mac) {
+    history.pushState({ drawer: mac }, '', location.href);
+  }
+}
+
+function _applyDrawerFilter(serviceFilter) {
+  if (_drawerActiveTab === 'all') {
+    _drawerFiltered = serviceFilter
+      ? _drawerEvents.filter(e => e.ai_service === serviceFilter)
+      : [..._drawerEvents];
+  } else {
+    _drawerFiltered = _drawerEvents.filter(e => e._cat === _drawerActiveTab);
+    if (serviceFilter) {
+      _drawerFiltered = _drawerFiltered.filter(e => e.ai_service === serviceFilter);
+    }
+  }
+  _drawerVisible = 0;
+  _renderDrawerEvents(true);
+}
+
+function _renderDrawerEvents(reset) {
+  const tbody = document.getElementById('drawer-event-body');
+  const loadMoreWrap = document.getElementById('drawer-load-more');
+  const countEl = document.getElementById('drawer-event-count');
+
+  if (reset) {
+    tbody.innerHTML = '';
+    _drawerVisible = 0;
+    document.getElementById('drawer-scroll').scrollTop = 0;
+  }
+
+  const nextBatch = _drawerFiltered.slice(_drawerVisible, _drawerVisible + DRAWER_PAGE_SIZE);
+  _drawerVisible += nextBatch.length;
+
+  const rows = nextBatch.map(e => {
     const up = e.possible_upload;
     const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
+    const typeLabel = e.detection_type === 'sni_hello' ? t('dev.connection') : e.detection_type;
+    const bytesStr = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '0 B';
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
-      <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
-      <td class="py-3 px-4">${badge(e.ai_service)}</td>
-      <td class="py-3 px-4 text-xs">${e.detection_type}${upBadge}</td>
-      <td class="py-3 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
-      <td class="py-3 px-4 text-xs text-right tabular-nums">${e.bytes_transferred ? formatNumber(e.bytes_transferred) : '0'}</td>
+      <td class="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
+      <td class="py-2.5 px-4">${badge(e.ai_service)}</td>
+      <td class="py-2.5 px-4 text-xs">${typeLabel}${upBadge}</td>
+      <td class="py-2.5 px-4 text-xs font-mono text-slate-400 dark:text-slate-500">${e.source_ip}</td>
+      <td class="py-2.5 px-4 text-xs text-right tabular-nums">${bytesStr}</td>
     </tr>`;
   }).join('');
 
-  if (events.length > 100) {
-    tbody.innerHTML += `<tr><td colspan="5" class="py-3 text-center text-slate-400 dark:text-slate-500 text-xs">${t('dev.showingFirst', { n: events.length })}</td></tr>`;
+  tbody.insertAdjacentHTML('beforeend', rows);
+
+  // Update count label
+  countEl.textContent = t('dev.showingOfEvents', { visible: _drawerVisible, total: _drawerFiltered.length });
+
+  // Show/hide load more
+  if (_drawerVisible < _drawerFiltered.length) {
+    loadMoreWrap.classList.remove('hidden');
+  } else {
+    loadMoreWrap.classList.add('hidden');
   }
-
-  // Store current MAC for the AI report button
-  panel.dataset.mac = mac;
-
-  // Hide any previous report
-  document.getElementById('dev-ai-report').classList.add('hidden');
-
-  panel.classList.remove('hidden');
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+function drawerLoadMore() {
+  _renderDrawerEvents(false);
+}
+
+function setDrawerTab(tabKey) {
+  _drawerActiveTab = tabKey;
+  // Update active class
+  document.querySelectorAll('#drawer-tabs .drawer-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${tabKey}'`));
+  });
+  _applyDrawerFilter(null); // clear service filter when switching tabs
+}
+
+function closeDeviceDrawer() {
+  document.getElementById('drawer-backdrop').classList.remove('open');
+  document.getElementById('drawer-panel').classList.remove('open');
+  document.body.classList.remove('overflow-hidden');
+  _drawerMac = null;
+  _drawerEvents = [];
+  _drawerFiltered = [];
+  _drawerVisible = 0;
+}
+
+// Back-button support: close drawer on popstate
+window.addEventListener('popstate', function(e) {
+  if (document.getElementById('drawer-panel').classList.contains('open')) {
+    closeDeviceDrawer();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // AI Recap — generate device report via Gemini
