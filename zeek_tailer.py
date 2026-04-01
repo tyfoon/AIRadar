@@ -909,9 +909,10 @@ async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                     record = dict(zip(fields, parts))
 
-                    mac = record.get("mac", "-")
-                    if not mac or mac == "-":
+                    mac_raw = record.get("mac", "-")
+                    if not mac_raw or mac_raw == "-":
                         continue
+                    mac = _normalize_mac(mac_raw)
 
                     # Determine IP: prefer assigned_addr, fall back to
                     # requested_addr, then client_addr
