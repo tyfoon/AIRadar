@@ -493,6 +493,13 @@ const TRANSLATIONS = {
     'dash.uploadDetected': 'Upload gedetecteerd ({kb} KB)',
     'dash.highVolume':     'Hoog dataverkeer ({kb} KB)',
     'dash.since':          'sinds {time}',
+    'dash.onNetwork':      '{count} op je netwerk',
+    'dash.eventsSubtitle': 'netwerkgebeurtenissen gedetecteerd',
+    'dash.adsTrackers':    'advertenties & trackers gestopt',
+    'dash.blockRate':      '{pct}% van al het verkeer',
+    'dash.trendUp':        '↑ {pct}% ten opzichte van gisteren',
+    'dash.trendDown':      '↓ {pct}% ten opzichte van gisteren',
+    'dash.trendFlat':      '— geen verandering sinds gisteren',
 
     // Killswitch banner
     'ks.bannerTitle':      'Killswitch actief — Alle bescherming uitgeschakeld',
