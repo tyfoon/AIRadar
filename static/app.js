@@ -2605,14 +2605,14 @@ function _renderDeviceMatrix() {
     groups.forEach(g => {
       const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
       const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
-      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer" onclick="_showCellEvents('${mac}', null, '${g.key}')">
+      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer hidden sm:table-cell" onclick="_showCellEvents('${mac}', null, '${g.key}')">
         ${_heatCell(groupCount, groupUploads, globalMax)}
       </td>`;
 
       if (expanded.has(g.key)) {
         g.services.forEach(s => {
           const v = row[s];
-          cells += `<td class="py-2.5 px-2 text-center cursor-pointer" onclick="_showCellEvents('${mac}', '${s}')">
+          cells += `<td class="py-2.5 px-2 text-center cursor-pointer hidden sm:table-cell" onclick="_showCellEvents('${mac}', '${s}')">
             ${_heatCell(v?.count || 0, v?.uploads || 0, globalMax)}
           </td>`;
         });
