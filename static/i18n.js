@@ -93,7 +93,8 @@ const TRANSLATIONS = {
 
     // Killswitch banner
     'ks.bannerTitle':      'Killswitch Active — All Protection Disabled',
-    'ks.bannerSubtitle':   'DNS filtering, IPS, and block rules are bypassed. Click to go to Settings.',
+    'ks.bannerSubtitle':   'Your network protection is currently paused. All traffic is unfiltered.',
+    'ks.restoreBtn':       'Restore Protection',
 
     // AI Radar page
     'ai.tabRadar':         'AI Radar',
