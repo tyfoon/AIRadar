@@ -2051,11 +2051,11 @@ function remainingTime(expiresAt) {
   if (!expiresAt) return null;
   const exp = new Date(expiresAt.endsWith('Z') ? expiresAt : expiresAt + 'Z');
   const diff = exp - new Date();
-  if (diff <= 0) return 'expiring...';
+  if (diff <= 0) return t('svc.expiring');
   const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m left`;
+  if (mins < 60) return t('svc.minsLeft', { m: mins });
   const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m left`;
+  return t('svc.hrsLeft', { h: hrs, m: mins % 60 });
 }
 
 function renderServiceCard(svc) {
