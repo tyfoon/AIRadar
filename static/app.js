@@ -1351,7 +1351,7 @@ function renderVpnAlerts(alerts) {
               <td class="py-2 px-3">
                 ${a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active'
                   ? badge(a.vpn_service)
-                  : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 Encrypted Tunnel</span>`
+                  : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`
                 }
               </td>
               <td class="py-2 px-3 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
