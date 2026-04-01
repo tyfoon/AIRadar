@@ -1426,7 +1426,7 @@ function renderTrackerDetailsList() {
           <div class="h-full rounded-full bg-amber-500/70" style="width:${pct}%"></div>
         </div>
       </div>
-      <span class="text-[11px] tabular-nums text-amber-500 dark:text-amber-400 font-medium">${t.hits.toLocaleString()}</span>
+      <span class="text-[11px] tabular-nums text-amber-500 dark:text-amber-400 font-medium">${formatNumber(t.hits)}</span>
     </div>`;
   }).join('');
 }
