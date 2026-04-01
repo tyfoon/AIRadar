@@ -2367,7 +2367,7 @@ function renderKillswitchUI(data) {
     subtitle.classList.remove('text-red-500', 'dark:text-red-400');
     subtitle.classList.add('text-slate-400', 'dark:text-slate-500');
 
-    btn.textContent = 'Activate Killswitch';
+    btn.textContent = t('settings.ksActivate');
     btn.className = 'relative px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 active:scale-95 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20';
 
     setKsDot('adguard', 'green', 'filtering');
