@@ -814,6 +814,24 @@ const TRANSLATIONS = {
     'svc.allowedToBlock':  'Toegestaan — klik om te blokkeren',
     'svc.blockedToAllow':  'Geblokkeerd — klik om toe te staan',
     'svc.lastSeen':        'Laatst: {time}',
+    'svc.activeTooltip':   '{count} verbindingen gedetecteerd. Laatst gezien: {time}',
+
+    // Planning
+    'sched.title':         'Schema: {name}',
+    'sched.alwaysActive':  'Altijd actief',
+    'sched.customSchedule':'Aangepast schema',
+    'sched.startTime':     'Starttijd',
+    'sched.endTime':       'Eindtijd',
+    'sched.days':          'Dagen',
+    'sched.save':          'Opslaan',
+    'sched.cancel':        'Annuleren',
+    'sched.mon':           'Ma',
+    'sched.tue':           'Di',
+    'sched.wed':           'Wo',
+    'sched.thu':           'Do',
+    'sched.fri':           'Vr',
+    'sched.sat':           'Za',
+    'sched.sun':           'Zo',
 
     // Instellingen — Killswitch
     'settings.killswitch': 'Noodschakelaar',
