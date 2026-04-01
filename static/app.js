@@ -371,7 +371,7 @@ function deviceTypeTag(device) {
     };
     const osIcon = osIcons[device.os_name] || '💻';
     const osLabel = device.os_version ? `${device.os_name} ${device.os_version}` : device.os_name;
-    const distText = device.network_distance != null ? ` · ${device.network_distance} hop${device.network_distance !== 1 ? 's' : ''}` : '';
+    const distText = device.network_distance != null ? ` · ${device.network_distance} ${device.network_distance !== 1 ? t('dev.hops') : t('dev.hop')}` : '';
     osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
   }
 
