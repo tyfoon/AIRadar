@@ -2040,10 +2040,10 @@ async function loadAccessControl() {
     const cloudSvcs = services.filter(s => s.category === 'cloud');
     aiContainer.innerHTML = aiSvcs.length
       ? aiSvcs.map(renderServiceCard).join('')
-      : '<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">No AI services configured</p>';
+      : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noAiServices')}</p>`;
     cloudContainer.innerHTML = cloudSvcs.length
       ? cloudSvcs.map(renderServiceCard).join('')
-      : '<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">No Cloud services configured</p>';
+      : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noCloudServices')}</p>`;
   } catch(e) { console.error('loadAccessControl:', e); }
 }
 
