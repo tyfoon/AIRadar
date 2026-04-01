@@ -1083,9 +1083,40 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
 }
 
 // ================================================================
+// LOADING SKELETONS
+// ================================================================
+const _skeletonLine = '<div class="h-3 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>';
+const _skeletonBlock = '<div class="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>';
+
+function _showStatSkeletons(prefix) {
+  // Show pulsing placeholders in stat cards while loading
+  const ids = [`${prefix}-stat-total`, `${prefix}-stat-services`, `${prefix}-stat-sources`, `${prefix}-stat-uploads`];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = _skeletonBlock;
+  });
+}
+
+function _showTableSkeleton(tbodyId, cols) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const n = cols || 5;
+  const rows = Array.from({ length: 5 }, () =>
+    `<tr class="border-b border-slate-100 dark:border-white/[0.04]">` +
+    Array.from({ length: n }, () => `<td class="py-3 px-4">${_skeletonLine}</td>`).join('') +
+    `</tr>`
+  ).join('');
+  tbody.innerHTML = rows;
+}
+
+// ================================================================
 // PAGE REFRESH LOGIC
 // ================================================================
 async function refreshPage(page) {
+  // Show skeletons before async load
+  if (page === 'ai') { _showStatSkeletons('ai'); _showTableSkeleton('ai-tbody', 5); }
+  else if (page === 'cloud') { _showStatSkeletons('cloud'); _showTableSkeleton('cloud-tbody', 5); }
+
   try {
     if (page === 'dashboard') await refreshDashboard();
     else if (page === 'ai') await refreshAI();
