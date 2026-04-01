@@ -52,6 +52,12 @@ class Device(Base):
     hostname = Column(String, nullable=True)
     vendor = Column(String, nullable=True)          # MAC vendor (e.g. "Apple", "Samsung")
     display_name = Column(String, nullable=True)
+    os_name = Column(String, nullable=True)         # e.g. "macOS", "Windows", "Linux"
+    os_version = Column(String, nullable=True)      # e.g. "14.x", "11", "6.x"
+    os_full = Column(String, nullable=True)         # Full p0f label, e.g. "Mac OS X 10.x"
+    device_class = Column(String, nullable=True)    # e.g. "laptop", "phone", "iot", "server"
+    network_distance = Column(Integer, nullable=True)  # Hops away from sensor
+    p0f_last_seen = Column(DateTime, nullable=True) # Last p0f fingerprint update
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime, nullable=False,
