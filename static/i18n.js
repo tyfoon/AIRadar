@@ -90,6 +90,13 @@ const TRANSLATIONS = {
     'dash.uploadDetected': 'Upload detected ({kb} KB)',
     'dash.highVolume':     'High volume traffic ({kb} KB)',
     'dash.since':          'since {time}',
+    'dash.onNetwork':      '{count} on your network',
+    'dash.eventsSubtitle': 'network events detected',
+    'dash.adsTrackers':    'ads & trackers stopped',
+    'dash.blockRate':      '{pct}% of all traffic',
+    'dash.trendUp':        '↑ {pct}% from yesterday',
+    'dash.trendDown':      '↓ {pct}% from yesterday',
+    'dash.trendFlat':      '— no change from yesterday',
 
     // Killswitch banner
     'ks.bannerTitle':      'Killswitch Active — All Protection Disabled',
