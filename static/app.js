@@ -2408,7 +2408,7 @@ async function toggleKillswitch() {
   const btn = document.getElementById('ks-toggle-btn');
   const log = document.getElementById('ks-log');
   btn.disabled = true;
-  btn.textContent = newState ? 'Activating…' : 'Deactivating…';
+  btn.textContent = newState ? t('settings.ksActivating') : t('settings.ksDeactivating');
 
   // Show log
   log.classList.remove('hidden');
