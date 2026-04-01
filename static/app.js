@@ -2334,8 +2334,8 @@ function renderKillswitchUI(data) {
     icon.innerHTML = '<span class="text-xl">⚠️</span>';
 
     const since = data.activated_at ? new Date(data.activated_at + 'Z').toLocaleTimeString() : '?';
-    const by = data.activated_by === 'auto_failsafe' ? 'auto-failsafe' : 'manual';
-    subtitle.textContent = `Active since ${since} (${by})`;
+    const by = data.activated_by === 'auto_failsafe' ? t('settings.ksAutoFailsafe') : t('settings.ksManual');
+    subtitle.textContent = t('settings.ksActiveSince', { time: since, by });
     subtitle.classList.remove('text-slate-400', 'dark:text-slate-500');
     subtitle.classList.add('text-red-500', 'dark:text-red-400');
 
