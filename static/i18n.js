@@ -651,6 +651,9 @@ const TRANSLATIONS = {
     'cloud.latestEvents':  'Laatste gebeurtenissen',
     'cloud.eventsHint':    'Cloudopslag-gebeurtenissen (Dropbox, WeTransfer, Google Drive, etc.).',
     'cloud.noEvents':      'Nog geen cloud-gebeurtenissen vastgelegd.',
+    'cloud.thDesc':        'Beschrijving',
+    'cloud.thSize':        'Grootte',
+    'cloud.lowActivity':   'Weinig activiteit in deze periode. Dit is normaal tijdens rustige periodes.',
 
     // Privacy pagina
     'priv.dnsQueries':     'DNS-lookups',
