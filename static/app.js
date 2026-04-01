@@ -1391,7 +1391,7 @@ function renderBlockedDomainsList() {
           <div class="h-full rounded-full bg-red-500/70" style="width:${pct}%"></div>
         </div>
       </div>
-      <span class="text-[11px] tabular-nums text-red-500 dark:text-red-400 font-medium">${d.count.toLocaleString()}</span>
+      <span class="text-[11px] tabular-nums text-red-500 dark:text-red-400 font-medium">${formatNumber(d.count)}</span>
     </div>`;
   }).join('');
 }
