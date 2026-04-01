@@ -443,7 +443,7 @@ const TRANSLATIONS = {
     'topbar.checking':     'Controleren...',
     'topbar.refresh':      'Vernieuwen',
     'topbar.allOk':        'Alle systemen operationeel',
-    'topbar.issues':       '{n} probleem{s}',
+    'topbar.issues':       '{n} {problem}',
     'topbar.connError':    'Verbindingsfout',
 
     // Dashboard
