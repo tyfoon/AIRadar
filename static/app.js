@@ -767,10 +767,10 @@ async function refreshDashboard() {
     const topTxt = document.getElementById('status-text');
     if (ok) {
       dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
-      txt.textContent = 'All Systems OK';
+      txt.textContent = t('dash.allOk');
       txt.className = 'text-lg font-semibold text-emerald-600 dark:text-emerald-400';
       topDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
-      topTxt.textContent = 'All Systems Operational';
+      topTxt.textContent = t('topbar.allOk');
     } else {
       const issues = healthRes.summary.total - healthRes.summary.ok;
       dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
