@@ -1895,7 +1895,7 @@ async function toggleGlobalFilter(type, checkbox) {
   } catch(err) {
     console.error('toggleGlobalFilter:', err);
     checkbox.checked = !checkbox.checked;
-    alert('Failed to update filter: ' + err.message);
+    alert(t('rules.filterFailed', { msg: err.message }));
   } finally { checkbox.disabled = false; }
 }
 
