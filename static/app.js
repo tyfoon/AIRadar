@@ -81,7 +81,7 @@ function navigate(page) {
 
   // Update page title
   const titleEl = document.getElementById('page-title');
-  if (titleEl) titleEl.textContent = PAGE_TITLES[page];
+  if (titleEl) titleEl.textContent = t('page.' + page);
 
   // Highlight sidebar
   document.querySelectorAll('.nav-item').forEach(a => {
