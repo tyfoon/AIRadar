@@ -191,11 +191,24 @@ function navigate(page) {
 
 function initRouter() {
   window.addEventListener('hashchange', () => {
-    const page = location.hash.replace('#/', '') || 'dashboard';
-    navigate(page);
+    const raw = location.hash.replace('#/', '') || 'dashboard';
+    _routeFromHash(raw);
   });
   const initial = location.hash.replace('#/', '') || 'dashboard';
-  navigate(initial);
+  _routeFromHash(initial);
+}
+
+function _routeFromHash(raw) {
+  // Handle settings sub-tabs: settings/system, settings/about, settings/protection
+  if (raw.startsWith('settings')) {
+    const parts = raw.split('/');
+    navigate('settings');
+    const subTab = parts[1] || 'protection';
+    switchSettingsTab(subTab);
+    _initThemeSelect();
+  } else {
+    navigate(raw);
+  }
 }
 
 // ================================================================
