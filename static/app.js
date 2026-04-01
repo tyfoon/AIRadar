@@ -685,9 +685,10 @@ function makeDoughnutConfig() {
     type: 'doughnut',
     data: { labels: [], datasets: [{ data: [], backgroundColor: ACCENT_COLORS, borderWidth: 0 }] },
     options: {
-      cutout: '60%',
+      cutout: '65%',
       plugins: {
         legend: { display: false },
+        doughnutCenterText: { text: '', subText: '' },
       },
       responsive: true,
       maintainAspectRatio: true,
