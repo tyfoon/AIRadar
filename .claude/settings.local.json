@@ -163,7 +163,11 @@
       "Bash(node -c static/app.js)",
       "Bash(node -c static/i18n.js)",
       "Bash(node -c /Users/goswijnthijssen/AIRadar/static/i18n.js)",
-      "Bash(node -c /Users/goswijnthijssen/AIRadar/static/app.js)"
+      "Bash(node -c /Users/goswijnthijssen/AIRadar/static/app.js)",
+      "Bash(grep -l \"zeek\\\\|DPD\\\\|protocol\" /Users/goswijnthijssen/AIRadar/*.py)",
+      "Bash(find /Users/goswijnthijssen/AIRadar -name *.sh)",
+      "Bash(grep -l \"local.zeek\\\\|zeek.*script\\\\|zeek.*config\" /Users/goswijnthijssen/AIRadar/*.sh)",
+      "Bash(grep -r \"@load\\\\|__load__\\\\|dpd\\\\|DPD\" /Users/goswijnthijssen/AIRadar --include=*.py --include=*.zeek)"
     ]
   },
   "hooks": {

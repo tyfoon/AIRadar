@@ -44,7 +44,7 @@ VPN_PORTS: dict[tuple[str, int], str] = {
     ("udp", 500):   "IPsec/IKEv2",
     ("udp", 4500):  "IPsec NAT-T",
     ("tcp", 443):   None,          # Skip — too common (HTTPS); only flagged via heuristic below
-    ("udp", 443):   "QUIC VPN",    # UDP/443 can indicate QUIC-based VPN tunnels
+    ("udp", 443):   None,          # Skip — UDP/443 is normal QUIC/HTTP3 traffic; rely on DPD instead
     ("tcp", 1723):  "PPTP",
     ("udp", 1701):  "L2TP",
     ("tcp", 22):    None,           # SSH — skip, too common
