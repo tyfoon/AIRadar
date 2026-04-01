@@ -253,6 +253,13 @@ const TRANSLATIONS = {
     'dev.renameDevice':    'Rename device:',
     'dev.hop':             'hop',
     'dev.hops':            'hops',
+    'dev.searchPlaceholder': 'Search devices by name, IP, or type...',
+    'dev.filterAll':       'All',
+    'dev.hideInactive':    'Hide inactive devices',
+    'dev.editName':        'Edit device name',
+    'dev.saveName':        'Save',
+    'dev.cancelEdit':      'Cancel',
+    'dev.originalName':    'Original:',
 
     // Attacks (IPS) page
     'ips.attackPrevention':'Attack Prevention',
