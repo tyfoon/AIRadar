@@ -1437,11 +1437,13 @@ let _devAllEvents = [];
 let _devMatrix = {};
 let _devExpandedGroups = new Set();
 
-const CATEGORY_GROUPS = [
-  { key: 'ai',       label: 'AI Services',   icon: '🤖', color: 'indigo' },
-  { key: 'cloud',    label: 'Cloud Storage',  icon: '☁️',  color: 'sky' },
-  { key: 'tracking', label: 'Privacy / Trackers', icon: '🛡️', color: 'amber' },
-];
+function getCategoryGroups() {
+  return [
+    { key: 'ai',       label: t('cat.aiServices'),   icon: '🤖', color: 'indigo' },
+    { key: 'cloud',    label: t('cat.cloudStorage'),  icon: '☁️',  color: 'sky' },
+    { key: 'tracking', label: t('cat.privacyTrackers'), icon: '🛡️', color: 'amber' },
+  ];
+}
 
 function _categorizeService(svc, svcCategoryMap) {
   return svcCategoryMap[svc] || 'tracking';
