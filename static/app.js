@@ -698,8 +698,8 @@ function renderDashHealthServices() {
       ? 'bg-emerald-500'
       : 'bg-amber-500 animate-pulse';
     const statusText = isOk
-      ? '<span class="text-emerald-600 dark:text-emerald-400">OK</span>'
-      : '<span class="text-amber-600 dark:text-amber-400">Issue</span>';
+      ? `<span class="text-emerald-600 dark:text-emerald-400">${t('dash.ok')}</span>`
+      : `<span class="text-amber-600 dark:text-amber-400">${t('dash.issue')}</span>`;
     const respTime = s.response_ms > 0
       ? `<span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${s.response_ms.toFixed(0)}ms</span>`
       : '';
