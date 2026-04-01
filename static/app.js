@@ -1496,7 +1496,7 @@ function _showCellEvents(mac, service, category) {
   let osLine = '';
   if (dev?.os_name) {
     const osLabel = dev.os_version ? `${dev.os_name} ${dev.os_version}` : dev.os_name;
-    const distText = dev.network_distance != null ? ` · ${dev.network_distance} hop${dev.network_distance !== 1 ? 's' : ''}` : '';
+    const distText = dev.network_distance != null ? ` · ${dev.network_distance} ${dev.network_distance !== 1 ? t('dev.hops') : t('dev.hop')}` : '';
     const dcText = dev.device_class ? ` · ${dev.device_class}` : '';
     osLine = `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">🔍 p0f: ${osLabel}${dcText}${distText}</div>`;
   }
