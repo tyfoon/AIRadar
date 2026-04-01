@@ -138,12 +138,16 @@ const TRANSLATIONS = {
     'ai.uploadHint':       'Orange rows indicate possible file uploads (>100 KB outbound).',
     'ai.thTime':           'Time',
     'ai.thService':        'Service',
-    'ai.thType':           'Type',
+    'ai.thDesc':           'Description',
     'ai.thDevice':         'Device',
-    'ai.thBytes':          'Bytes',
+    'ai.thSize':           'Size',
     'ai.noEvents':         'No AI events captured yet.',
     'ai.upload':           'UPLOAD',
     'ai.uploadsLegend':    'Uploads',
+    'ai.lowActivity':      'Low activity detected in this time period. This is normal during quiet periods.',
+    'ev.connection':       'Connection detected',
+    'ev.upload':           'File upload ({size})',
+    'ev.dnsLookup':        'DNS lookup',
 
     // AI Adoption
     'adopt.overview':      'AI Adoption Overview',
