@@ -28,6 +28,9 @@ const TRANSLATIONS = {
     'nav.settings':        'Settings',
     'nav.toggleTheme':     'Toggle Theme',
     'nav.collapse':        'Collapse',
+    'nav.groupMonitor':    'Monitor',
+    'nav.groupProtect':    'Protect',
+    'nav.groupManage':     'Manage',
 
     // Mobile nav
     'mob.home':            'Home',
