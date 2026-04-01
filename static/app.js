@@ -186,6 +186,9 @@ function updateNavBadges() {
       settingsBadge.classList.add('hidden');
     }
   }
+
+  // Mobile nav badges
+  _updateMobileBadges();
 }
 
 // ================================================================
