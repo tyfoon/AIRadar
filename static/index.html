@@ -161,22 +161,22 @@
       <!-- Metric cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer" onclick="toggleDashHealthDetail()">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium"><span data-i18n="dash.system">System</span> <span class="normal-case text-slate-400 dark:text-slate-500">▾</span></p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium"><span data-i18n="dash.system">System</span> <span class="normal-case text-slate-400 dark:text-slate-500">▾</span></p>
           <div class="flex items-center gap-2 mt-2">
             <span id="dash-health-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
             <p id="dash-health" class="text-lg font-semibold">Checking...</p>
           </div>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dash.devices">Devices</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.devices">Devices</p>
           <p id="dash-devices" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dash.eventsToday">Events Today</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.eventsToday">Events Today</p>
           <p id="dash-events-today" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dash.dnsBlocked">Threats Blocked</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.dnsBlocked">Threats Blocked</p>
           <p id="dash-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500">0</p>
         </div>
       </div>
@@ -255,15 +255,15 @@
       <!-- Stats -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ai.events">AI Events</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.events">AI Events</p>
           <p id="ai-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ai.services">Services</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.services">Services</p>
           <p id="ai-stat-services" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ai.devices">Devices</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.devices">Devices</p>
           <p id="ai-stat-sources" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
@@ -274,7 +274,7 @@
 
       <!-- Filter bar -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ai.filters">Filters</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.filters">Filters</span>
         <select id="ai-filter-service"><option value="" data-i18n="ai.allServices">All services</option></select>
         <select id="ai-filter-device"><option value="" data-i18n="ai.allDevices">All devices</option></select>
         <select id="ai-filter-period">
@@ -391,15 +391,15 @@
 
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="cloud.events">Cloud Events</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="cloud.events">Cloud Events</p>
           <p id="cloud-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="cloud.services">Services</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="cloud.services">Services</p>
           <p id="cloud-stat-services" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="cloud.devices">Devices</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="cloud.devices">Devices</p>
           <p id="cloud-stat-sources" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
@@ -410,7 +410,7 @@
 
       <!-- Filter bar -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="cloud.filters">Filters</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="cloud.filters">Filters</span>
         <select id="cloud-filter-service"><option value="" data-i18n="cloud.allServices">All services</option></select>
         <select id="cloud-filter-device"><option value="" data-i18n="cloud.allDevices">All devices</option></select>
         <select id="cloud-filter-period">
@@ -461,7 +461,7 @@
       <!-- Stats row -->
       <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="priv.dnsQueries">DNS Lookups</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.dnsQueries">DNS Lookups</p>
           <p id="priv-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
           <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="priv.viaAdguard">via AdGuard Home</p>
         </div>
@@ -485,7 +485,7 @@
           <p class="text-[10px] mt-1"><span id="vpn-stat-label" class="text-emerald-500 dark:text-emerald-400" data-i18n="priv.noTunnels">No tunnels detected</span></p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="priv.adguard">AdGuard</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.adguard">AdGuard</p>
           <p id="priv-status" class="text-base font-semibold mt-2">--</p>
         </div>
       </div>
@@ -522,7 +522,7 @@
 
       <!-- Filter bar -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="priv.filters">Filters</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.filters">Filters</span>
         <select id="priv-filter-service"><option value="" data-i18n="priv.allTrackers">All trackers</option></select>
         <select id="priv-filter-device"><option value="" data-i18n="priv.allDevices">All devices</option></select>
         <select id="priv-filter-period">
@@ -576,15 +576,15 @@
       <!-- Summary row -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dev.totalDevices">Total Devices</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dev.totalDevices">Total Devices</p>
           <p id="dev-stat-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dev.withViolations">With Violations</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dev.withViolations">With Violations</p>
           <p id="dev-stat-violators" class="text-2xl font-bold mt-2 tabular-nums text-amber-500 dark:text-amber-400">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dev.totalEvents">Total Events</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dev.totalEvents">Total Events</p>
           <p id="dev-stat-events" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-orange-200 dark:border-orange-700/40 rounded-xl p-5 card-hover">
@@ -595,7 +595,7 @@
 
       <!-- Filter -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="dev.period">Period</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dev.period">Period</span>
         <select id="dev-filter-period">
           <option value="" data-i18n="dev.allTime">All time</option>
           <option value="60" data-i18n="dev.lastHour">Last hour</option>
@@ -690,21 +690,21 @@
       <!-- Stats Cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ips.threatsBlocked">Threats Blocked</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.threatsBlocked">Threats Blocked</p>
           <p id="ips-stat-blocked" class="text-2xl font-bold mt-2 tabular-nums text-emerald-500 dark:text-emerald-400">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ips.activeDecisions">Active Decisions</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.activeDecisions">Active Decisions</p>
           <p id="ips-stat-decisions" class="text-2xl font-bold mt-2 tabular-nums">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ips.crowdsecEngine">CrowdSec Engine</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.crowdsecEngine">CrowdSec Engine</p>
           <p id="ips-stat-engine" class="text-2xl font-bold mt-2">
             <span id="ips-engine-status" class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 dark:text-slate-500"><span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> <span data-i18n="ips.offline">Offline</span></span>
           </p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium" data-i18n="ips.bouncer">Bouncer</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.bouncer">Bouncer</p>
           <p id="ips-stat-bouncer" class="text-2xl font-bold mt-2">
             <span id="ips-bouncer-status" class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 dark:text-slate-500"><span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> <span data-i18n="ips.notConfigured">Not configured</span></span>
           </p>
