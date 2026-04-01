@@ -637,7 +637,7 @@ function updateCategoryCharts(events, timeline, doughnutId, timelineId) {
     const ul = timeline.map(p => p.uploads || 0);
     if (ul.some(v => v > 0)) {
       ds.push({
-        label: 'Uploads', data: ul, type: 'line', borderColor: '#ef4444', backgroundColor: '#ef4444',
+        label: t('ai.uploadsLegend'), data: ul, type: 'line', borderColor: '#ef4444', backgroundColor: '#ef4444',
         pointBackgroundColor: '#ef4444', pointRadius: ul.map(v => v > 0 ? 5 : 0), pointStyle: 'circle',
         borderWidth: 0, showLine: false, yAxisID: 'y2', _isUpload: true,
       });
