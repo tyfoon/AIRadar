@@ -1499,7 +1499,15 @@ function _showCellEvents(mac, service, category) {
   const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
   const catGroup = category ? CATEGORY_GROUPS.find(g => g.key === category) : null;
   const svcLabel = service ? svcLogoName(service) : catGroup ? `${catGroup.icon} ${catGroup.label}` : 'All Services';
-  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>`;
+  // OS fingerprint info line
+  let osLine = '';
+  if (dev?.os_name) {
+    const osLabel = dev.os_version ? `${dev.os_name} ${dev.os_version}` : dev.os_name;
+    const distText = dev.network_distance != null ? ` · ${dev.network_distance} hop${dev.network_distance !== 1 ? 's' : ''}` : '';
+    const dcText = dev.device_class ? ` · ${dev.device_class}` : '';
+    osLine = `<div class="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">🔍 p0f: ${osLabel}${dcText}${distText}</div>`;
+  }
+  title.innerHTML = `${_detectDeviceType(dev).icon} ${dn} — ${svcLabel} <span class="text-slate-400 dark:text-slate-500 font-normal">(${events.length} events)</span>${osLine}`;
 
   tbody.innerHTML = events.slice(0, 100).map(e => {
     const up = e.possible_upload;
