@@ -716,11 +716,11 @@ function renderDashHealthServices() {
       </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">${s.details || ''}</p>
       ${(!isOk && s.service === 'Zeek (Packet Capture)')
-        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">⚡ Restart Zeek</button>` : ''}
+        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dash.restartZeek')}</button>` : ''}
       ${(!isOk && s.service === 'Zeek Tailer')
-        ? `<button onclick="restartService('tailer', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">⚡ Restart Tailer</button>` : ''}
+        ? `<button onclick="restartService('tailer', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dash.restartTailer')}</button>` : ''}
       ${(!isOk && s.service.startsWith('Zeek ') && s.service.endsWith('.log'))
-        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors">⚡ Restart Zeek</button>` : ''}
+        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors">${t('dash.restartZeek')}</button>` : ''}
     </div>`;
   }).join('');
 }
