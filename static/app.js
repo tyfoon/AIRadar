@@ -1726,23 +1726,39 @@ async function refreshPrivacy() {
   document.getElementById('priv-blocked').textContent = formatNumber(ag.blocked_queries || 0);
   document.getElementById('priv-pct').textContent = (ag.block_percentage || 0) + '%';
 
-  const statusEl = document.getElementById('priv-status');
   const unavail = document.getElementById('priv-unavailable');
   const chartC = document.getElementById('priv-chart-container');
 
   if (ag.status === 'ok') {
-    statusEl.textContent = '● ' + t('priv.connected');
-    statusEl.className = 'text-base font-semibold mt-2 text-emerald-600 dark:text-emerald-400';
     if (unavail) unavail.classList.add('hidden');
     if (chartC) chartC.classList.remove('hidden');
 
-    const topD = (ag.top_blocked || []).slice(0, 10);
     _cachedTopBlocked = ag.top_blocked || [];
+
+    // Aggregate blocked domains by company+category for the bar chart
+    const aggregated = groupBlockedByCompany(_cachedTopBlocked).slice(0, 10);
+    _cachedAggregatedBlocked = aggregated;
 
     const bChart = getOrCreateChart('priv-chart', makeBarConfig());
     if (bChart) {
-      bChart.data.labels = topD.map(d => d.domain.length > 30 ? d.domain.slice(0, 27) + '...' : d.domain);
-      bChart.data.datasets[0].data = topD.map(d => d.count);
+      bChart.data.labels = aggregated.map(d => d.label.length > 35 ? d.label.slice(0, 32) + '...' : d.label);
+      bChart.data.datasets[0].data = aggregated.map(d => d.count);
+      // Store domain lists for tooltip
+      bChart._domainMap = aggregated.map(d => d.domains);
+      bChart.options.plugins.tooltip = {
+        callbacks: {
+          afterBody: function(items) {
+            const idx = items[0]?.dataIndex;
+            const domains = bChart._domainMap?.[idx];
+            if (domains && domains.length > 1) {
+              return domains.slice(0, 5).map(d => '  ' + d).join('\n') +
+                (domains.length > 5 ? `\n  +${domains.length - 5} more` : '');
+            }
+            if (domains?.length === 1) return '  ' + domains[0];
+            return '';
+          }
+        }
+      };
       bChart.update();
     }
 
@@ -1750,8 +1766,6 @@ async function refreshPrivacy() {
     const panel = document.getElementById('blocked-domains-panel');
     if (panel && !panel.classList.contains('hidden')) renderBlockedDomainsList();
   } else {
-    statusEl.textContent = '● ' + t('priv.offline');
-    statusEl.className = 'text-base font-semibold mt-2 text-red-500 dark:text-red-400';
     if (chartC) chartC.classList.add('hidden');
     if (unavail) unavail.classList.remove('hidden');
   }
@@ -1777,7 +1791,7 @@ async function refreshPrivacy() {
     renderHtmlLegend('tracker-chart-legend', tChart, trackerKeys);
   }
 
-  // Tracker table
+  // Tracker table — with company badges, category subtitles, device names, translated types
   const tbody = document.getElementById('tracker-table-body');
   const recent = tk.recent || [];
   if (tbody) {
@@ -1785,11 +1799,27 @@ async function refreshPrivacy() {
       tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">${t('priv.noTrackers')}</td></tr>`;
     } else {
       tbody.innerHTML = recent.map(e => {
+        // Resolve tracker company from service key or domain (if available)
+        const trackerInfo = resolveTracker(e.service) || resolveTracker(e.domain || '');
+        const trackerBadge = badge(e.service);
+        const categoryLine = trackerInfo
+          ? `<div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${trackerInfo.category}</div>`
+          : '';
+
+        // Resolve source IP to device name
+        const srcName = deviceName(e.source_ip);
+        const srcDisplay = srcName !== e.source_ip
+          ? `<span class="text-slate-700 dark:text-slate-200">${srcName}</span><div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">${e.source_ip}</div>`
+          : `<span class="font-mono">${e.source_ip}</span>`;
+
+        // Translate detection type
+        const typeLabel = e.detection_type === 'sni_hello' ? t('priv.dnsQuery') : e.detection_type;
+
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
-          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
-          <td class="py-3 px-4">${badge(e.service)}</td>
-          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
-          <td class="py-3 px-4 text-xs font-mono text-slate-500 dark:text-slate-400">${e.source_ip}</td>
+          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
+          <td class="py-3 px-4"><div>${trackerBadge}</div>${categoryLine}</td>
+          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${typeLabel}</td>
+          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${srcDisplay}</td>
         </tr>`;
       }).join('');
     }
