@@ -1299,7 +1299,7 @@ function renderVpnAlerts(alerts) {
   statCount.textContent = count;
 
   if (count === 0) {
-    statLabel.textContent = 'No tunnels detected';
+    statLabel.textContent = t('priv.noTunnels');
     statLabel.className = 'text-emerald-500 dark:text-emerald-400';
     statCard.className = statCard.className.replace(/border-orange-\S+/g, '').replace(/dark:border-orange-\S+/g, '');
     if (!statCard.className.includes('border-slate-200')) statCard.className += ' border-slate-200 dark:border-white/[0.05]';
