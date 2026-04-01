@@ -602,7 +602,7 @@ function renderEventsTable(events, tbodyId, emptyId) {
       <td class="py-3 px-4">${badge(e.ai_service)}</td>
       <td class="py-3 px-4 font-mono text-xs text-slate-600 dark:text-slate-300">${e.detection_type}${ub}</td>
       <td class="py-3 px-4 text-xs">${dc}</td>
-      <td class="py-2 text-right tabular-nums text-xs">${formatNumber(e.bytes_transferred)}</td>
+      <td class="py-3 px-4 text-right tabular-nums text-xs">${formatNumber(e.bytes_transferred)}</td>
     </tr>`;
   }).join('');
 }
