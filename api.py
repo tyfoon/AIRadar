@@ -644,7 +644,6 @@ Upload tijdlijn:
     }
 
 
-@app.post("/api/devices", response_model=DeviceRead, status_code=201)
 def _normalize_mac(mac: str) -> str:
     """Normalize MAC to consistent lowercase format without leading zeros.
     e.g. 'A2:C0:6D:40:07:F7' → 'a2:c0:6d:40:7:f7'
@@ -658,6 +657,7 @@ def _normalize_mac(mac: str) -> str:
         return mac.lower()
 
 
+@app.post("/api/devices", response_model=DeviceRead, status_code=201)
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     mac = _normalize_mac(payload.mac_address)

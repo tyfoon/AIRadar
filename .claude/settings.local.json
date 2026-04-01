@@ -148,7 +148,8 @@
       "Bash(python3 -c \"import google.generativeai; print\\(''OK''\\)\")",
       "Bash(tail -3 python3 -c \"from google import genai; print\\(''''OK''''\\)\")",
       "Bash(curl -s \"http://localhost:8000/api/devices/a2:c0:6d:40:7:f7/report\")",
-      "Bash(curl -v http://localhost:8000/api/devices)"
+      "Bash(curl -v http://localhost:8000/api/devices)",
+      "Bash(curl -s -X POST http://localhost:8000/api/devices -H \"Content-Type: application/json\" -d '{\"\"ip\"\": \"\"192.168.1.155\"\", \"\"mac_address\"\": \"\"a2:c0:6d:40:07:f7\"\"}')"
     ]
   },
   "hooks": {
