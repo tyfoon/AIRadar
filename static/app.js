@@ -2588,7 +2588,7 @@ async function restartService(service, btn) {
 // ================================================================
 function updateRefreshTimestamp() {
   const el = document.getElementById('last-refresh');
-  if (el) el.textContent = new Date().toLocaleTimeString();
+  if (el) el.textContent = t('topbar.lastUpdated') + ' ' + new Date().toLocaleTimeString();
 }
 
 async function manualRefresh() {
