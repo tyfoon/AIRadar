@@ -1933,7 +1933,7 @@ function _updateIpsBanner(data) {
     banner.classList.add('border-emerald-300', 'dark:border-emerald-700/40');
     if (shield) shield.className = 'w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-2xl';
   } else if (data.enabled) {
-    statusText.textContent = 'Enabled — CrowdSec engine not reachable';
+    statusText.textContent = t('ips.enabledNoEngine');
     statusText.className = 'text-sm text-amber-500 dark:text-amber-400';
     banner.classList.remove('border-slate-200', 'dark:border-white/[0.05]');
     banner.classList.add('border-amber-300', 'dark:border-amber-700/40');
