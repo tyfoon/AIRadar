@@ -825,7 +825,7 @@ async function refreshDashboard() {
   const alarmsBody = document.getElementById('dash-alarms-body');
   if (alarmsBody) {
     if (alarms.length === 0) {
-      alarmsBody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">No alarms — network is clean.</td></tr>';
+      alarmsBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">${t('dash.noAlarms')}</td></tr>`;
     } else {
       alarmsBody.innerHTML = alarms.map(e => {
         const isUpload = e.possible_upload;
