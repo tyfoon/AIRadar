@@ -453,6 +453,7 @@ const TRANSLATIONS = {
     'topbar.allOk':        'Alle systemen operationeel',
     'topbar.issues':       '{n} {problem}',
     'topbar.connError':    'Verbindingsfout',
+    'topbar.lastUpdated':  'Laatst bijgewerkt:',
 
     // Dashboard
     'dash.system':         'Systeem',
