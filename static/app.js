@@ -836,10 +836,10 @@ async function refreshDashboard() {
           ? t('dash.uploadDetected', { kb: (e.bytes_transferred / 1024).toFixed(0) })
           : t('dash.highVolume', { kb: (e.bytes_transferred / 1024).toFixed(0) });
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-          <td class="py-2.5 pr-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
-          <td class="py-2.5 pr-4">${severity}</td>
-          <td class="py-2.5 pr-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
-          <td class="py-2.5 pr-4">${badge(e.ai_service)}</td>
+          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
+          <td class="py-3 px-4">${severity}</td>
+          <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
+          <td class="py-3 px-4">${badge(e.ai_service)}</td>
           <td class="py-2.5 text-xs">${_detectDeviceType(_deviceByIp(e.source_ip)).icon} ${deviceName(e.source_ip)}</td>
         </tr>`;
       }).join('');
