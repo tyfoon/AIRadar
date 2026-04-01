@@ -3573,6 +3573,44 @@ async function runHealthCheck() {
 // ================================================================
 // SERVICE RESTART
 // ================================================================
+// ================================================================
+// SETTINGS TABS
+// ================================================================
+let _currentSettingsTab = 'protection';
+
+function switchSettingsTab(tab) {
+  const tabs = ['protection', 'system', 'about'];
+  if (!tabs.includes(tab)) tab = 'protection';
+  _currentSettingsTab = tab;
+
+  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+
+  tabs.forEach(t => {
+    const div = document.getElementById('settings-tab-' + t);
+    const btn = document.getElementById('settings-tab-btn-' + t);
+    if (div) div.classList.toggle('hidden', t !== tab);
+    if (btn) btn.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${t === tab ? activeClass : inactiveClass}`;
+  });
+
+  // Update URL hash without triggering full navigate
+  const newHash = tab === 'protection' ? '#/settings' : '#/settings/' + tab;
+  if (location.hash !== newHash) {
+    history.replaceState(null, '', newHash);
+  }
+}
+
+function setThemeFromSelect(value) {
+  const wantDark = value === 'dark';
+  const currentlyDark = isDark();
+  if (wantDark !== currentlyDark) toggleTheme();
+}
+
+function _initThemeSelect() {
+  const sel = document.getElementById('theme-select');
+  if (sel) sel.value = isDark() ? 'dark' : 'light';
+}
+
 async function restartService(service, btn) {
   const origText = btn.textContent;
   btn.disabled = true;
