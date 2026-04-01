@@ -1245,10 +1245,10 @@ async function refreshPrivacy() {
     } else {
       tbody.innerHTML = recent.map(e => {
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
-          <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
-          <td class="py-2 px-3">${badge(e.service)}</td>
-          <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
-          <td class="py-2 px-3 text-xs font-mono text-slate-500 dark:text-slate-400">${e.source_ip}</td>
+          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e.timestamp)}</td>
+          <td class="py-3 px-4">${badge(e.service)}</td>
+          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${e.detection_type}</td>
+          <td class="py-3 px-4 text-xs font-mono text-slate-500 dark:text-slate-400">${e.source_ip}</td>
         </tr>`;
       }).join('');
     }
@@ -1344,20 +1344,20 @@ function renderVpnAlerts(alerts) {
               ? (a.total_bytes / 1048576).toFixed(1) + ' MB'
               : (a.total_bytes / 1024).toFixed(0) + ' KB';
             return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-orange-50/50 dark:hover:bg-orange-900/10">
-              <td class="py-2 px-3">
+              <td class="py-3 px-4">
                 <div class="font-medium text-xs">${name}</div>
                 ${dtTag}
                 <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.source_ip}</span>
               </td>
-              <td class="py-2 px-3">
+              <td class="py-3 px-4">
                 ${a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active'
                   ? badge(a.vpn_service)
                   : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`
                 }
               </td>
-              <td class="py-2 px-3 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
-              <td class="py-2 px-3 text-xs tabular-nums">${a.hits}</td>
-              <td class="py-2 px-3 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(a.last_seen)}</td>
+              <td class="py-3 px-4 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
+              <td class="py-3 px-4 text-xs tabular-nums">${a.hits}</td>
+              <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(a.last_seen)}</td>
             </tr>`;
           }).join('')}
         </tbody>
