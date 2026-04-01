@@ -504,21 +504,19 @@
     <section id="page-privacy" class="page space-y-6">
 
       <!-- Stats row -->
-      <div class="stat-grid grid grid-cols-2 lg:grid-cols-6 gap-4">
+      <div class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.dnsQueries">DNS Lookups</p>
           <p id="priv-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
-          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="priv.viaAdguard">via AdGuard Home</p>
         </div>
         <div class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover cursor-pointer" onclick="toggleBlockedDomains()">
           <p class="text-xs text-red-500 dark:text-red-400 font-medium"><span data-i18n="priv.dnsBlocked">Threats Blocked</span> <span class="text-slate-400 dark:text-slate-500">▾</span></p>
           <p id="priv-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
-          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1"><span id="priv-pct" class="text-red-500 dark:text-red-400">0%</span> <span data-i18n="priv.blockRate">block rate</span></p>
+          <p id="priv-block-subtitle" class="text-[10px] text-slate-400 dark:text-slate-500 mt-1"><span id="priv-pct" class="text-red-500 dark:text-red-400">0%</span> <span data-i18n="priv.ofAllTraffic">of all traffic</span></p>
         </div>
         <div class="bg-white dark:bg-amber-900/10 border border-slate-200 dark:border-amber-700/30 rounded-xl p-5 card-hover cursor-pointer" onclick="toggleTrackerDetails()">
           <p class="text-xs text-amber-500 dark:text-amber-400 font-medium"><span data-i18n="priv.trackers">Trackers Found</span> <span class="text-slate-400 dark:text-slate-500">▾</span></p>
           <p id="tracker-total" class="text-2xl font-bold mt-2 tabular-nums text-amber-500 dark:text-amber-400">0</p>
-          <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="priv.viaZeek"></p>
         </div>
         <div class="bg-white dark:bg-purple-900/10 border border-slate-200 dark:border-purple-700/30 rounded-xl p-5 card-hover">
           <p class="text-xs text-purple-500 dark:text-purple-400 font-medium" data-i18n="priv.uniqueTrackers">Tracker Companies</p>
@@ -528,10 +526,6 @@
           <p class="text-xs text-orange-500 dark:text-orange-400 font-medium"><span data-i18n="priv.vpnTunnels">VPN Connections</span> <span class="text-slate-400 dark:text-slate-500">▾</span></p>
           <p id="vpn-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
           <p class="text-[10px] mt-1"><span id="vpn-stat-label" class="text-emerald-500 dark:text-emerald-400" data-i18n="priv.noTunnels">No tunnels detected</span></p>
-        </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.adguard">AdGuard</p>
-          <p id="priv-status" class="text-base font-semibold mt-2">--</p>
         </div>
       </div>
 
