@@ -602,13 +602,13 @@ Upload tijdlijn:
 
     # 5. Call Gemini
     system_prompt = (
-        "Je bent een professionele netwerkanalist. Hier is de netwerkdata "
-        "(DNS bezoeken en AI/Cloud uploads) van één apparaat over de afgelopen 24 uur. "
-        "Schrijf een vloeiend, begrijpelijk verslag in het Nederlands. "
-        "Geef een chronologische inschatting van de dag (bijv. ochtend, middag), "
-        "noem actieve en inactieve periodes, en sluit af met het kopje "
-        "'Opvallende gebeurtenissen' waarin je 3 specifieke zaken uitlicht "
-        "(zoals uploads of opvallend surfgedrag). Gebruik markdown."
+        "You are a professional network analyst. Below is the network data "
+        "(DNS queries and AI/Cloud uploads) from a single device over the past 24 hours. "
+        "Write a clear, easy-to-read report in English. "
+        "Provide a chronological overview of the day (e.g. morning, afternoon, evening), "
+        "mention active and inactive periods, and conclude with a section titled "
+        "'Notable Events' highlighting 3 specific observations "
+        "(such as uploads, unusual browsing patterns, or noteworthy services). Use markdown."
     )
 
     try:
