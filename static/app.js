@@ -1728,7 +1728,7 @@ function _renderDeviceMatrix() {
       ? `<span class="text-xs text-slate-300 dark:text-slate-600">—</span>`
       : `<span class="cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</span>`;
 
-    const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="Generate AI Network Recap">&#10024; AI</button>` : '';
+    const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
 
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${rowOpacity}">
       <td class="py-2.5 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
