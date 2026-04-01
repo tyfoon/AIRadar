@@ -653,7 +653,7 @@ def _normalize_mac(mac: str) -> str:
         return mac
     try:
         parts = mac.lower().replace("-", ":").split(":")
-        return ":".join(str(int(p, 16)) if len(p) <= 2 else p for p in parts)
+        return ":".join(format(int(p, 16), "x") for p in parts)
     except (ValueError, AttributeError):
         return mac.lower()
 
