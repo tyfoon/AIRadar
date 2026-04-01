@@ -2071,7 +2071,7 @@ function renderServiceCard(svc) {
     ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${svc.hit_count} events">● ${t('svc.active')} (${formatNumber(svc.hit_count)})</span>`
     : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="No traffic detected">○ ${t('svc.preventive')}</span>`;
 
-  const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : 'No traffic detected';
+  const lastSeenText = svc.seen && svc.last_seen ? `Last: ${fmtTime(svc.last_seen)}` : t('svc.noTraffic');
 
   return `
     <div class="svc-card bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ${blockedClass}">
