@@ -1939,7 +1939,7 @@ function _updateIpsBanner(data) {
     banner.classList.add('border-amber-300', 'dark:border-amber-700/40');
     if (shield) shield.className = 'w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-2xl';
   } else {
-    statusText.textContent = 'Disabled — network is not protected';
+    statusText.textContent = t('ips.disabled');
     statusText.className = 'text-sm text-slate-400 dark:text-slate-500';
     banner.classList.remove('border-emerald-300', 'dark:border-emerald-700/40', 'border-amber-300', 'dark:border-amber-700/40');
     banner.classList.add('border-slate-200', 'dark:border-white/[0.05]');
