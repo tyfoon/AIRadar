@@ -2111,16 +2111,73 @@ window._toggleDevGroup = _toggleDevGroup;
 window._showCellEvents = _showCellEvents;
 
 function _renderDeviceMatrix() {
+  if (!_devMatrix.deviceMacs) return;
   const matrix = _devMatrix.matrix;
   const svcCategoryMap = _devMatrix.svcCategoryMap;
   const allServices = _devMatrix.allServices;
-  const deviceMacs = _devMatrix.deviceMacs;
+  const allDeviceMacs = _devMatrix.deviceMacs;
   const globalMax = _devMatrix.globalMax;
+
+  // --- Build device type chip list from actual data ---
+  const typeCountMap = {}; // type → count
+  allDeviceMacs.forEach(mac => {
+    const dev = deviceMap[mac] || null;
+    const dt = _detectDeviceType(dev);
+    typeCountMap[dt.type] = (typeCountMap[dt.type] || 0) + 1;
+  });
+  const chipContainer = document.getElementById('dev-type-chips');
+  if (chipContainer) {
+    const types = Object.keys(typeCountMap).sort();
+    const allActive = _devTypeFilter === 'all';
+    let chips = `<button onclick="setDevTypeFilter('all')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${allActive ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-600' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]'}">${t('dev.filterAll')} <span class="ml-0.5 text-[10px] opacity-60">${allDeviceMacs.length}</span></button>`;
+    types.forEach(typ => {
+      const active = _devTypeFilter === typ;
+      const cls = active
+        ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-600'
+        : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]';
+      chips += `<button onclick="setDevTypeFilter('${typ.replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${cls}">${typ} <span class="ml-0.5 text-[10px] opacity-60">${typeCountMap[typ]}</span></button>`;
+    });
+    chipContainer.innerHTML = chips;
+  }
+
+  // --- Filter devices ---
+  let deviceMacs = allDeviceMacs;
+
+  // Type filter
+  if (_devTypeFilter !== 'all') {
+    deviceMacs = deviceMacs.filter(mac => {
+      const dev = deviceMap[mac] || null;
+      const dt = _detectDeviceType(dev);
+      return dt.type === _devTypeFilter;
+    });
+  }
+
+  // Search filter
+  if (_devSearchQuery) {
+    deviceMacs = deviceMacs.filter(mac => {
+      const dev = deviceMap[mac] || null;
+      const name = _bestDeviceName(mac, dev).toLowerCase();
+      const hostname = (dev?.hostname || '').toLowerCase();
+      const ip = dev ? _latestIp(dev).toLowerCase() : mac.replace('_ip_', '');
+      const dt = _detectDeviceType(dev);
+      const vendor = (dev?.vendor || '').toLowerCase();
+      return name.includes(_devSearchQuery) || hostname.includes(_devSearchQuery) ||
+             ip.includes(_devSearchQuery) || dt.type.toLowerCase().includes(_devSearchQuery) ||
+             vendor.includes(_devSearchQuery);
+    });
+  }
+
+  // Hide inactive
+  if (_devHideInactive) {
+    deviceMacs = deviceMacs.filter(mac => {
+      const row = matrix[mac] || {};
+      return Object.values(row).reduce((s, v) => s + v.count, 0) > 0;
+    });
+  }
 
   // Group services by category
   const groups = getCategoryGroups().map(g => {
     const svcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === g.key).sort();
-    // Compute group total per device
     return { ...g, services: svcs };
   }).filter(g => g.services.length > 0);
 
@@ -2128,7 +2185,7 @@ function _renderDeviceMatrix() {
   const thead = document.getElementById('devices-matrix-head');
   const expanded = _devExpandedGroups;
 
-  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[180px]">${t('dev.device')}</th>
+  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[220px]">${t('dev.device')}</th>
     <th class="py-3 px-3 font-medium text-right min-w-[60px]">${t('dev.total')}</th>`;
 
   groups.forEach(g => {
@@ -2163,13 +2220,18 @@ function _renderDeviceMatrix() {
     const total = Object.values(row).reduce((s, v) => s + v.count, 0);
     const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
     const dev = deviceMap[mac] || null;
-    const dn = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+    const bestName = _bestDeviceName(mac, dev);
+    const origName = _originalDeviceName(dev);
+    const friendlyName = _getFriendlyName(mac);
+    const hasFriendly = !!friendlyName || (dev?.display_name && dev.display_name !== origName);
     const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
     const dtTag = deviceTypeTag(dev);
 
+    // Truncated original name for display
+    const origTruncated = origName.length > 35 ? origName.slice(0, 33) + '...' : origName;
+
     let cells = '';
     groups.forEach(g => {
-      // Group total cell
       const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
       const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
       cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer" onclick="_showCellEvents('${mac}', null, '${g.key}')">
@@ -2191,19 +2253,31 @@ function _renderDeviceMatrix() {
       : '';
 
     const isQuiet = total === 0;
-    const rowOpacity = isQuiet ? 'opacity-60' : '';
+    const rowOpacity = isQuiet ? 'opacity-50' : '';
     const totalDisplay = isQuiet
       ? `<span class="text-xs text-slate-300 dark:text-slate-600">—</span>`
       : `<span class="cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</span>`;
 
     const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
 
-    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${rowOpacity}">
+    // Edit (pencil) button — appears on hover via group utility
+    const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="opacity-0 group-hover/devrow:opacity-100 ml-1 text-slate-400 hover:text-indigo-500 transition-all" title="${t('dev.editName')}"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg></button>`;
+
+    // Name display: friendly name as primary, original name as secondary
+    const nameEscaped = bestName.replace(/"/g, '&quot;');
+    const origTitle = origName.replace(/"/g, '&quot;');
+    const secondaryName = hasFriendly && origName
+      ? `<p class="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[200px]" title="${origTitle}">${origTruncated}</p>`
+      : '';
+
+    return `<tr class="group/devrow border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${rowOpacity}">
       <td class="py-3 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
-        <div class="flex items-center gap-1">
-          <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium" data-mac="${dev ? dev.mac_address : ''}" title="${dn}">${dn}</span>
+        <div class="flex items-center gap-1" id="dev-name-row-${mac.replace(/[^a-zA-Z0-9]/g, '_')}">
+          <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium truncate max-w-[180px]" data-mac="${dev ? dev.mac_address : ''}" title="${nameEscaped}">${bestName}</span>
+          ${editBtn}
           ${reportBtn}
         </div>
+        ${secondaryName}
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
