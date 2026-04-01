@@ -447,9 +447,13 @@ const TRANSLATIONS = {
     'settings.legalIntro': 'AI-Radar integrates the following independent open-source components via their official APIs. No source code of these projects has been modified or redistributed.',
     'settings.legalFooter':'All trademarks and registered trademarks are the property of their respective owners. This software is provided "as is" without warranty of any kind.',
 
-    // Settings — Language
+    // Settings — Preferences
     'settings.language':   'Language',
     'settings.langDesc':   'Choose your preferred language',
+    'settings.theme':      'Theme',
+    'settings.themeDesc':  'Choose your preferred appearance',
+    'settings.themeDark':  'Dark',
+    'settings.themeLight': 'Light',
 
     // Modal
     'modal.customDuration':'Custom Block Duration',
