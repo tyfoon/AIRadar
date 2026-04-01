@@ -686,7 +686,7 @@ function toggleDashHealthDetail() {
 function renderDashHealthServices() {
   const container = document.getElementById('dash-health-services');
   if (!container || !_lastHealthData?.services) {
-    if (container) container.innerHTML = '<p class="col-span-full text-center text-sm text-slate-400 py-4">No health data yet. Wait for next refresh.</p>';
+    if (container) container.innerHTML = `<p class="col-span-full text-center text-sm text-slate-400 py-4">${t('dash.noHealthData')}</p>`;
     return;
   }
   container.innerHTML = _lastHealthData.services.map(s => {
