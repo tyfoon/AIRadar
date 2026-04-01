@@ -155,7 +155,11 @@
       "Bash(route get:*)",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\(''p0f_tailer.py''\\).read\\(\\)\\); print\\(''p0f_tailer.py: OK''\\)\")",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\(''zeek_tailer.py''\\).read\\(\\)\\); print\\(''zeek_tailer.py: OK''\\)\")",
-      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''api.py''\\).read\\(\\)\\); print\\(''api.py: OK''\\)\")"
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''api.py''\\).read\\(\\)\\); print\\(''api.py: OK''\\)\")",
+      "Bash(python3 -c \"import json,sys; devs=json.load\\(sys.stdin\\); [print\\(f''''{d[mac_address]:30s} os={d.get\\(os_name,-\\):10s} class={d.get\\(device_class,-\\)}''''\\) for d in devs[:5]]\")",
+      "Bash(kill -HUP 72701)",
+      "Bash(bash -c \"set -a && source .env && set +a && python3 -m uvicorn api:app --host 0.0.0.0 --port 8000 &\")",
+      "Bash(curl -s http://localhost:8000/api/devices/fingerprint -X POST -H \"Content-Type: application/json\" -d '{\"\"\"\"ip\"\"\"\": \"\"\"\"192.168.1.155\"\"\"\", \"\"\"\"os_name\"\"\"\": \"\"\"\"macOS\"\"\"\", \"\"\"\"os_version\"\"\"\": \"\"\"\"14.x\"\"\"\", \"\"\"\"os_full\"\"\"\": \"\"\"\"Mac OS X 10.x\"\"\"\", \"\"\"\"device_class\"\"\"\": \"\"\"\"laptop\"\"\"\", \"\"\"\"network_distance\"\"\"\": 0}')"
     ]
   },
   "hooks": {
