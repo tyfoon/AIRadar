@@ -260,6 +260,23 @@ def init_db() -> None:
                     "DELETE FROM devices WHERE mac_address = :mac"
                 ), {"mac": ph_mac})
 
+    # --- Ensure devices p0f columns exist ---
+    inspector = inspect(engine)
+    if "devices" in inspector.get_table_names():
+        dev_cols = [c["name"] for c in inspector.get_columns("devices")]
+        p0f_columns = {
+            "os_name": "TEXT",
+            "os_version": "TEXT",
+            "os_full": "TEXT",
+            "device_class": "TEXT",
+            "network_distance": "INTEGER",
+            "p0f_last_seen": "DATETIME",
+        }
+        for col_name, col_type in p0f_columns.items():
+            if col_name not in dev_cols:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_type}"))
+
     # --- Ensure detection_events columns exist ---
     inspector = inspect(engine)
     if "detection_events" in inspector.get_table_names():
