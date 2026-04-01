@@ -2562,13 +2562,13 @@ function _renderDeviceMatrix() {
   groups.forEach(g => {
     const isExpanded = expanded.has(g.key);
     const chevron = isExpanded ? '▾' : '▸';
-    headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[90px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06]"
+    headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[90px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06] hidden sm:table-cell"
       onclick="_toggleDevGroup('${g.key}')" title="Click to ${isExpanded ? 'collapse' : 'expand'} ${g.label}">
       <span class="inline-flex items-center gap-1 justify-center">${g.icon} ${g.label} <span class="text-[10px] opacity-60">${chevron}</span></span>
     </th>`;
     if (isExpanded) {
       g.services.forEach(s => {
-        headerCells += `<th class="py-3 px-2 font-medium text-center min-w-[70px]" title="${s}">
+        headerCells += `<th class="py-3 px-2 font-medium text-center min-w-[70px] hidden sm:table-cell" title="${s}">
           <span class="inline-flex items-center gap-1 justify-center">${svcLogo(s)} <span class="truncate max-w-[60px]">${svcDisplayName(s)}</span></span>
         </th>`;
       });
