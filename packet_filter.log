@@ -7,3 +7,4 @@
 #fields	ts	node	filter	init	success	failure_reason
 #types	time	string	string	bool	bool	string
 1774896470.219076	zeek	ip or not ip	T	T	-
+#close	2026-04-01-22-50-49

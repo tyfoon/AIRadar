@@ -183,7 +183,15 @@
       "Bash(python3 -c \"from dotenv import load_dotenv; print\\(''dotenv OK''\\)\")",
       "Bash(curl -s -w \"\\\\n%{http_code}\" -u \"goswijn@goswijn.com:3xvBqkA5vYKUW7z\" http://127.0.0.1:3001/control/status)",
       "Bash(/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -c \":*)",
-      "Bash(sqlite3 /Users/goswijnthijssen/AIRadar/data/airadar.db \":*)"
+      "Bash(sqlite3 /Users/goswijnthijssen/AIRadar/data/airadar.db \":*)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\(''/Users/goswijnthijssen/AIRadar/zeek_tailer.py'', doraise=True\\); py_compile.compile\\(''/Users/goswijnthijssen/AIRadar/api.py'', doraise=True\\)\")",
+      "Bash(__NEW_LINE_da2e6ad1c57349b7__ sqlite3 /Users/goswijnthijssen/AIRadar/data/airadar.db \":*)",
+      "Bash(curl -s http://127.0.0.1:8000/api/devices)",
+      "WebFetch(domain:www.joybuy.nl)",
+      "Bash(find /Users/goswijnthijssen/AIRadar -type f \\\\\\(-name Dockerfile* -o -name *docker-compose* -o -name Makefile -o -name *.mk -o -name deploy* -o -name install* \\\\\\))",
+      "Bash(find /Users/goswijnthijssen/AIRadar -maxdepth 2 -type f \\\\\\(-iname README* -o -iname INSTALL* -o -iname SETUP* -o -iname *.md \\\\\\))",
+      "Bash(find /Users/goswijnthijssen/AIRadar -type f \\\\\\(-name *.conf -o -name *.config -o -name *.yaml -o -name *.yml -o -name *.json \\\\\\))",
+      "Bash(grep -r \"arm\\\\|ARM\\\\|x86\\\\|aarch64\\\\|architecture\\\\|platform.machine\\\\|sys.platform\" /Users/goswijnthijssen/AIRadar --include=*.py --include=*.sh --include=*.yml --include=*.yaml)"
     ]
   },
   "hooks": {
