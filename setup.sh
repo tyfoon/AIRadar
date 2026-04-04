@@ -36,6 +36,9 @@ err()  { echo -e "    ${RED}✗${NC}  $1"; }
 AIRADAR_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOTAL_STEPS=9
 
+# Ensure Zeek is always in PATH for this script
+export PATH=/opt/zeek/bin:$PATH
+
 banner
 
 # ── Check root ───────────────────────────────────────────────
@@ -56,6 +59,8 @@ fi
 
 # ── Step 1: System update ────────────────────────────────────
 step 1 "Updating system packages"
+# Prevent interactive prompts during apt installs (e.g. postfix)
+export DEBIAN_FRONTEND=noninteractive
 apt update -qq
 apt upgrade -y -qq
 ok "System packages updated"
@@ -114,7 +119,6 @@ else
     if [ "$ZEEK_INSTALLED" = false ]; then
         warn "Repo install failed, trying direct .deb download..."
         ZEEK_DEB_URL="https://download.zeek.org/binary-packages/xUbuntu_${UBUNTU_VER}/amd64/"
-        # Get the latest zeek .deb filename
         ZEEK_DEB=$(curl -fsSL "$ZEEK_DEB_URL" 2>/dev/null | grep -oP 'zeek_[0-9][^"]*_amd64\.deb' | sort -V | tail -1)
         if [ -n "$ZEEK_DEB" ]; then
             curl -fsSL "${ZEEK_DEB_URL}${ZEEK_DEB}" -o /tmp/zeek.deb
@@ -141,8 +145,30 @@ else
     fi
 fi
 
+# Ensure Zeek directories exist
 mkdir -p /opt/zeek/logs
-ok "Zeek log directory ready (/opt/zeek/logs)"
+mkdir -p /opt/zeek/spool/zeek
+ok "Zeek directories ready"
+
+# Fix Zeek log symlink: Docker cannot mount symlinks as volumes.
+# Replace the 'current' symlink with a bind mount of the actual spool dir.
+if [ -L /opt/zeek/logs/current ]; then
+    rm /opt/zeek/logs/current
+    info "Removed symlink /opt/zeek/logs/current"
+fi
+if [ ! -d /opt/zeek/logs/current ]; then
+    mkdir -p /opt/zeek/logs/current
+fi
+# Create a persistent bind mount (spool dir → logs/current)
+if ! mountpoint -q /opt/zeek/logs/current; then
+    mount --bind /opt/zeek/spool/zeek /opt/zeek/logs/current
+    ok "Bind-mounted Zeek spool → /opt/zeek/logs/current"
+fi
+# Make the bind mount persistent across reboots
+if ! grep -q "zeek/spool/zeek" /etc/fstab 2>/dev/null; then
+    echo "/opt/zeek/spool/zeek /opt/zeek/logs/current none bind 0 0" >> /etc/fstab
+    ok "Added Zeek log bind mount to /etc/fstab (persistent)"
+fi
 
 # ── Step 4: Detect network mode ─────────────────────────────
 step 4 "Configuring network"
@@ -165,7 +191,7 @@ if [ -n "$IFACE_LIST" ]; then
     IFACE_2=$(echo "$IFACE_LIST" | awk '{print $2}')
 fi
 
-BRIDGE_IP_ADDR="${BRIDGE_IP:-192.168.1.2/24}"
+BRIDGE_IP_ADDR="${BRIDGE_IP:-192.168.1.7/24}"
 BRIDGE_GW="${BRIDGE_GATEWAY:-192.168.1.1}"
 UPSTREAM="${UPSTREAM_DNS:-1.1.1.1}"
 
@@ -250,7 +276,6 @@ for path in /opt/zeek/etc/node.cfg /etc/zeek/node.cfg /usr/local/zeek/etc/node.c
 done
 
 if [ -n "$ZEEK_CFG" ]; then
-    # Write Zeek node config with detected interface
     cat > "$ZEEK_CFG" <<EOF
 [zeek]
 type=standalone
@@ -269,20 +294,21 @@ systemctl daemon-reload
 systemctl enable zeek-airadar.service
 ok "Zeek auto-start service installed (zeek-airadar.service)"
 
-if command -v zeekctl &>/dev/null || [ -f /opt/zeek/bin/zeekctl ]; then
-    ZEEKCTL=$(command -v zeekctl 2>/dev/null || echo /opt/zeek/bin/zeekctl)
+# Install and deploy Zeek
+ZEEKCTL=$(command -v zeekctl 2>/dev/null || echo /opt/zeek/bin/zeekctl)
+if [ -x "$ZEEKCTL" ]; then
     $ZEEKCTL install 2>/dev/null || true
-    ok "Zeek configuration installed"
-    info "Start with: ${BOLD}sudo zeekctl deploy${NC}"
+    $ZEEKCTL deploy 2>/dev/null || true
+    ok "Zeek installed and deployed"
+    $ZEEKCTL status
 else
-    warn "zeekctl not found — install Zeek first, then run: zeekctl deploy"
+    warn "zeekctl not found — install Zeek first, then run: /opt/zeek/bin/zeekctl deploy"
 fi
 
 # ── Step 6: Transparent DNS redirect ─────────────────────────
 step 6 "Installing transparent DNS redirect"
 
 if [ "$DEPLOY_MODE" = "bridge" ]; then
-    # Install iptables if not present
     if ! command -v iptables &>/dev/null; then
         apt install -y -qq iptables
     fi
@@ -290,8 +316,8 @@ if [ "$DEPLOY_MODE" = "bridge" ]; then
     # Deploy systemd service for persistent iptables rules
     cp "$AIRADAR_DIR/network/airadar-dns-redirect.service" /etc/systemd/system/airadar-dns-redirect.service
     systemctl daemon-reload
-    systemctl enable airadar-dns-redirect.service
-    ok "DNS redirect service installed"
+    systemctl enable --now airadar-dns-redirect.service
+    ok "DNS redirect service installed and started"
     info "All DNS traffic through the bridge is automatically redirected to AdGuard"
     info "No DNS/DHCP changes needed on your router or client devices!"
 else
@@ -339,52 +365,53 @@ CRON_LINE="0 3 * * * sqlite3 $AIRADAR_DIR/data/airadar.db \".backup $BACKUP_DIR/
 (crontab -l 2>/dev/null | grep -v "airadar.*backup"; echo "$CRON_LINE") | crontab -
 ok "Daily backup at 03:00 → $BACKUP_DIR (7-day retention)"
 
-# ── Step 9: Post-setup instructions ──────────────────────────
-step 9 "Final steps"
+# ── Step 9: Start the stack ──────────────────────────────────
+step 9 "Starting AI-Radar stack"
+
+cd "$AIRADAR_DIR"
+docker compose up -d --build
+
+if [ $? -eq 0 ]; then
+    ok "All containers started"
+else
+    err "Docker compose failed — check logs with: docker compose logs"
+fi
 
 MGMT_IP="${BRIDGE_IP_ADDR%/*}"
 
-echo ""
-info "After starting the stack with ${BOLD}docker compose up -d --build${NC}:"
-echo ""
-echo -e "    ${BOLD}${CYAN}1.${NC} Complete the AdGuard Home setup wizard:"
-echo -e "       ${BOLD}http://${MGMT_IP}:3000${NC}"
-echo -e "       Set your admin credentials, then update ${BOLD}.env${NC}:"
-echo -e "       ${YELLOW}ADGUARD_USER=your_email${NC}"
-echo -e "       ${YELLOW}ADGUARD_PASS=your_password${NC}"
-echo ""
-echo -e "    ${BOLD}${CYAN}2.${NC} Generate CrowdSec API key:"
-echo -e "       ${BOLD}sudo docker exec crowdsec cscli bouncers add airadar_dashboard${NC}"
-echo -e "       Copy the key into ${BOLD}.env${NC}:"
-echo -e "       ${YELLOW}CROWDSEC_API_KEY=<paste_key_here>${NC}"
-echo ""
-echo -e "    ${BOLD}${CYAN}3.${NC} Restart to pick up all config:"
-echo -e "       ${BOLD}docker compose restart airadar-app${NC}"
-
-if [ "$DEPLOY_MODE" = "bridge" ]; then
-    echo ""
-    echo -e "    ${GREEN}${BOLD}Zero-touch DNS:${NC} All DNS queries are transparently redirected"
-    echo -e "    to AdGuard. No changes needed on your router or devices!"
-else
-    echo ""
-    echo -e "    ${BOLD}${CYAN}4.${NC} Set client devices' DNS to: ${BOLD}${MGMT_IP}${NC}"
-    echo -e "       (or configure your DHCP server to push this DNS)"
-    echo ""
-    echo -e "    ${YELLOW}Single-NIC note:${NC} Zeek captures via promiscuous mode."
-    echo -e "    For best coverage, enable ${BOLD}port mirroring${NC} on your switch"
-    echo -e "    to mirror all traffic to the ${IFACE_1} port."
-fi
-
-# ── Done ─────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}${BOLD}║            ✅ Host setup complete!                ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  ${BOLD}Deploy mode:${NC} ${DEPLOY_MODE^^} (${ZEEK_IFACE})"
-echo -e "  ${BOLD}Quick start:${NC}"
-echo -e "  1. Review ${BOLD}.env${NC} settings"
-echo -e "  2. Deploy Zeek: ${CYAN}${BOLD}sudo zeekctl deploy${NC}"
-echo -e "  3. Start stack: ${CYAN}${BOLD}docker compose up -d --build${NC}"
-echo -e "  4. Open dashboard: ${CYAN}http://${MGMT_IP}:8000${NC}"
+echo -e "  ${BOLD}Management IP:${NC} ${MGMT_IP}"
+echo ""
+echo -e "  ${BOLD}Next steps:${NC}"
+echo -e "  1. Open AdGuard setup wizard: ${CYAN}${BOLD}http://${MGMT_IP}:3000${NC}"
+echo -e "     Create an admin account, then put the credentials in ${BOLD}.env${NC}:"
+echo -e "     ${YELLOW}ADGUARD_USER=your_email${NC}"
+echo -e "     ${YELLOW}ADGUARD_PASS=your_password${NC}"
+echo ""
+echo -e "  2. Generate CrowdSec API key:"
+echo -e "     ${CYAN}${BOLD}sudo docker exec crowdsec cscli bouncers add airadar_dashboard${NC}"
+echo -e "     Put the key in ${BOLD}.env${NC}:"
+echo -e "     ${YELLOW}CROWDSEC_API_KEY=<paste_key_here>${NC}"
+echo ""
+echo -e "  3. Restart to pick up config:"
+echo -e "     ${CYAN}${BOLD}cd $AIRADAR_DIR && docker compose restart${NC}"
+echo ""
+echo -e "  4. Open dashboard: ${CYAN}${BOLD}http://${MGMT_IP}:8000${NC}"
+
+if [ "$DEPLOY_MODE" = "bridge" ]; then
+    echo ""
+    echo -e "  ${GREEN}${BOLD}Zero-touch DNS:${NC} All DNS queries are transparently redirected"
+    echo -e "  to AdGuard. No changes needed on your router or devices!"
+else
+    echo ""
+    echo -e "  5. Set client devices' DNS to: ${BOLD}${MGMT_IP}${NC}"
+    echo ""
+    echo -e "  ${YELLOW}Single-NIC note:${NC} For best coverage, enable port mirroring"
+    echo -e "  on your switch to mirror all traffic to ${IFACE_1}."
+fi
 echo ""
