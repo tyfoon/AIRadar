@@ -1604,7 +1604,7 @@ async def health_check(db: Session = Depends(get_db)):
         zeek_log = _Path(_os.environ.get("ZEEK_LOG_DIR", "/app/logs")) / "conn.log"
         ms = round((_time.monotonic() - t0) * 1000, 1)
         if zeek_log.exists():
-            age_s = _time.time() - os.path.getmtime(zeek_log)
+            age_s = _time.time() - _os.path.getmtime(zeek_log)
             if age_s < 60:
                 results.append({
                     "service": "Zeek (Packet Capture)",
