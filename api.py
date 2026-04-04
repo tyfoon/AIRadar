@@ -1599,7 +1599,9 @@ async def health_check(db: Session = Depends(get_db)):
     # 3) Zeek process — check via log freshness (Zeek runs on host, not in container)
     t0 = _time.monotonic()
     try:
-        zeek_log = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs")) / "conn.log"
+        import os as _os
+        from pathlib import Path as _Path
+        zeek_log = _Path(_os.environ.get("ZEEK_LOG_DIR", "/app/logs")) / "conn.log"
         ms = round((_time.monotonic() - t0) * 1000, 1)
         if zeek_log.exists():
             age_s = _time.time() - os.path.getmtime(zeek_log)
