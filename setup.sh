@@ -280,8 +280,8 @@ fi
 
 ok "Directory structure ready"
 
-# ── Step 7: SQLite backup cron ───────────────────────────────
-step 7 "Setting up automated database backup"
+# ── Step 8: SQLite backup cron ───────────────────────────────
+step 8 "Setting up automated database backup"
 
 BACKUP_DIR="$AIRADAR_DIR/backups"
 mkdir -p "$BACKUP_DIR"
