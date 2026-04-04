@@ -59,7 +59,7 @@ services:
     network_mode: "host"
     restart: unless-stopped
     environment:
-      - COLLECTIONS=crowdsecurity/zeek
+      - COLLECTIONS=crowdsecurity/linux
     volumes:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
