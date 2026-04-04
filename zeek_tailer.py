@@ -414,13 +414,60 @@ def _resolve_mac_ipv6(ip: str) -> str | None:
         return _ndp_cache.get(ip)
 
 
+def _detect_local_v6_prefixes() -> list[str]:
+    """Auto-detect global IPv6 /64 prefixes assigned to local interfaces."""
+    import ipaddress
+    prefixes = []
+    try:
+        result = subprocess.run(
+            ["ip", "-6", "addr", "show", "scope", "global"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("inet6 "):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        net = ipaddress.ip_network(parts[1], strict=False)
+                        # Store the /64 prefix as a string for fast startswith matching
+                        prefix = str(net.network_address)
+                        # Truncate to /64: take first 4 groups
+                        groups = prefix.split(":")[:4]
+                        prefixes.append(":".join(groups) + ":")
+                    except ValueError:
+                        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    # Also allow manual override via env var
+    env_prefix = os.environ.get("LOCAL_IPV6_PREFIX", "")
+    if env_prefix:
+        prefixes.append(env_prefix)
+    if prefixes:
+        print(f"[*] Local IPv6 prefixes: {prefixes}")
+    return prefixes
+
+_local_v6_prefixes: list[str] = _detect_local_v6_prefixes()
+
 def _is_local_ip(ip: str) -> bool:
-    """Check if an IP address is a local/private network address."""
+    """Check if an IP address is a local/private network address.
+
+    For IPv6, global addresses on the home network (e.g. 2a02:a447:...)
+    are NOT in RFC1918 private ranges but ARE local devices.
+    Auto-detects the local IPv6 prefix from interface addresses.
+    """
     import ipaddress
     try:
         addr = ipaddress.ip_address(ip)
-        # Private ranges: 10.x, 172.16-31.x, 192.168.x, fc00::/7, fe80::/10
-        return addr.is_private or addr.is_link_local
+        if addr.is_private or addr.is_link_local:
+            return True
+        # Match global IPv6 against local interface prefixes
+        if addr.version == 6 and _local_v6_prefixes:
+            normalized = str(addr)
+            for prefix in _local_v6_prefixes:
+                if normalized.startswith(prefix):
+                    return True
+        return False
     except ValueError:
         return False
 
