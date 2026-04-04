@@ -44,7 +44,7 @@ services:
       - ./adguard/conf:/opt/adguardhome/conf
       - ./adguard/work:/opt/adguardhome/work
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
       interval: 10s
       timeout: 3s
       retries: 5
