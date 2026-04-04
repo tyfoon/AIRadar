@@ -1353,6 +1353,8 @@ async def main(zeek_log_dir: str) -> None:
         tail_ssl_log(ssl_log, client := httpx.AsyncClient()),
         tail_conn_log(conn_log, client),
         tail_dhcp_log(dhcp_log, client),
+        tail_ja4d_log(ja4d_log, client),
+        tail_mdns_log(mdns_log, client),
         flush_upload_buckets(client),  # background flusher
     ]
     if p0f_task is not None:
