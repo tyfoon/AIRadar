@@ -1320,6 +1320,8 @@ async def main(zeek_log_dir: str) -> None:
     ssl_log = log_dir / "ssl.log"
     conn_log = log_dir / "conn.log"
     dhcp_log = log_dir / "dhcp.log"
+    ja4d_log = log_dir / "ja4d.log"
+    mdns_log = log_dir / "mdns.log"
 
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
     print(f"[*] Reporting to API at {API_URL}")
@@ -1327,6 +1329,8 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] Upload threshold: {UPLOAD_THRESHOLD_BYTES:,} bytes")
     print(f"[*] Upload debounce window: {UPLOAD_DEBOUNCE_SECONDS}s")
     print(f"[*] DHCP passive device recognition: enabled")
+    print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
+    print(f"[*] mDNS device name discovery: enabled (tailing mdns.log)")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
