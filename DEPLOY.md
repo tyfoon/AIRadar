@@ -168,8 +168,8 @@ CROWDSEC_URL=http://localhost:8080
 CROWDSEC_API_KEY=
 
 # Netwerk — het setup script heeft dit al ingevuld
-# Pas BRIDGE_IP aan als 192.168.1.2 al in gebruik is
-BRIDGE_IP=192.168.1.2/24
+# Pas BRIDGE_IP aan als 192.168.1.7 al in gebruik is
+BRIDGE_IP=192.168.1.7/24
 BRIDGE_GATEWAY=192.168.1.1
 UPSTREAM_DNS=1.1.1.1
 ```
@@ -177,8 +177,8 @@ UPSTREAM_DNS=1.1.1.1
 **Opslaan**: druk `Ctrl+X`, dan `Y`, dan `Enter`
 
 > **Let op**: `BRIDGE_IP` moet een vrij IP-adres zijn in je netwerk.
-> Als je router `192.168.1.1` is, is `192.168.1.2` meestal vrij.
-> Check dit eventueel door op je Mac te pingen: `ping 192.168.1.2`
+> Als je router `192.168.1.1` is, is `192.168.1.7` meestal vrij.
+> Check dit eventueel door op je Mac te pingen: `ping 192.168.1.7`
 > Als er geen antwoord komt, is het vrij.
 
 ---
@@ -215,10 +215,10 @@ Alle 3 containers moeten `Up` of `running (healthy)` zijn.
 Open een browser op je laptop en ga naar:
 
 ```
-http://192.168.1.2:3000
+http://192.168.1.7:3000
 ```
 
-(vervang `192.168.1.2` door je gekozen BRIDGE_IP)
+(vervang `192.168.1.7` door je gekozen BRIDGE_IP)
 
 De AdGuard Home setup wizard verschijnt:
 
@@ -311,7 +311,7 @@ Hoe het werkt:
 Open in je browser:
 
 ```
-http://192.168.1.2:8000
+http://192.168.1.7:8000
 ```
 
 Je ziet nu het AI-Radar dashboard! Binnen een paar minuten verschijnen de eerste events.
@@ -339,7 +339,7 @@ Je ziet nu het AI-Radar dashboard! Binnen een paar minuten verschijnen de eerste
 **"Ik kan niet meer bij de AM02L via SSH"**
 ```bash
 # Vanuit je Mac:
-ssh airadar@192.168.1.2
+ssh airadar@192.168.1.7
 ```
 Als dit niet werkt, sluit monitor + toetsenbord aan en check met `ip addr` welk IP de machine heeft.
 
