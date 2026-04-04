@@ -129,8 +129,19 @@ _hostname_vendors: list[dict] = _load_hostname_vendors()
 
 
 def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
-    """Look up the hardware vendor from a MAC address, with hostname fallback."""
-    # Layer 1: OUI database (39k+ manufacturers by MAC prefix)
+    """Look up the hardware vendor from a MAC address and/or hostname.
+
+    Priority: hostname keyword match > OUI database.
+    Hostname is more specific (e.g. "MACBOOK" → Apple) and catches cases
+    where the OUI prefix has been reassigned or is shared across vendors.
+    """
+    # Layer 1: hostname keyword matching (user-editable JSON, most specific)
+    if hostname:
+        hn = hostname.lower()
+        for entry in _hostname_vendors:
+            if any(kw in hn for kw in entry.get("keywords", [])):
+                return entry["vendor"]
+    # Layer 2: OUI database (39k+ manufacturers by MAC prefix)
     if mac and _oui_db and not mac.startswith("unknown_"):
         try:
             clean = mac.upper().replace(":", "").replace("-", "").replace(".", "")
@@ -139,12 +150,6 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
                 return vendor
         except Exception:
             pass
-    # Layer 2: hostname keyword matching (user-editable JSON file)
-    if hostname:
-        hn = hostname.lower()
-        for entry in _hostname_vendors:
-            if any(kw in hn for kw in entry.get("keywords", [])):
-                return entry["vendor"]
     return None
 
 
