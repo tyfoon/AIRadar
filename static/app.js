@@ -825,9 +825,16 @@ function groupBlockedByCompany(topBlocked) {
   for (const [label, data] of Object.entries(grouped)) {
     result.push({ label, count: data.count, domains: data.domains, isCompany: true });
   }
-  // Add unknown domains individually with readable names
+  // Group unknown domains by readable name (e.g. ads.vungle.com + api.vungle.com → "Vungle")
+  const unknownGrouped = {};
   for (const item of unknown) {
-    result.push({ label: _readableDomain(item.domain), count: item.count, domains: [item.domain], isCompany: false });
+    const label = _readableDomain(item.domain);
+    if (!unknownGrouped[label]) unknownGrouped[label] = { count: 0, domains: [] };
+    unknownGrouped[label].count += item.count;
+    unknownGrouped[label].domains.push(item.domain);
+  }
+  for (const [label, data] of Object.entries(unknownGrouped)) {
+    result.push({ label, count: data.count, domains: data.domains, isCompany: false });
   }
   result.sort((a, b) => b.count - a.count);
   return result;
