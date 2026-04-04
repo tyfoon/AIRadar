@@ -148,39 +148,6 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
     return None
 
 
-def _ipv6_network64(addr: str):
-    """Return the /64 network of an IPv6 address, or None."""
-    try:
-        import ipaddress
-        ip = ipaddress.ip_address(addr)
-        if ip.version != 6:
-            return None
-        return ipaddress.ip_network(f"{addr}/64", strict=False)
-    except Exception:
-        return None
-
-
-def _same_ipv6_subnet(ip1: str, ip2: str) -> bool:
-    """Check if two IPv6 addresses share the same /64 prefix.
-
-    Excludes link-local (fe80::/10) addresses — ALL devices on the same
-    segment share fe80::/64, so matching on that prefix would incorrectly
-    merge unrelated devices.
-    """
-    import ipaddress
-    try:
-        a1 = ipaddress.ip_address(ip1)
-        a2 = ipaddress.ip_address(ip2)
-        # Never match link-local addresses — they all share fe80::/64
-        if a1.is_link_local or a2.is_link_local:
-            return False
-    except ValueError:
-        return False
-    n1 = _ipv6_network64(ip1)
-    n2 = _ipv6_network64(ip2)
-    if n1 and n2:
-        return n1 == n2
-    return False
 from schemas import (
     BlockRuleCreate,
     BlockRuleRead,
