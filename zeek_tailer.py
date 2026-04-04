@@ -1093,6 +1093,225 @@ async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# JA4D DHCP fingerprinting — enrich devices from ja4d.log
+# ---------------------------------------------------------------------------
+
+JA4D_DEDUP_SECONDS = 600  # 10 min per MAC
+_ja4d_last_seen: dict[str, float] = {}
+
+
+async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Tail Zeek's ja4d.log for DHCP fingerprints (JA4 plugin).
+
+    ja4d.log fields include client_mac, hostname, vendor_class_id, ja4d.
+    Uses these to enrich device records with better hostnames.
+    """
+    print(f"[*] Tailing ja4d.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break
+                        except OSError:
+                            break
+                        await asyncio.sleep(1)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    record = dict(zip(fields, parts))
+
+                    mac_raw = record.get("client_mac", "-")
+                    if not mac_raw or mac_raw == "-":
+                        continue
+                    mac = _normalize_mac(mac_raw)
+
+                    now = time.time()
+                    last = _ja4d_last_seen.get(mac, 0)
+                    if (now - last) < JA4D_DEDUP_SECONDS:
+                        continue
+                    _ja4d_last_seen[mac] = now
+
+                    hostname = record.get("hostname", "-")
+                    if hostname == "-":
+                        hostname = None
+
+                    assigned_ip = record.get("assigned_addr") or record.get("requested_ip")
+                    if assigned_ip and assigned_ip == "-":
+                        assigned_ip = None
+
+                    # Fall back to IP→MAC reverse lookup
+                    ip = assigned_ip
+                    if not ip:
+                        for cached_ip, cached_mac in _ip_to_mac.items():
+                            if cached_mac == mac:
+                                ip = cached_ip
+                                break
+
+                    if not ip:
+                        continue
+
+                    payload: dict = {"ip": ip, "mac_address": mac}
+                    if hostname:
+                        payload["hostname"] = hostname
+
+                    try:
+                        await client.post(DEVICE_API_URL, json=payload, timeout=5)
+                        label = hostname or mac
+                        print(f"[JA4D] Device: {label} → {ip} (MAC: {mac}, JA4D: {record.get('ja4d', '?')})")
+                    except httpx.HTTPError as exc:
+                        print(f"[!] JA4D device registration failed: {exc}")
+
+        except (OSError, IOError) as exc:
+            print(f"[!] ja4d.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
+# mDNS device name discovery — tail mdns.log for .local announcements
+# ---------------------------------------------------------------------------
+
+MDNS_DEDUP_SECONDS = 600  # 10 min per (ip, name)
+_mdns_last_seen: dict[str, float] = {}
+
+
+async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Tail Zeek's mdns.log for mDNS name announcements.
+
+    Devices (Apple, Chromecast, printers, IoT) broadcast their .local
+    hostnames via mDNS (port 5353).  We extract these and link them to
+    devices via the IP→MAC cache from conn.log.
+    """
+    print(f"[*] Tailing mdns.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break
+                        except OSError:
+                            break
+                        await asyncio.sleep(1)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    record = dict(zip(fields, parts))
+
+                    src_ip = record.get("id.orig_h", "-")
+                    if src_ip == "-" or not _is_local_ip(src_ip):
+                        continue
+
+                    # Extract hostname from mDNS — try common field names
+                    mdns_name = None
+                    for field in ("query", "qname", "name", "answers"):
+                        val = record.get(field, "-")
+                        if val and val != "-":
+                            mdns_name = val
+                            break
+
+                    if not mdns_name:
+                        continue
+
+                    # Clean up: strip trailing dots and ".local" suffix
+                    hostname = mdns_name.rstrip(".")
+                    if hostname.lower().endswith(".local"):
+                        hostname = hostname[:-6]
+
+                    # Skip service discovery queries (_tcp, _udp, _services)
+                    if hostname.startswith("_") or "._" in hostname:
+                        continue
+
+                    # Skip too-short or numeric-only names
+                    if len(hostname) < 2:
+                        continue
+
+                    # Dedup
+                    now = time.time()
+                    dedup_key = f"{src_ip}:{hostname}"
+                    last = _mdns_last_seen.get(dedup_key, 0)
+                    if (now - last) < MDNS_DEDUP_SECONDS:
+                        continue
+                    _mdns_last_seen[dedup_key] = now
+
+                    # Look up MAC from conn.log cache
+                    mac = _ip_to_mac.get(src_ip)
+
+                    payload: dict = {"ip": src_ip, "hostname": hostname}
+                    if mac:
+                        payload["mac_address"] = mac
+
+                    try:
+                        await client.post(DEVICE_API_URL, json=payload, timeout=5)
+                        print(f"[mDNS] Device: {hostname} → {src_ip} (MAC: {mac or 'unknown'})")
+                    except httpx.HTTPError as exc:
+                        print(f"[!] mDNS device registration failed: {exc}")
+
+        except (OSError, IOError) as exc:
+            print(f"[!] mdns.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
