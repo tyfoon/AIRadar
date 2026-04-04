@@ -790,6 +790,9 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 l2_mac = record.get("orig_l2_addr")
                 if l2_mac and l2_mac == "-":
                     l2_mac = None
+                # Populate IP→MAC cache for use by ssl.log and mDNS tailers
+                if l2_mac and _is_local_ip(src_ip):
+                    _ip_to_mac[src_ip] = _normalize_mac(l2_mac)
                 resp_port_str = record.get("id.resp_p", "0")
                 try:
                     resp_port = int(resp_port_str) if resp_port_str != "-" else 0
