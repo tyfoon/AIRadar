@@ -33,7 +33,7 @@ ok()   { echo -e "    ${GREEN}✓${NC}  $1"; }
 err()  { echo -e "    ${RED}✗${NC}  $1"; }
 
 AIRADAR_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOTAL_STEPS=8
+TOTAL_STEPS=9
 
 banner
 
