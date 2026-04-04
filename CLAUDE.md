@@ -27,7 +27,7 @@ AI-Radar is a network monitoring dashboard that detects AI service usage, cloud 
 ## Git workflow
 - After making code changes, always **commit and push** to keep GitHub in sync.
 - Commit messages: concise, English, describe the "why".
-- Remote: `origin` → `https://github.com/goswijnthijssen/AIRadar.git`
+- Remote: `origin` → `https://github.com/tyfoon/AIRadar.git`
 
 ## Deployment
 - Production runs on this machine (AM02L mini-PC, Ubuntu 24.04)
