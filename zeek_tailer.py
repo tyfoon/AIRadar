@@ -466,22 +466,14 @@ def _is_local_ip(ip: str) -> bool:
         return False
 
 
-<<<<<<< HEAD
 async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = None) -> None:
-=======
-async def register_device(client: httpx.AsyncClient, ip: str, mac_hint: str | None = None) -> None:
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
     """Register/update a device on the API (non-blocking).
 
     Only registers devices with local/private IP addresses — public IPs
     (AI service servers, CDNs, etc.) are NOT devices on our network.
 
-<<<<<<< HEAD
     If *mac* is provided (e.g. from Zeek's orig_l2_addr), it is used
     directly — no ARP lookup needed.
-=======
-    mac_hint: optional MAC from Zeek conn.log (orig_l2_addr field).
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
     """
     if not _is_local_ip(ip):
         return
@@ -492,19 +484,13 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac_hint: str | No
         return
     _device_cache[ip] = now
 
-<<<<<<< HEAD
     # No reverse DNS — hostnames come exclusively from DHCP and mDNS tailers.
     # Prefer Zeek-provided MAC > conn.log cache > ARP lookup
     if not mac:
         mac = _ip_to_mac.get(ip)  # conn.log cache
     if not mac:
         mac = _resolve_mac(ip)    # ARP/NDP fallback
-    else:
-=======
-    hostname = _resolve_hostname(ip)
-    mac = mac_hint or _ip_mac_cache.get(ip) or _resolve_mac(ip)
     if mac:
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
         mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
     if mac:
