@@ -46,22 +46,21 @@ _last_update: dict[str, float] = {}  # ip → timestamp
 # ---------------------------------------------------------------------------
 # p0f log line parser
 # ---------------------------------------------------------------------------
-# p0f log format (one line per event):
-#   <date/time> mod=syn|mtu|http cli=1.2.3.4/12345 srv=5.6.7.8/443 subj=cli os=Linux 5.x dist=1 params=none raw_sig=...
-#   or for SYN+ACK:
-#   <date/time> mod=syn cli=1.2.3.4/12345 srv=5.6.7.8/443 subj=srv os=Windows 10.x dist=0 ...
+# p0f log format (pipe-delimited, one line per event):
+#   [2026/04/04 13:21:33] mod=syn|cli=1.2.3.4/12345|srv=5.6.7.8/443|subj=cli|os=Linux 3.1-3.10|dist=0|params=none|raw_sig=...
+#   [2026/04/04 13:21:33] mod=mtu|cli=1.2.3.4/12345|srv=5.6.7.8/443|subj=cli|link=Ethernet or modem|raw_mtu=1500
 
 # We care about lines where subj=cli (the client, i.e. our local device)
 _P0F_LINE_RE = re.compile(
-    r"^(?P<timestamp>\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+"
-    r"mod=(?P<mod>\S+)\s+"
-    r"cli=(?P<cli_ip>[^/]+)/(?P<cli_port>\d+)\s+"
-    r"srv=(?P<srv_ip>[^/]+)/(?P<srv_port>\d+)\s+"
-    r"subj=(?P<subj>\w+)\s+"
+    r"^\[(?P<timestamp>\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\]\s+"
+    r"mod=(?P<mod>[^|]+)\|"
+    r"cli=(?P<cli_ip>[^/]+)/(?P<cli_port>\d+)\|"
+    r"srv=(?P<srv_ip>[^/]+)/(?P<srv_port>\d+)\|"
+    r"subj=(?P<subj>[^|]+)\|"
     r"(?P<rest>.*)"
 )
 
-_OS_RE = re.compile(r"os=(?P<os>[^|]+?)(?:\s+dist=|\s+params=|\s+raw_sig=|$)")
+_OS_RE = re.compile(r"os=(?P<os>[^|]+)")
 _DIST_RE = re.compile(r"dist=(?P<dist>\d+)")
 
 
