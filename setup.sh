@@ -288,63 +288,55 @@ else
     info "Manually set interface=${ZEEK_IFACE} in your Zeek node.cfg"
 fi
 
-# Enable MAC address logging in conn.log (orig_l2_addr / resp_l2_addr)
-LOCAL_ZEEK=""
-for lz in /opt/zeek/share/zeek/site/local.zeek /etc/zeek/local.zeek /usr/local/zeek/share/zeek/site/local.zeek; do
-    if [ -f "$lz" ]; then
-        LOCAL_ZEEK="$lz"
+# Enable MAC logging in Zeek
+ZEEK_LOCAL=""
+for path in /opt/zeek/share/zeek/site/local.zeek /etc/zeek/site/local.zeek /usr/local/zeek/share/zeek/site/local.zeek; do
+    if [ -f "$path" ]; then
+        ZEEK_LOCAL="$path"
         break
     fi
 done
-if [ -n "$LOCAL_ZEEK" ]; then
-    if ! grep -q "mac-logging" "$LOCAL_ZEEK" 2>/dev/null; then
-        echo "" >> "$LOCAL_ZEEK"
-        echo "# AI-Radar: log Layer 2 MAC addresses in conn.log" >> "$LOCAL_ZEEK"
-        echo "@load policy/protocols/conn/mac-logging" >> "$LOCAL_ZEEK"
+
+if [ -n "$ZEEK_LOCAL" ]; then
+    if ! grep -q "mac-logging" "$ZEEK_LOCAL" 2>/dev/null; then
+        echo "@load policy/protocols/conn/mac-logging" >> "$ZEEK_LOCAL"
         ok "Zeek MAC logging enabled (orig_l2_addr in conn.log)"
     else
         ok "Zeek MAC logging already enabled"
     fi
 else
-    warn "Could not find local.zeek — manually add: @load policy/protocols/conn/mac-logging"
+    warn "Could not find Zeek local.zeek — manually add: @load policy/protocols/conn/mac-logging"
 fi
 
 # Install Zeek plugins: JA4 (DHCP fingerprinting) + mDNS (device names)
 ZKG=$(command -v zkg 2>/dev/null || echo /opt/zeek/bin/zkg)
 if [ -x "$ZKG" ] || command -v zkg &>/dev/null; then
-    # Ensure zkg is initialized
     $ZKG autoconfig 2>/dev/null || true
 
-    # JA4 plugin — provides ja4d.log with DHCP device fingerprints
     if $ZKG install zeek/foxio/ja4 --force 2>/dev/null; then
         ok "JA4 plugin installed (DHCP fingerprinting)"
     else
         warn "JA4 plugin installation failed — ja4d.log will not be available"
     fi
 
-    # mDNS plugin — captures .local device name announcements
     if $ZKG install zeek-plugins/mdns --force 2>/dev/null; then
         ok "mDNS plugin installed (device name discovery)"
     else
         warn "mDNS plugin installation failed — mdns.log will not be available"
     fi
 
-    # Load plugins in local.zeek
-    if [ -n "$LOCAL_ZEEK" ]; then
-        if ! grep -q "@load ja4" "$LOCAL_ZEEK" 2>/dev/null; then
-            echo "# AI-Radar: JA4 DHCP fingerprinting" >> "$LOCAL_ZEEK"
-            echo "@load ja4" >> "$LOCAL_ZEEK"
+    if [ -n "$ZEEK_LOCAL" ]; then
+        if ! grep -q "@load ja4" "$ZEEK_LOCAL" 2>/dev/null; then
+            echo "@load ja4" >> "$ZEEK_LOCAL"
             ok "JA4 loaded in local.zeek"
         fi
-        if ! grep -q "@load mdns" "$LOCAL_ZEEK" 2>/dev/null; then
-            echo "# AI-Radar: mDNS device name discovery" >> "$LOCAL_ZEEK"
-            echo "@load mdns" >> "$LOCAL_ZEEK"
+        if ! grep -q "@load mdns" "$ZEEK_LOCAL" 2>/dev/null; then
+            echo "@load mdns" >> "$ZEEK_LOCAL"
             ok "mDNS loaded in local.zeek"
         fi
     fi
 else
     warn "zkg not found — install zeek-zkg to enable JA4D and mDNS plugins"
-    info "Manual install: zkg install zeek/foxio/ja4 && zkg install zeek-plugins/mdns"
 fi
 
 # Install Zeek systemd service for auto-start

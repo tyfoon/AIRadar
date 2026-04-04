@@ -144,7 +144,10 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
     # Layer 2: OUI database (39k+ manufacturers by MAC prefix)
     if mac and _oui_db and not mac.startswith("unknown_"):
         try:
-            clean = mac.upper().replace(":", "").replace("-", "").replace(".", "")
+            # Re-pad each octet to 2 hex digits before concatenating,
+            # because _normalize_mac strips leading zeros (e.g. "2:a:6d" → "020A6D")
+            parts = mac.upper().replace("-", ":").replace(".", ":").split(":")
+            clean = "".join(p.zfill(2) for p in parts)
             vendor = _oui_db.get(clean[:6])
             if vendor:
                 return vendor
@@ -1044,14 +1047,18 @@ async def get_filter_status():
 # ---------------------------------------------------------------------------
 
 class CrowdSecClient:
-    """Stub client for CrowdSec Local API (LAPI).
-    Will eventually connect to http://localhost:8080 to manage
-    the firewall bouncer and fetch threat intelligence decisions.
+    """Client for CrowdSec Local API (LAPI).
+
+    Connects to http://localhost:8080 to fetch alerts and decisions.
     """
 
     def __init__(self, base_url: str = "http://localhost:8080"):
         self.base_url = base_url
-        self._enabled = False   # in-memory state until CrowdSec is deployed
+        self._api_key = os.getenv("CROWDSEC_API_KEY", "")
+        self._enabled = False
+
+    def _headers(self) -> dict:
+        return {"X-Api-Key": self._api_key}
 
     async def is_running(self) -> bool:
         """Check if CrowdSec LAPI is reachable."""
@@ -1062,19 +1069,57 @@ class CrowdSecClient:
         except Exception:
             return False
 
-    async def get_decisions_count(self) -> int:
-        """Get the number of active ban decisions (blocked IPs)."""
+    async def get_decisions(self) -> list[dict]:
+        """Get active decisions (bans/captchas) with full details."""
         try:
             async with httpx.AsyncClient(timeout=3) as client:
                 r = await client.get(
                     f"{self.base_url}/v1/decisions",
-                    headers={"X-Api-Key": os.getenv("CROWDSEC_API_KEY", "")},
+                    headers=self._headers(),
                 )
                 if r.status_code == 200:
-                    return len(r.json() or [])
+                    return r.json() or []
         except Exception:
             pass
-        return 0
+        return []
+
+    async def get_decisions_count(self) -> int:
+        """Get the number of active ban decisions (blocked IPs)."""
+        return len(await self.get_decisions())
+
+    async def get_alerts(self, limit: int = 50) -> list[dict]:
+        """Fetch recent alerts from CrowdSec LAPI.
+
+        Note: bouncer API keys only have access to /v1/decisions, not /v1/alerts.
+        If a machine/watcher login is configured via CROWDSEC_MACHINE_ID and
+        CROWDSEC_MACHINE_PASSWORD, those are used for alert access.
+        """
+        machine_id = os.getenv("CROWDSEC_MACHINE_ID", "")
+        machine_pw = os.getenv("CROWDSEC_MACHINE_PASSWORD", "")
+        if not machine_id:
+            return []
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                # Authenticate with machine credentials
+                login = await client.post(
+                    f"{self.base_url}/v1/watchers/login",
+                    json={"machine_id": machine_id, "password": machine_pw},
+                )
+                if login.status_code != 200:
+                    return []
+                token = login.json().get("token", "")
+
+                r = await client.get(
+                    f"{self.base_url}/v1/alerts",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"limit": limit},
+                )
+                if r.status_code == 200:
+                    return r.json() or []
+        except Exception:
+            pass
+        return []
 
     @property
     def enabled(self) -> bool:
@@ -1090,13 +1135,62 @@ crowdsec = CrowdSecClient(base_url=os.environ.get("CROWDSEC_URL", "http://localh
 
 @app.get("/api/ips/status")
 async def get_ips_status():
-    """Return Active Protect (IPS) status."""
+    """Return Active Protect (IPS) status with alerts and decisions."""
     running = await crowdsec.is_running()
-    blocked = await crowdsec.get_decisions_count() if running else 0
+    if not running:
+        return {
+            "enabled": crowdsec.enabled,
+            "crowdsec_running": False,
+            "active_threats_blocked": 0,
+            "alerts": [],
+            "decisions": [],
+        }
+
+    alerts_raw = await crowdsec.get_alerts(limit=50)
+    decisions_raw = await crowdsec.get_decisions()
+
+    # Normalize alerts for the UI
+    alerts = []
+    for a in alerts_raw:
+        source = a.get("source", {})
+        alerts.append({
+            "id": a.get("id"),
+            "created_at": a.get("created_at", ""),
+            "scenario": a.get("scenario", "unknown"),
+            "message": a.get("message", ""),
+            "ip": source.get("ip", source.get("value", "?")),
+            "country": source.get("cn", ""),
+            "as_name": source.get("as_name", ""),
+            "events_count": a.get("events_count", 0),
+            "scope": source.get("scope", ""),
+        })
+
+    # Split decisions into local (detected on our network) vs CAPI (community blocklist)
+    local_decisions = []
+    blocklist = []
+    for d in decisions_raw:
+        entry = {
+            "id": d.get("id"),
+            "created_at": d.get("created_at", ""),
+            "ip": d.get("value", "?"),
+            "reason": d.get("scenario", "manual"),
+            "origin": d.get("origin", ""),
+            "type": d.get("type", "ban"),
+            "duration": d.get("duration", ""),
+        }
+        if d.get("origin") == "CAPI":
+            blocklist.append(entry)
+        else:
+            local_decisions.append(entry)
+
     return {
         "enabled": crowdsec.enabled,
         "crowdsec_running": running,
-        "active_threats_blocked": blocked,
+        "local_alerts_count": len(alerts) + len(local_decisions),
+        "blocklist_count": len(blocklist),
+        "alerts": alerts,
+        "local_decisions": local_decisions,
+        "blocklist": blocklist[:100],  # Limit blocklist to 100 for UI performance
     }
 
 
@@ -1616,7 +1710,57 @@ async def health_check(db: Session = Depends(get_db)):
             "details": str(exc),
         })
 
-    # 5) AdGuard Home
+    # 5) p0f Passive OS Fingerprinting
+    t0 = _time.monotonic()
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "p0f.*-i"],
+            capture_output=True, timeout=5,
+        )
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if proc.returncode == 0:
+            pids = proc.stdout.decode().strip().split('\n')
+            # Check log freshness
+            p0f_log = _Path("/app/data/p0f.log")
+            if p0f_log.exists():
+                age_s = _time.time() - _os.path.getmtime(p0f_log)
+                size_kb = _os.path.getsize(p0f_log) / 1024
+                # Count devices with OS fingerprints
+                fp_count = db.query(Device).filter(Device.os_name != None).count()  # noqa: E711
+                detail = f"Running (PID {pids[0]}), log {size_kb:,.0f} KB, {fp_count} devices fingerprinted"
+                results.append({
+                    "service": "p0f (OS Fingerprinting)",
+                    "icon": "🔍",
+                    "status": "ok",
+                    "response_ms": ms,
+                    "details": detail,
+                })
+            else:
+                results.append({
+                    "service": "p0f (OS Fingerprinting)",
+                    "icon": "🔍",
+                    "status": "warning",
+                    "response_ms": ms,
+                    "details": f"Process running (PID {pids[0]}) but no log file yet",
+                })
+        else:
+            results.append({
+                "service": "p0f (OS Fingerprinting)",
+                "icon": "🔍",
+                "status": "error",
+                "response_ms": ms,
+                "details": "Process not found — p0f not running",
+            })
+    except Exception as exc:
+        results.append({
+            "service": "p0f (OS Fingerprinting)",
+            "icon": "🔍",
+            "status": "error",
+            "response_ms": 0,
+            "details": str(exc),
+        })
+
+    # 6) AdGuard Home
     t0 = _time.monotonic()
     try:
         import httpx
@@ -1655,7 +1799,39 @@ async def health_check(db: Session = Depends(get_db)):
             "details": f"Not reachable: {exc}",
         })
 
-    # 6) Zeek log freshness
+    # 7) CrowdSec IPS
+    t0 = _time.monotonic()
+    try:
+        cs_running = await crowdsec.is_running()
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if cs_running:
+            decisions = await crowdsec.get_decisions_count()
+            results.append({
+                "service": "CrowdSec (IPS)",
+                "icon": "🚨",
+                "status": "ok",
+                "response_ms": ms,
+                "details": f"LAPI online, {decisions} active decision{'s' if decisions != 1 else ''}",
+            })
+        else:
+            results.append({
+                "service": "CrowdSec (IPS)",
+                "icon": "🚨",
+                "status": "error",
+                "response_ms": ms,
+                "details": "LAPI not reachable at " + crowdsec.base_url,
+            })
+    except Exception as exc:
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        results.append({
+            "service": "CrowdSec (IPS)",
+            "icon": "🚨",
+            "status": "error",
+            "response_ms": ms,
+            "details": str(exc),
+        })
+
+    # 8) Zeek log freshness
     import os
     from pathlib import Path
     log_dir = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs"))
@@ -1688,7 +1864,7 @@ async def health_check(db: Session = Depends(get_db)):
                 "details": "File not found",
             })
 
-    # 7) Database size & retention info
+    # 9) Database size & retention info
     db_size_mb = DB_PATH.stat().st_size / (1024*1024) if DB_PATH.exists() else 0
     event_count = db.query(func.count(DetectionEvent.id)).scalar() or 0
     db_status = "ok" if db_size_mb < MAX_DB_SIZE_MB else "warning"

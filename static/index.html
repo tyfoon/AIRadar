@@ -734,12 +734,12 @@
       <!-- Stats Cards -->
       <div class="stat-grid grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.threatsBlocked">Threats Blocked</p>
-          <p id="ips-stat-blocked" class="text-2xl font-bold mt-2 tabular-nums text-emerald-500 dark:text-emerald-400">0</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Local Alerts</p>
+          <p id="ips-stat-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.activeDecisions">Active Decisions</p>
-          <p id="ips-stat-decisions" class="text-2xl font-bold mt-2 tabular-nums">0</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Community Blocklist</p>
+          <p id="ips-stat-decisions" class="text-2xl font-bold mt-2 tabular-nums text-slate-500 dark:text-slate-400">0</p>
         </div>
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ips.crowdsecEngine">CrowdSec Engine</p>
@@ -755,63 +755,62 @@
         </div>
       </div>
 
-      <!-- Threat Intelligence Info -->
+      <!-- Tabbed section: Alerts / Blocklist -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
-        <div class="px-5 py-3 border-b border-slate-200 dark:border-white/[0.05]">
-          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="ips.threatIntel">Threat Intelligence Sources</h3>
+        <!-- Tab bar -->
+        <div class="flex border-b border-slate-200 dark:border-white/[0.05]">
+          <button id="ips-tab-alerts" onclick="switchIpsTab('alerts')" class="px-5 py-3 text-sm font-semibold border-b-2 border-red-500 text-red-600 dark:text-red-400">
+            Attacks on your network <span id="ips-tab-alerts-count" class="ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">0</span>
+          </button>
+          <button id="ips-tab-blocklist" onclick="switchIpsTab('blocklist')" class="px-5 py-3 text-sm font-medium text-slate-400 dark:text-slate-500 border-b-2 border-transparent hover:text-slate-600 dark:hover:text-slate-300">
+            Community Blocklist <span id="ips-tab-blocklist-count" class="ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">0</span>
+          </button>
         </div>
-        <div class="p-5">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="flex items-start gap-3">
-              <div class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0"><span class="text-sm">🤖</span></div>
-              <div>
-                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="ips.botnetDetection">Botnet Detection</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500" data-i18n="ips.botnetDesc">Known C2 servers, zombie networks, and automated attack infrastructure.</p>
-              </div>
-            </div>
-            <div class="flex items-start gap-3">
-              <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0"><span class="text-sm">🔓</span></div>
-              <div>
-                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="ips.bruteForce">Brute Force Protection</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500" data-i18n="ips.bruteForceDesc">IPs flagged for SSH, HTTP, and credential stuffing attacks.</p>
-              </div>
-            </div>
-            <div class="flex items-start gap-3">
-              <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0"><span class="text-sm">🕵️</span></div>
-              <div>
-                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="ips.scannerExploit">Scanner & Exploit</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500" data-i18n="ips.scannerDesc">Port scanners, vulnerability probers, and exploit attempt sources.</p>
-              </div>
-            </div>
+
+        <!-- Alerts tab content -->
+        <div id="ips-panel-alerts">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10]">
+                <tr>
+                  <th class="py-3 px-4 font-medium">Time</th>
+                  <th class="py-3 px-4 font-medium">IP Address</th>
+                  <th class="py-3 px-4 font-medium">Attack Type</th>
+                  <th class="py-3 px-4 font-medium">Source</th>
+                  <th class="py-3 px-4 font-medium">Events</th>
+                </tr>
+              </thead>
+              <tbody id="ips-alerts-body" class="text-slate-600 dark:text-slate-300 striped-rows">
+                <tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+                  <div class="flex flex-col items-center gap-2">
+                    <span class="text-2xl">🛡️</span>
+                    <span>No attacks detected on your network yet.</span>
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
 
-      <!-- Recent Blocked Threats Table -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
-        <div class="px-5 py-3 border-b border-slate-200 dark:border-white/[0.05]">
-          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="ips.recentThreats">Recent Blocked Threats</h3>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left">
-            <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10]">
-              <tr>
-                <th class="py-3 px-4 font-medium" data-i18n="ips.thTime">Time</th>
-                <th class="py-3 px-4 font-medium" data-i18n="ips.thIpAddress">IP Address</th>
-                <th class="py-3 px-4 font-medium" data-i18n="ips.thReason">Reason</th>
-                <th class="py-3 px-4 font-medium" data-i18n="ips.thOrigin">Origin</th>
-                <th class="py-3 px-4 font-medium" data-i18n="ips.thDuration">Duration</th>
-              </tr>
-            </thead>
-            <tbody id="ips-threats-body" class="text-slate-600 dark:text-slate-300 striped-rows">
-              <tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm" id="ips-threats-empty">
-                <div class="flex flex-col items-center gap-2">
-                  <span class="text-2xl">🛡️</span>
-                  <span data-i18n="ips.noThreats">No threats blocked yet. CrowdSec will populate this table once active.</span>
-                </div>
-              </td></tr>
-            </tbody>
-          </table>
+        <!-- Blocklist tab content (hidden by default) -->
+        <div id="ips-panel-blocklist" class="hidden">
+          <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-white/[0.05]">
+            <p class="text-xs text-slate-400 dark:text-slate-500">Known malicious IPs shared by the CrowdSec community. These are not attacks on your network — they are preventive blocklist entries.</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10]">
+                <tr>
+                  <th class="py-3 px-4 font-medium">IP Address</th>
+                  <th class="py-3 px-4 font-medium">Reason</th>
+                  <th class="py-3 px-4 font-medium">Duration</th>
+                </tr>
+              </thead>
+              <tbody id="ips-blocklist-body" class="text-slate-600 dark:text-slate-300 striped-rows">
+                <tr><td colspan="3" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">Loading blocklist...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

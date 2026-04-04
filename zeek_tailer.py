@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import os
 import socket
 import subprocess
@@ -259,9 +260,22 @@ def match_domain(
 _device_cache: dict[str, float] = {}  # ip -> last_registered_at
 DEVICE_CACHE_TTL = 300  # 5 minutes
 
+<<<<<<< HEAD
 # IP → MAC cache — populated from conn.log's orig_l2_addr field.
 # Used by ssl.log (which has no MAC) to link events to the correct device.
 _ip_to_mac: dict[str, str] = {}  # ip → normalized MAC
+=======
+# IP → MAC cache populated by conn.log (with MAC logging enabled)
+_ip_mac_cache: dict[str, str] = {}  # ip → normalized MAC
+
+
+def _resolve_hostname(ip: str) -> str | None:
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        return hostname
+    except (socket.herror, socket.gaierror, OSError):
+        return None
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
 
 
 def _normalize_mac(mac: str) -> str:
@@ -407,25 +421,80 @@ def _resolve_mac_ipv6(ip: str) -> str | None:
         return _ndp_cache.get(ip)
 
 
+def _detect_local_v6_prefixes() -> list[ipaddress.IPv6Network]:
+    """Auto-detect global IPv6 /64 prefixes assigned to local interfaces."""
+    prefixes: list[ipaddress.IPv6Network] = []
+    try:
+        result = subprocess.run(
+            ["ip", "-6", "addr", "show", "scope", "global"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("inet6 "):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        net = ipaddress.ip_network(parts[1], strict=False)
+                        # Ensure /64 prefix
+                        net64 = ipaddress.ip_network(f"{net.network_address}/64", strict=False)
+                        if net64 not in prefixes:
+                            prefixes.append(net64)
+                    except ValueError:
+                        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    # Also allow manual override via env var
+    env_prefix = os.environ.get("LOCAL_IPV6_PREFIX", "")
+    if env_prefix:
+        try:
+            net = ipaddress.ip_network(env_prefix, strict=False)
+            prefixes.append(net)
+        except ValueError:
+            pass
+    if prefixes:
+        print(f"[*] Local IPv6 prefixes: {prefixes}")
+    return prefixes
+
+_local_v6_prefixes: list[ipaddress.IPv6Network] = _detect_local_v6_prefixes()
+
 def _is_local_ip(ip: str) -> bool:
-    """Check if an IP address is a local/private network address."""
-    import ipaddress
+    """Check if an IP address is a local/private network address.
+
+    For IPv6, global addresses on the home network (e.g. 2a02:a447:...)
+    are NOT in RFC1918 private ranges but ARE local devices.
+    Auto-detects the local IPv6 prefix from interface addresses.
+    """
     try:
         addr = ipaddress.ip_address(ip)
-        # Private ranges: 10.x, 172.16-31.x, 192.168.x, fc00::/7, fe80::/10
-        return addr.is_private or addr.is_link_local
+        if addr.is_private or addr.is_link_local:
+            return True
+        # Match global IPv6 against local interface prefixes
+        if addr.version == 6 and _local_v6_prefixes:
+            for prefix in _local_v6_prefixes:
+                if addr in prefix:
+                    return True
+        return False
     except ValueError:
         return False
 
 
+<<<<<<< HEAD
 async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = None) -> None:
+=======
+async def register_device(client: httpx.AsyncClient, ip: str, mac_hint: str | None = None) -> None:
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
     """Register/update a device on the API (non-blocking).
 
     Only registers devices with local/private IP addresses — public IPs
     (AI service servers, CDNs, etc.) are NOT devices on our network.
 
+<<<<<<< HEAD
     If *mac* is provided (e.g. from Zeek's orig_l2_addr), it is used
     directly — no ARP lookup needed.
+=======
+    mac_hint: optional MAC from Zeek conn.log (orig_l2_addr field).
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
     """
     if not _is_local_ip(ip):
         return
@@ -436,6 +505,7 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = 
         return
     _device_cache[ip] = now
 
+<<<<<<< HEAD
     # No reverse DNS — hostnames come exclusively from DHCP and mDNS tailers.
     # Prefer Zeek-provided MAC > conn.log cache > ARP lookup
     if not mac:
@@ -443,6 +513,11 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = 
     if not mac:
         mac = _resolve_mac(ip)    # ARP/NDP fallback
     else:
+=======
+    hostname = _resolve_hostname(ip)
+    mac = mac_hint or _ip_mac_cache.get(ip) or _resolve_mac(ip)
+    if mac:
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
         mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
     if mac:
@@ -786,6 +861,12 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
+                # MAC address from Zeek conn.log (requires @load policy/protocols/conn/mac-logging)
+                src_mac = record.get("orig_l2_addr")
+                if src_mac and src_mac == "-":
+                    src_mac = None
+                if src_mac and _is_local_ip(src_ip):
+                    _ip_mac_cache[src_ip] = _normalize_mac(src_mac)
                 proto = record.get("proto", "").lower()
                 # Zeek MAC logging: use orig_l2_addr if available
                 l2_mac = record.get("orig_l2_addr")
@@ -824,7 +905,11 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         last_vpn = _vpn_last_seen.get(dedup_k, 0)
                         if (now - last_vpn) >= VPN_DEDUP_SECONDS:
                             _vpn_last_seen[dedup_k] = now
+<<<<<<< HEAD
                             asyncio.create_task(register_device(client, src_ip, l2_mac))
+=======
+                            asyncio.create_task(register_device(client, src_ip, src_mac))
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
@@ -871,7 +956,11 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             dpd_resp = 0
                         dpd_total = dpd_orig + dpd_resp
 
+<<<<<<< HEAD
                         asyncio.create_task(register_device(client, src_ip, l2_mac))
+=======
+                        asyncio.create_task(register_device(client, src_ip, src_mac))
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                         await send_event(
                             client,
                             detection_type="stealth_vpn_tunnel",
@@ -923,7 +1012,11 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         h_last = _heuristic_vpn_seen.get(h_key, 0)
                         if (now - h_last) >= HEURISTIC_VPN_DEDUP_SECONDS:
                             _heuristic_vpn_seen[h_key] = now
+<<<<<<< HEAD
                             asyncio.create_task(register_device(client, src_ip, l2_mac))
+=======
+                            asyncio.create_task(register_device(client, src_ip, src_mac))
+>>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
@@ -1341,13 +1434,23 @@ async def main(zeek_log_dir: str) -> None:
         p0f_log = Path(P0F_LOG_FILE)
         p0f_task = tail_p0f_standalone(p0f_log)
         print(f"[*] p0f passive OS fingerprinting: enabled (tailing {p0f_log})")
-        print(f"[*]   Start p0f separately: sudo p0f -i en0 -f /opt/homebrew/etc/p0f/p0f.fp -o {p0f_log} -p")
     except ImportError:
         print(f"[*] p0f passive OS fingerprinting: disabled (p0f_tailer not found)")
     except Exception as exc:
         print(f"[*] p0f passive OS fingerprinting: disabled ({exc})")
 
     print()
+
+    # Network scanner — periodic nmap + nbtscan for hostname discovery
+    scanner_task = None
+    try:
+        from network_scanner import run_network_scanner
+        scanner_task = run_network_scanner()
+        print(f"[*] Network scanner: enabled (nmap + nbtscan)")
+    except ImportError:
+        print(f"[*] Network scanner: disabled (network_scanner not found)")
+    except Exception as exc:
+        print(f"[*] Network scanner: disabled ({exc})")
 
     tasks = [
         tail_ssl_log(ssl_log, client := httpx.AsyncClient()),
@@ -1359,6 +1462,8 @@ async def main(zeek_log_dir: str) -> None:
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)
+    if scanner_task is not None:
+        tasks.append(scanner_task)
 
     try:
         await asyncio.gather(*tasks)

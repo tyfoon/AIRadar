@@ -200,7 +200,8 @@
       "WebFetch(domain:www.fingerbank.org)",
       "WebFetch(domain:zeek.org)",
       "WebFetch(domain:api.fingerbank.org)",
-      "WebFetch(domain:foxio.io)"
+      "WebFetch(domain:foxio.io)",
+      "Bash(git pull:*)"
     ]
   },
   "hooks": {
