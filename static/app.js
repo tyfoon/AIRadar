@@ -3107,7 +3107,60 @@ async function loadIpsStatus() {
     styleIpsCard(data.enabled);
     _updateIpsBanner(data);
     _updateIpsStats(data);
+    _renderIpsThreats(data);
   } catch(e) { console.error('loadIpsStatus:', e); }
+}
+
+function _renderIpsThreats(data) {
+  const tbody = document.getElementById('ips-threats-body');
+  if (!tbody) return;
+
+  // Combine alerts and decisions into one list, sorted by time
+  const rows = [];
+  for (const a of (data.alerts || [])) {
+    rows.push({
+      time: a.created_at,
+      ip: a.ip,
+      reason: a.scenario.replace(/^crowdsecurity\//, ''),
+      origin: a.country ? `${a.as_name || ''} (${a.country})`.trim() : (a.as_name || 'local'),
+      duration: `${a.events_count} event${a.events_count !== 1 ? 's' : ''}`,
+      type: 'alert',
+    });
+  }
+  for (const d of (data.decisions || [])) {
+    // Skip if already shown as alert with same IP+reason
+    if (rows.some(r => r.ip === d.ip && d.reason.includes(r.reason))) continue;
+    rows.push({
+      time: d.created_at,
+      ip: d.ip,
+      reason: d.reason.replace(/^crowdsecurity\//, ''),
+      origin: d.origin || 'crowdsec',
+      duration: d.duration || '',
+      type: 'decision',
+    });
+  }
+
+  // Sort newest first
+  rows.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" id="ips-threats-empty" class="text-center py-8 text-slate-400 dark:text-slate-500">${t('ips.noThreats')}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.slice(0, 50).map(r => {
+    const timeStr = r.time ? new Date(r.time).toLocaleString() : '';
+    const typeBadge = r.type === 'decision'
+      ? '<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">BAN</span>'
+      : '<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">ALERT</span>';
+    return `<tr class="border-t border-slate-100 dark:border-white/[0.04]">
+      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${timeStr}</td>
+      <td class="py-2 px-3 font-mono text-xs">${r.ip}</td>
+      <td class="py-2 px-3 text-xs">${r.reason}${typeBadge}</td>
+      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${r.origin}</td>
+      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${r.duration}</td>
+    </tr>`;
+  }).join('');
 }
 
 function _updateIpsBanner(data) {

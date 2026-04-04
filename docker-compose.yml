@@ -68,6 +68,8 @@ services:
       - ./crowdsec/data:/var/lib/crowdsec/data
       # Same Zeek logs as our app — CrowdSec parses them for threats
       - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/var/log/zeek:ro
+      # Host system logs for SSH brute force & syslog detection
+      - /var/log:/var/log/host:ro
     healthcheck:
       test: ["CMD", "cscli", "version"]
       interval: 15s

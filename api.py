@@ -1110,14 +1110,18 @@ async def get_filter_status():
 # ---------------------------------------------------------------------------
 
 class CrowdSecClient:
-    """Stub client for CrowdSec Local API (LAPI).
-    Will eventually connect to http://localhost:8080 to manage
-    the firewall bouncer and fetch threat intelligence decisions.
+    """Client for CrowdSec Local API (LAPI).
+
+    Connects to http://localhost:8080 to fetch alerts and decisions.
     """
 
     def __init__(self, base_url: str = "http://localhost:8080"):
         self.base_url = base_url
-        self._enabled = False   # in-memory state until CrowdSec is deployed
+        self._api_key = os.getenv("CROWDSEC_API_KEY", "")
+        self._enabled = False
+
+    def _headers(self) -> dict:
+        return {"X-Api-Key": self._api_key}
 
     async def is_running(self) -> bool:
         """Check if CrowdSec LAPI is reachable."""
@@ -1128,19 +1132,38 @@ class CrowdSecClient:
         except Exception:
             return False
 
-    async def get_decisions_count(self) -> int:
-        """Get the number of active ban decisions (blocked IPs)."""
+    async def get_decisions(self) -> list[dict]:
+        """Get active decisions (bans/captchas) with full details."""
         try:
             async with httpx.AsyncClient(timeout=3) as client:
                 r = await client.get(
                     f"{self.base_url}/v1/decisions",
-                    headers={"X-Api-Key": os.getenv("CROWDSEC_API_KEY", "")},
+                    headers=self._headers(),
                 )
                 if r.status_code == 200:
-                    return len(r.json() or [])
+                    return r.json() or []
         except Exception:
             pass
-        return 0
+        return []
+
+    async def get_decisions_count(self) -> int:
+        """Get the number of active ban decisions (blocked IPs)."""
+        return len(await self.get_decisions())
+
+    async def get_alerts(self, limit: int = 50) -> list[dict]:
+        """Fetch recent alerts from CrowdSec LAPI."""
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(
+                    f"{self.base_url}/v1/alerts",
+                    headers=self._headers(),
+                    params={"limit": limit},
+                )
+                if r.status_code == 200:
+                    return r.json() or []
+        except Exception:
+            pass
+        return []
 
     @property
     def enabled(self) -> bool:
@@ -1156,13 +1179,55 @@ crowdsec = CrowdSecClient(base_url=os.environ.get("CROWDSEC_URL", "http://localh
 
 @app.get("/api/ips/status")
 async def get_ips_status():
-    """Return Active Protect (IPS) status."""
+    """Return Active Protect (IPS) status with alerts and decisions."""
     running = await crowdsec.is_running()
-    blocked = await crowdsec.get_decisions_count() if running else 0
+    if not running:
+        return {
+            "enabled": crowdsec.enabled,
+            "crowdsec_running": False,
+            "active_threats_blocked": 0,
+            "alerts": [],
+            "decisions": [],
+        }
+
+    alerts_raw = await crowdsec.get_alerts(limit=50)
+    decisions_raw = await crowdsec.get_decisions()
+
+    # Normalize alerts for the UI
+    alerts = []
+    for a in alerts_raw:
+        source = a.get("source", {})
+        alerts.append({
+            "id": a.get("id"),
+            "created_at": a.get("created_at", ""),
+            "scenario": a.get("scenario", "unknown"),
+            "message": a.get("message", ""),
+            "ip": source.get("ip", source.get("value", "?")),
+            "country": source.get("cn", ""),
+            "as_name": source.get("as_name", ""),
+            "events_count": a.get("events_count", 0),
+            "scope": source.get("scope", ""),
+        })
+
+    # Normalize decisions for the UI
+    decisions = []
+    for d in decisions_raw:
+        decisions.append({
+            "id": d.get("id"),
+            "created_at": d.get("created_at", ""),
+            "ip": d.get("value", "?"),
+            "reason": d.get("scenario", "manual"),
+            "origin": d.get("origin", ""),
+            "type": d.get("type", "ban"),
+            "duration": d.get("duration", ""),
+        })
+
     return {
         "enabled": crowdsec.enabled,
         "crowdsec_running": running,
-        "active_threats_blocked": blocked,
+        "active_threats_blocked": len(decisions),
+        "alerts": alerts,
+        "decisions": decisions,
     }
 
 
