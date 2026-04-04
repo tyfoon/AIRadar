@@ -7,7 +7,8 @@
 #   chmod +x setup.sh
 #   sudo ./setup.sh
 # ──────────────────────────────────────────────────────────────
-set -e
+set -eE
+trap 'err "Command failed at line $LINENO. Continuing..."; set +e' ERR
 
 # ── Colors ───────────────────────────────────────────────────
 RED='\033[0;31m'
