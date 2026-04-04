@@ -288,6 +288,26 @@ else
     info "Manually set interface=${ZEEK_IFACE} in your Zeek node.cfg"
 fi
 
+# Enable DHCP + MAC logging in Zeek (needed for device hostnames and MAC addresses)
+ZEEK_LOCAL=""
+for path in /opt/zeek/share/zeek/site/local.zeek /etc/zeek/site/local.zeek /usr/local/zeek/share/zeek/site/local.zeek; do
+    if [ -f "$path" ]; then
+        ZEEK_LOCAL="$path"
+        break
+    fi
+done
+
+if [ -n "$ZEEK_LOCAL" ]; then
+    for module in "protocols/dhcp" "policy/protocols/conn/mac-logging"; do
+        if ! grep -q "@load ${module}" "$ZEEK_LOCAL"; then
+            echo "@load ${module}" >> "$ZEEK_LOCAL"
+            ok "Added @load ${module} to Zeek local.zeek"
+        fi
+    done
+else
+    warn "Could not find Zeek local.zeek — manually add: @load protocols/dhcp"
+fi
+
 # Install Zeek systemd service for auto-start
 cp "$AIRADAR_DIR/network/zeek-autostart.service" /etc/systemd/system/zeek-airadar.service
 systemctl daemon-reload
