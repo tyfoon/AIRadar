@@ -263,6 +263,20 @@ DEVICE_CACHE_TTL = 300  # 5 minutes
 def _resolve_hostname(ip: str) -> str | None:
     try:
         hostname, _, _ = socket.gethostbyaddr(ip)
+        if not hostname:
+            return None
+        # Filter out useless reverse-DNS names that are just the IP reformatted.
+        # ISPs return names like "2a02-a447-d50b-0-607a.access.telfort.nl" for
+        # IPv6 addresses — these add no value as a device name.
+        hn_lower = hostname.lower()
+        # Strip the domain suffix and check if what remains looks like an IP
+        first_part = hn_lower.split(".")[0]
+        # IPv6-derived: contains hex chars and dashes matching the address
+        if ":" in ip and len(first_part) > 15 and all(c in "0123456789abcdef-" for c in first_part):
+            return None
+        # Generic ISP hostnames (e.g. "84-87-123-45.cable.dynamic.v4.ziggo.nl")
+        if first_part.replace("-", "").replace(".", "").isdigit() and len(first_part) > 8:
+            return None
         return hostname
     except (socket.herror, socket.gaierror, OSError):
         return None
