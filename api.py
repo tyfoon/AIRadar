@@ -691,9 +691,10 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         elif payload.hostname and payload.hostname != device.hostname:
             # DHCP hostname is usually more accurate than reverse DNS
             device.hostname = payload.hostname
-        # Resolve vendor if not already set
-        if not device.vendor:
-            device.vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
+        # Re-resolve vendor — hostname match may be more accurate than stale OUI
+        new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
+        if new_vendor and new_vendor != device.vendor:
+            device.vendor = new_vendor
         device.last_seen = now
     else:
         vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
