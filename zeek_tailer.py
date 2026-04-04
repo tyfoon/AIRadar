@@ -790,6 +790,10 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
                 proto = record.get("proto", "").lower()
+                # Zeek MAC logging: use orig_l2_addr if available
+                l2_mac = record.get("orig_l2_addr")
+                if l2_mac and l2_mac == "-":
+                    l2_mac = None
                 resp_port_str = record.get("id.resp_p", "0")
                 try:
                     resp_port = int(resp_port_str) if resp_port_str != "-" else 0
