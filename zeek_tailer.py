@@ -839,7 +839,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 if src_mac and src_mac == "-":
                     src_mac = None
                 if src_mac and _is_local_ip(src_ip):
-                    _ip_mac_cache[src_ip] = _normalize_mac(src_mac)
+                    _ip_to_mac[src_ip] = _normalize_mac(src_mac)
                 proto = record.get("proto", "").lower()
                 # Zeek MAC logging: use orig_l2_addr if available
                 l2_mac = record.get("orig_l2_addr")
