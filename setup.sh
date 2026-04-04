@@ -230,8 +230,29 @@ else
     warn "zeekctl not found — install Zeek first, then run: zeekctl deploy"
 fi
 
-# ── Step 6: Prepare directory structure ──────────────────────
-step 6 "Preparing AI-Radar directory structure"
+# ── Step 6: Transparent DNS redirect ─────────────────────────
+step 6 "Installing transparent DNS redirect"
+
+if [ "$DEPLOY_MODE" = "bridge" ]; then
+    # Install iptables if not present
+    if ! command -v iptables &>/dev/null; then
+        apt install -y -qq iptables
+    fi
+
+    # Deploy systemd service for persistent iptables rules
+    cp "$AIRADAR_DIR/network/airadar-dns-redirect.service" /etc/systemd/system/airadar-dns-redirect.service
+    systemctl daemon-reload
+    systemctl enable airadar-dns-redirect.service
+    ok "DNS redirect service installed"
+    info "All DNS traffic through the bridge is automatically redirected to AdGuard"
+    info "No DNS/DHCP changes needed on your router or client devices!"
+else
+    warn "Single-NIC mode: transparent DNS redirect not available"
+    info "Clients need to point their DNS to ${BRIDGE_IP_ADDR%/*}"
+fi
+
+# ── Step 7: Prepare directory structure ──────────────────────
+step 7 "Preparing AI-Radar directory structure"
 
 mkdir -p "$AIRADAR_DIR/data"
 mkdir -p "$AIRADAR_DIR/adguard/conf"
