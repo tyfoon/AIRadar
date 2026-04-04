@@ -878,11 +878,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         last_vpn = _vpn_last_seen.get(dedup_k, 0)
                         if (now - last_vpn) >= VPN_DEDUP_SECONDS:
                             _vpn_last_seen[dedup_k] = now
-<<<<<<< HEAD
                             asyncio.create_task(register_device(client, src_ip, l2_mac))
-=======
-                            asyncio.create_task(register_device(client, src_ip, src_mac))
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
@@ -929,11 +925,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             dpd_resp = 0
                         dpd_total = dpd_orig + dpd_resp
 
-<<<<<<< HEAD
                         asyncio.create_task(register_device(client, src_ip, l2_mac))
-=======
-                        asyncio.create_task(register_device(client, src_ip, src_mac))
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                         await send_event(
                             client,
                             detection_type="stealth_vpn_tunnel",
@@ -985,11 +977,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         h_last = _heuristic_vpn_seen.get(h_key, 0)
                         if (now - h_last) >= HEURISTIC_VPN_DEDUP_SECONDS:
                             _heuristic_vpn_seen[h_key] = now
-<<<<<<< HEAD
                             asyncio.create_task(register_device(client, src_ip, l2_mac))
-=======
-                            asyncio.create_task(register_device(client, src_ip, src_mac))
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
