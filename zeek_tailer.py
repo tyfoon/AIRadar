@@ -259,6 +259,9 @@ def match_domain(
 _device_cache: dict[str, float] = {}  # ip -> last_registered_at
 DEVICE_CACHE_TTL = 300  # 5 minutes
 
+# IP → MAC cache populated by conn.log (with MAC logging enabled)
+_ip_mac_cache: dict[str, str] = {}  # ip → normalized MAC
+
 
 def _resolve_hostname(ip: str) -> str | None:
     try:
@@ -440,7 +443,7 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac_hint: str | No
     _device_cache[ip] = now
 
     hostname = _resolve_hostname(ip)
-    mac = mac_hint or _resolve_mac(ip)
+    mac = mac_hint or _ip_mac_cache.get(ip) or _resolve_mac(ip)
     if mac:
         mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
@@ -790,6 +793,8 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 src_mac = record.get("orig_l2_addr")
                 if src_mac and src_mac == "-":
                     src_mac = None
+                if src_mac and _is_local_ip(src_ip):
+                    _ip_mac_cache[src_ip] = _normalize_mac(src_mac)
                 proto = record.get("proto", "").lower()
                 resp_port_str = record.get("id.resp_p", "0")
                 try:
