@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ipaddress
 import os
 import socket
 import subprocess
@@ -414,10 +415,9 @@ def _resolve_mac_ipv6(ip: str) -> str | None:
         return _ndp_cache.get(ip)
 
 
-def _detect_local_v6_prefixes() -> list[str]:
+def _detect_local_v6_prefixes() -> list[ipaddress.IPv6Network]:
     """Auto-detect global IPv6 /64 prefixes assigned to local interfaces."""
-    import ipaddress
-    prefixes = []
+    prefixes: list[ipaddress.IPv6Network] = []
     try:
         result = subprocess.run(
             ["ip", "-6", "addr", "show", "scope", "global"],
@@ -430,11 +430,10 @@ def _detect_local_v6_prefixes() -> list[str]:
                 if len(parts) >= 2:
                     try:
                         net = ipaddress.ip_network(parts[1], strict=False)
-                        # Store the /64 prefix as a string for fast startswith matching
-                        prefix = str(net.network_address)
-                        # Truncate to /64: take first 4 groups
-                        groups = prefix.split(":")[:4]
-                        prefixes.append(":".join(groups) + ":")
+                        # Ensure /64 prefix
+                        net64 = ipaddress.ip_network(f"{net.network_address}/64", strict=False)
+                        if net64 not in prefixes:
+                            prefixes.append(net64)
                     except ValueError:
                         pass
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -442,12 +441,16 @@ def _detect_local_v6_prefixes() -> list[str]:
     # Also allow manual override via env var
     env_prefix = os.environ.get("LOCAL_IPV6_PREFIX", "")
     if env_prefix:
-        prefixes.append(env_prefix)
+        try:
+            net = ipaddress.ip_network(env_prefix, strict=False)
+            prefixes.append(net)
+        except ValueError:
+            pass
     if prefixes:
         print(f"[*] Local IPv6 prefixes: {prefixes}")
     return prefixes
 
-_local_v6_prefixes: list[str] = _detect_local_v6_prefixes()
+_local_v6_prefixes: list[ipaddress.IPv6Network] = _detect_local_v6_prefixes()
 
 def _is_local_ip(ip: str) -> bool:
     """Check if an IP address is a local/private network address.
@@ -456,16 +459,14 @@ def _is_local_ip(ip: str) -> bool:
     are NOT in RFC1918 private ranges but ARE local devices.
     Auto-detects the local IPv6 prefix from interface addresses.
     """
-    import ipaddress
     try:
         addr = ipaddress.ip_address(ip)
         if addr.is_private or addr.is_link_local:
             return True
         # Match global IPv6 against local interface prefixes
         if addr.version == 6 and _local_v6_prefixes:
-            normalized = str(addr)
             for prefix in _local_v6_prefixes:
-                if normalized.startswith(prefix):
+                if addr in prefix:
                     return True
         return False
     except ValueError:
