@@ -260,22 +260,9 @@ def match_domain(
 _device_cache: dict[str, float] = {}  # ip -> last_registered_at
 DEVICE_CACHE_TTL = 300  # 5 minutes
 
-<<<<<<< HEAD
 # IP → MAC cache — populated from conn.log's orig_l2_addr field.
 # Used by ssl.log (which has no MAC) to link events to the correct device.
 _ip_to_mac: dict[str, str] = {}  # ip → normalized MAC
-=======
-# IP → MAC cache populated by conn.log (with MAC logging enabled)
-_ip_mac_cache: dict[str, str] = {}  # ip → normalized MAC
-
-
-def _resolve_hostname(ip: str) -> str | None:
-    try:
-        hostname, _, _ = socket.gethostbyaddr(ip)
-        return hostname
-    except (socket.herror, socket.gaierror, OSError):
-        return None
->>>>>>> 89e6a4773f9ab9721ecf2228f791560853a5a94b
 
 
 def _normalize_mac(mac: str) -> str:
