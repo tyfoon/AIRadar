@@ -693,8 +693,9 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 if resp_ip and resp_ip != "-":
                     _known_ips[resp_ip] = (service, category, time.time())
 
-                # Register the device if it's a local source
-                asyncio.create_task(register_device(client, src_ip))
+                # Register the device if it's a local source (use cached MAC from conn.log)
+                cached_mac = _ip_to_mac.get(src_ip)
+                asyncio.create_task(register_device(client, src_ip, cached_mac))
 
                 # --- SNI deduplication ---
                 # Suppress repeated TLS handshakes (heartbeats / keep-alives)
