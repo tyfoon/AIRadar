@@ -291,8 +291,8 @@ CRON_LINE="0 3 * * * sqlite3 $AIRADAR_DIR/data/airadar.db \".backup $BACKUP_DIR/
 (crontab -l 2>/dev/null | grep -v "airadar.*backup"; echo "$CRON_LINE") | crontab -
 ok "Daily backup at 03:00 → $BACKUP_DIR (7-day retention)"
 
-# ── Step 8: Post-setup instructions ──────────────────────────
-step 8 "Final steps"
+# ── Step 9: Post-setup instructions ──────────────────────────
+step 9 "Final steps"
 
 MGMT_IP="${BRIDGE_IP_ADDR%/*}"
 
@@ -312,15 +312,19 @@ echo -e "       ${YELLOW}CROWDSEC_API_KEY=<paste_key_here>${NC}"
 echo ""
 echo -e "    ${BOLD}${CYAN}3.${NC} Restart to pick up all config:"
 echo -e "       ${BOLD}docker compose restart airadar-app${NC}"
-echo ""
-echo -e "    ${BOLD}${CYAN}4.${NC} Set client devices' DNS to: ${BOLD}${MGMT_IP}${NC}"
-echo -e "       (or configure your DHCP server to push this DNS)"
 
-if [ "$DEPLOY_MODE" = "single" ]; then
+if [ "$DEPLOY_MODE" = "bridge" ]; then
     echo ""
-    echo -e "    ${BOLD}${CYAN}5.${NC} ${YELLOW}Single-NIC note:${NC} Zeek captures via promiscuous mode."
-    echo -e "       For best coverage, enable ${BOLD}port mirroring${NC} on your switch"
-    echo -e "       to mirror all traffic to the ${IFACE_1} port."
+    echo -e "    ${GREEN}${BOLD}Zero-touch DNS:${NC} All DNS queries are transparently redirected"
+    echo -e "    to AdGuard. No changes needed on your router or devices!"
+else
+    echo ""
+    echo -e "    ${BOLD}${CYAN}4.${NC} Set client devices' DNS to: ${BOLD}${MGMT_IP}${NC}"
+    echo -e "       (or configure your DHCP server to push this DNS)"
+    echo ""
+    echo -e "    ${YELLOW}Single-NIC note:${NC} Zeek captures via promiscuous mode."
+    echo -e "    For best coverage, enable ${BOLD}port mirroring${NC} on your switch"
+    echo -e "    to mirror all traffic to the ${IFACE_1} port."
 fi
 
 # ── Done ─────────────────────────────────────────────────────
