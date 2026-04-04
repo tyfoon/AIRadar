@@ -10,6 +10,7 @@ RUN apt-get update && \
         net-tools \
         iproute2 \
         curl \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
