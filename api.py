@@ -657,57 +657,21 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     mac = _normalize_mac(payload.mac_address)
 
     if not mac:
-        # No MAC provided — try to find the device that already owns this IP
+        # No MAC provided — check if this IP already belongs to a device
         existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
-        if existing_ip and not existing_ip.mac_address.startswith("unknown_"):
+        if existing_ip:
             mac = existing_ip.mac_address
-        elif existing_ip and existing_ip.mac_address.startswith("unknown_"):
-            # Placeholder MAC — try to upgrade to a real device via /64 match
-            if ":" in payload.ip:
-                all_dev_ips = db.query(DeviceIP).all()
-                for dip in all_dev_ips:
-                    if not dip.mac_address.startswith("unknown_") and _same_ipv6_subnet(payload.ip, dip.ip):
-                        mac = dip.mac_address
-                        # Migrate the IP to the real device
-                        existing_ip.mac_address = mac
-                        break
-            if not mac:
-                mac = existing_ip.mac_address
         else:
-            # Brand new IP — try multiple strategies to find the owning device
-            # 1) Hostname match
-            if payload.hostname:
-                host_match = db.query(Device).filter(
-                    Device.hostname == payload.hostname,
-                    ~Device.mac_address.startswith("unknown_"),
-                ).first()
-                if host_match:
-                    mac = host_match.mac_address
-            # 2) IPv6 /64 prefix match — same subnet = same device
-            if not mac and ":" in payload.ip:
-                all_dev_ips = db.query(DeviceIP).all()
-                # Prefer real-MAC devices first, then placeholders
-                for prefer_real in [True, False]:
-                    for dip in all_dev_ips:
-                        if prefer_real and dip.mac_address.startswith("unknown_"):
-                            continue
-                        if _same_ipv6_subnet(payload.ip, dip.ip):
-                            mac = dip.mac_address
-                            break
-                    if mac:
-                        break
-            if not mac:
-                mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
+            # Completely new IP without a MAC — create placeholder
+            mac = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
 
-    # ── Merge unknown_ placeholder into real MAC device ──────────────
-    # When DHCP provides a real MAC for an IP that previously had a placeholder,
-    # migrate all IPs from the placeholder device to the real MAC device and
-    # delete the placeholder.
+    # ── Upgrade placeholder to real MAC ──────────────────────────────
+    # When a request for a specific IP now includes a real MAC, migrate
+    # the placeholder device's IPs to the real MAC device and delete it.
     if not mac.startswith("unknown_"):
         placeholder_key = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
         placeholder_dev = db.query(Device).filter(Device.mac_address == placeholder_key).first()
         if placeholder_dev:
-            # Migrate all IPs owned by the placeholder to the real MAC
             db.query(DeviceIP).filter(DeviceIP.mac_address == placeholder_key).update(
                 {DeviceIP.mac_address: mac}, synchronize_session="fetch"
             )
