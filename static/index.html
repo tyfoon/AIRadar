@@ -52,6 +52,11 @@
       <span class="nav-label" data-i18n="nav.privacy">Privacy</span>
       <span class="nav-tooltip" data-i18n="nav.privacy">Privacy</span>
     </a>
+    <a href="#/other" data-page="other" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+      <span class="nav-label" data-i18n="nav.other">Other Usage</span>
+      <span class="nav-tooltip" data-i18n="nav.other">Other Usage</span>
+    </a>
 
     <!-- Divider -->
     <div class="my-2 border-t border-slate-200 dark:border-slate-700/50"></div>
@@ -628,6 +633,34 @@
       </div>
 
       <!-- (VPN alerts moved to expandable panel at top) -->
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- PAGE: OTHER USAGE                                              -->
+    <!-- ============================================================= -->
+    <section id="page-other" class="page space-y-6">
+
+      <!-- Header -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-700 dark:text-slate-200" data-i18n="other.title">Other Network Usage</h2>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1" data-i18n="other.subtitle">Gaming, social media, streaming and other detected traffic</p>
+          </div>
+          <button onclick="refreshPage('other')" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors" data-i18n="other.refresh">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div id="other-stats" class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"></div>
+
+      <!-- Tree accordion -->
+      <div id="other-usage-tree-container" class="space-y-3">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
+          <p class="text-slate-400 dark:text-slate-500 text-sm" data-i18n="other.noData">No other usage detected yet.</p>
+        </div>
+      </div>
+
     </section>
 
     <!-- ============================================================= -->

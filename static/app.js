@@ -194,7 +194,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['dashboard','ai','cloud','privacy','devices','ips','rules','settings'];
+const VALID_PAGES = ['dashboard','ai','cloud','privacy','other','devices','ips','rules','settings'];
 
 let currentPage = 'dashboard';
 
@@ -276,6 +276,17 @@ const SERVICE_COLORS = {
   vpn_surfshark:'#1cbdb4', vpn_protonvpn:'#6d4aff', vpn_pia:'#4bb543',
   vpn_cyberghost:'#ffd400', vpn_mullvad:'#294d73', vpn_ipvanish:'#70bb44',
   vpn_tunnelbear:'#ffc600', vpn_windscribe:'#1a5276', vpn_cloudflare_warp:'#f48120',
+  // Social
+  facebook:'#1877f2', instagram:'#e4405f', tiktok:'#010101', snapchat:'#fffc00',
+  twitter:'#1da1f2', pinterest:'#e60023', linkedin:'#0a66c2', reddit:'#ff4500',
+  tumblr:'#35465c', whatsapp:'#25d366', signal:'#3a76f0',
+  // Gaming
+  steam:'#1b2838', epic_games:'#2f2d2e', roblox:'#e2231a', ea_games:'#000000',
+  xbox_live:'#107c10', playstation:'#003791', nintendo:'#e60012',
+  twitch:'#9146ff', discord:'#5865f2',
+  // Streaming
+  netflix:'#e50914', youtube:'#ff0000', spotify:'#1db954', disney_plus:'#113ccf',
+  hbo_max:'#5822b4', prime_video:'#00a8e1', apple_tv:'#000000',
 };
 
 const SERVICE_NAMES = {
@@ -296,13 +307,18 @@ const SERVICE_NAMES = {
   vpn_surfshark:'Surfshark', vpn_protonvpn:'ProtonVPN', vpn_pia:'Private Internet Access',
   vpn_cyberghost:'CyberGhost', vpn_mullvad:'Mullvad', vpn_ipvanish:'IPVanish',
   vpn_tunnelbear:'TunnelBear', vpn_windscribe:'Windscribe', vpn_cloudflare_warp:'Cloudflare WARP',
-  // Social / Gaming (for Rules page)
+  // Social
   facebook:'Facebook', instagram:'Instagram', tiktok:'TikTok',
   twitter:'X (Twitter)', snapchat:'Snapchat', pinterest:'Pinterest',
   linkedin:'LinkedIn', reddit:'Reddit', tumblr:'Tumblr',
-  steam:'Steam', epic_games:'Epic Games', roblox:'Roblox',
-  twitch:'Twitch', discord:'Discord', nintendo:'Nintendo',
-  playstation:'PlayStation', xbox_live:'Xbox Live',
+  whatsapp:'WhatsApp', signal:'Signal',
+  // Gaming
+  steam:'Steam', epic_games:'Epic Games', roblox:'Roblox', ea_games:'EA Games',
+  xbox_live:'Xbox Live', playstation:'PlayStation', nintendo:'Nintendo',
+  twitch:'Twitch', discord:'Discord',
+  // Streaming
+  netflix:'Netflix', youtube:'YouTube', spotify:'Spotify', disney_plus:'Disney+',
+  hbo_max:'HBO Max', prime_video:'Prime Video', apple_tv:'Apple TV+',
 };
 
 // Domain mapping for Clearbit logos
@@ -329,6 +345,13 @@ const SERVICE_LOGO_DOMAIN = {
   vpn_surfshark:'surfshark.com', vpn_protonvpn:'protonvpn.com', vpn_pia:'privateinternetaccess.com',
   vpn_cyberghost:'cyberghostvpn.com', vpn_mullvad:'mullvad.net', vpn_ipvanish:'ipvanish.com',
   vpn_tunnelbear:'tunnelbear.com', vpn_windscribe:'windscribe.com', vpn_cloudflare_warp:'cloudflare.com',
+  // Social
+  whatsapp:'whatsapp.com', signal:'signal.org', tumblr:'tumblr.com',
+  // Gaming
+  ea_games:'ea.com',
+  // Streaming
+  netflix:'netflix.com', youtube:'youtube.com', spotify:'spotify.com',
+  disney_plus:'disneyplus.com', hbo_max:'max.com', prime_video:'primevideo.com', apple_tv:'apple.com',
 };
 
 const SVC_BADGE_CLS = {
@@ -1138,6 +1161,7 @@ async function refreshPage(page) {
     else if (page === 'devices') await refreshDevices();
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
+    else if (page === 'other') await refreshOther();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
@@ -2168,6 +2192,130 @@ function renderTrackerDetailsList() {
     </div>`;
   }).join('');
 }
+
+// ================================================================
+// OTHER USAGE — category tree accordion
+// ================================================================
+
+const CATEGORY_META = {
+  gaming:    { icon: '🎮', color: 'indigo' },
+  social:    { icon: '💬', color: 'pink' },
+  streaming: { icon: '📺', color: 'purple' },
+};
+
+function _fmtBytes(b) {
+  if (!b || b <= 0) return '0 B';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+async function refreshOther() {
+  const [tree, devices] = await Promise.all([
+    fetch('/api/analytics/category-tree').then(r => r.json()),
+    fetch('/api/devices').then(r => r.json()),
+  ]);
+
+  // Build IP → device name map
+  const ipName = {};
+  (devices || []).forEach(d => {
+    const name = d.display_name || d.hostname || d.mac_address;
+    (d.ips || []).forEach(ipRec => { ipName[ipRec.ip] = name; });
+  });
+
+  // Stats cards
+  const statsEl = document.getElementById('other-stats');
+  if (statsEl) {
+    statsEl.innerHTML = (tree || []).map(cat => {
+      const m = CATEGORY_META[cat.category] || { icon: '📊', color: 'slate' };
+      const totalHits = cat.services.reduce((s, svc) => s + svc.devices.reduce((a, d) => a + d.hits, 0), 0);
+      const uniqueDevices = new Set(cat.services.flatMap(svc => svc.devices.map(d => d.ip))).size;
+      return `<div class="bg-white dark:bg-${m.color}-900/10 border border-slate-200 dark:border-${m.color}-700/30 rounded-xl p-5 card-hover">
+        <p class="text-xs text-${m.color}-500 dark:text-${m.color}-400 font-medium">${m.icon} ${t('other.cat.' + cat.category) || cat.category}</p>
+        <p class="text-2xl font-bold mt-2 tabular-nums text-${m.color}-600 dark:text-${m.color}-400">${totalHits}</p>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${cat.services.length} services · ${uniqueDevices} ${t('other.devices')}</p>
+      </div>`;
+    }).join('');
+  }
+
+  // Tree accordion
+  const container = document.getElementById('other-usage-tree-container');
+  if (!container) return;
+
+  if (!tree || tree.length === 0) {
+    container.innerHTML = `<div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
+      <p class="text-slate-400 dark:text-slate-500 text-sm">${t('other.noData')}</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = tree.map((cat, ci) => {
+    const m = CATEGORY_META[cat.category] || { icon: '📊', color: 'slate' };
+    const catLabel = t('other.cat.' + cat.category) || cat.category;
+    const totalHits = cat.services.reduce((s, svc) => s + svc.devices.reduce((a, d) => a + d.hits, 0), 0);
+
+    const servicesHtml = cat.services.map((svc, si) => {
+      const svcName = SERVICE_NAMES[svc.service_name] || svc.service_name;
+      const logoDomain = SERVICE_LOGO_DOMAIN[svc.service_name];
+      const logoImg = logoDomain
+        ? `<img src="https://logo.clearbit.com/${logoDomain}" class="w-5 h-5 rounded" onerror="this.style.display='none'" alt="">`
+        : '';
+      const svcColor = SERVICE_COLORS[svc.service_name] || '#6b7280';
+      const svcHits = svc.devices.reduce((a, d) => a + d.hits, 0);
+
+      const devicesHtml = svc.devices.map(d => {
+        const dName = ipName[d.ip] || d.ip;
+        return `<div class="flex items-center justify-between py-2 px-4 text-xs border-b border-slate-100 dark:border-white/[0.03] last:border-0">
+          <span class="text-slate-600 dark:text-slate-300">${dName} <span class="text-slate-400 dark:text-slate-500 font-mono text-[10px] ml-1">${d.ip}</span></span>
+          <span class="flex items-center gap-3">
+            <span class="tabular-nums font-medium text-slate-700 dark:text-slate-200">${_fmtBytes(d.bytes)}</span>
+            <span class="tabular-nums text-slate-400 dark:text-slate-500 w-12 text-right">${d.hits} ${t('other.hits')}</span>
+          </span>
+        </div>`;
+      }).join('');
+
+      return `<div class="border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+        <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.other-chevron').classList.toggle('rotate-90')"
+                class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors group">
+          <span class="flex items-center gap-2.5">
+            ${logoImg}
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${svcName}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">${svc.devices.length} ${t('other.devices')}</span>
+          </span>
+          <span class="flex items-center gap-3">
+            <span class="text-xs tabular-nums font-medium text-slate-600 dark:text-slate-300">${_fmtBytes(svc.total_bytes)}</span>
+            <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${svcHits} ${t('other.hits')}</span>
+            <svg class="other-chevron w-4 h-4 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </span>
+        </button>
+        <div class="hidden bg-slate-50/50 dark:bg-white/[0.01]">
+          ${devicesHtml}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden">
+      <button onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.other-chevron').classList.toggle('rotate-90')"
+              class="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
+        <span class="flex items-center gap-3">
+          <span class="text-xl">${m.icon}</span>
+          <span class="text-base font-semibold text-slate-800 dark:text-white">${catLabel}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-${m.color}-100 dark:bg-${m.color}-900/30 text-${m.color}-600 dark:text-${m.color}-400 font-medium">${cat.services.length} services</span>
+        </span>
+        <span class="flex items-center gap-3">
+          <span class="text-sm tabular-nums font-semibold text-slate-700 dark:text-slate-200">${_fmtBytes(cat.total_bytes)}</span>
+          <span class="text-xs tabular-nums text-slate-400 dark:text-slate-500">${totalHits} ${t('other.hits')}</span>
+          <svg class="other-chevron w-5 h-5 text-slate-400 transition-transform duration-200 rotate-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </button>
+      <div class="border-t border-slate-200 dark:border-white/[0.05]">
+        ${servicesHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 
 // --- DEVICES ---
 // Store events globally for drill-down

@@ -23,6 +23,7 @@ const TRANSLATIONS = {
     'nav.cloud':           'Cloud Storage',
     'nav.privacy':         'Privacy',
     'nav.attacks':         'Attacks',
+    'nav.other':           'Other Usage',
     'nav.devices':         'Devices',
     'nav.rules':           'Rules',
     'nav.settings':        'Settings',
@@ -50,8 +51,20 @@ const TRANSLATIONS = {
     'page.privacy':        'Privacy',
     'page.devices':        'Devices',
     'page.ips':            'Attacks',
+    'page.other':          'Other Usage',
     'page.rules':          'Rules & Access Control',
     'page.settings':       'Settings',
+
+    // Other Usage page
+    'other.title':         'Other Network Usage',
+    'other.subtitle':      'Gaming, social media, streaming and other detected traffic',
+    'other.refresh':       'Refresh',
+    'other.noData':        'No other usage detected yet.',
+    'other.hits':          'hits',
+    'other.devices':       'devices',
+    'other.cat.gaming':    'Gaming',
+    'other.cat.social':    'Social Media',
+    'other.cat.streaming': 'Streaming',
 
     // Top bar
     'topbar.checking':     'Checking...',
@@ -495,6 +508,7 @@ const TRANSLATIONS = {
     'nav.cloud':           'Cloudopslag',
     'nav.privacy':         'Privacy',
     'nav.attacks':         'Aanvallen',
+    'nav.other':           'Overig Gebruik',
     'nav.devices':         'Apparaten',
     'nav.rules':           'Regels',
     'nav.settings':        'Instellingen',
@@ -522,8 +536,20 @@ const TRANSLATIONS = {
     'page.privacy':        'Privacy',
     'page.devices':        'Apparaten',
     'page.ips':            'Aanvallen',
+    'page.other':          'Overig Gebruik',
     'page.rules':          'Regels & Toegangsbeheer',
     'page.settings':       'Instellingen',
+
+    // Overig Gebruik pagina
+    'other.title':         'Overig Netwerkgebruik',
+    'other.subtitle':      'Gaming, sociale media, streaming en ander gedetecteerd verkeer',
+    'other.refresh':       'Vernieuwen',
+    'other.noData':        'Nog geen overig gebruik gedetecteerd.',
+    'other.hits':          'hits',
+    'other.devices':       'apparaten',
+    'other.cat.gaming':    'Gaming',
+    'other.cat.social':    'Sociale Media',
+    'other.cat.streaming': 'Streaming',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',

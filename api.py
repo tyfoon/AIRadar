@@ -819,6 +819,50 @@ def update_hostname_vendors(entries: list[dict]):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/analytics/category-tree — hierarchical view of non-AI traffic
+# ---------------------------------------------------------------------------
+EXCLUDED_CATEGORIES = {"ai", "cloud", "tracking"}
+
+@app.get("/api/analytics/category-tree")
+def category_tree(db: Session = Depends(get_db)):
+    rows = (
+        db.query(
+            DetectionEvent.category,
+            DetectionEvent.ai_service,
+            DetectionEvent.source_ip,
+            func.sum(DetectionEvent.bytes_transferred).label("bytes"),
+            func.count().label("hits"),
+        )
+        .filter(~DetectionEvent.category.in_(EXCLUDED_CATEGORIES))
+        .group_by(DetectionEvent.category, DetectionEvent.ai_service, DetectionEvent.source_ip)
+        .all()
+    )
+
+    # Build nested dict: category → service → [devices]
+    tree: dict = {}
+    for cat, svc, ip, byt, hits in rows:
+        if cat not in tree:
+            tree[cat] = {"category": cat, "total_bytes": 0, "services": {}}
+        tree[cat]["total_bytes"] += byt or 0
+        svcs = tree[cat]["services"]
+        if svc not in svcs:
+            svcs[svc] = {"service_name": svc, "total_bytes": 0, "devices": []}
+        svcs[svc]["total_bytes"] += byt or 0
+        svcs[svc]["devices"].append({"ip": ip, "bytes": byt or 0, "hits": hits})
+
+    # Flatten services dict to list, sort by bytes desc
+    result = []
+    for cat_data in sorted(tree.values(), key=lambda c: -c["total_bytes"]):
+        cat_data["services"] = sorted(
+            cat_data["services"].values(), key=lambda s: -s["total_bytes"]
+        )
+        for svc in cat_data["services"]:
+            svc["devices"].sort(key=lambda d: -d["bytes"])
+        result.append(cat_data)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # GET /api/privacy/stats — AdGuard Home + Zeek tracking statistics
 # ---------------------------------------------------------------------------
 @app.get("/api/privacy/stats")
