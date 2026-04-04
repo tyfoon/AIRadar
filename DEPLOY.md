@@ -94,17 +94,18 @@ cd AIRadar
 De AM02L heeft 2 ethernet poorten aan de achterkant. De bekabeling wordt:
 
 ```
-                    AM02L Mini-PC
-                   ┌─────────────┐
-[Router] ─────────►│ ETH 1  ETH 2│──────────► [Switch / Access Point]
-                   └─────────────┘
-                         │
-                    AI-Radar draait
-                    hier als bridge
+                        AM02L Mini-PC
+                    ┌──────────────────┐
+[UDM Pro / Router] ►│ RECHTS    LINKS  │► [Switch / Access Point]
+                    │ (eno1)   (enp2s0)│
+                    └──────────────────┘
+                            │
+                       AI-Radar draait
+                       hier als bridge
 ```
 
-- **Kabel 1**: van je **router** naar **ETH poort 1** van de AM02L
-- **Kabel 2**: van **ETH poort 2** van de AM02L naar je **switch of access point**
+- **Rechter poort** (eno1): kabel van je **router / UDM Pro**
+- **Linker poort** (enp2s0): kabel naar je **switch of access point**
 
 Al het netwerkverkeer loopt nu *door* de AM02L heen. De AM02L is onzichtbaar voor je apparaten (transparante bridge).
 
