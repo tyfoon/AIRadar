@@ -7,8 +7,8 @@
 #   chmod +x setup.sh
 #   sudo ./setup.sh
 # ──────────────────────────────────────────────────────────────
-set -eE
-trap 'err "Command failed at line $LINENO. Continuing..."; set +e' ERR
+# Don't exit on error — handle failures per step
+set +e
 
 # ── Colors ───────────────────────────────────────────────────
 RED='\033[0;31m'
