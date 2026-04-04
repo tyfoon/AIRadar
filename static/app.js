@@ -423,7 +423,10 @@ function deviceLabel(ip) {
 
 function _latestIp(device) {
   if (!device.ips || device.ips.length === 0) return device.mac_address;
-  return device.ips[0].ip;  // sorted by last_seen desc from API
+  // Prefer IPv4 over IPv6 for display (IPv6 is unreadable as a label)
+  const ipv4 = device.ips.find(i => !i.ip.includes(':'));
+  if (ipv4) return ipv4.ip;
+  return device.ips[0].ip;
 }
 
 function _ipSummary(device) {
