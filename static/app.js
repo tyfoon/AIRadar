@@ -3112,55 +3112,90 @@ async function loadIpsStatus() {
 }
 
 function _renderIpsThreats(data) {
-  const tbody = document.getElementById('ips-threats-body');
-  if (!tbody) return;
+  // --- Alerts tab: real attacks on our network ---
+  const alertsBody = document.getElementById('ips-alerts-body');
+  if (alertsBody) {
+    const rows = [];
+    for (const a of (data.alerts || [])) {
+      rows.push({
+        time: a.created_at,
+        ip: a.ip,
+        reason: a.scenario.replace(/^crowdsecurity\//, ''),
+        source: a.country ? `${a.as_name || ''} (${a.country})`.trim() : (a.as_name || 'local'),
+        events: a.events_count || 0,
+      });
+    }
+    for (const d of (data.local_decisions || [])) {
+      if (rows.some(r => r.ip === d.ip)) continue;
+      rows.push({
+        time: d.created_at,
+        ip: d.ip,
+        reason: d.reason.replace(/^crowdsecurity\//, ''),
+        source: d.origin || 'local',
+        events: '',
+      });
+    }
+    rows.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
 
-  // Combine alerts and decisions into one list, sorted by time
-  const rows = [];
-  for (const a of (data.alerts || [])) {
-    rows.push({
-      time: a.created_at,
-      ip: a.ip,
-      reason: a.scenario.replace(/^crowdsecurity\//, ''),
-      origin: a.country ? `${a.as_name || ''} (${a.country})`.trim() : (a.as_name || 'local'),
-      duration: `${a.events_count} event${a.events_count !== 1 ? 's' : ''}`,
-      type: 'alert',
-    });
+    if (rows.length === 0) {
+      alertsBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+        <div class="flex flex-col items-center gap-2"><span class="text-2xl">🛡️</span><span>No attacks detected on your network yet.</span></div>
+      </td></tr>`;
+    } else {
+      alertsBody.innerHTML = rows.slice(0, 50).map(r => {
+        const timeStr = r.time ? new Date(r.time).toLocaleString() : '';
+        return `<tr class="border-t border-slate-100 dark:border-white/[0.04]">
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${timeStr}</td>
+          <td class="py-2 px-4 font-mono text-xs">${r.ip}</td>
+          <td class="py-2 px-4 text-xs">${r.reason}</td>
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">${r.source}</td>
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">${r.events}</td>
+        </tr>`;
+      }).join('');
+    }
   }
-  for (const d of (data.decisions || [])) {
-    // Skip if already shown as alert with same IP+reason
-    if (rows.some(r => r.ip === d.ip && d.reason.includes(r.reason))) continue;
-    rows.push({
-      time: d.created_at,
-      ip: d.ip,
-      reason: d.reason.replace(/^crowdsecurity\//, ''),
-      origin: d.origin || 'crowdsec',
-      duration: d.duration || '',
-      type: 'decision',
-    });
+
+  // --- Blocklist tab: community CAPI entries ---
+  const blocklistBody = document.getElementById('ips-blocklist-body');
+  if (blocklistBody) {
+    const bl = data.blocklist || [];
+    if (bl.length === 0) {
+      blocklistBody.innerHTML = `<tr><td colspan="3" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">Community blocklist is empty or still loading.</td></tr>`;
+    } else {
+      blocklistBody.innerHTML = bl.slice(0, 100).map(d => {
+        const reason = d.reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ');
+        return `<tr class="border-t border-slate-100 dark:border-white/[0.04]">
+          <td class="py-2 px-4 font-mono text-xs">${d.ip}</td>
+          <td class="py-2 px-4 text-xs">${reason}</td>
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">${d.duration || ''}</td>
+        </tr>`;
+      }).join('');
+    }
   }
+}
 
-  // Sort newest first
-  rows.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+function switchIpsTab(tab) {
+  const alertsTab = document.getElementById('ips-tab-alerts');
+  const blocklistTab = document.getElementById('ips-tab-blocklist');
+  const alertsPanel = document.getElementById('ips-panel-alerts');
+  const blocklistPanel = document.getElementById('ips-panel-blocklist');
+  if (!alertsTab || !blocklistTab) return;
 
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" id="ips-threats-empty" class="text-center py-8 text-slate-400 dark:text-slate-500">${t('ips.noThreats')}</td></tr>`;
-    return;
+  const activeClass = 'px-5 py-3 text-sm font-semibold border-b-2 border-red-500 text-red-600 dark:text-red-400';
+  const inactiveClass = 'px-5 py-3 text-sm font-medium text-slate-400 dark:text-slate-500 border-b-2 border-transparent hover:text-slate-600 dark:hover:text-slate-300';
+
+  if (tab === 'alerts') {
+    alertsTab.className = activeClass;
+    blocklistTab.className = inactiveClass;
+    alertsPanel.classList.remove('hidden');
+    blocklistPanel.classList.add('hidden');
+  } else {
+    alertsTab.className = inactiveClass.replace('border-transparent', 'border-slate-500');
+    alertsTab.className = inactiveClass;
+    blocklistTab.className = activeClass.replace('border-red-500 text-red-600 dark:text-red-400', 'border-slate-500 text-slate-700 dark:text-slate-200');
+    alertsPanel.classList.add('hidden');
+    blocklistPanel.classList.remove('hidden');
   }
-
-  tbody.innerHTML = rows.slice(0, 50).map(r => {
-    const timeStr = r.time ? new Date(r.time).toLocaleString() : '';
-    const typeBadge = r.type === 'decision'
-      ? '<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">BAN</span>'
-      : '<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">ALERT</span>';
-    return `<tr class="border-t border-slate-100 dark:border-white/[0.04]">
-      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${timeStr}</td>
-      <td class="py-2 px-3 font-mono text-xs">${r.ip}</td>
-      <td class="py-2 px-3 text-xs">${r.reason}${typeBadge}</td>
-      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${r.origin}</td>
-      <td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${r.duration}</td>
-    </tr>`;
-  }).join('');
 }
 
 function _updateIpsBanner(data) {
@@ -3191,17 +3226,23 @@ function _updateIpsBanner(data) {
 }
 
 function _updateIpsStats(data) {
-  // Threats blocked count
+  // Local alerts count (real attacks on our network)
   const blockedEl = document.getElementById('ips-stat-blocked');
-  if (blockedEl) blockedEl.textContent = formatNumber(data.active_threats_blocked);
+  if (blockedEl) blockedEl.textContent = formatNumber(data.local_alerts_count || 0);
 
-  // Decisions count
+  // Community blocklist count
   const decisionsEl = document.getElementById('ips-stat-decisions');
-  if (decisionsEl) decisionsEl.textContent = formatNumber(data.active_threats_blocked);
+  if (decisionsEl) decisionsEl.textContent = formatNumber(data.blocklist_count || 0);
 
-  // Rules card badge
+  // Tab counts
+  const alertsCountEl = document.getElementById('ips-tab-alerts-count');
+  if (alertsCountEl) alertsCountEl.textContent = formatNumber(data.local_alerts_count || 0);
+  const blocklistCountEl = document.getElementById('ips-tab-blocklist-count');
+  if (blocklistCountEl) blocklistCountEl.textContent = formatNumber(data.blocklist_count || 0);
+
+  // Rules card badge — only show local alerts (real attacks)
   const countEl = document.getElementById('ips-threats-count');
-  if (countEl) countEl.textContent = formatNumber(data.active_threats_blocked);
+  if (countEl) countEl.textContent = formatNumber(data.local_alerts_count || 0);
 
   // Engine status
   const engineEl = document.getElementById('ips-engine-status');
@@ -3235,8 +3276,8 @@ function _updateIpsStats(data) {
   const guide = document.getElementById('ips-setup-guide');
   if (guide) guide.classList.toggle('hidden', data.crowdsec_running);
 
-  // Update nav badge
-  _navIpsCount = data.active_threats_blocked || 0;
+  // Nav badge — only local alerts (real attacks), not blocklist
+  _navIpsCount = data.local_alerts_count || 0;
   updateNavBadges();
 }
 

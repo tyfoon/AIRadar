@@ -1228,10 +1228,11 @@ async def get_ips_status():
             "scope": source.get("scope", ""),
         })
 
-    # Normalize decisions for the UI
-    decisions = []
+    # Split decisions into local (detected on our network) vs CAPI (community blocklist)
+    local_decisions = []
+    blocklist = []
     for d in decisions_raw:
-        decisions.append({
+        entry = {
             "id": d.get("id"),
             "created_at": d.get("created_at", ""),
             "ip": d.get("value", "?"),
@@ -1239,14 +1240,20 @@ async def get_ips_status():
             "origin": d.get("origin", ""),
             "type": d.get("type", "ban"),
             "duration": d.get("duration", ""),
-        })
+        }
+        if d.get("origin") == "CAPI":
+            blocklist.append(entry)
+        else:
+            local_decisions.append(entry)
 
     return {
         "enabled": crowdsec.enabled,
         "crowdsec_running": running,
-        "active_threats_blocked": len(decisions),
+        "local_alerts_count": len(alerts) + len(local_decisions),
+        "blocklist_count": len(blocklist),
         "alerts": alerts,
-        "decisions": decisions,
+        "local_decisions": local_decisions,
+        "blocklist": blocklist[:100],  # Limit blocklist to 100 for UI performance
     }
 
 
