@@ -313,13 +313,13 @@ ZKG=$(command -v zkg 2>/dev/null || echo /opt/zeek/bin/zkg)
 if [ -x "$ZKG" ] || command -v zkg &>/dev/null; then
     $ZKG autoconfig 2>/dev/null || true
 
-    if $ZKG install zeek/foxio/ja4 --force 2>/dev/null; then
+    if $ZKG install zeek/foxio/ja4 --force --skiptests 2>/dev/null; then
         ok "JA4 plugin installed (DHCP fingerprinting)"
     else
         warn "JA4 plugin installation failed — ja4d.log will not be available"
     fi
 
-    if $ZKG install zeek-plugins/mdns --force 2>/dev/null; then
+    if $ZKG install zeek/fdekeers/mdns --force --skiptests 2>/dev/null; then
         ok "mDNS plugin installed (device name discovery)"
     else
         warn "mDNS plugin installation failed — mdns.log will not be available"
