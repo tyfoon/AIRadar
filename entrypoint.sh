@@ -15,6 +15,15 @@ echo "  Zeek Logs:   ${ZEEK_LOG_DIR}"
 echo "  AdGuard:     ${ADGUARD_URL}"
 echo ""
 
+# Start Avahi for mDNS hostname resolution (.local names like iPhone.local)
+if [ -x /usr/sbin/avahi-daemon ]; then
+    # Create required directories
+    mkdir -p /var/run/avahi-daemon
+    /usr/sbin/avahi-daemon --daemonize --no-chroot 2>/dev/null && \
+        echo "[entrypoint] avahi-daemon started (mDNS enabled)" || \
+        echo "[entrypoint] WARNING: avahi-daemon failed to start"
+fi
+
 # Start p0f in background — passive OS fingerprinting on the bridge
 P0F_LOG="/app/data/p0f.log"
 P0F_IFACE="${P0F_INTERFACE:-br0}"
