@@ -449,7 +449,7 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = 
         payload["mac_address"] = mac
     try:
         await client.post(DEVICE_API_URL, json=payload, timeout=5)
-        name = hostname or mac or ip
+        name = mac or ip
         print(f"[*] Device registered: {ip} -> {name}")
     except httpx.HTTPError:
         pass
