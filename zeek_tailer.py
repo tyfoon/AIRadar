@@ -422,11 +422,14 @@ def _is_local_ip(ip: str) -> bool:
         return False
 
 
-async def register_device(client: httpx.AsyncClient, ip: str) -> None:
+async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = None) -> None:
     """Register/update a device on the API (non-blocking).
 
     Only registers devices with local/private IP addresses — public IPs
     (AI service servers, CDNs, etc.) are NOT devices on our network.
+
+    If *mac* is provided (e.g. from Zeek's orig_l2_addr), it is used
+    directly — no ARP lookup needed.
     """
     if not _is_local_ip(ip):
         return
@@ -438,7 +441,11 @@ async def register_device(client: httpx.AsyncClient, ip: str) -> None:
     _device_cache[ip] = now
 
     hostname = _resolve_hostname(ip)
-    mac = _resolve_mac(ip)
+    # Prefer Zeek-provided MAC; fall back to ARP lookup
+    if not mac:
+        mac = _resolve_mac(ip)
+    else:
+        mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
     if hostname:
         payload["hostname"] = hostname
