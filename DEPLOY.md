@@ -328,8 +328,8 @@ Je ziet nu het AI-Radar dashboard! Binnen een paar minuten verschijnen de eerste
 - [ ] CrowdSec API key gegenereerd en in `.env` gezet
 - [ ] `docker compose restart` gedraaid
 - [ ] `sudo zeekctl deploy` gedraaid
-- [ ] DNS ingesteld op router of apparaten
 - [ ] Dashboard werkt op `:8000`
+- [ ] DNS filtering werkt (transparant, geen config nodig)
 
 ---
 
