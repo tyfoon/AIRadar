@@ -1151,12 +1151,31 @@ class CrowdSecClient:
         return len(await self.get_decisions())
 
     async def get_alerts(self, limit: int = 50) -> list[dict]:
-        """Fetch recent alerts from CrowdSec LAPI."""
+        """Fetch recent alerts from CrowdSec LAPI.
+
+        Note: bouncer API keys only have access to /v1/decisions, not /v1/alerts.
+        If a machine/watcher login is configured via CROWDSEC_MACHINE_ID and
+        CROWDSEC_MACHINE_PASSWORD, those are used for alert access.
+        """
+        machine_id = os.getenv("CROWDSEC_MACHINE_ID", "")
+        machine_pw = os.getenv("CROWDSEC_MACHINE_PASSWORD", "")
+        if not machine_id:
+            return []
+
         try:
             async with httpx.AsyncClient(timeout=5) as client:
+                # Authenticate with machine credentials
+                login = await client.post(
+                    f"{self.base_url}/v1/watchers/login",
+                    json={"machine_id": machine_id, "password": machine_pw},
+                )
+                if login.status_code != 200:
+                    return []
+                token = login.json().get("token", "")
+
                 r = await client.get(
                     f"{self.base_url}/v1/alerts",
-                    headers=self._headers(),
+                    headers={"Authorization": f"Bearer {token}"},
                     params={"limit": limit},
                 )
                 if r.status_code == 200:
@@ -1836,7 +1855,39 @@ async def health_check(db: Session = Depends(get_db)):
             "details": f"Not reachable: {exc}",
         })
 
-    # 7) Zeek log freshness
+    # 7) CrowdSec IPS
+    t0 = _time.monotonic()
+    try:
+        cs_running = await crowdsec.is_running()
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if cs_running:
+            decisions = await crowdsec.get_decisions_count()
+            results.append({
+                "service": "CrowdSec (IPS)",
+                "icon": "🚨",
+                "status": "ok",
+                "response_ms": ms,
+                "details": f"LAPI online, {decisions} active decision{'s' if decisions != 1 else ''}",
+            })
+        else:
+            results.append({
+                "service": "CrowdSec (IPS)",
+                "icon": "🚨",
+                "status": "error",
+                "response_ms": ms,
+                "details": "LAPI not reachable at " + crowdsec.base_url,
+            })
+    except Exception as exc:
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        results.append({
+            "service": "CrowdSec (IPS)",
+            "icon": "🚨",
+            "status": "error",
+            "response_ms": ms,
+            "details": str(exc),
+        })
+
+    # 8) Zeek log freshness
     import os
     from pathlib import Path
     log_dir = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs"))
@@ -1869,7 +1920,7 @@ async def health_check(db: Session = Depends(get_db)):
                 "details": "File not found",
             })
 
-    # 8) Database size & retention info
+    # 9) Database size & retention info
     db_size_mb = DB_PATH.stat().st_size / (1024*1024) if DB_PATH.exists() else 0
     event_count = db.query(func.count(DetectionEvent.id)).scalar() or 0
     db_status = "ok" if db_size_mb < MAX_DB_SIZE_MB else "warning"
