@@ -1107,7 +1107,6 @@ async def main(zeek_log_dir: str) -> None:
         p0f_log = Path(P0F_LOG_FILE)
         p0f_task = tail_p0f_standalone(p0f_log)
         print(f"[*] p0f passive OS fingerprinting: enabled (tailing {p0f_log})")
-        print(f"[*]   Start p0f separately: sudo p0f -i en0 -f /opt/homebrew/etc/p0f/p0f.fp -o {p0f_log} -p")
     except ImportError:
         print(f"[*] p0f passive OS fingerprinting: disabled (p0f_tailer not found)")
     except Exception as exc:

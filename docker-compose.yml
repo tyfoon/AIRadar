@@ -14,6 +14,9 @@ services:
     container_name: airadar-app
     network_mode: "host"
     restart: unless-stopped
+    cap_add:
+      - NET_RAW      # Required for p0f passive packet capture
+      - NET_ADMIN    # Required for ARP/NDP lookups
     env_file: .env
     environment:
       # Container-internal overrides (paths inside the container)

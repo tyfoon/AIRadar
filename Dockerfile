@@ -4,13 +4,14 @@
 # ──────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
-# System dependencies for mac-vendor-lookup & arp resolution
+# System dependencies for mac-vendor-lookup, arp resolution & p0f
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         net-tools \
         iproute2 \
         curl \
         procps \
+        p0f \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

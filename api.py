@@ -133,7 +133,10 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
     # Layer 1: OUI database (39k+ manufacturers by MAC prefix)
     if mac and _oui_db and not mac.startswith("unknown_"):
         try:
-            clean = mac.upper().replace(":", "").replace("-", "").replace(".", "")
+            # Re-pad each octet to 2 hex digits before concatenating,
+            # because _normalize_mac strips leading zeros (e.g. "2:a:6d" → "020A6D")
+            parts = mac.upper().replace("-", ":").replace(".", ":").split(":")
+            clean = "".join(p.zfill(2) for p in parts)
             vendor = _oui_db.get(clean[:6])
             if vendor:
                 return vendor
@@ -1679,7 +1682,57 @@ async def health_check(db: Session = Depends(get_db)):
             "details": str(exc),
         })
 
-    # 5) AdGuard Home
+    # 5) p0f Passive OS Fingerprinting
+    t0 = _time.monotonic()
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "p0f.*-i"],
+            capture_output=True, timeout=5,
+        )
+        ms = round((_time.monotonic() - t0) * 1000, 1)
+        if proc.returncode == 0:
+            pids = proc.stdout.decode().strip().split('\n')
+            # Check log freshness
+            p0f_log = _Path("/app/data/p0f.log")
+            if p0f_log.exists():
+                age_s = _time.time() - _os.path.getmtime(p0f_log)
+                size_kb = _os.path.getsize(p0f_log) / 1024
+                # Count devices with OS fingerprints
+                fp_count = db.query(Device).filter(Device.os_name != None).count()  # noqa: E711
+                detail = f"Running (PID {pids[0]}), log {size_kb:,.0f} KB, {fp_count} devices fingerprinted"
+                results.append({
+                    "service": "p0f (OS Fingerprinting)",
+                    "icon": "🔍",
+                    "status": "ok",
+                    "response_ms": ms,
+                    "details": detail,
+                })
+            else:
+                results.append({
+                    "service": "p0f (OS Fingerprinting)",
+                    "icon": "🔍",
+                    "status": "warning",
+                    "response_ms": ms,
+                    "details": f"Process running (PID {pids[0]}) but no log file yet",
+                })
+        else:
+            results.append({
+                "service": "p0f (OS Fingerprinting)",
+                "icon": "🔍",
+                "status": "error",
+                "response_ms": ms,
+                "details": "Process not found — p0f not running",
+            })
+    except Exception as exc:
+        results.append({
+            "service": "p0f (OS Fingerprinting)",
+            "icon": "🔍",
+            "status": "error",
+            "response_ms": 0,
+            "details": str(exc),
+        })
+
+    # 6) AdGuard Home
     t0 = _time.monotonic()
     try:
         import httpx
@@ -1718,7 +1771,7 @@ async def health_check(db: Session = Depends(get_db)):
             "details": f"Not reachable: {exc}",
         })
 
-    # 6) Zeek log freshness
+    # 7) Zeek log freshness
     import os
     from pathlib import Path
     log_dir = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs"))
@@ -1751,7 +1804,7 @@ async def health_check(db: Session = Depends(get_db)):
                 "details": "File not found",
             })
 
-    # 7) Database size & retention info
+    # 8) Database size & retention info
     db_size_mb = DB_PATH.stat().st_size / (1024*1024) if DB_PATH.exists() else 0
     event_count = db.query(func.count(DetectionEvent.id)).scalar() or 0
     db_status = "ok" if db_size_mb < MAX_DB_SIZE_MB else "warning"

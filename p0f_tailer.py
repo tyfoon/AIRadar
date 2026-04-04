@@ -31,9 +31,9 @@ import httpx
 DEVICE_API_URL = os.environ.get(
     "AIRADAR_DEVICE_API_URL", "http://localhost:8000/api/devices"
 )
-P0F_BIN = os.environ.get("P0F_BIN", "/opt/homebrew/sbin/p0f")
-P0F_FP_DB = os.environ.get("P0F_FP_DB", "/opt/homebrew/etc/p0f/p0f.fp")
-P0F_INTERFACE = os.environ.get("P0F_INTERFACE", "en0")
+P0F_BIN = os.environ.get("P0F_BIN", "/usr/sbin/p0f")
+P0F_FP_DB = os.environ.get("P0F_FP_DB", "/etc/p0f/p0f.fp")
+P0F_INTERFACE = os.environ.get("P0F_INTERFACE", "br0")
 P0F_LOG_FILE = os.environ.get(
     "P0F_LOG_FILE",
     os.path.join(os.path.dirname(__file__), "data", "p0f.log"),
@@ -280,7 +280,7 @@ async def _start_p0f_process(interface: str, log_file: str) -> subprocess.Popen 
     """Start p0f as a background process."""
     if not os.path.exists(P0F_BIN):
         print(f"[p0f] ⚠️  p0f binary not found at {P0F_BIN}")
-        print(f"[p0f]    Install with: brew install p0f")
+        print(f"[p0f]    Install with: apt-get install p0f")
         return None
 
     log_path = Path(log_file)
