@@ -422,11 +422,13 @@ def _is_local_ip(ip: str) -> bool:
         return False
 
 
-async def register_device(client: httpx.AsyncClient, ip: str) -> None:
+async def register_device(client: httpx.AsyncClient, ip: str, mac_hint: str | None = None) -> None:
     """Register/update a device on the API (non-blocking).
 
     Only registers devices with local/private IP addresses — public IPs
     (AI service servers, CDNs, etc.) are NOT devices on our network.
+
+    mac_hint: optional MAC from Zeek conn.log (orig_l2_addr field).
     """
     if not _is_local_ip(ip):
         return
@@ -438,7 +440,9 @@ async def register_device(client: httpx.AsyncClient, ip: str) -> None:
     _device_cache[ip] = now
 
     hostname = _resolve_hostname(ip)
-    mac = _resolve_mac(ip)
+    mac = mac_hint or _resolve_mac(ip)
+    if mac:
+        mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
     if hostname:
         payload["hostname"] = hostname
@@ -782,6 +786,10 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
+                # MAC address from Zeek conn.log (requires @load policy/protocols/conn/mac-logging)
+                src_mac = record.get("orig_l2_addr")
+                if src_mac and src_mac == "-":
+                    src_mac = None
                 proto = record.get("proto", "").lower()
                 resp_port_str = record.get("id.resp_p", "0")
                 try:
@@ -813,7 +821,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         last_vpn = _vpn_last_seen.get(dedup_k, 0)
                         if (now - last_vpn) >= VPN_DEDUP_SECONDS:
                             _vpn_last_seen[dedup_k] = now
-                            asyncio.create_task(register_device(client, src_ip))
+                            asyncio.create_task(register_device(client, src_ip, src_mac))
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
@@ -860,7 +868,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             dpd_resp = 0
                         dpd_total = dpd_orig + dpd_resp
 
-                        asyncio.create_task(register_device(client, src_ip))
+                        asyncio.create_task(register_device(client, src_ip, src_mac))
                         await send_event(
                             client,
                             detection_type="stealth_vpn_tunnel",
@@ -912,7 +920,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         h_last = _heuristic_vpn_seen.get(h_key, 0)
                         if (now - h_last) >= HEURISTIC_VPN_DEDUP_SECONDS:
                             _heuristic_vpn_seen[h_key] = now
-                            asyncio.create_task(register_device(client, src_ip))
+                            asyncio.create_task(register_device(client, src_ip, src_mac))
                             await send_event(
                                 client,
                                 detection_type="vpn_tunnel",
