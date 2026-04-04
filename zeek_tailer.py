@@ -1174,6 +1174,17 @@ async def main(zeek_log_dir: str) -> None:
 
     print()
 
+    # Network scanner — periodic nmap + nbtscan for hostname discovery
+    scanner_task = None
+    try:
+        from network_scanner import run_network_scanner
+        scanner_task = run_network_scanner()
+        print(f"[*] Network scanner: enabled (nmap + nbtscan)")
+    except ImportError:
+        print(f"[*] Network scanner: disabled (network_scanner not found)")
+    except Exception as exc:
+        print(f"[*] Network scanner: disabled ({exc})")
+
     tasks = [
         tail_ssl_log(ssl_log, client := httpx.AsyncClient()),
         tail_conn_log(conn_log, client),
@@ -1182,6 +1193,8 @@ async def main(zeek_log_dir: str) -> None:
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)
+    if scanner_task is not None:
+        tasks.append(scanner_task)
 
     try:
         await asyncio.gather(*tasks)

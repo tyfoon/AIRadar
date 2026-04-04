@@ -15,6 +15,8 @@ RUN apt-get update && \
         avahi-daemon \
         avahi-utils \
         libnss-mdns \
+        nmap \
+        nbtscan \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i 's/^hosts:.*/hosts: files mdns4_minimal [NOTFOUND=return] dns/' /etc/nsswitch.conf
 
