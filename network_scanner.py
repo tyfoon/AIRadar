@@ -21,7 +21,7 @@ import httpx
 DEVICE_API_URL = os.environ.get(
     "AIRADAR_DEVICE_API_URL", "http://localhost:8000/api/devices"
 )
-SCAN_INTERVAL = int(os.environ.get("SCAN_INTERVAL", "600"))  # 10 minutes
+SCAN_INTERVAL = int(os.environ.get("SCAN_INTERVAL", "900"))  # 15 minutes
 SCAN_SUBNET = os.environ.get("SCAN_SUBNET", "192.168.1.0/24")
 
 
@@ -33,6 +33,8 @@ def _nmap_scan(subnet: str) -> list[dict]:
             [
                 "nmap", "-sn",       # Ping scan only (no port scan — fast)
                 "--host-timeout", "5s",
+                "--max-rate", "50",  # Limit to 50 packets/sec to avoid congestion
+                "-T3",               # Normal timing (not aggressive)
                 "-oX", "-",          # XML output to stdout
                 subnet,
             ],
@@ -123,8 +125,8 @@ async def run_network_scanner() -> None:
     """Periodically scan the local network and register discovered devices."""
     print(f"[scanner] Network scanner started (interval={SCAN_INTERVAL}s, subnet={SCAN_SUBNET})")
 
-    # Wait for the API to be ready
-    await asyncio.sleep(15)
+    # Wait for the API to be ready and initial traffic to settle
+    await asyncio.sleep(30)
 
     async with httpx.AsyncClient() as client:
         while True:
