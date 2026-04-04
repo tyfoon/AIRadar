@@ -290,20 +290,18 @@ sudo zeekctl deploy
 
 ---
 
-## Stap 11: DNS instellen op je netwerk
+## Stap 11: DNS — hoef je niks te doen!
 
-Dit is de laatste stap: je apparaten moeten de AM02L als DNS-server gebruiken.
+Het setup script heeft **transparante DNS redirect** geconfigureerd. Alle DNS verkeer dat door de bridge loopt wordt automatisch onderschept en door AdGuard gefilterd.
 
-**Optie A — Op je router (aanbevolen, werkt voor alle apparaten)**:
-1. Log in op je router (meestal `192.168.1.1`)
-2. Ga naar DHCP instellingen
-3. Zet de **DNS server** op `192.168.1.2` (het IP van de AM02L)
-4. Sla op en herstart de router
+Je hoeft **niks** aan te passen op je router, DHCP server, of apparaten. Zero-touch.
 
-**Optie B — Per apparaat (als je router het niet ondersteunt)**:
-- Mac: Systeeminstellingen → Netwerk → Wi-Fi → Details → DNS → voeg `192.168.1.2` toe
-- iPhone: Instellingen → Wi-Fi → (i) bij je netwerk → Configureer DNS → Handmatig → `192.168.1.2`
-- Windows: Netwerkinstellingen → Adapter → IPv4 → DNS server: `192.168.1.2`
+Hoe het werkt:
+- Je apparaten sturen hun DNS naar je router (zoals altijd)
+- Die DNS query gaat door de AM02L bridge
+- De AM02L vangt het af en stuurt het naar AdGuard
+- AdGuard filtert trackers/ads en stuurt het antwoord terug
+- Je apparaat merkt er niks van
 
 ---
 
