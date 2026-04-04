@@ -288,6 +288,27 @@ else
     info "Manually set interface=${ZEEK_IFACE} in your Zeek node.cfg"
 fi
 
+# Enable MAC address logging in conn.log (orig_l2_addr / resp_l2_addr)
+LOCAL_ZEEK=""
+for lz in /opt/zeek/share/zeek/site/local.zeek /etc/zeek/local.zeek /usr/local/zeek/share/zeek/site/local.zeek; do
+    if [ -f "$lz" ]; then
+        LOCAL_ZEEK="$lz"
+        break
+    fi
+done
+if [ -n "$LOCAL_ZEEK" ]; then
+    if ! grep -q "mac-logging" "$LOCAL_ZEEK" 2>/dev/null; then
+        echo "" >> "$LOCAL_ZEEK"
+        echo "# AI-Radar: log Layer 2 MAC addresses in conn.log" >> "$LOCAL_ZEEK"
+        echo "@load policy/protocols/conn/mac-logging" >> "$LOCAL_ZEEK"
+        ok "Zeek MAC logging enabled (orig_l2_addr in conn.log)"
+    else
+        ok "Zeek MAC logging already enabled"
+    fi
+else
+    warn "Could not find local.zeek — manually add: @load policy/protocols/conn/mac-logging"
+fi
+
 # Install Zeek systemd service for auto-start
 cp "$AIRADAR_DIR/network/zeek-autostart.service" /etc/systemd/system/zeek-airadar.service
 systemctl daemon-reload
