@@ -1713,7 +1713,7 @@ async def health_check(db: Session = Depends(get_db)):
     # 6) Zeek log freshness
     import os
     from pathlib import Path
-    log_dir = Path(".")
+    log_dir = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs"))
     for logname in ["ssl.log", "conn.log"]:
         logpath = log_dir / logname
         t0 = _time.monotonic()
