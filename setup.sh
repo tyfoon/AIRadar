@@ -83,14 +83,61 @@ step 3 "Installing Zeek network monitor"
 if command -v zeek &> /dev/null || [ -f /opt/zeek/bin/zeek ]; then
     ok "Zeek already installed"
 else
-    echo "deb http://download.opensuse.org/repositories/security:/zeek/xUbuntu_$(lsb_release -rs)/ /" | \
-        tee /etc/apt/sources.list.d/zeek.list > /dev/null
-    curl -fsSL "https://download.opensuse.org/repositories/security:/zeek/xUbuntu_$(lsb_release -rs)/Release.key" | \
-        gpg --dearmor -o /etc/apt/keyrings/zeek.gpg
-    apt update -qq
-    apt install -y -qq zeek
-    echo 'export PATH=/opt/zeek/bin:$PATH' >> /etc/profile.d/zeek.sh
-    ok "Zeek installed"
+    UBUNTU_VER=$(lsb_release -rs)
+    ZEEK_INSTALLED=false
+
+    # Method 1: Try official Zeek OBS repository (signed)
+    info "Trying Zeek OBS repository..."
+    ZEEK_REPO="http://download.opensuse.org/repositories/security:/zeek/xUbuntu_${UBUNTU_VER}"
+    if curl -fsSL "${ZEEK_REPO}/Release.key" 2>/dev/null | gpg --dearmor -o /etc/apt/keyrings/zeek.gpg 2>/dev/null; then
+        echo "deb [signed-by=/etc/apt/keyrings/zeek.gpg] ${ZEEK_REPO}/ /" | \
+            tee /etc/apt/sources.list.d/zeek.list > /dev/null
+        apt update -qq 2>/dev/null
+        if apt install -y -qq zeek 2>/dev/null; then
+            ZEEK_INSTALLED=true
+        fi
+    fi
+
+    # Method 2: Try trusted repo (skip GPG) — for repos with key issues
+    if [ "$ZEEK_INSTALLED" = false ]; then
+        warn "Signed repo failed, trying trusted repo..."
+        echo "deb [trusted=yes] ${ZEEK_REPO}/ /" | \
+            tee /etc/apt/sources.list.d/zeek.list > /dev/null
+        apt update -qq 2>/dev/null
+        if apt install -y -qq zeek 2>/dev/null; then
+            ZEEK_INSTALLED=true
+        fi
+    fi
+
+    # Method 3: Try Zeek binary package directly
+    if [ "$ZEEK_INSTALLED" = false ]; then
+        warn "Repo install failed, trying direct .deb download..."
+        ZEEK_DEB_URL="https://download.zeek.org/binary-packages/xUbuntu_${UBUNTU_VER}/amd64/"
+        # Get the latest zeek .deb filename
+        ZEEK_DEB=$(curl -fsSL "$ZEEK_DEB_URL" 2>/dev/null | grep -oP 'zeek_[0-9][^"]*_amd64\.deb' | sort -V | tail -1)
+        if [ -n "$ZEEK_DEB" ]; then
+            curl -fsSL "${ZEEK_DEB_URL}${ZEEK_DEB}" -o /tmp/zeek.deb
+            dpkg -i /tmp/zeek.deb || apt install -f -y
+            ZEEK_INSTALLED=true
+            rm -f /tmp/zeek.deb
+        fi
+    fi
+
+    # Method 4: Snap fallback
+    if [ "$ZEEK_INSTALLED" = false ]; then
+        warn "Direct download failed, trying snap..."
+        snap install zeek --classic 2>/dev/null && ZEEK_INSTALLED=true
+    fi
+
+    if [ "$ZEEK_INSTALLED" = true ]; then
+        echo 'export PATH=/opt/zeek/bin:$PATH' >> /etc/profile.d/zeek.sh
+        export PATH=/opt/zeek/bin:$PATH
+        ok "Zeek installed"
+    else
+        err "Could not install Zeek automatically"
+        info "Install manually: https://docs.zeek.org/en/current/install.html"
+        info "Then re-run this script."
+    fi
 fi
 
 mkdir -p /opt/zeek/logs
