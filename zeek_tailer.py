@@ -436,15 +436,15 @@ async def register_device(client: httpx.AsyncClient, ip: str, mac: str | None = 
         return
     _device_cache[ip] = now
 
-    hostname = _resolve_hostname(ip)
-    # Prefer Zeek-provided MAC; fall back to ARP lookup
+    # No reverse DNS — hostnames come exclusively from DHCP and mDNS tailers.
+    # Prefer Zeek-provided MAC > conn.log cache > ARP lookup
     if not mac:
-        mac = _resolve_mac(ip)
+        mac = _ip_to_mac.get(ip)  # conn.log cache
+    if not mac:
+        mac = _resolve_mac(ip)    # ARP/NDP fallback
     else:
         mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
-    if hostname:
-        payload["hostname"] = hostname
     if mac:
         payload["mac_address"] = mac
     try:
