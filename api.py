@@ -1596,30 +1596,36 @@ async def health_check(db: Session = Depends(get_db)):
             "details": str(exc),
         })
 
-    # 3) Zeek process
+    # 3) Zeek process — check via log freshness (Zeek runs on host, not in container)
     t0 = _time.monotonic()
     try:
-        proc = subprocess.run(
-            ["pgrep", "-f", "zeek.*-i"],
-            capture_output=True, timeout=5,
-        )
+        zeek_log = Path(os.environ.get("ZEEK_LOG_DIR", "/app/logs")) / "conn.log"
         ms = round((_time.monotonic() - t0) * 1000, 1)
-        if proc.returncode == 0:
-            pids = proc.stdout.decode().strip().split('\n')
-            results.append({
-                "service": "Zeek (Packet Capture)",
-                "icon": "📡",
-                "status": "ok",
-                "response_ms": ms,
-                "details": f"Running (PID {pids[0]})",
-            })
+        if zeek_log.exists():
+            age_s = _time.time() - os.path.getmtime(zeek_log)
+            if age_s < 60:
+                results.append({
+                    "service": "Zeek (Packet Capture)",
+                    "icon": "📡",
+                    "status": "ok",
+                    "response_ms": ms,
+                    "details": f"Active — conn.log updated {age_s:.0f}s ago",
+                })
+            else:
+                results.append({
+                    "service": "Zeek (Packet Capture)",
+                    "icon": "📡",
+                    "status": "warning",
+                    "response_ms": ms,
+                    "details": f"Stale — conn.log last updated {age_s:.0f}s ago",
+                })
         else:
             results.append({
                 "service": "Zeek (Packet Capture)",
                 "icon": "📡",
                 "status": "error",
                 "response_ms": ms,
-                "details": "Process not found — run: sudo zeek -i en0 -C",
+                "details": "conn.log not found — is Zeek running?",
             })
     except Exception as exc:
         results.append({
