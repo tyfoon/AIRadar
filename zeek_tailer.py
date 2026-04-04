@@ -871,7 +871,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             dpd_resp = 0
                         dpd_total = dpd_orig + dpd_resp
 
-                        asyncio.create_task(register_device(client, src_ip))
+                        asyncio.create_task(register_device(client, src_ip, l2_mac))
                         await send_event(
                             client,
                             detection_type="stealth_vpn_tunnel",
