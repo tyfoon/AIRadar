@@ -3654,15 +3654,22 @@ function openDeviceDrawer(mac, service, category) {
   }
 
   // Tabs: Summary · AI Recap · (ai|cloud|tracking|other that have events).
-  // The old "All" tab was removed — Summary covers the same need with
-  // a more useful rollup, and each category tab is still reachable.
+  // Uses the exact same Tailwind utility pattern as Rules / AI / Settings
+  // / Geo / IPS so every tab bar in the app is pixel-identical. Don't
+  // use the .drawer-tab CSS class anymore — direct utilities prevent
+  // the subtle drift that CSS overrides tend to introduce.
+  const tabBase = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap';
+  const tabActive = `${tabBase} bg-blue-700 text-white shadow-sm`;
+  const tabInactive = `${tabBase} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  const tabCls = (key) => (_drawerActiveTab === key ? tabActive : tabInactive);
+
   const tabsHtml = [
-    `<button class="drawer-tab ${_drawerActiveTab === 'summary' ? 'active' : ''}" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
-    `<button class="drawer-tab ${_drawerActiveTab === 'report' ? 'active' : ''}" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
+    `<button class="${tabCls('summary')}" data-tab="summary" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
+    `<button class="${tabCls('report')}" data-tab="report" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
-      tabsHtml.push(`<button class="drawer-tab ${_drawerActiveTab === c.key ? 'active' : ''}" onclick="setDrawerTab('${c.key}')">${c.icon} ${c.label} <span class="ml-1 text-[10px] opacity-60">${tabCounts[c.key]}</span></button>`);
+      tabsHtml.push(`<button class="${tabCls(c.key)}" data-tab="${c.key}" onclick="setDrawerTab('${c.key}')">${c.icon} ${c.label} <span class="ml-1 text-[10px] opacity-60">${tabCounts[c.key]}</span></button>`);
     }
   });
   document.getElementById('drawer-tabs').innerHTML = tabsHtml.join('');
@@ -3867,9 +3874,13 @@ function drawerLoadMore() {
 
 function setDrawerTab(tabKey) {
   _drawerActiveTab = tabKey;
-  // Update active class
-  document.querySelectorAll('#drawer-tabs .drawer-tab').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${tabKey}'`));
+  // Swap active / inactive Tailwind class strings on every tab button
+  // so the visual update matches exactly what openDeviceDrawer() built.
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  document.querySelectorAll('#drawer-tabs button[data-tab]').forEach(btn => {
+    btn.className = (btn.getAttribute('data-tab') === tabKey) ? active : inactive;
   });
   _applyDrawerFilter(null); // clear service filter when switching tabs
 }
