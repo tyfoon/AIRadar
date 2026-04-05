@@ -1011,30 +1011,60 @@ GEO_DB_CANDIDATES = [
     str(Path(__file__).parent / "data" / "GeoLite2-Country.mmdb"),
 ]
 _geo_reader = None
+# Use the low-level maxminddb reader directly instead of geoip2.database.Reader
+# because geoip2's high-level methods (.country(), .city(), etc.) validate the
+# database type string in the MMDB metadata — e.g. they require
+# "GeoLite2-Country". DB-IP's free country MMDB has a different type string
+# ("DBIP-Country-Lite"), so geoip2 rejects it even though the schema is
+# compatible. maxminddb.open_database() works on ANY MMDB file.
 try:
-    import geoip2.database  # type: ignore
+    import maxminddb  # type: ignore
     for _p in GEO_DB_CANDIDATES:
         if _p and os.path.exists(_p):
             try:
-                _geo_reader = geoip2.database.Reader(_p)
-                print(f"[geo] GeoIP country DB loaded from {_p}")
+                _geo_reader = maxminddb.open_database(_p)
+                print(f"[geo] GeoIP country DB loaded from {_p} (type: {_geo_reader.metadata().database_type})")
                 break
             except Exception as _exc:
                 print(f"[geo] Failed to open {_p}: {_exc}")
     if not _geo_reader:
         print("[geo] No GeoIP database found — Geo Traffic dashboard will be empty")
 except ImportError:
-    print("[geo] geoip2 library not installed — Geo Traffic dashboard disabled")
+    print("[geo] maxminddb library not installed — Geo Traffic dashboard disabled")
+
+
+_geo_lookup_errors = 0
 
 
 def _resolve_country(ip: str) -> str | None:
-    """Return ISO-3166-1 alpha-2 country code for a public IP, or None."""
+    """Return ISO-3166-1 alpha-2 country code for a public IP, or None.
+
+    Handles multiple MMDB schemas:
+      - MaxMind GeoLite2:  {"country": {"iso_code": "US"}, ...}
+      - DB-IP Country:     {"country": {"iso_code": "US"}, ...}  (same)
+      - iptoasn-country:   {"country_code": "US"}
+    """
+    global _geo_lookup_errors
     if not _geo_reader or not ip or ip == "-":
         return None
     try:
-        result = _geo_reader.country(ip)
-        return result.country.iso_code  # e.g. "US", "NL"
-    except Exception:
+        result = _geo_reader.get(ip)
+        if not result or not isinstance(result, dict):
+            return None
+        # GeoLite2 / DB-IP schema
+        country = result.get("country")
+        if isinstance(country, dict):
+            iso = country.get("iso_code") or country.get("iso_code_3166_1_alpha_2")
+            if iso:
+                return str(iso).upper()[:2]
+        # Alternative flat schema
+        if "country_code" in result:
+            return str(result["country_code"]).upper()[:2]
+        return None
+    except Exception as exc:
+        _geo_lookup_errors += 1
+        if _geo_lookup_errors <= 3:
+            print(f"[geo] lookup error for {ip}: {exc}")
         return None
 
 
@@ -1043,13 +1073,10 @@ def _resolve_country(ip: str) -> str | None:
 _geo_buckets: dict[tuple[str, str], dict] = {}
 _geo_lock = asyncio.Lock()
 GEO_FLUSH_INTERVAL = 15  # seconds
-_geo_record_count = 0  # diagnostic: total calls to _record_geo_traffic
-_geo_flush_tick = 0    # diagnostic: how many times the flusher has run
 
 
 async def _record_geo_traffic(country_code: str, direction: str, total_bytes: int) -> None:
     """Add a connection's bytes to the in-memory buffer."""
-    global _geo_record_count
     if not country_code:
         return
     key = (country_code, direction)
@@ -1060,18 +1087,12 @@ async def _record_geo_traffic(country_code: str, direction: str, total_bytes: in
             bucket["hits"] += 1
         else:
             _geo_buckets[key] = {"bytes": total_bytes, "hits": 1}
-    _geo_record_count += 1
-    if _geo_record_count <= 5:
-        # Log the first few hits so we can confirm the code path is live.
-        print(f"[geo] record #{_geo_record_count}: {direction} {country_code} +{total_bytes}B")
 
 
 async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
     """Background task: flush the geo traffic buffer to the API periodically."""
-    global _geo_flush_tick
     while True:
         await asyncio.sleep(GEO_FLUSH_INTERVAL)
-        _geo_flush_tick += 1
         async with _geo_lock:
             snapshot = [
                 {"country_code": cc, "direction": d, "bytes": v["bytes"], "hits": v["hits"]}
@@ -1086,12 +1107,8 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                     json={"updates": snapshot},
                     timeout=10,
                 )
-                print(f"[geo] Flushed {len(snapshot)} country update(s) (total records so far: {_geo_record_count})")
             except httpx.HTTPError as exc:
                 print(f"[geo] Flush failed ({len(snapshot)} updates): {exc}")
-        elif _geo_flush_tick % 8 == 0:
-            # Heartbeat every 2 minutes so we can confirm the task is alive.
-            print(f"[geo] Idle (records={_geo_record_count}, reader={'ok' if _geo_reader else 'missing'})")
 
 
 # ---------------------------------------------------------------------------
@@ -1106,8 +1123,6 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
     """
     print(f"[*] Tailing conn.log: {log_path}")
     fields: list[str] = []
-    _conn_lines_processed = 0
-    _conn_mismatch_count = 0
 
     while True:
         if not log_path.exists():
@@ -1122,10 +1137,8 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 else:
                     break
             fields = parse_zeek_header(header_lines) or []
-            print(f"[conn.log debug] opened file, parsed {len(fields)} header fields: {fields[:8]}...")
 
             f.seek(0, 2)
-            print(f"[conn.log debug] seeked to end ({f.tell()} bytes), entering tail loop")
 
             while True:
                 line = f.readline()
@@ -1149,14 +1162,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 parts = line.split("\t")
                 if len(parts) != len(fields):
-                    _conn_mismatch_count += 1
-                    if _conn_mismatch_count <= 3:
-                        print(f"[conn.log debug] field count mismatch: {len(parts)} vs {len(fields)} header fields")
                     continue
-
-                _conn_lines_processed += 1
-                if _conn_lines_processed <= 5 or _conn_lines_processed % 500 == 0:
-                    print(f"[conn.log debug] line #{_conn_lines_processed}: {line[:120]}")
 
                 record = dict(zip(fields, parts))
 
@@ -1187,12 +1193,9 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # other is public, resolve the public IP to a country and
                 # add the total bytes to the in-memory buffer. The buffer
                 # is flushed to the DB by flush_geo_buckets() every 15s.
-                _geo_trace = (_conn_lines_processed <= 5)
                 if _geo_reader and resp_ip and resp_ip != "-":
                     src_local = _is_local_ip(src_ip)
                     dst_local = _is_local_ip(resp_ip)
-                    if _geo_trace:
-                        print(f"[geo trace] line #{_conn_lines_processed}: src={src_ip} (local={src_local}) dst={resp_ip} (local={dst_local})")
                     direction = None
                     public_ip = None
                     if src_local and not dst_local:
@@ -1210,25 +1213,12 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         except ValueError:
                             _ob = _rb = 0
                         total = _ob + _rb
-                        if _geo_trace:
-                            print(f"[geo trace]   direction={direction} public={public_ip} bytes={total}")
                         if total > 0:
                             cc = _resolve_country(public_ip)
-                            if _geo_trace:
-                                print(f"[geo trace]   country={cc}")
                             if cc:
-                                try:
-                                    asyncio.create_task(
-                                        _record_geo_traffic(cc, direction, total)
-                                    )
-                                    if _geo_trace:
-                                        print(f"[geo trace]   task scheduled")
-                                except Exception as _exc:
-                                    print(f"[geo trace]   task FAILED: {_exc}")
-                    elif _geo_trace:
-                        print(f"[geo trace]   no direction (both local or both public)")
-                elif _geo_trace:
-                    print(f"[geo trace] line #{_conn_lines_processed}: skipped (reader={_geo_reader is not None}, resp_ip='{resp_ip}')")
+                                asyncio.create_task(
+                                    _record_geo_traffic(cc, direction, total)
+                                )
 
                 # --- VPN / tunnel detection ---
                 vpn_key = (proto, resp_port)
