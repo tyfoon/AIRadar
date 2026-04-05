@@ -2960,11 +2960,10 @@ async function refreshOther() {
 
     const servicesHtml = cat.services.map((svc, si) => {
       const svcName = SERVICE_NAMES[svc.service_name] || svc.service_name;
-      const logoDomain = SERVICE_LOGO_DOMAIN[svc.service_name];
-      const logoImg = logoDomain
-        ? `<img src="https://logo.clearbit.com/${logoDomain}" class="w-5 h-5 rounded" onerror="this.style.display='none'" alt="">`
-        : '';
-      const svcColor = SERVICE_COLORS[svc.service_name] || '#6b7280';
+      // Use the shared favicon-based svcLogo helper — same source as
+      // badges, device drawer Summary, and Action Inbox. The old code
+      // used logo.clearbit.com which has been dead since Dec 2023.
+      const logoImg = svcLogo(svc.service_name);
       const svcHits = svc.devices.reduce((a, d) => a + d.hits, 0);
 
       const devicesHtml = svc.devices.map(d => {
