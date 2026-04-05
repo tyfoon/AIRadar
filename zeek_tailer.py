@@ -921,12 +921,18 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # (client, server, SNI) per device so we can later do
                 # context-aware classification — e.g. distinguish a Google
                 # Nest talking to storage.googleapis.com from a browser.
-                ja4 = record.get("ja4", "-")
-                if ja4 == "-" or not ja4:
-                    ja4 = None
-                ja4s = record.get("ja4s", "-")
-                if ja4s == "-" or not ja4s:
-                    ja4s = None
+                #
+                # Zeek writes "-" for missing fields AND "(empty)" for fields
+                # that were present but contained an empty value. Both mean
+                # "no data" and must be normalised to None so we don't store
+                # "(empty)" as a literal string and split one logical tuple
+                # into two rows.
+                def _clean(val):
+                    if not val or val == "-" or val == "(empty)":
+                        return None
+                    return val
+                ja4 = _clean(record.get("ja4"))
+                ja4s = _clean(record.get("ja4s"))
 
                 # Pass source_ip so ambiguous Google domains can be resolved
                 match = match_domain(sni, source_ip=src_ip)
@@ -1430,22 +1436,25 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         continue
                     _ja4d_last_seen[mac] = now
 
-                    hostname = record.get("hostname", "-")
-                    if hostname == "-":
-                        hostname = None
+                    # Zeek writes "-" for missing and "(empty)" for present-
+                    # but-blank. Normalise both to None.
+                    def _clean_zeek(val):
+                        if not val or val == "-" or val == "(empty)":
+                            return None
+                        return val
+
+                    hostname = _clean_zeek(record.get("hostname"))
 
                     # vendor_class_id is extremely valuable for device type
                     # identification — e.g. "MSFT 5.0", "android-dhcp-14",
                     # "dhcpcd-10.0.0", "LG_webOS", "Google Nest". More
                     # reliable than OUI for distinguishing Google device
                     # types (Nest vs Chromecast vs Pixel).
-                    vendor_class = record.get("vendor_class_id") or record.get("vendor_class")
-                    if vendor_class == "-" or not vendor_class:
-                        vendor_class = None
+                    vendor_class = _clean_zeek(
+                        record.get("vendor_class_id") or record.get("vendor_class")
+                    )
 
-                    ja4d_hash = record.get("ja4d")
-                    if ja4d_hash == "-" or not ja4d_hash:
-                        ja4d_hash = None
+                    ja4d_hash = _clean_zeek(record.get("ja4d"))
 
                     assigned_ip = record.get("assigned_addr") or record.get("requested_ip")
                     if assigned_ip and assigned_ip == "-":

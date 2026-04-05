@@ -40,7 +40,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import Integer, func
+from sqlalchemy import Integer, func, text
 from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
@@ -547,10 +547,81 @@ def _cleanup_junk_hostnames():
         db.close()
 
 
+def _cleanup_empty_sentinel_strings():
+    """One-shot sweep: replace Zeek '(empty)' sentinel strings with NULL.
+
+    Early Phase 1 data collection stored Zeek's literal '(empty)' string
+    when a field was present-but-blank. Normalise to NULL so that tuple
+    dedup works properly (otherwise the same logical (ja4, ja4s, sni)
+    gets split into two rows).
+    """
+    db = SessionLocal()
+    try:
+        from sqlalchemy import update, or_
+        fixed = 0
+
+        # tls_fingerprints table
+        for col in ("ja4", "ja4s", "sni"):
+            stmt = text(
+                f"UPDATE tls_fingerprints SET {col} = NULL "
+                f"WHERE {col} IN ('(empty)', '-', '')"
+            )
+            result = db.execute(stmt)
+            fixed += result.rowcount
+
+        # devices table
+        for col in ("dhcp_vendor_class", "dhcp_fingerprint", "ja4_fingerprint"):
+            stmt = text(
+                f"UPDATE devices SET {col} = NULL "
+                f"WHERE {col} IN ('(empty)', '-', '')"
+            )
+            result = db.execute(stmt)
+            fixed += result.rowcount
+
+        if fixed:
+            db.commit()
+            print(f"[cleanup] Normalised {fixed} Zeek '(empty)' sentinel string(s) to NULL")
+
+        # Also collapse duplicate tls_fingerprints rows that differ only in
+        # NULL vs '(empty)'. After the UPDATE above we may now have two rows
+        # with the exact same (mac, ja4, ja4s, sni) — merge their hit_counts.
+        dupes = db.execute(text("""
+            SELECT mac_address, ja4, ja4s, sni, MIN(id), SUM(hit_count), MIN(first_seen), MAX(last_seen), COUNT(*)
+            FROM tls_fingerprints
+            GROUP BY mac_address, ja4, ja4s, sni
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+        for row in dupes:
+            mac, ja4, ja4s, sni, keep_id, total_hits, first_seen, last_seen, _n = row
+            # Update the kept row with merged counts
+            db.execute(text("""
+                UPDATE tls_fingerprints
+                SET hit_count = :hits, first_seen = :fs, last_seen = :ls
+                WHERE id = :id
+            """), {"hits": total_hits, "fs": first_seen, "ls": last_seen, "id": keep_id})
+            # Delete the others
+            db.execute(text("""
+                DELETE FROM tls_fingerprints
+                WHERE mac_address = :mac
+                  AND (ja4 IS :ja4 OR ja4 = :ja4)
+                  AND (ja4s IS :ja4s OR ja4s = :ja4s)
+                  AND (sni IS :sni OR sni = :sni)
+                  AND id != :id
+            """), {"mac": mac, "ja4": ja4, "ja4s": ja4s, "sni": sni, "id": keep_id})
+        if dupes:
+            db.commit()
+            print(f"[cleanup] Merged {len(dupes)} duplicate TLS fingerprint tuple(s)")
+    except Exception as exc:
+        print(f"[cleanup] Empty-string sweep failed: {exc}")
+    finally:
+        db.close()
+
+
 async def lifespan(app: FastAPI):
     init_db()
     _backfill_vendors()
     _cleanup_junk_hostnames()
+    _cleanup_empty_sentinel_strings()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
@@ -963,6 +1034,13 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     # Sanitize incoming hostname — drop junk so it never lands in the DB
     if payload.hostname and _is_junk_hostname(payload.hostname):
         payload.hostname = None
+
+    # Normalise Zeek's "(empty)" sentinels to None so we don't store
+    # literal placeholder strings as values.
+    for field in ("ja4", "ja4s", "sni", "dhcp_vendor_class", "dhcp_fingerprint"):
+        val = getattr(payload, field, None)
+        if val in ("(empty)", "-", ""):
+            setattr(payload, field, None)
 
     if not mac:
         # No MAC provided — check if this IP already belongs to a device
