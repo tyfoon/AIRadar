@@ -358,6 +358,10 @@
           <option value="1440" data-i18n="ai.last24h">Last 24 h</option>
           <option value="10080" data-i18n="ai.last7d">Last 7 days</option>
         </select>
+        <label class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none" title="Include zero-byte TLS pings (push notifications, keep-alives)">
+          <input type="checkbox" id="ai-show-heartbeats" class="rounded border-slate-300 dark:border-slate-600">
+          <span data-i18n="filter.showHeartbeats">Show pings</span>
+        </label>
         <button onclick="refreshPage('ai')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors" data-i18n="ai.apply">Apply</button>
         <button onclick="exportCSV('ai')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors" data-i18n="ai.exportCsv">Export CSV</button>
       </div>
@@ -497,6 +501,10 @@
           <option value="1440" data-i18n="cloud.last24h">Last 24 h</option>
           <option value="10080" data-i18n="cloud.last7d">Last 7 days</option>
         </select>
+        <label class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none" title="Include zero-byte TLS pings (push notifications, keep-alives)">
+          <input type="checkbox" id="cloud-show-heartbeats" class="rounded border-slate-300 dark:border-slate-600">
+          <span data-i18n="filter.showHeartbeats">Show pings</span>
+        </label>
         <button onclick="refreshPage('cloud')" class="ml-auto px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors" data-i18n="cloud.apply">Apply</button>
         <button onclick="exportCSV('cloud')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors" data-i18n="cloud.exportCsv">Export CSV</button>
       </div>

@@ -701,6 +701,14 @@ function getFilterParams(cat) {
     if (svc) p.set('service', svc);
     if (dev) p.set('source_ip', dev);
     if (per) p.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
+
+    // Heartbeat toggle: by default hide zero-byte SNI pings on insight
+    // pages so the event table reflects real activity, not presence.
+    // Active usage = bytes > 0 OR possible_upload. Users can tick the
+    // checkbox to re-include pings (e.g. when debugging).
+    const hbToggle = document.getElementById(prefix + '-show-heartbeats');
+    const includeHb = hbToggle ? hbToggle.checked : false;
+    if (!includeHb) p.set('include_heartbeats', 'false');
   }
   return p;
 }
@@ -1272,10 +1280,14 @@ function renderDashHealthServices() {
 async function refreshDashboard() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const [aiEvt, cloudEvt, privRes, healthRes, sankeyAi, sankeyCloud, ksState] = await Promise.all([
-    fetch('/api/events?category=ai&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
-    fetch('/api/events?category=cloud&limit=200&start=' + todayStart.toISOString()).then(r => r.json()),
+    // Counter: meaningful activity only (heartbeats excluded). Users see
+    // a realistic "real events today" number, not thousands of 0-byte pings.
+    fetch('/api/events?category=ai&limit=200&include_heartbeats=false&start=' + todayStart.toISOString()).then(r => r.json()),
+    fetch('/api/events?category=cloud&limit=200&include_heartbeats=false&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/privacy/stats').then(r => r.json()).catch(() => null),
     fetch('/api/health').then(r => r.json()).catch(() => null),
+    // Sankey: include heartbeats so service adoption (e.g. "my iPhone uses iCloud")
+    // is represented even when the device only pings and never transfers data.
     fetch('/api/events?category=ai&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/events?category=cloud&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/killswitch').then(r => r.json()).catch(() => ({ active: false })),

@@ -704,7 +704,13 @@ _outbound_src: dict[str, str] = {}
 # keep-alive by size alone.  Instead we deduplicate: for each (service, src_ip)
 # pair we only emit one sni_hello event per window.  Actual data transfer is
 # still captured separately via conn.log → volumetric_upload events.
-SNI_DEDUP_SECONDS = 120  # 2-minute window per (service, device)
+#
+# Heartbeats from mobile apps (iCloud push, Snapchat presence, etc) fire every
+# 5-10 min per device. With a 2-minute window every single ping still made it
+# through, producing ~70 noise events per device per 12h. A 30-minute window
+# caps it at ~2 events/hour which is plenty to show "service is active" while
+# dropping 10-15x of the noise.
+SNI_DEDUP_SECONDS = 1800  # 30 minutes per (service, device)
 _sni_last_seen: dict[tuple[str, str], float] = {}  # (service, src_ip) → timestamp
 
 # ---------------------------------------------------------------------------

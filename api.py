@@ -626,6 +626,26 @@ def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # GET /api/events — return events with optional filters
 # ---------------------------------------------------------------------------
+def _apply_heartbeat_filter(q, include_heartbeats: bool):
+    """Filter out zero-byte SNI heartbeats unless explicitly included.
+
+    A "heartbeat" is a TLS handshake to a known service (sni_hello) that
+    carries no byte count and is not flagged as an upload. They represent
+    "service is configured and reachable" (e.g. iPhone checking iCloud push
+    every 5-10 min) — useful for service adoption but noise in event tables.
+    """
+    if include_heartbeats:
+        return q
+    from sqlalchemy import or_
+    return q.filter(
+        or_(
+            DetectionEvent.detection_type != "sni_hello",
+            DetectionEvent.bytes_transferred > 0,
+            DetectionEvent.possible_upload == True,  # noqa: E712
+        )
+    )
+
+
 @app.get("/api/events", response_model=list[EventRead])
 def list_events(
     service: Optional[str] = Query(None),
@@ -635,6 +655,10 @@ def list_events(
     end: Optional[datetime] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    include_heartbeats: bool = Query(
+        True,
+        description="Include zero-byte sni_hello heartbeats (keep-alives / push-notification pings)",
+    ),
     db: Session = Depends(get_db),
 ):
     q = db.query(DetectionEvent)
@@ -649,6 +673,7 @@ def list_events(
         q = q.filter(DetectionEvent.timestamp >= start)
     if end:
         q = q.filter(DetectionEvent.timestamp <= end)
+    q = _apply_heartbeat_filter(q, include_heartbeats)
     return q.order_by(DetectionEvent.timestamp.desc()).offset(offset).limit(limit).all()
 
 

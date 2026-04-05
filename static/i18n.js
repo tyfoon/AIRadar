@@ -112,6 +112,9 @@ const TRANSLATIONS = {
     'cloud.totalUploaded':     'Total',
     'cloud.noUploaders':       'No uploads detected in this time window.',
 
+    // Heartbeat / ping filter toggle
+    'filter.showHeartbeats':   'Show pings',
+
     // Top bar
     'topbar.checking':     'Checking...',
     'topbar.refresh':      'Refresh',
@@ -642,6 +645,9 @@ const TRANSLATIONS = {
     'cloud.topUploadersHint':  'Apparaten met de grootste uitgaande datavolumes',
     'cloud.totalUploaded':     'Totaal',
     'cloud.noUploaders':       'Geen uploads in dit tijdvenster.',
+
+    // Heartbeat / ping filter toggle
+    'filter.showHeartbeats':   'Toon pings',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',
