@@ -1043,10 +1043,13 @@ def _resolve_country(ip: str) -> str | None:
 _geo_buckets: dict[tuple[str, str], dict] = {}
 _geo_lock = asyncio.Lock()
 GEO_FLUSH_INTERVAL = 15  # seconds
+_geo_record_count = 0  # diagnostic: total calls to _record_geo_traffic
+_geo_flush_tick = 0    # diagnostic: how many times the flusher has run
 
 
 async def _record_geo_traffic(country_code: str, direction: str, total_bytes: int) -> None:
     """Add a connection's bytes to the in-memory buffer."""
+    global _geo_record_count
     if not country_code:
         return
     key = (country_code, direction)
@@ -1057,29 +1060,38 @@ async def _record_geo_traffic(country_code: str, direction: str, total_bytes: in
             bucket["hits"] += 1
         else:
             _geo_buckets[key] = {"bytes": total_bytes, "hits": 1}
+    _geo_record_count += 1
+    if _geo_record_count <= 5:
+        # Log the first few hits so we can confirm the code path is live.
+        print(f"[geo] record #{_geo_record_count}: {direction} {country_code} +{total_bytes}B")
 
 
 async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
     """Background task: flush the geo traffic buffer to the API periodically."""
+    global _geo_flush_tick
     while True:
         await asyncio.sleep(GEO_FLUSH_INTERVAL)
+        _geo_flush_tick += 1
         async with _geo_lock:
-            if not _geo_buckets:
-                continue
-            # Snapshot and clear
             snapshot = [
                 {"country_code": cc, "direction": d, "bytes": v["bytes"], "hits": v["hits"]}
                 for (cc, d), v in _geo_buckets.items()
-            ]
-            _geo_buckets.clear()
-        try:
-            await client.post(
-                GEO_API_URL,
-                json={"updates": snapshot},
-                timeout=10,
-            )
-        except httpx.HTTPError as exc:
-            print(f"[geo] Flush failed ({len(snapshot)} updates): {exc}")
+            ] if _geo_buckets else []
+            if snapshot:
+                _geo_buckets.clear()
+        if snapshot:
+            try:
+                await client.post(
+                    GEO_API_URL,
+                    json={"updates": snapshot},
+                    timeout=10,
+                )
+                print(f"[geo] Flushed {len(snapshot)} country update(s) (total records so far: {_geo_record_count})")
+            except httpx.HTTPError as exc:
+                print(f"[geo] Flush failed ({len(snapshot)} updates): {exc}")
+        elif _geo_flush_tick % 8 == 0:
+            # Heartbeat every 2 minutes so we can confirm the task is alive.
+            print(f"[geo] Idle (records={_geo_record_count}, reader={'ok' if _geo_reader else 'missing'})")
 
 
 # ---------------------------------------------------------------------------
