@@ -10,6 +10,39 @@ import io
 import json
 import os
 import re
+import socket
+
+
+# ---------------------------------------------------------------------------
+# IPv6-safe socket resolver
+# ---------------------------------------------------------------------------
+# The container uses host networking on a LAN that has global IPv6 but no
+# working upstream IPv6 route to the broader internet. Python's default
+# getaddrinfo() returns AAAA records first for dual-stack hosts like
+# generativelanguage.googleapis.com, and httpx / httpcore / google-genai
+# then try to connect() over IPv6 — which silently hangs until the kernel
+# TCP timeout fires (~2 minutes). urllib in the stdlib handles this
+# slightly differently and still works, but all httpx-based clients
+# inherit the bug.
+#
+# Fix: monkey-patch getaddrinfo to strip IPv6 results, so every outbound
+# socket.connect() goes directly to the IPv4 A record. This affects ALL
+# httpx / aiohttp / requests / google-genai traffic in-process, but the
+# tradeoff is worth it — the app only talks to external APIs (Gemini,
+# AdGuard, itself) over IPv4 anyway, and IPv6 was causing 120-second
+# hangs on Gemini calls.
+_ORIG_GETADDRINFO = socket.getaddrinfo
+
+
+def _ipv4_only_getaddrinfo(host, *args, **kwargs):
+    results = _ORIG_GETADDRINFO(host, *args, **kwargs)
+    filtered = [r for r in results if r[0] == socket.AF_INET]
+    return filtered or results  # fallback to IPv6 if no IPv4 exists
+
+
+if os.environ.get("AIRADAR_DISABLE_IPV6_FALLBACK") != "1":
+    socket.getaddrinfo = _ipv4_only_getaddrinfo
+    print("[net] IPv4-only getaddrinfo patch active (outbound httpx/SDK calls forced to IPv4)")
 
 # Auto-load .env so credentials work regardless of how the server is started.
 # First try python-dotenv; if not installed, fall back to a simple manual parser.
