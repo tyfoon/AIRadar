@@ -29,6 +29,8 @@ services:
       - ./data:/app/data
       # Read-only access to Zeek logs on the host
       - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/app/logs:ro
+      # Read-only docker socket — used for per-container performance stats
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       adguardhome:
         condition: service_healthy

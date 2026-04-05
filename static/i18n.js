@@ -66,6 +66,28 @@ const TRANSLATIONS = {
     'other.cat.social':    'Social Media',
     'other.cat.streaming': 'Streaming',
 
+    // Settings — System Performance
+    'settings.performance':'System Performance',
+    'settings.cpu':        'CPU',
+    'settings.memory':     'Memory',
+    'settings.disk':       'Disk',
+    'settings.containers': 'Containers',
+    'settings.autoRefresh':'Auto-refresh',
+    'settings.refresh':    'Refresh',
+    'settings.thContainer':'Container',
+    'settings.thState':    'State',
+    'settings.thCpu':      'CPU',
+    'settings.thMemory':   'Memory',
+    'settings.perfLoading':'Loading performance data...',
+    'settings.perfError':  'Failed to load performance data',
+    'settings.noContainers':'No container data available',
+
+    // Rules — AdGuard filtering toggle
+    'rules.adguardFiltering':     'AdGuard DNS Filtering',
+    'rules.adguardFilteringDesc': 'Master switch for AdGuard Home\u2019s default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.',
+    'rules.adguardFilteringNote': 'Default: off. Individual block rules and global filters below still work independently.',
+    'rules.adguardToggleFailed':  'Failed to toggle AdGuard filtering: {msg}',
+
     // Top bar
     'topbar.checking':     'Checking...',
     'topbar.refresh':      'Refresh',
@@ -550,6 +572,28 @@ const TRANSLATIONS = {
     'other.cat.gaming':    'Gaming',
     'other.cat.social':    'Sociale Media',
     'other.cat.streaming': 'Streaming',
+
+    // Instellingen — Systeemprestaties
+    'settings.performance':'Systeemprestaties',
+    'settings.cpu':        'CPU',
+    'settings.memory':     'Geheugen',
+    'settings.disk':       'Schijf',
+    'settings.containers': 'Containers',
+    'settings.autoRefresh':'Auto-vernieuwen',
+    'settings.refresh':    'Vernieuwen',
+    'settings.thContainer':'Container',
+    'settings.thState':    'Status',
+    'settings.thCpu':      'CPU',
+    'settings.thMemory':   'Geheugen',
+    'settings.perfLoading':'Prestatiegegevens laden...',
+    'settings.perfError':  'Kon prestatiegegevens niet laden',
+    'settings.noContainers':'Geen containergegevens beschikbaar',
+
+    // Regels — AdGuard filter toggle
+    'rules.adguardFiltering':     'AdGuard DNS-filtering',
+    'rules.adguardFilteringDesc': 'Hoofdschakelaar voor de standaard AdGuard Home blokkeerlijsten. Als deze uit staat werkt DNS-doorsturen nog wel, maar blokkeren de ingebouwde filters niets.',
+    'rules.adguardFilteringNote': 'Standaard: uit. Individuele blokkeerregels en onderstaande filters werken nog gewoon.',
+    'rules.adguardToggleFailed':  'Kon AdGuard-filtering niet omschakelen: {msg}',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',

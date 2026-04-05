@@ -1162,7 +1162,7 @@ async function refreshPage(page) {
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
     else if (page === 'other') await refreshOther();
-    else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); }
+    else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
 
@@ -3038,8 +3038,56 @@ function switchRulesTab(tab) {
 }
 
 async function refreshRules() {
-  await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl()]);
+  await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl(), loadAdguardProtectionState()]);
 }
+
+async function loadAdguardProtectionState() {
+  try {
+    const res = await fetch('/api/adguard/protection');
+    const data = await res.json();
+    const cb = document.getElementById('toggle-adguard-protection');
+    const label = document.getElementById('adguard-protection-state');
+    if (cb) cb.checked = !!data.enabled;
+    if (label) {
+      label.textContent = data.enabled ? t('svc.on') : t('svc.off');
+      label.className = data.enabled
+        ? 'text-xs font-medium text-emerald-500'
+        : 'text-xs font-medium text-slate-400';
+    }
+  } catch (err) {
+    console.error('loadAdguardProtectionState:', err);
+  }
+}
+
+async function toggleAdguardProtection(checkbox) {
+  checkbox.disabled = true;
+  const enabled = checkbox.checked;
+  try {
+    const res = await fetch('/api/adguard/protection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    const label = document.getElementById('adguard-protection-state');
+    if (label) {
+      label.textContent = enabled ? t('svc.on') : t('svc.off');
+      label.className = enabled
+        ? 'text-xs font-medium text-emerald-500'
+        : 'text-xs font-medium text-slate-400';
+    }
+  } catch (err) {
+    console.error('toggleAdguardProtection:', err);
+    checkbox.checked = !enabled;
+    alert(t('rules.adguardToggleFailed', { msg: err.message }) || `Failed: ${err.message}`);
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+window.toggleAdguardProtection = toggleAdguardProtection;
 
 async function loadGlobalFilterStatus() {
   try {
@@ -4039,6 +4087,146 @@ function switchSettingsTab(tab) {
     history.replaceState(null, '', newHash);
   }
 }
+
+// ---------------------------------------------------------------------------
+// System Performance — host CPU/memory/disk + per-container stats
+// ---------------------------------------------------------------------------
+let _perfAutoTimer = null;
+
+function _perfBytes(b) {
+  if (!b || b <= 0) return '0 B';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+function _perfBar(pct, color) {
+  const safePct = Math.min(100, Math.max(0, pct || 0));
+  return `<div class="w-full h-1.5 rounded-full bg-slate-200 dark:bg-white/[0.06] overflow-hidden">
+    <div class="h-full rounded-full bg-${color}-500 transition-all duration-500" style="width:${safePct}%"></div>
+  </div>`;
+}
+
+function _perfColor(pct) {
+  if (pct >= 85) return 'red';
+  if (pct >= 65) return 'amber';
+  return 'emerald';
+}
+
+async function loadSystemPerformance() {
+  const grid = document.getElementById('perf-host-grid');
+  const section = document.getElementById('perf-container-section');
+  const tbody = document.getElementById('perf-container-tbody');
+  const errP = document.getElementById('perf-docker-error');
+  if (!grid) return;
+
+  try {
+    const data = await fetch('/api/system/performance').then(r => r.json());
+    const host = data.host || {};
+
+    // Host cards
+    const cpuColor = _perfColor(host.cpu_percent);
+    const memColor = _perfColor(host.memory?.percent);
+    const diskColor = _perfColor(host.disk?.percent);
+    const load = host.load_avg || [0, 0, 0];
+
+    grid.innerHTML = `
+      <div class="bg-slate-50 dark:bg-white/[0.02] rounded-lg p-4 border border-slate-200 dark:border-white/[0.04]">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${t('settings.cpu') || 'CPU'}</span>
+          <span class="text-xs tabular-nums font-semibold text-${cpuColor}-500 dark:text-${cpuColor}-400">${host.cpu_percent ?? 0}%</span>
+        </div>
+        ${_perfBar(host.cpu_percent, cpuColor)}
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2 tabular-nums">${host.cpu_count || 0} cores &middot; load ${load[0]} / ${load[1]} / ${load[2]}</p>
+      </div>
+      <div class="bg-slate-50 dark:bg-white/[0.02] rounded-lg p-4 border border-slate-200 dark:border-white/[0.04]">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${t('settings.memory') || 'Memory'}</span>
+          <span class="text-xs tabular-nums font-semibold text-${memColor}-500 dark:text-${memColor}-400">${host.memory?.percent ?? 0}%</span>
+        </div>
+        ${_perfBar(host.memory?.percent, memColor)}
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2 tabular-nums">${_perfBytes(host.memory?.used)} / ${_perfBytes(host.memory?.total)}</p>
+      </div>
+      <div class="bg-slate-50 dark:bg-white/[0.02] rounded-lg p-4 border border-slate-200 dark:border-white/[0.04]">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">${t('settings.disk') || 'Disk'}</span>
+          <span class="text-xs tabular-nums font-semibold text-${diskColor}-500 dark:text-${diskColor}-400">${host.disk?.percent ?? 0}%</span>
+        </div>
+        ${_perfBar(host.disk?.percent, diskColor)}
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2 tabular-nums">${_perfBytes(host.disk?.used)} / ${_perfBytes(host.disk?.total)}</p>
+      </div>
+    `;
+
+    // Container table
+    const containers = data.containers || [];
+    if (containers.length > 0) {
+      section.classList.remove('hidden');
+      tbody.innerHTML = containers.map(c => {
+        const cpuC = _perfColor(c.cpu_percent);
+        const memC = _perfColor(c.memory_percent);
+        const stateDot = c.state === 'running'
+          ? '<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>'
+          : '<span class="inline-block w-2 h-2 rounded-full bg-slate-400"></span>';
+        return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
+          <td class="py-2.5 px-4">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${c.name}</span>
+          </td>
+          <td class="py-2.5 px-4">
+            <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">${stateDot} ${c.state}</span>
+          </td>
+          <td class="py-2.5 px-4 min-w-[140px]">
+            <div class="flex items-center gap-2">
+              <div class="flex-1">${_perfBar(c.cpu_percent, cpuC)}</div>
+              <span class="text-[11px] tabular-nums font-medium text-${cpuC}-500 dark:text-${cpuC}-400 w-12 text-right">${c.cpu_percent}%</span>
+            </div>
+          </td>
+          <td class="py-2.5 px-4 min-w-[180px]">
+            <div class="flex items-center gap-2">
+              <div class="flex-1">${_perfBar(c.memory_percent, memC)}</div>
+              <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">${_perfBytes(c.memory_used)}</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      errP.classList.add('hidden');
+    } else {
+      section.classList.remove('hidden');
+      tbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-xs text-slate-400 dark:text-slate-500">${t('settings.noContainers') || 'No container data available'}</td></tr>`;
+    }
+
+    if (data.docker_error) {
+      errP.textContent = data.docker_error;
+      errP.classList.remove('hidden');
+    }
+  } catch (err) {
+    grid.innerHTML = `<p class="col-span-full text-center text-sm text-red-500 dark:text-red-400 py-6">${t('settings.perfError') || 'Failed to load performance data'}: ${err.message}</p>`;
+  }
+}
+
+function _togglePerfAutoRefresh() {
+  const cb = document.getElementById('perf-autorefresh');
+  if (!cb) return;
+  if (cb.checked) {
+    if (_perfAutoTimer) clearInterval(_perfAutoTimer);
+    _perfAutoTimer = setInterval(() => {
+      if (currentPage === 'settings' && _currentSettingsTab === 'system') {
+        loadSystemPerformance();
+      }
+    }, 5000);
+  } else if (_perfAutoTimer) {
+    clearInterval(_perfAutoTimer);
+    _perfAutoTimer = null;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const cb = document.getElementById('perf-autorefresh');
+  if (cb) cb.addEventListener('change', _togglePerfAutoRefresh);
+});
+
+window.loadSystemPerformance = loadSystemPerformance;
+
 
 function setThemeFromSelect(value) {
   const wantDark = value === 'dark';

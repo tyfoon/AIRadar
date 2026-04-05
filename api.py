@@ -327,6 +327,19 @@ async def lifespan(app: FastAPI):
     if ks.get("active"):
         print(f"[killswitch] ⚠️  Killswitch was active before restart — still active")
         crowdsec.enabled = False
+
+    # Restore AdGuard DNS filtering preference (defaults to OFF on first run)
+    async def _restore_adguard_pref():
+        try:
+            pref = _read_adguard_protection_pref()
+            desired = bool(pref.get("enabled", False))
+            await adguard.set_protection(desired)
+            tag = "user preference" if pref.get("user_set") else "first-run default"
+            print(f"[adguard] DNS filtering set to {'ON' if desired else 'OFF'} ({tag})")
+        except Exception as exc:
+            print(f"[adguard] Could not apply DNS filtering preference: {exc}")
+    asyncio.create_task(_restore_adguard_pref())
+
     yield
     cleanup_task.cancel()
     expiry_task.cancel()
@@ -1440,6 +1453,59 @@ def get_known_services(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# ADGUARD DNS FILTERING TOGGLE — user-controllable, defaults to OFF
+# ---------------------------------------------------------------------------
+# State file remembers the user's last choice across restarts.
+# On first boot (no file), filtering is disabled by default.
+_ADGUARD_PROTECTION_FILE = os.path.join(os.path.dirname(__file__), "data", "adguard_protection.json")
+
+
+def _read_adguard_protection_pref() -> dict:
+    """Read persisted user preference for AdGuard DNS filtering."""
+    try:
+        if os.path.exists(_ADGUARD_PROTECTION_FILE):
+            with open(_ADGUARD_PROTECTION_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    # First-run default: filtering OFF
+    return {"enabled": False, "user_set": False}
+
+
+def _write_adguard_protection_pref(enabled: bool):
+    """Persist the user's AdGuard filtering preference."""
+    try:
+        os.makedirs(os.path.dirname(_ADGUARD_PROTECTION_FILE), exist_ok=True)
+        with open(_ADGUARD_PROTECTION_FILE, "w") as f:
+            json.dump({"enabled": bool(enabled), "user_set": True}, f, indent=2)
+    except Exception as exc:
+        print(f"[adguard] Failed to write protection preference: {exc}")
+
+
+@app.get("/api/adguard/protection")
+async def get_adguard_protection():
+    """Return whether AdGuard DNS filtering is currently enabled."""
+    try:
+        enabled = await adguard.is_protection_enabled()
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+    return {"enabled": bool(enabled)}
+
+
+@app.post("/api/adguard/protection")
+async def set_adguard_protection(payload: dict):
+    """Enable or disable AdGuard DNS filtering.
+
+    Body: {"enabled": true/false}
+    """
+    enabled = bool(payload.get("enabled", False))
+    ok = await adguard.set_protection(enabled)
+    if ok:
+        _write_adguard_protection_pref(enabled)
+        print(f"[adguard] DNS filtering {'enabled' if enabled else 'disabled'} by user")
+    return {"enabled": enabled, "success": ok}
+
+
 # ---------------------------------------------------------------------------
 # KILLSWITCH — Emergency bypass for all protection systems
 # ---------------------------------------------------------------------------
@@ -1635,6 +1701,118 @@ async def _adguard_watchdog():
         except Exception as exc:
             fail_count += 1
             print(f"[watchdog] Error checking AdGuard: {exc}")
+
+
+# GET /api/system/performance — CPU/memory per container + host totals
+# ---------------------------------------------------------------------------
+def _docker_get(path: str):
+    """Issue a GET request to the Docker daemon via its Unix socket."""
+    import httpx
+    transport = httpx.HTTPTransport(uds="/var/run/docker.sock")
+    with httpx.Client(transport=transport, timeout=5.0) as client:
+        resp = client.get(f"http://localhost{path}")
+        resp.raise_for_status()
+        return resp.json()
+
+
+def _calc_container_cpu(stats: dict) -> float:
+    """Convert Docker container stats JSON into a CPU percentage."""
+    try:
+        cpu = stats["cpu_stats"]
+        pre = stats["precpu_stats"]
+        cpu_delta = cpu["cpu_usage"]["total_usage"] - pre["cpu_usage"]["total_usage"]
+        sys_delta = cpu.get("system_cpu_usage", 0) - pre.get("system_cpu_usage", 0)
+        online = cpu.get("online_cpus") or len(cpu["cpu_usage"].get("percpu_usage") or [1])
+        if sys_delta > 0 and cpu_delta > 0:
+            return round((cpu_delta / sys_delta) * online * 100.0, 1)
+    except (KeyError, TypeError, ZeroDivisionError):
+        pass
+    return 0.0
+
+
+@app.get("/api/system/performance")
+async def system_performance():
+    """Return overall host stats + per-container resource usage."""
+    import psutil
+
+    # --- Host overall stats (via psutil, reads host /proc under host networking) ---
+    def _collect_host():
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        vm = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+        try:
+            load1, load5, load15 = psutil.getloadavg()
+        except (AttributeError, OSError):
+            load1 = load5 = load15 = 0.0
+        return {
+            "cpu_percent": round(cpu_percent, 1),
+            "cpu_count": psutil.cpu_count(logical=True) or 1,
+            "memory": {
+                "used": vm.used,
+                "total": vm.total,
+                "percent": round(vm.percent, 1),
+            },
+            "disk": {
+                "used": disk.used,
+                "total": disk.total,
+                "percent": round(disk.percent, 1),
+            },
+            "load_avg": [round(load1, 2), round(load5, 2), round(load15, 2)],
+        }
+
+    host = await asyncio.to_thread(_collect_host)
+
+    # --- Per-container stats via Docker socket ---
+    containers: list[dict] = []
+    try:
+        container_list = await asyncio.to_thread(_docker_get, "/containers/json")
+        # Fetch stats for each container in parallel threads
+        async def _one(c):
+            cid = c["Id"]
+            name = (c.get("Names") or ["?"])[0].lstrip("/")
+            try:
+                stats = await asyncio.to_thread(
+                    _docker_get, f"/containers/{cid}/stats?stream=false"
+                )
+                cpu_pct = _calc_container_cpu(stats)
+                mem = stats.get("memory_stats", {}) or {}
+                mem_usage = mem.get("usage", 0) or 0
+                mem_cache = (mem.get("stats") or {}).get("cache", 0) or 0
+                mem_used = max(0, mem_usage - mem_cache)
+                mem_limit = mem.get("limit", 0) or 0
+                mem_pct = round((mem_used / mem_limit) * 100, 1) if mem_limit else 0.0
+                return {
+                    "name": name,
+                    "state": c.get("State", "unknown"),
+                    "status": c.get("Status", ""),
+                    "cpu_percent": cpu_pct,
+                    "memory_used": mem_used,
+                    "memory_limit": mem_limit,
+                    "memory_percent": mem_pct,
+                }
+            except Exception as exc:
+                return {
+                    "name": name,
+                    "state": c.get("State", "unknown"),
+                    "status": c.get("Status", ""),
+                    "cpu_percent": 0.0,
+                    "memory_used": 0,
+                    "memory_limit": 0,
+                    "memory_percent": 0.0,
+                    "error": str(exc),
+                }
+
+        containers = await asyncio.gather(*(_one(c) for c in container_list))
+        containers.sort(key=lambda x: -x["memory_used"])
+    except Exception as exc:
+        # Docker socket unavailable — return host stats only with an explanation
+        return {
+            "host": host,
+            "containers": [],
+            "docker_error": f"Docker socket not accessible: {exc}",
+        }
+
+    return {"host": host, "containers": containers}
 
 
 # GET /api/health — system health check for all services
