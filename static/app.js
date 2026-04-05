@@ -1044,6 +1044,61 @@ function updateChartsTheme() {
 // ================================================================
 // RENDER HELPERS
 // ================================================================
+// ---------------------------------------------------------------------------
+// Collapse consecutive events — shared helper used by every events table
+// ---------------------------------------------------------------------------
+// Problem: a single SNI heartbeat stream (Spotify, Discord, WhatsApp, etc.)
+// emits a steady drip of identical 0-byte sni_hello rows every few seconds,
+// plus duplicate rows when a device talks over both IPv4 and IPv6. Rendered
+// raw, a 24h window for one device can be hundreds of visually-identical
+// lines. We group adjacent events that share the same key within a short
+// time window and collapse them into one row that carries a ×N badge and
+// summed bytes. Caller supplies the key function so each table can pick
+// what "same event" means for its scope:
+//   drawer (device-scoped)     → (ai_service, detection_type)
+//   multi-device tables        → (ai_service, detection_type, source_ip)
+const COLLAPSE_WINDOW_SEC = 60;
+
+function _collapseConsecutiveEvents(events, keyFn, windowSec = COLLAPSE_WINDOW_SEC) {
+  if (!events || events.length === 0) return [];
+  // Work on a desc-sorted copy — that's the display order too.
+  const sorted = [...events].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const out = [];
+  let cur = null;
+  for (const e of sorted) {
+    const k = keyFn(e);
+    const ts = new Date(e.timestamp).getTime();
+    // Groups grow backward in time; compare against the oldest event
+    // already in the group so a continuous stream collapses fully.
+    if (cur && cur._key === k && (cur._oldest_ms - ts) <= windowSec * 1000) {
+      cur._count += 1;
+      cur.bytes_transferred = (cur.bytes_transferred || 0) + (e.bytes_transferred || 0);
+      cur.possible_upload = cur.possible_upload || !!e.possible_upload;
+      cur._oldest_ts = e.timestamp;
+      cur._oldest_ms = ts;
+    } else {
+      cur = {
+        ...e,
+        _key: k,
+        _count: 1,
+        _newest_ts: e.timestamp,
+        _oldest_ts: e.timestamp,
+        _newest_ms: ts,
+        _oldest_ms: ts,
+      };
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
+// Render helper: when a collapsed row has _count > 1, append a ×N badge
+// and a time-range so the user sees "Spotify · 19:29:24 ×12 (over 45s)".
+function _countBadge(e) {
+  if (!e || !e._count || e._count <= 1) return '';
+  return ` <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold tabular-nums bg-slate-200/70 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300" title="${e._count} events between ${fmtTime(e._oldest_ts)} and ${fmtTime(e._newest_ts)}">×${e._count}</span>`;
+}
+
 function _eventDescription(e) {
   const type = e.detection_type;
   if (type === 'sni_hello') return t('ev.connection');
@@ -1100,7 +1155,8 @@ function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
   const lowAct = lowActivityId ? document.getElementById(lowActivityId) : null;
   if (!tbody) return;
 
-  // Low-activity callout
+  // Low-activity callout based on raw event count (before collapse so
+  // the "3+ events" threshold still reflects true activity volume).
   if (lowAct) lowAct.classList.toggle('hidden', events.length === 0 || events.length >= 3);
 
   if (!events.length) {
@@ -1109,7 +1165,15 @@ function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
     return;
   }
   if (empty) empty.classList.add('hidden');
-  tbody.innerHTML = events.map(e => {
+
+  // Multi-device table: include source_ip in the key so two devices
+  // hitting the same service at the same second don't merge.
+  const collapsed = _collapseConsecutiveEvents(
+    events,
+    e => `${e.ai_service}|${e.detection_type}|${e.source_ip}`,
+  );
+
+  tbody.innerHTML = collapsed.map(e => {
     const up = e.possible_upload;
     const rc = up
       ? 'border-b border-orange-200 dark:border-orange-700/30 bg-orange-50/30 dark:bg-orange-900/10 border-l-[3px] border-l-orange-400'
@@ -1119,9 +1183,12 @@ function renderEventsTable(events, tbodyId, emptyId, lowActivityId) {
     const dt = _detectDeviceType(dev);
     const macAttr = dev ? `data-mac="${dev.mac_address}"` : '';
     const dc = `<span class="device-name cursor-pointer hover:text-indigo-500 transition-colors" ${macAttr} title="${e.source_ip}">${dt.icon} ${dn}</span>`;
+    const timeCell = e._count > 1
+      ? `${fmtTime(e._newest_ts)} <span class="text-[10px] text-slate-400 dark:text-slate-500">– ${fmtTime(e._oldest_ts)}</span>`
+      : fmtTime(e.timestamp);
     return `<tr class="${rc} transition-colors">
-      <td class="py-3 px-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${fmtTime(e.timestamp)}</td>
-      <td class="py-3 px-4">${badge(e.ai_service)}</td>
+      <td class="py-3 px-4 tabular-nums text-slate-400 dark:text-slate-500 text-xs">${timeCell}</td>
+      <td class="py-3 px-4">${badge(e.ai_service)}${_countBadge(e)}</td>
       <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${_eventDescription(e)}</td>
       <td class="py-3 px-4 text-xs hidden sm:table-cell">${dc}</td>
       <td class="py-3 px-4 text-right tabular-nums text-xs hidden sm:table-cell">${_fmtSize(e.bytes_transferred)}</td>
@@ -2434,7 +2501,14 @@ async function refreshPrivacy() {
     if (recent.length === 0) {
       tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">${t('priv.noTrackers')}</td></tr>`;
     } else {
-      tbody.innerHTML = recent.map(e => {
+      // Collapse consecutive events per (tracker, type, device) within
+      // 60s so a burst of identical tracker pings appears as one row
+      // with a ×N badge instead of 50 visually-identical lines.
+      const collapsed = _collapseConsecutiveEvents(
+        recent,
+        e => `${e.service}|${e.detection_type}|${e.source_ip}`,
+      );
+      tbody.innerHTML = collapsed.map(e => {
         // Resolve tracker company from service key or domain (if available)
         const trackerInfo = resolveTracker(e.service) || resolveTracker(e.domain || '');
         const trackerBadge = badge(e.service);
@@ -2450,10 +2524,13 @@ async function refreshPrivacy() {
 
         // Translate detection type
         const typeLabel = e.detection_type === 'sni_hello' ? t('priv.dnsQuery') : e.detection_type;
+        const timeCell = e._count > 1
+          ? `${fmtTime(e._newest_ts)} <span class="text-[10px] text-slate-400 dark:text-slate-500">– ${fmtTime(e._oldest_ts)}</span>`
+          : fmtTime(e.timestamp);
 
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
-          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
-          <td class="py-3 px-4"><div>${trackerBadge}</div>${categoryLine}</td>
+          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${timeCell}</td>
+          <td class="py-3 px-4"><div>${trackerBadge}${_countBadge(e)}</div>${categoryLine}</td>
           <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${typeLabel}</td>
           <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${srcDisplay}</td>
         </tr>`;
@@ -3338,16 +3415,24 @@ function _applyDrawerFilter(serviceFilter) {
   if (summaryView) summaryView.classList.add('hidden');
   if (eventsView) eventsView.classList.remove('hidden');
 
+  let filtered;
   if (_drawerActiveTab === 'all') {
-    _drawerFiltered = serviceFilter
+    filtered = serviceFilter
       ? _drawerEvents.filter(e => e.ai_service === serviceFilter)
       : [..._drawerEvents];
   } else {
-    _drawerFiltered = _drawerEvents.filter(e => e._cat === _drawerActiveTab);
+    filtered = _drawerEvents.filter(e => e._cat === _drawerActiveTab);
     if (serviceFilter) {
-      _drawerFiltered = _drawerFiltered.filter(e => e.ai_service === serviceFilter);
+      filtered = filtered.filter(e => e.ai_service === serviceFilter);
     }
   }
+  // Drawer is already scoped to one device, so collapsing by
+  // (service, detection_type) folds both IPv4/IPv6 duplicates and
+  // rapid heartbeat drips of the same service into a single row.
+  _drawerFiltered = _collapseConsecutiveEvents(
+    filtered,
+    e => `${e.ai_service}|${e.detection_type}`,
+  );
   _drawerVisible = 0;
   _renderDrawerEvents(true);
 }
@@ -3452,11 +3537,13 @@ function _renderDrawerEvents(reset) {
     const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     const typeLabel = e.detection_type === 'sni_hello' ? t('dev.connection') : e.detection_type;
     const bytesStr = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '0 B';
+    const timeCell = e._count > 1
+      ? `${fmtTime(e._newest_ts)} <span class="text-[10px] text-slate-400 dark:text-slate-500">– ${fmtTime(e._oldest_ts)}</span>`
+      : fmtTime(e.timestamp);
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
-      <td class="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
-      <td class="py-2.5 px-4">${badge(e.ai_service)}</td>
+      <td class="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${timeCell}</td>
+      <td class="py-2.5 px-4">${badge(e.ai_service)}${_countBadge(e)}</td>
       <td class="py-2.5 px-4 text-xs">${typeLabel}${upBadge}</td>
-      <td class="py-2.5 px-4 text-xs font-mono text-slate-400 dark:text-slate-500 hidden sm:table-cell">${e.source_ip}</td>
       <td class="py-2.5 px-4 text-xs text-right tabular-nums hidden sm:table-cell">${bytesStr}</td>
     </tr>`;
   }).join('');
