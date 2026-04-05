@@ -74,6 +74,33 @@ HEURISTIC_VPN_BYTE_THRESHOLD = 20_000_000  # 20 MB in one conn.log entry (was 5 
 HEURISTIC_VPN_DEDUP_SECONDS = 600  # 10 min window
 _heuristic_vpn_seen: dict[tuple[str, str], float] = {}  # (src_ip, dest_ip) → ts
 
+
+def _is_apple_device(mac: str | None) -> bool:
+    """Return True if the device's vendor or hostname identifies it as
+    an Apple product (iPhone, iPad, Mac, Apple TV, HomePod, ...).
+
+    Used to skip the heuristic VPN detection for Apple devices. iCloud
+    Photos sync, iOS backup, App Store downloads, and iCloud Private
+    Relay bulk flows routinely cross the 20 MB threshold to unknown
+    Apple/Akamai/Cloudflare edges, producing a steady stream of false
+    positives labelled vpn_active. Real user-installed VPNs on Apple
+    devices (WireGuard, NordVPN, etc.) are still caught via the
+    port-match and DPD paths which use protocol-level signatures
+    instead of "unknown large flow".
+    """
+    if not mac:
+        return False
+    meta = _device_meta.get(mac)
+    if not meta:
+        return False
+    vendor = (meta.get("vendor") or "").lower()
+    if vendor.startswith("apple"):
+        return True
+    hostname = (meta.get("hostname") or "").lower()
+    if any(tag in hostname for tag in ("iphone", "ipad", "ipod", "macbook", "imac", "appletv", "homepod")):
+        return True
+    return False
+
 # Zeek DPD service labels that indicate normal (non-VPN) traffic.
 # If conn.log's `service` field contains any of these, do NOT flag as heuristic VPN.
 HEURISTIC_VPN_SAFE_SERVICES = frozenset({
@@ -1568,12 +1595,21 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # Skip if Zeek's DPD already identified a known safe protocol.
                 h_services = {s.strip().lower() for s in service_field.split(",")} if service_field and service_field != "-" else set()
                 h_has_safe_svc = bool(h_services & HEURISTIC_VPN_SAFE_SERVICES)
+                # Apple devices (iPhones, iPads, Macs) produce a steady
+                # stream of 20+ MB encrypted flows to Akamai/Cloudflare/
+                # Apple CDN edges for iCloud sync, backups, Private Relay
+                # and App Store downloads. These edge IPs usually aren't
+                # in _known_ips because the traffic runs over QUIC (no
+                # ssl.log entry). Skip the heuristic for Apple devices —
+                # real VPN apps are still caught via port-match + DPD.
+                h_is_apple = _is_apple_device(l2_mac)
                 if (
                     _is_local_ip(src_ip)
                     and resp_ip
                     and resp_ip not in _known_ips
                     and not _is_local_ip(resp_ip)
                     and not h_has_safe_svc  # DPD says it's a known protocol → not a VPN
+                    and not h_is_apple      # iCloud bulk-sync is not a VPN
                 ):
                     try:
                         h_ob = record.get("orig_bytes", "0")
@@ -1641,9 +1677,15 @@ DPD_EVASION_PROTOCOLS: dict[str, str] = {
     "wireguard":  "vpn_wireguard",
     "tor":        "tor_active",
     "socks":      "vpn_socks_proxy",
-    "ayiya":      "vpn_ayiya_tunnel",   # IPv6-in-IPv4 tunnel
-    "teredo":     "vpn_teredo_tunnel",  # IPv6-in-IPv4 tunnel
     "dtls":       "vpn_dtls_tunnel",    # DTLS can indicate VPN (e.g. AnyConnect)
+    # NOTE: ayiya + teredo intentionally removed. Both are IPv6-over-IPv4
+    # tunnel protocols from the 2000s. SixXS (the main AYIYA provider)
+    # shut down in 2017 and Microsoft Teredo has been deprecated for
+    # years. In 2026 Zeek's DPD signatures for these protocols fire
+    # almost exclusively on modern QUIC / obfuscated-UDP traffic from
+    # iOS and other mobile devices — 100% false-positive rate in
+    # practice. If you actually need to detect them, reintroduce with
+    # an IP-based allowlist rather than DPD alone.
 }
 
 DPD_DEDUP_SECONDS = 300  # 5-minute window per (src_ip, protocol)
