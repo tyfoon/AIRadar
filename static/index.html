@@ -887,30 +887,27 @@
       <!-- ── OUTBOUND TAB ── -->
       <div id="rules-tab-outbound" class="space-y-6">
 
-        <!-- AdGuard DNS Filtering master toggle -->
-        <div id="adguard-protection-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <div class="flex items-center justify-between">
-            <div class="flex items-start gap-3 flex-1 min-w-0">
-              <div class="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                <svg class="w-5 h-5 text-indigo-500 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="rules.adguardFiltering">AdGuard DNS Filtering</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" data-i18n="rules.adguardFilteringDesc">Master switch for AdGuard Home's default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.</p>
-                <p class="mt-2 text-[10px] text-amber-500 dark:text-amber-400" data-i18n="rules.adguardFilteringNote">Default: off. Individual block rules and global filters below still work independently.</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 flex-shrink-0 ml-3">
-              <span id="adguard-protection-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
-              <label class="toggle"><input type="checkbox" id="toggle-adguard-protection" onchange="toggleAdguardProtection(this)"><span class="slider"></span></label>
-            </div>
-          </div>
-        </div>
-
         <!-- Global Filters -->
         <div>
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.globalFilters">Global Office Filters</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+
+            <div id="adguard-protection-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+              <div class="flex items-center justify-between mb-1">
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.adguardFiltering">AdGuard DNS Filtering</p>
+                <div class="flex items-center gap-2">
+                  <span id="adguard-protection-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
+                  <label class="toggle"><input type="checkbox" id="toggle-adguard-protection" onchange="toggleAdguardProtection(this)"><span class="slider"></span></label>
+                </div>
+              </div>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.adguardFilteringDesc">Master switch for AdGuard Home's default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.</p>
+              <div class="flex flex-wrap items-center gap-1">
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">Ads</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">Malware</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">Trackers</span>
+              </div>
+            </div>
+
 
             <div id="filter-parental-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
               <div class="flex items-center justify-between mb-1">
