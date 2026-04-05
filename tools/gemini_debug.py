@@ -18,8 +18,22 @@ Host usage:
 """
 import json
 import os
+import socket
 import sys
 import time
+
+
+# IPv4-only patch — same as api.py. Without this, socket.create_connection
+# tries IPv6 first, waits ~63s for the kernel SYN retry timeout, then
+# falls back to IPv4. Tests 1-3 complete in 60.5s because of this
+# fallback; Test 4 (google-genai SDK) doesn't fall back at all and hangs.
+_ORIG_GETADDRINFO = socket.getaddrinfo
+def _ipv4_only_getaddrinfo(host, *args, **kwargs):
+    results = _ORIG_GETADDRINFO(host, *args, **kwargs)
+    filtered = [r for r in results if r[0] == socket.AF_INET]
+    return filtered or results
+socket.getaddrinfo = _ipv4_only_getaddrinfo
+print("[net] IPv4-only getaddrinfo patch active in debug script")
 
 # Flush print immediately so we see progress when a test hangs.
 print = lambda *a, **k: __builtins__.print(*a, **{**k, "flush": True}) if hasattr(__builtins__, "print") else None

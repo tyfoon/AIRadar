@@ -918,8 +918,44 @@ def list_devices(db: Session = Depends(get_db)):
 # GET /api/devices/{mac}/report — AI-powered device activity recap (Gemini)
 # ---------------------------------------------------------------------------
 @app.get("/api/devices/{mac_address}/report")
-async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
-    """Generate a human-readable AI recap of a device's last 24h activity."""
+async def device_ai_report(
+    mac_address: str,
+    force: bool = Query(False, description="Regenerate the report even if a cached one exists"),
+    db: Session = Depends(get_db),
+):
+    """Return the AI recap for a device.
+
+    By default returns the previously-cached report if one exists.
+    Pass ?force=true to regenerate (overwrites the cached copy).
+    The cached report is persisted on the Device row, so it survives
+    across container restarts and the user sees it immediately next
+    time they open the drawer.
+    """
+    # 1. Find device + associated IPs
+    device = db.query(Device).filter(Device.mac_address == mac_address).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Apparaat niet gevonden.")
+
+    # If we have a cached report and the caller didn't ask for a refresh,
+    # return it immediately — no Gemini call, no cost, instant.
+    if device.ai_report_md and not force:
+        return {
+            "device": device.display_name or device.hostname or device.mac_address,
+            "mac": device.mac_address,
+            "report": device.ai_report_md,
+            "tokens": {
+                "total_tokens": device.ai_report_tokens or 0,
+                # Per-bucket tokens aren't stored — UI only needs total
+                # for the footer pricing calc, and total × blended rate
+                # is close enough.
+                "prompt_tokens": 0,
+                "response_tokens": device.ai_report_tokens or 0,
+                "thinking_tokens": 0,
+            },
+            "model": device.ai_report_model or "gemini-2.5-flash-lite",
+            "cached": True,
+            "generated_at": device.ai_report_at.isoformat() if device.ai_report_at else None,
+        }
 
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not gemini_key:
@@ -928,11 +964,6 @@ async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
             detail="GEMINI_API_KEY is niet geconfigureerd. "
                    "Voeg je API-sleutel toe aan .env (krijg er een op https://aistudio.google.com/app/apikey).",
         )
-
-    # 1. Find device + associated IPs
-    device = db.query(Device).filter(Device.mac_address == mac_address).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="Apparaat niet gevonden.")
 
     device_ips = [dip.ip for dip in device.ips]
     if not device_ips:
@@ -1181,12 +1212,22 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
             detail=f"Gemini-fout ({err_type}): {err_msg}",
         )
 
+    # Persist the freshly-generated report on the Device row so future
+    # reads hit the cache instead of Gemini.
+    device.ai_report_md = report_md
+    device.ai_report_at = datetime.utcnow()
+    device.ai_report_model = gemini_model
+    device.ai_report_tokens = token_info.get("total_tokens", 0)
+    db.commit()
+
     return {
         "device": device_label,
         "mac": mac_address,
         "report": report_md,
         "tokens": token_info,
         "model": gemini_model,
+        "cached": False,
+        "generated_at": device.ai_report_at.isoformat(),
     }
 
 

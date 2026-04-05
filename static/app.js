@@ -3295,8 +3295,9 @@ function openDeviceDrawer(mac, service, category) {
   // --- Filter events for active tab and optional service ---
   _applyDrawerFilter(service);
 
-  // --- Hide previous AI report ---
+  // --- Hide previous AI report, then silently load cached one if it exists ---
   document.getElementById('drawer-ai-report').classList.add('hidden');
+  _loadCachedDeviceReport(mac);
 
   // --- Open drawer ---
   document.getElementById('drawer-backdrop').classList.add('open');
@@ -3470,7 +3471,11 @@ async function generateDeviceReport(macParam) {
   reportBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   try {
-    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report`);
+    // When the user explicitly clicks the button, always regenerate.
+    // The cached copy is shown automatically on drawer open via
+    // _loadCachedDeviceReport() — the button is specifically for
+    // refreshing it.
+    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?force=true`);
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -3478,53 +3483,87 @@ async function generateDeviceReport(macParam) {
       return;
     }
 
-    // Render markdown (simple parser for bold, italic, headers, lists, code)
-    let html = renderSimpleMarkdown(data.report);
-
-    // Token usage footer — pricing table per model. Keys match the
-    // values returned by the backend in data.model. Fallback is the
-    // 2.5-flash-lite default.
-    // Source: https://ai.google.dev/gemini-api/docs/pricing
-    // All prices in USD per 1M tokens.
-    if (data.tokens) {
-      const tok = data.tokens;
-      const pricing = {
-        'gemini-2.5-flash-lite':   { input: 0.10, output: 0.40, thinking: 0 },
-        'gemini-2.5-flash':        { input: 0.30, output: 2.50, thinking: 3.50 },
-        'gemini-2.0-flash':        { input: 0.10, output: 0.40, thinking: 0 },
-        'gemini-2.0-flash-lite':   { input: 0.075, output: 0.30, thinking: 0 },
-        'gemini-3-flash-preview':  { input: 0.30, output: 2.50, thinking: 0 },
-      };
-      const modelName = data.model || 'gemini-2.5-flash-lite';
-      const p = pricing[modelName] || pricing['gemini-2.5-flash-lite'];
-      const costIn = (tok.prompt_tokens || 0) * p.input / 1e6;
-      const costOut = (tok.response_tokens || 0) * p.output / 1e6;
-      const costThink = (tok.thinking_tokens || 0) * p.thinking / 1e6;
-      const totalCost = costIn + costOut + costThink;
-      // Show sub-cent precision when cost is very small
-      const costLabel = totalCost >= 0.01
-        ? `${(totalCost * 100).toFixed(2)}\u00A2`
-        : `${(totalCost * 1000).toFixed(3)}m\u00A2`;
-      // Friendly model label
-      const modelLabel = modelName
-        .replace('gemini-', 'Gemini ')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, c => c.toUpperCase());
-      html += `<div class="mt-4 pt-3 border-t border-indigo-200/30 dark:border-indigo-700/20 flex items-center justify-between text-[10px] text-indigo-400/70 dark:text-indigo-500/50">
-        <span>${modelLabel} &middot; ${formatNumber(tok.total_tokens || 0)} tokens</span>
-        <span>${costLabel} per report</span>
-      </div>`;
-    }
-
-    reportContent.innerHTML = html;
+    reportContent.innerHTML = _renderReportHTML(data);
 
   } catch (err) {
     reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${t('dev.networkError', { msg: err.message })}</div>`;
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.generateReport')}`;
+    // After a generation the cached copy exists → label becomes "Regenerate"
+    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.regenerateReport') || 'Regenereer AI recap'}`;
     btn.classList.remove('opacity-70', 'cursor-wait');
   }
+}
+
+// Silently load the cached AI report (if any) on drawer open.
+// No loading spinner, no error toast — if there's no cache we leave
+// the report box hidden and wait for the user to click Generate.
+async function _loadCachedDeviceReport(mac) {
+  try {
+    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report`);
+    if (!resp.ok) return;  // 400/404 → no cache, let user click Generate
+    const data = await resp.json();
+    if (!data.cached || !data.report) return;
+
+    const reportBox = document.getElementById('drawer-ai-report');
+    const reportContent = document.getElementById('drawer-ai-report-content');
+    const btn = document.getElementById('drawer-btn-ai-report');
+    if (!reportBox || !reportContent || !btn) return;
+    reportBox.classList.remove('hidden');
+    reportContent.innerHTML = _renderReportHTML(data);
+    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.regenerateReport') || 'Regenereer AI recap'}`;
+  } catch (err) {
+    console.warn('_loadCachedDeviceReport:', err);
+  }
+}
+
+// Shared renderer — markdown body + pricing footer + generated-at line
+function _renderReportHTML(data) {
+  let html = renderSimpleMarkdown(data.report);
+
+  // Pricing table per model.
+  // Source: https://ai.google.dev/gemini-api/docs/pricing (USD per 1M tokens).
+  const pricing = {
+    'gemini-2.5-flash-lite':   { input: 0.10, output: 0.40, thinking: 0 },
+    'gemini-2.5-flash':        { input: 0.30, output: 2.50, thinking: 3.50 },
+    'gemini-2.0-flash':        { input: 0.10, output: 0.40, thinking: 0 },
+    'gemini-2.0-flash-lite':   { input: 0.075, output: 0.30, thinking: 0 },
+    'gemini-3-flash-preview':  { input: 0.30, output: 2.50, thinking: 0 },
+  };
+  const modelName = data.model || 'gemini-2.5-flash-lite';
+  const p = pricing[modelName] || pricing['gemini-2.5-flash-lite'];
+  const tok = data.tokens || {};
+  const costIn = (tok.prompt_tokens || 0) * p.input / 1e6;
+  const costOut = (tok.response_tokens || 0) * p.output / 1e6;
+  const costThink = (tok.thinking_tokens || 0) * p.thinking / 1e6;
+  const totalCost = costIn + costOut + costThink;
+  const costLabel = totalCost >= 0.01
+    ? `${(totalCost * 100).toFixed(2)}\u00A2`
+    : `${(totalCost * 1000).toFixed(3)}m\u00A2`;
+  const modelLabel = modelName
+    .replace('gemini-', 'Gemini ')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+
+  // Generated-at line + cached badge
+  let generatedLine = '';
+  if (data.generated_at) {
+    const when = fmtTime(data.generated_at);
+    const cachedBadge = data.cached
+      ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-white/[0.05] text-slate-500 dark:text-slate-400 text-[9px] uppercase tracking-wider font-medium">${t('dev.cached') || 'Cached'}</span>`
+      : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] uppercase tracking-wider font-medium">${t('dev.freshScan') || 'Fresh'}</span>`;
+    generatedLine = `<div class="mt-3 flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500">
+      ${cachedBadge}
+      <span>${t('dev.reportGeneratedAt') || 'Gegenereerd op'} ${when}</span>
+    </div>`;
+  }
+
+  html += generatedLine + `<div class="mt-2 pt-3 border-t border-indigo-200/30 dark:border-indigo-700/20 flex items-center justify-between text-[10px] text-indigo-400/70 dark:text-indigo-500/50">
+    <span>${modelLabel} &middot; ${formatNumber(tok.total_tokens || 0)} tokens</span>
+    <span>${costLabel} per report</span>
+  </div>`;
+
+  return html;
 }
 
 function renderSimpleMarkdown(md) {
