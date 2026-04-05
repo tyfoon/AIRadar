@@ -2969,11 +2969,20 @@ async def privacy_stats(
         for e in recent_tracking
     ]
 
-    # 3) VPN / tunnel alerts (vpn_tunnel events + vpn_* service SNI events)
-    #    Only show alerts where the most recent event is within 15 minutes.
-    #    Stealth tunnels (IPv6-over-IPv4 like AYIYA/Teredo, DPD-detected)
-    #    are counted separately so the UI can distinguish them from
-    #    commercial VPN clients.
+    # 3) VPN / tunnel alerts — only real tunnel detections.
+    #    The old query also OR'd ai_service LIKE 'vpn_%', which made a
+    #    browser visit to nordvpn.com or an ad impression from a VPN
+    #    affiliate fire a "VPN active" alert with 0 bytes transferred.
+    #    Those SNI events still exist as normal events in the privacy
+    #    section (category=tracking) — they just don't show up as
+    #    active-VPN alerts anymore.
+    #
+    #    A VPN alert now requires one of:
+    #      - detection_type = vpn_tunnel          (port-match or ASN-match)
+    #      - detection_type = stealth_vpn_tunnel  (DPD protocol signature)
+    #      - ai_service LIKE 'tor_%'              (Tor DPD signature)
+    #    The last event must be within 15 minutes, so a device that
+    #    stopped its VPN an hour ago doesn't keep flashing red.
     from sqlalchemy import case, Integer
     vpn_active_cutoff = datetime.utcnow() - timedelta(minutes=15)
     stealth_flag = func.sum(
@@ -2995,7 +3004,6 @@ async def privacy_stats(
         .filter(
             (DetectionEvent.detection_type == "vpn_tunnel")
             | (DetectionEvent.detection_type == "stealth_vpn_tunnel")
-            | (DetectionEvent.ai_service.like("vpn_%"))
             | (DetectionEvent.ai_service.like("tor_%"))
         )
         .group_by(DetectionEvent.source_ip)

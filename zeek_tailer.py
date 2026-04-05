@@ -54,68 +54,97 @@ VPN_PORTS: dict[tuple[str, int], str] = {
     ("udp", 51820): "WireGuard",
     ("udp", 500):   "IPsec/IKEv2",
     ("udp", 4500):  "IPsec NAT-T",
-    ("tcp", 443):   None,          # Skip — too common (HTTPS); only flagged via heuristic below
-    ("udp", 443):   None,          # Skip — UDP/443 is normal QUIC/HTTP3 traffic; rely on DPD instead
+    ("tcp", 443):   None,          # Skip — too common (HTTPS); ASN match covers commercial VPNs
+    ("udp", 443):   None,          # Skip — UDP/443 is normal QUIC/HTTP3 traffic; rely on DPD + ASN
     ("tcp", 1723):  "PPTP",
     ("udp", 1701):  "L2TP",
-    ("tcp", 22):    None,           # SSH — skip, too common
+    ("tcp", 22):    None,          # SSH — skip, too common
 }
 
-# Only flag VPN if bytes exceed this threshold (filters handshakes / probes)
-VPN_BYTE_THRESHOLD = 50_000  # 50 KB
+# Only flag a port-match VPN if bytes exceed this threshold — filters
+# out iOS carrier IKE/IPsec keep-alives which send 50-80 KB one-off
+# handshakes to the carrier. Real IPsec tunnels rapidly cross 500 KB.
+VPN_BYTE_THRESHOLD = 500_000  # 500 KB
 
 # Dedup VPN events per (src_ip, dest_port) — avoid flooding dashboard
 VPN_DEDUP_SECONDS = 300  # 5-minute window
 _vpn_last_seen: dict[tuple[str, int], float] = {}  # (src_ip, resp_port) → ts
 
+
 # ---------------------------------------------------------------------------
-# Heuristic VPN detection — single-destination high-volume encrypted flows
+# VPN provider ASN detection — the primary detection method
 # ---------------------------------------------------------------------------
-# On a network bridge, a VPN client appears as a device sending huge amounts
-# of encrypted UDP (WireGuard/NordLynx) or TCP traffic to a single external IP,
-# often on port 443 to look like normal HTTPS.  We detect this by tracking
-# per-(src_ip, dest_ip) byte accumulation.  If a single destination receives
-# a disproportionate share of a device's traffic AND the traffic is not a
-# known service (not in _known_ips), flag it as a potential VPN tunnel.
+# Every major consumer VPN service rents IP space from a small number of
+# Autonomous Systems. Matching resp_ip → ASN → provider is deterministic
+# (no DPI, no byte-threshold heuristics) and catches commercial VPN apps
+# that hop ports and evade DPD. Self-hosted VPNs on standard ports are
+# still caught by VPN_PORTS; obfuscated protocols by Zeek's DPD.
+#
+# Sources (manually curated, April 2026):
+#   - https://github.com/brianhama/bad-asn-list
+#   - https://github.com/NullifiedCode/ASN-Lists
+#   - https://ipapi.is/vpn-exit-nodes.html
+#   - WHOIS lookups for each provider's published ranges
+#
+# Each key is the AS number, each value is the provider label used in
+# ai_service (stored as "vpn_<label>"). Update this table when a provider
+# migrates or you see false negatives in production.
+VPN_PROVIDER_ASNS: dict[int, str] = {
+    # M247 — hosts NordVPN, Surfshark, ProtonVPN, CyberGhost, many others.
+    # Heavily VPN-dominated; home users rarely have legitimate traffic here.
+    9009:   "m247",
+    # Datacamp Limited / CDN77 — NordVPN, ExpressVPN exit pools.
+    60068:  "datacamp",
+    # Mullvad VPN AB — confirmed own ASN.
+    16247:  "mullvad",
+    # ExpressVPN International Limited.
+    133199: "expressvpn",
+    # IP Volume inc — ProtonVPN, Surfshark partial.
+    202425: "ipvolume",
+    # HVC-AS — IPVanish, StrongVPN.
+    29802:  "ipvanish",
+    # Trabia Network — ExpressVPN pool.
+    43350:  "trabia",
+    # Quadranet Enterprises — Private Internet Access (PIA).
+    8100:   "quadranet",
+    # Netprotect / PIA / IPVanish (London Trust Media).
+    133695: "pia",
+    # CDN Pro Limited — various VPN resellers.
+    212238: "cdnpro",
+    # Global Layer B.V. — Mullvad partial, multiple niche VPNs.
+    49453:  "globallayer",
+    # 31173 Services AB — Mullvad partial.
+    39351:  "31173",
+    # Datapacket.com — ExpressVPN, NordVPN partial.
+    44087:  "datapacket",
+    # Tefincom S.A. — NordVPN's legacy holding ASN.
+    136787: "nordvpn",
+    # FlokiNET ehf — many niche / privacy VPNs.
+    200651: "flokinet",
+}
 
-HEURISTIC_VPN_BYTE_THRESHOLD = 20_000_000  # 20 MB in one conn.log entry (was 5 MB — too aggressive)
-HEURISTIC_VPN_DEDUP_SECONDS = 600  # 10 min window
-_heuristic_vpn_seen: dict[tuple[str, str], float] = {}  # (src_ip, dest_ip) → ts
+# Minimum bytes to flag an ASN-matched VPN connection. Much lower than
+# the old heuristic because ASN match is deterministic — we just need
+# to filter single-packet probes.
+VPN_ASN_BYTE_THRESHOLD = 100_000  # 100 KB
+VPN_ASN_DEDUP_SECONDS = 300
+_vpn_asn_seen: dict[tuple[str, int], float] = {}  # (src_ip, asn) → ts
 
 
-def _is_apple_device(mac: str | None) -> bool:
-    """Return True if the device's vendor or hostname identifies it as
-    an Apple product (iPhone, iPad, Mac, Apple TV, HomePod, ...).
-
-    Used to skip the heuristic VPN detection for Apple devices. iCloud
-    Photos sync, iOS backup, App Store downloads, and iCloud Private
-    Relay bulk flows routinely cross the 20 MB threshold to unknown
-    Apple/Akamai/Cloudflare edges, producing a steady stream of false
-    positives labelled vpn_active. Real user-installed VPNs on Apple
-    devices (WireGuard, NordVPN, etc.) are still caught via the
-    port-match and DPD paths which use protocol-level signatures
-    instead of "unknown large flow".
+def _vpn_provider_for_ip(ip: str) -> tuple[int, str] | None:
+    """Return (asn, provider_label) if the IP belongs to a known VPN
+    provider's ASN, otherwise None. Uses the existing ASN MMDB reader
+    loaded for the Geo Traffic drilldown.
     """
-    if not mac:
-        return False
-    meta = _device_meta.get(mac)
-    if not meta:
-        return False
-    vendor = (meta.get("vendor") or "").lower()
-    if vendor.startswith("apple"):
-        return True
-    hostname = (meta.get("hostname") or "").lower()
-    if any(tag in hostname for tag in ("iphone", "ipad", "ipod", "macbook", "imac", "appletv", "homepod")):
-        return True
-    return False
-
-# Zeek DPD service labels that indicate normal (non-VPN) traffic.
-# If conn.log's `service` field contains any of these, do NOT flag as heuristic VPN.
-HEURISTIC_VPN_SAFE_SERVICES = frozenset({
-    "ssl", "http", "dns", "quic", "ntp", "dhcp", "krb", "dce_rpc",
-    "smb", "smtp", "imap", "pop3", "ftp", "ssh", "rdp", "mysql",
-    "ntlm", "gssapi", "ldap", "snmp", "sip", "stun", "mqtt",
-})
+    if not ip or not _asn_reader:
+        return None
+    asn_num, _org = _resolve_asn(ip)
+    if asn_num is None:
+        return None
+    label = VPN_PROVIDER_ASNS.get(asn_num)
+    if label:
+        return asn_num, label
+    return None
 
 # ---------------------------------------------------------------------------
 # Domain → service mapping (AI + Cloud)
@@ -1804,60 +1833,53 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if (time.time() - _learned) > IP_TTL_SECONDS:
                         del _known_ips[resp_ip]
 
-                # --- Heuristic VPN detection ---
-                # Large single-connection to an unknown external IP (not a known
-                # AI/Cloud service) hints at an encrypted tunnel.
-                # Skip if Zeek's DPD already identified a known safe protocol.
-                h_services = {s.strip().lower() for s in service_field.split(",")} if service_field and service_field != "-" else set()
-                h_has_safe_svc = bool(h_services & HEURISTIC_VPN_SAFE_SERVICES)
-                # Apple devices (iPhones, iPads, Macs) produce a steady
-                # stream of 20+ MB encrypted flows to Akamai/Cloudflare/
-                # Apple CDN edges for iCloud sync, backups, Private Relay
-                # and App Store downloads. These edge IPs usually aren't
-                # in _known_ips because the traffic runs over QUIC (no
-                # ssl.log entry). Skip the heuristic for Apple devices —
-                # real VPN apps are still caught via port-match + DPD.
-                h_is_apple = _is_apple_device(l2_mac)
+                # --- ASN-based VPN detection ---
+                # The old "large flow to unknown IP = VPN" heuristic fired
+                # on every Netflix stream, Steam download, iCloud backup,
+                # and TV box. Replaced with deterministic ASN matching:
+                # if resp_ip belongs to a known consumer-VPN provider's
+                # ASN, flag it. Self-hosted VPNs on standard ports are
+                # still caught by VPN_PORTS; obfuscated protocols by DPD.
                 if (
                     _is_local_ip(src_ip)
                     and resp_ip
-                    and resp_ip not in _known_ips
                     and not _is_local_ip(resp_ip)
-                    and not h_has_safe_svc  # DPD says it's a known protocol → not a VPN
-                    and not h_is_apple      # iCloud bulk-sync is not a VPN
                 ):
-                    try:
-                        h_ob = record.get("orig_bytes", "0")
-                        h_orig = int(h_ob) if h_ob and h_ob != "-" else 0
-                    except ValueError:
-                        h_orig = 0
-                    try:
-                        h_rb = record.get("resp_bytes", "0")
-                        h_resp = int(h_rb) if h_rb and h_rb != "-" else 0
-                    except ValueError:
-                        h_resp = 0
-                    h_total = h_orig + h_resp
+                    vpn_asn_hit = _vpn_provider_for_ip(resp_ip)
+                    if vpn_asn_hit:
+                        asn_num, provider_label = vpn_asn_hit
+                        try:
+                            a_ob = record.get("orig_bytes", "0")
+                            a_orig = int(a_ob) if a_ob and a_ob != "-" else 0
+                        except ValueError:
+                            a_orig = 0
+                        try:
+                            a_rb = record.get("resp_bytes", "0")
+                            a_resp = int(a_rb) if a_rb and a_rb != "-" else 0
+                        except ValueError:
+                            a_resp = 0
+                        a_total = a_orig + a_resp
 
-                    if h_total >= HEURISTIC_VPN_BYTE_THRESHOLD:
-                        now = time.time()
-                        h_key = (src_ip, resp_ip)
-                        h_last = _heuristic_vpn_seen.get(h_key, 0)
-                        if (now - h_last) >= HEURISTIC_VPN_DEDUP_SECONDS:
-                            _heuristic_vpn_seen[h_key] = now
-                            asyncio.create_task(register_device(client, src_ip, l2_mac))
-                            await send_event(
-                                client,
-                                detection_type="vpn_tunnel",
-                                ai_service="vpn_active",
-                                source_ip=src_ip,
-                                bytes_transferred=h_total,
-                                category="tracking",
-                            )
-                            print(
-                                f"    └─ Heuristic VPN: large encrypted flow "
-                                f"to {resp_ip}:{resp_port} ({proto.upper()}) "
-                                f"from {src_ip} — {h_total/1024/1024:,.1f} MB"
-                            )
+                        if a_total >= VPN_ASN_BYTE_THRESHOLD:
+                            now = time.time()
+                            asn_key = (src_ip, asn_num)
+                            last = _vpn_asn_seen.get(asn_key, 0)
+                            if (now - last) >= VPN_ASN_DEDUP_SECONDS:
+                                _vpn_asn_seen[asn_key] = now
+                                asyncio.create_task(register_device(client, src_ip, l2_mac))
+                                await send_event(
+                                    client,
+                                    detection_type="vpn_tunnel",
+                                    ai_service=f"vpn_{provider_label}",
+                                    source_ip=src_ip,
+                                    bytes_transferred=a_total,
+                                    category="tracking",
+                                )
+                                print(
+                                    f"    └─ VPN provider ASN match: AS{asn_num} "
+                                    f"({provider_label}) from {src_ip} to {resp_ip} "
+                                    f"— {a_total/1024:,.0f} KB"
+                                )
 
                 # Check if destination IP is a known AI/Cloud service
                 # (stale mappings were already evicted above)
