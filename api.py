@@ -1111,12 +1111,19 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
     print(f"[gemini] Device report prompt for {mac_address}: {prompt_chars} chars, "
           f"{len(events)} events, {total_uploads} uploads")
 
-    # Use gemini-flash-lite-latest because gemini-2.5-flash has "thinking mode"
-    # enabled by default which adds 30-60+ seconds of chain-of-thought
-    # before responding. For pure summarisation we don't need reasoning
-    # and 2.0-flash is always fast (5-10s) and same quality for this
-    # use case. Override with env var if you want to experiment.
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+    # Model choice — see https://ai.google.dev/gemini-api/docs/deprecations
+    # gemini-2.5-flash-lite: GA, no thinking mode, shutdown July 22 2026.
+    # Why not the others:
+    #   - gemini-2.0-flash        → blocked for new API keys already,
+    #                                 200s hangs instead of 404
+    #   - gemini-2.5-flash        → thinking mode adds 30-120s latency
+    #   - gemini-flash-latest     → alias currently points at 2.5-flash
+    #                                 (thinking enabled)
+    #   - gemini-3-flash-preview  → preview, unstable API
+    # When 2.5-flash-lite is shut down, migrate to gemini-3.1-flash-lite
+    # (currently preview, should be GA before July 2026).
+    # Override via GEMINI_MODEL env var in .env.
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
     gemini_timeout = int(os.environ.get("GEMINI_TIMEOUT_S", "90"))
 
     try:
@@ -2083,9 +2090,9 @@ async def alerts_ai_summary(
         "belangrijkste."
     )
 
-    # gemini-flash-lite-latest: non-thinking, always fast. See device report
+    # gemini-2.5-flash-lite: non-thinking, always fast. See device report
     # endpoint for the rationale. Override via GEMINI_MODEL env var.
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
     try:
         from google import genai

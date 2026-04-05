@@ -29,7 +29,7 @@ def p(*a, **k):
     _print(*a, flush=True, **k)
 
 
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 PAYLOAD = {"contents": [{"parts": [{"text": "Say hello in one word."}]}]}
 
 
