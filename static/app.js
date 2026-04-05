@@ -452,21 +452,31 @@ function _isJunkHostname(name) {
   return false;
 }
 
+function _shortVendor(vendor) {
+  if (!vendor) return null;
+  return vendor
+    .replace(/,?\s*(inc\.?|ltd\.?|corp\.?|corporation|limited|co\.?|llc|b\.v\.?|ag|gmbh)$/i, '')
+    .trim();
+}
+
 function _vendorFallbackName(device) {
-  // Build a friendly "Vendor device (xx:yy)" label from MAC + vendor
+  // Build a friendly "Vendor device (xx:yy)" label from MAC + vendor.
+  // When a JA4 TLS fingerprint label is available, prefer that over the
+  // generic "device" wording (e.g. "Apple Safari (a2:3e)").
   const macTail = (device.mac_address || '').split(':').slice(-2).join(':') || '??';
-  if (device.vendor) {
-    // Shorten verbose vendor names: "Apple Inc." → "Apple", "Google, Inc." → "Google"
-    const vendor = device.vendor
-      .replace(/,?\s*(inc\.?|ltd\.?|corp\.?|corporation|limited|co\.?|llc|b\.v\.?|ag|gmbh)$/i, '')
-      .trim();
+  const vendor = _shortVendor(device.vendor);
+  if (device.ja4_label) {
+    // JA4 label already implies the vendor/app, so show it directly
+    return `${device.ja4_label} (${macTail})`;
+  }
+  if (vendor) {
     return `${vendor} device (${macTail})`;
   }
   return `Device ${macTail}`;
 }
 
 function _bestDeviceName(device) {
-  // Priority: user-set display_name > clean hostname > vendor+MAC fallback > IP
+  // Priority: user-set display_name > clean hostname > vendor+JA4+MAC fallback > IP
   if (device.display_name) return device.display_name;
   if (device.hostname && !_isJunkHostname(device.hostname)) return device.hostname;
   const fallback = _vendorFallbackName(device);

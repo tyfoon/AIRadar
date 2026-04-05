@@ -142,6 +142,91 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 _HEX_ID_RE = re.compile(r"^[0-9a-f]{16,}$")
 
 
+# ---------------------------------------------------------------------------
+# JA4 TLS fingerprint → friendly label resolver
+# ---------------------------------------------------------------------------
+# JA4 format: <proto><tls_ver><sni><alpn><ciphers><ext>_<cipher_hash>_<ext_hash>
+# The first "a-part" before the first underscore is the most stable part
+# and encodes the TLS client profile. We match on either the full hash
+# (exact) or the a-part prefix (family match).
+#
+# Seed list hand-curated from public Wireshark/foxio samples. Users can
+# extend via the /api/ja4-labels endpoint (TODO) or the JSON file.
+_JA4_EXACT_LABELS: dict[str, str] = {
+    # Chrome desktop (recent versions)
+    "t13d1516h2_8daaf6152771_02713d6af862": "Chrome",
+    "t13d1517h2_8daaf6152771_b0da82dd1658": "Chrome",
+    # Firefox
+    "t13d1715h2_5b57614c22b0_3d5424432f57": "Firefox",
+    "t13d1715h1_5b57614c22b0_93c746dc12af": "Firefox",
+    # Safari macOS / iOS
+    "t13d2014h2_a09f3c656075_14788d8d241b": "Safari (Apple)",
+    # cURL
+    "t13d3112h2_e8f1e7e78f70_1f3f5c5c2e8e": "curl",
+    # Go HTTP client
+    "t13d1715h1_9313f49636e6_db1a0dc7fd7c": "Go http client",
+    # Python requests / urllib3
+    "t13d591100_ba7ebdd8f9d7_6aee39d76e4b": "Python requests",
+}
+
+# Match on the "a-part" prefix (everything before first `_`). This catches
+# the whole family of a TLS client even when the cipher order drifts.
+_JA4_PREFIX_LABELS: list[tuple[str, str]] = [
+    # Apple: t13d2014h2 = TLS 1.3, SNI, h2 ALPN, 20 ciphers, 14 extensions
+    ("t13d2014h2", "Apple device (Safari/iOS)"),
+    ("t13d1517h2", "Apple app / Chrome-based"),
+    # Chrome family (Chromium, Edge, Brave, modern Electron apps)
+    ("t13d1516h2", "Chromium-based browser"),
+    ("t13d1517h1", "Chromium-based app (HTTP/1.1)"),
+    # Firefox family
+    ("t13d1715h2", "Firefox"),
+    # Apple Lockdown / MDM agents / System daemons
+    ("t13d1313h2", "Apple system daemon"),
+    ("t13d1512h2", "Apple Mail / Messages"),
+    # Go libraries (many IoT devices, Docker, Kubernetes, Grafana Agent)
+    ("t13d1715h1", "Go HTTP client"),
+    # Python
+    ("t13d591100",  "Python requests/urllib3"),
+    ("t13d301000",  "Python httpx/aiohttp"),
+    # Java
+    ("t13d311100",  "Java HttpsURLConnection"),
+    # Node.js
+    ("t13d1411h2",  "Node.js TLS client"),
+    # Minimal embedded TLS stacks (ESP32, Arduino, IoT firmware)
+    ("t13d060200",  "Embedded TLS (ESP/Arduino)"),
+    ("t13d070300",  "Embedded TLS (mbedTLS/IoT)"),
+    ("t13d080500",  "Embedded TLS (IoT firmware)"),
+    # TLS 1.2 legacy clients (older smart TVs, consoles, printers)
+    ("t12d310600",  "Legacy TLS 1.2 client"),
+    ("t12d311000",  "Legacy TLS 1.2 (smart TV/console)"),
+    # QUIC (HTTP/3)
+    ("q13d1516h3",  "Chromium-based (HTTP/3)"),
+    ("q13d2014h3",  "Apple device (HTTP/3)"),
+]
+
+
+def _resolve_ja4_label(ja4: Optional[str]) -> Optional[str]:
+    """Resolve a JA4 TLS fingerprint to a human label.
+
+    Priority: exact hash match > a-part prefix match. Returns None when
+    the fingerprint is unknown — callers should fall back to vendor/MAC.
+    """
+    if not ja4 or not isinstance(ja4, str):
+        return None
+    ja4 = ja4.strip()
+    if not ja4:
+        return None
+    # Exact full-hash match (most precise)
+    if ja4 in _JA4_EXACT_LABELS:
+        return _JA4_EXACT_LABELS[ja4]
+    # Prefix match on the a-part (before first underscore)
+    a_part = ja4.split("_", 1)[0]
+    for prefix, label in _JA4_PREFIX_LABELS:
+        if a_part == prefix:
+            return label
+    return None
+
+
 def _is_junk_hostname(name) -> bool:
     """True if a hostname is meaningless (UUID, hex ID, reverse-DNS, placeholder)."""
     if name is None or not isinstance(name, str):
@@ -570,7 +655,16 @@ def timeline(
 
 @app.get("/api/devices", response_model=list[DeviceRead])
 def list_devices(db: Session = Depends(get_db)):
-    return db.query(Device).order_by(Device.last_seen.desc()).all()
+    devices = db.query(Device).order_by(Device.last_seen.desc()).all()
+    # Hydrate each device with the derived ja4_label (computed on the fly
+    # from the stored ja4_fingerprint so the curated label list can evolve
+    # without needing a data migration).
+    result = []
+    for d in devices:
+        dr = DeviceRead.model_validate(d)
+        dr.ja4_label = _resolve_ja4_label(d.ja4_fingerprint)
+        result.append(dr)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -785,6 +879,10 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         if new_vendor and new_vendor != device.vendor:
             device.vendor = new_vendor
+        # Update JA4 fingerprint if the sensor provided one
+        if payload.ja4:
+            device.ja4_fingerprint = payload.ja4
+            device.ja4_last_seen = now
         device.last_seen = now
     else:
         vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
@@ -792,6 +890,8 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
             mac_address=mac,
             hostname=payload.hostname,
             vendor=vendor,
+            ja4_fingerprint=payload.ja4,
+            ja4_last_seen=now if payload.ja4 else None,
             first_seen=now,
             last_seen=now,
         )

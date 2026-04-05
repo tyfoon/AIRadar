@@ -60,6 +60,8 @@ class DeviceRead(BaseModel):
     os_full: Optional[str] = None          # Full p0f label
     device_class: Optional[str] = None     # e.g. "laptop", "phone", "iot"
     network_distance: Optional[int] = None # Hops
+    ja4_fingerprint: Optional[str] = None  # Most recent JA4 TLS hash
+    ja4_label: Optional[str] = None        # Friendly name resolved from ja4
     first_seen: datetime
     last_seen: datetime
     ips: List[DeviceIPRead] = []
@@ -73,6 +75,7 @@ class DeviceRegister(BaseModel):
     ip: str
     hostname: Optional[str] = None
     mac_address: Optional[str] = None
+    ja4: Optional[str] = None              # JA4 TLS fingerprint from ssl.log
 
 
 class DeviceUpdate(BaseModel):

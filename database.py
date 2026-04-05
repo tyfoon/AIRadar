@@ -58,6 +58,8 @@ class Device(Base):
     device_class = Column(String, nullable=True)    # e.g. "laptop", "phone", "iot", "server"
     network_distance = Column(Integer, nullable=True)  # Hops away from sensor
     p0f_last_seen = Column(DateTime, nullable=True) # Last p0f fingerprint update
+    ja4_fingerprint = Column(String, nullable=True) # Most recent JA4 TLS hash observed
+    ja4_last_seen = Column(DateTime, nullable=True) # Last time a JA4 was recorded
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime, nullable=False,
@@ -207,6 +209,8 @@ def init_db() -> None:
             "device_class": "TEXT",
             "network_distance": "INTEGER",
             "p0f_last_seen": "DATETIME",
+            "ja4_fingerprint": "TEXT",
+            "ja4_last_seen": "DATETIME",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:
