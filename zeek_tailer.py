@@ -1187,9 +1187,12 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # other is public, resolve the public IP to a country and
                 # add the total bytes to the in-memory buffer. The buffer
                 # is flushed to the DB by flush_geo_buckets() every 15s.
+                _geo_trace = (_conn_lines_processed <= 5)
                 if _geo_reader and resp_ip and resp_ip != "-":
                     src_local = _is_local_ip(src_ip)
                     dst_local = _is_local_ip(resp_ip)
+                    if _geo_trace:
+                        print(f"[geo trace] line #{_conn_lines_processed}: src={src_ip} (local={src_local}) dst={resp_ip} (local={dst_local})")
                     direction = None
                     public_ip = None
                     if src_local and not dst_local:
@@ -1207,12 +1210,25 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         except ValueError:
                             _ob = _rb = 0
                         total = _ob + _rb
+                        if _geo_trace:
+                            print(f"[geo trace]   direction={direction} public={public_ip} bytes={total}")
                         if total > 0:
                             cc = _resolve_country(public_ip)
+                            if _geo_trace:
+                                print(f"[geo trace]   country={cc}")
                             if cc:
-                                asyncio.create_task(
-                                    _record_geo_traffic(cc, direction, total)
-                                )
+                                try:
+                                    asyncio.create_task(
+                                        _record_geo_traffic(cc, direction, total)
+                                    )
+                                    if _geo_trace:
+                                        print(f"[geo trace]   task scheduled")
+                                except Exception as _exc:
+                                    print(f"[geo trace]   task FAILED: {_exc}")
+                    elif _geo_trace:
+                        print(f"[geo trace]   no direction (both local or both public)")
+                elif _geo_trace:
+                    print(f"[geo trace] line #{_conn_lines_processed}: skipped (reader={_geo_reader is not None}, resp_ip='{resp_ip}')")
 
                 # --- VPN / tunnel detection ---
                 vpn_key = (proto, resp_port)
