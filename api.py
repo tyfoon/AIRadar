@@ -1123,14 +1123,40 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     # one device's mDNS record ("slide-<mac>") gets attributed to a
     # different MAC via a stale IP→MAC cache, usually because Google
     # Cast devices forward each other's mDNS announcements over their
-    # mesh. Refuse to set a hostname that's already owned by another
-    # MAC — unless the hostname's MAC suffix matches the current MAC
-    # (a legit device naming its own MAC).
+    # mesh.
+    #
+    # Rules (evaluated in order):
+    #   1. The incoming MAC is the rightful owner (its flat form appears
+    #      in the hostname) — always accept, even if another device
+    #      currently has the hostname. In that case, steal it from the
+    #      squatter and null out the squatter's hostname.
+    #   2. Another device already has this hostname — refuse the
+    #      assignment, log and drop to None.
+    #   3. No collision — accept.
     if payload.hostname and mac and not mac.startswith("unknown_"):
         mac_flat = mac.replace(":", "").lower()
         host_flat = payload.hostname.replace("-", "").replace("_", "").replace(".", "").lower()
         self_match = bool(mac_flat) and mac_flat in host_flat
-        if not self_match:
+
+        if self_match:
+            # This MAC is the rightful owner of the hostname. If any
+            # other device currently has it, reclaim it for the real owner.
+            squatters = (
+                db.query(Device)
+                .filter(
+                    Device.hostname == payload.hostname,
+                    Device.mac_address != mac,
+                )
+                .all()
+            )
+            for sq in squatters:
+                print(
+                    f"[hostname-collision] Reclaiming '{payload.hostname}' "
+                    f"from {sq.mac_address} for rightful owner {mac}"
+                )
+                sq.hostname = None
+        else:
+            # Not the rightful owner — refuse if anyone else has it
             collision = (
                 db.query(Device)
                 .filter(
@@ -1140,10 +1166,6 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
                 .first()
             )
             if collision:
-                # Another device already claims this hostname. If that
-                # device's MAC suffix appears in the hostname, it's the
-                # rightful owner and we refuse to steal it. Otherwise
-                # keep the first-seen assignment and drop the new one.
                 owner_flat = collision.mac_address.replace(":", "").lower()
                 owner_matches = bool(owner_flat) and owner_flat in host_flat
                 reason = (
