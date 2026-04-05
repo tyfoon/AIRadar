@@ -919,8 +919,16 @@ async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
         .all()
     )
 
+    # Prompt budget: hard caps so the LLM prompt stays under Gemini's
+    # context window even for extremely active devices. Before these
+    # limits, an iPhone with hundreds of iCloud sync events could
+    # produce a 50k-character prompt that crashed the call.
+    MAX_SERVICES_IN_PROMPT = 15        # top 15 services by bytes
+    MAX_UPLOAD_EVENTS = 20             # most recent 20 uploads only
+    MAX_DNS_DOMAINS = 20               # top 20 requested domains
+    MAX_PROMPT_CHARS = 18000           # safety net on total prompt size
+
     # Summarize events by service + type
-    event_summary_lines = []
     svc_totals: dict[str, dict] = {}
     for e in events:
         svc = e.ai_service
@@ -932,27 +940,39 @@ async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
             svc_totals[svc]["uploads"] += 1
         svc_totals[svc]["last"] = e.timestamp
 
-    for svc, t in sorted(svc_totals.items(), key=lambda x: -x[1]["bytes"]):
+    sorted_svcs = sorted(svc_totals.items(), key=lambda x: -x[1]["bytes"])
+    event_summary_lines = []
+    for svc, t in sorted_svcs[:MAX_SERVICES_IN_PROMPT]:
         kb = t["bytes"] / 1024
         line = f"- {svc} ({t['category']}): {t['count']} events, {kb:,.0f} KB totaal"
         if t["uploads"] > 0:
             line += f", {t['uploads']} uploads"
         line += f" | actief {t['first'].strftime('%H:%M')}–{t['last'].strftime('%H:%M')} UTC"
         event_summary_lines.append(line)
+    extra_svcs = len(sorted_svcs) - MAX_SERVICES_IN_PROMPT
+    if extra_svcs > 0:
+        event_summary_lines.append(f"- ... +{extra_svcs} andere services (niet getoond)")
 
-    # Upload timeline
+    # Upload timeline — cap to most recent N, sort by timestamp desc
+    upload_events = [
+        e for e in events
+        if e.possible_upload and e.bytes_transferred and e.bytes_transferred > 0
+    ]
+    upload_events.sort(key=lambda e: e.timestamp, reverse=True)
+    total_uploads = len(upload_events)
     upload_timeline = []
-    for e in events:
-        if e.possible_upload and e.bytes_transferred and e.bytes_transferred > 0:
-            kb = e.bytes_transferred / 1024
-            upload_timeline.append(
-                f"- {e.timestamp.strftime('%H:%M')} UTC: {e.ai_service} upload ({kb:,.0f} KB)"
-            )
+    for e in upload_events[:MAX_UPLOAD_EVENTS]:
+        kb = e.bytes_transferred / 1024
+        upload_timeline.append(
+            f"- {e.timestamp.strftime('%H:%M')} UTC: {e.ai_service} upload ({kb:,.0f} KB)"
+        )
+    if total_uploads > MAX_UPLOAD_EVENTS:
+        upload_timeline.append(f"- ... +{total_uploads - MAX_UPLOAD_EVENTS} oudere uploads (niet getoond)")
 
-    # 3. Fetch DNS queries from AdGuard
+    # 3. Fetch DNS queries from AdGuard (capped)
     dns_domains = await adguard.get_recent_dns_queries(device_ips, hours=24)
     dns_lines = []
-    for domain, count in list(dns_domains.items())[:30]:
+    for domain, count in list(dns_domains.items())[:MAX_DNS_DOMAINS]:
         dns_lines.append(f"- {domain}: {count}x")
 
     # 4. Build the data block for the LLM
@@ -961,22 +981,31 @@ async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
 Naam: {device_label}
 MAC: {mac_address}
 Vendor: {device.vendor or 'Onbekend'}
-IP-adressen: {', '.join(device_ips)}
+IP-adressen: {', '.join(device_ips[:5])}{' (+' + str(len(device_ips) - 5) + ' meer)' if len(device_ips) > 5 else ''}
 Rapport gegenereerd: {now_str}
 
 === AI/CLOUD ACTIVITEIT (afgelopen 24u) ===
 Totaal events: {len(events)}
 Totaal uploads: {sum(1 for e in events if e.possible_upload)}
 
-Per service:
+Per service (top {MAX_SERVICES_IN_PROMPT} op bytes):
 {chr(10).join(event_summary_lines) if event_summary_lines else '- Geen activiteit gedetecteerd'}
 
-Upload tijdlijn:
+Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
 {chr(10).join(upload_timeline) if upload_timeline else '- Geen uploads gedetecteerd'}
 
-=== DNS VERZOEKEN (top domeinen, afgelopen 24u) ===
+=== DNS VERZOEKEN (top {MAX_DNS_DOMAINS} domeinen, afgelopen 24u) ===
 {chr(10).join(dns_lines) if dns_lines else '- Geen DNS-data beschikbaar (AdGuard querylog leeg of niet bereikbaar)'}
 """
+
+    # Hard safety net: if the prompt is still huge, trim the middle.
+    # Gemini 2.5 Flash has a large context window but extremely long
+    # inputs cause cost spikes and 400-level errors on edge cases.
+    if len(data_block) > MAX_PROMPT_CHARS:
+        head = data_block[: MAX_PROMPT_CHARS // 2]
+        tail = data_block[-MAX_PROMPT_CHARS // 2 :]
+        data_block = head + "\n\n[... data truncated for prompt budget ...]\n\n" + tail
+        print(f"[gemini] Prompt truncated to {MAX_PROMPT_CHARS} chars for {mac_address}")
 
     # 5. Call Gemini
     system_prompt = (
@@ -988,6 +1017,10 @@ Upload tijdlijn:
         "'Notable Events' highlighting 3 specific observations "
         "(such as uploads, unusual browsing patterns, or noteworthy services). Use markdown."
     )
+
+    prompt_chars = len(system_prompt) + len(data_block)
+    print(f"[gemini] Device report prompt for {mac_address}: {prompt_chars} chars, "
+          f"{len(events)} events, {total_uploads} uploads")
 
     try:
         from google import genai
@@ -1015,10 +1048,27 @@ Upload tijdlijn:
             "total_tokens": getattr(usage, "total_token_count", 0),
         }
         print(f"[gemini] Report for {mac_address}: {token_info}")
+    except asyncio.TimeoutError:
+        print(f"[gemini] Device report timed out after 60s for {mac_address}")
+        raise HTTPException(
+            status_code=504,
+            detail="Gemini timed out na 60 seconden. Het apparaat heeft mogelijk te veel data — "
+                   "probeer het later opnieuw of kies een specifieker tijdvenster.",
+        )
     except Exception as exc:
+        # Surface the actual error type + message so the user can see
+        # whether it's a key issue, rate limit, safety filter, context
+        # window exceeded, etc. — instead of a generic 502.
+        err_type = type(exc).__name__
+        err_msg = str(exc) or repr(exc)
+        print(f"[gemini] Device report failed for {mac_address}: {err_type}: {err_msg}")
+        # Shorten overly long error strings (Gemini errors can contain
+        # the entire input back in the message)
+        if len(err_msg) > 500:
+            err_msg = err_msg[:500] + "..."
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini API-fout: {exc}",
+            detail=f"Gemini-fout ({err_type}): {err_msg}",
         )
 
     return {
