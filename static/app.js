@@ -2300,7 +2300,7 @@ function renderAiAdoption(events) {
     return `<div class="flex items-center gap-2 text-[11px]">
       <span class="w-[140px] truncate flex-shrink-0 text-slate-600 dark:text-slate-300" title="${d.name}">${d.dt.icon} ${d.name}</span>
       <div class="flex-1 h-4 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
-        <div class="h-full rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 transition-all duration-500" style="width:${pct}%"></div>
+        <div class="h-full rounded bg-gradient-to-r from-blue-500/80 to-blue-700/80 transition-all duration-500" style="width:${pct}%"></div>
         <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 40 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${d.count}</span>
       </div>
       <span class="flex items-center gap-0.5 flex-shrink-0">${svcLogos}</span>
@@ -2322,7 +2322,7 @@ function renderAiAdoption(events) {
     return `<div class="flex items-center gap-3 text-[11px]">
       <span class="w-[120px] flex-shrink-0">${svcLogoName(svc)}</span>
       <div class="flex-1 h-5 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
-        <div class="h-full rounded bg-gradient-to-r from-indigo-500/70 to-purple-500/70" style="width:${pct}%"></div>
+        <div class="h-full rounded bg-gradient-to-r from-blue-500/70 to-blue-700/70" style="width:${pct}%"></div>
         <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} ${t('adopt.queries')} · ${share}% ${t('adopt.share')} · ${usersCount} ${usersCount !== 1 ? t('adopt.users') : t('adopt.user')}</span>
       </div>
     </div>`;
@@ -2415,7 +2415,7 @@ function renderTopUploaders(events) {
                    + (r.services.length > 3 ? ` +${r.services.length - 3}` : '');
     const barColor = i === 0 ? 'from-red-500 to-orange-500'
                   : i < 3 ? 'from-orange-500 to-amber-500'
-                  : 'from-indigo-500 to-purple-500';
+                  : 'from-blue-500 to-blue-700';
     return `<div class="group">
       <div class="flex items-center justify-between gap-3 mb-1">
         <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -3246,7 +3246,7 @@ function _renderGeoTable(data) {
     const pctLabel = pct.toFixed(1);
     const barColor = i === 0 ? 'from-red-500 to-orange-500'
                    : i < 3 ? 'from-orange-500 to-amber-500'
-                   : 'from-indigo-500 to-purple-500';
+                   : 'from-blue-500 to-blue-700';
     const ratioCls = _geoRatioClass(c.bytes, c.opposite_bytes, data.direction);
     // Top-3 devices line — stacked chips with truncation
     const devChips = (c.top_devices || []).slice(0, 3).map(d => {
@@ -3380,7 +3380,7 @@ function _renderCountryDrawer(data) {
             <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_geoFmtBytes(d.bytes)}</span>
           </div>
           <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-            <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500" style="width:${w}%"></div>
+            <div class="h-full bg-gradient-to-r from-blue-500 to-blue-700" style="width:${w}%"></div>
           </div>
         </div>
       </div>`;
@@ -3802,7 +3802,7 @@ function _renderDrawerSummary() {
           </span>
         </div>
         <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-          <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500" style="width: ${barPct}%"></div>
+          <div class="h-full bg-gradient-to-r from-blue-500 to-blue-700" style="width: ${barPct}%"></div>
         </div>
       </div>
     </div>`;
