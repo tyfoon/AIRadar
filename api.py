@@ -2138,43 +2138,104 @@ def ingest_ip_metadata(
 @app.get("/api/analytics/geo")
 def get_geo_traffic(
     direction: str = Query("outbound", description="outbound or inbound"),
+    service: Optional[str] = Query(None, description="Filter to a single ai_service"),
+    source_ip: Optional[str] = Query(None, description="Filter to a single device IP"),
+    start: Optional[datetime] = Query(None, description="Only include conversations active since this ISO timestamp"),
     db: Session = Depends(get_db),
 ):
     """Return per-country bandwidth totals for the dashboard map.
 
-    Sorted by bytes_transferred descending so the heaviest-traffic
-    countries appear first in the table and drive the color gradient.
-    Also includes a compact inbound vs outbound ratio so the frontend
-    can shade rows, and the top 3 devices per country pulled from
-    GeoConversation for the 'who is talking' column.
+    Without filters the heavy-lifting uses the pre-aggregated GeoTraffic
+    rollup. As soon as any filter is supplied we switch to the
+    high-resolution GeoConversation table so we can apply device /
+    service / period constraints; that costs a bit more per request
+    but only fires when the user actually filters.
+
+    The top-3 devices-per-country list and the opposite-direction byte
+    total (used for in/out ratio shading) are computed from
+    GeoConversation in both code paths so they respect the filters.
     """
     if direction not in ("outbound", "inbound"):
         raise HTTPException(status_code=400, detail="direction must be outbound or inbound")
-    rows = (
-        db.query(GeoTraffic)
-        .filter(GeoTraffic.direction == direction)
-        .order_by(GeoTraffic.bytes_transferred.desc())
-        .all()
-    )
+    other = "inbound" if direction == "outbound" else "outbound"
+
+    # Resolve source_ip to the owning MAC (if any) so device filter
+    # matches both IPv4 and IPv6 traffic from the same device.
+    filter_mac = None
+    if source_ip:
+        dip = db.query(DeviceIP).filter(DeviceIP.ip == source_ip).first()
+        if dip:
+            filter_mac = dip.mac_address
+
+    filters_active = bool(service or source_ip or start)
+
+    def _apply_conv_filters(q, direction_val):
+        q = q.filter(GeoConversation.direction == direction_val)
+        if service:
+            q = q.filter(GeoConversation.ai_service == service)
+        if filter_mac:
+            q = q.filter(GeoConversation.mac_address == filter_mac)
+        if start:
+            q = q.filter(GeoConversation.last_seen >= start)
+        return q
+
+    if filters_active:
+        # Compute country totals from GeoConversation so filters apply.
+        agg_rows = (
+            _apply_conv_filters(
+                db.query(
+                    GeoConversation.country_code,
+                    func.coalesce(func.sum(GeoConversation.bytes_transferred), 0).label("bytes"),
+                    func.coalesce(func.sum(GeoConversation.hits), 0).label("hits"),
+                    func.max(GeoConversation.last_seen).label("last_seen"),
+                ),
+                direction,
+            )
+            .group_by(GeoConversation.country_code)
+            .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+            .all()
+        )
+        rows = agg_rows  # list of Row objects; accessed as r.country_code etc.
+    else:
+        rows = (
+            db.query(GeoTraffic)
+            .filter(GeoTraffic.direction == direction)
+            .order_by(GeoTraffic.bytes_transferred.desc())
+            .all()
+        )
 
     # Pull the opposite direction in one query so we can compute the
     # in/out ratio without an extra round-trip per row.
-    other = "inbound" if direction == "outbound" else "outbound"
-    opp_map = {
-        r.country_code: r.bytes_transferred
-        for r in db.query(GeoTraffic).filter(GeoTraffic.direction == other).all()
-    }
+    if filters_active:
+        opp_rows = (
+            _apply_conv_filters(
+                db.query(
+                    GeoConversation.country_code,
+                    func.coalesce(func.sum(GeoConversation.bytes_transferred), 0).label("bytes"),
+                ),
+                other,
+            )
+            .group_by(GeoConversation.country_code)
+            .all()
+        )
+        opp_map = {r.country_code: int(r.bytes or 0) for r in opp_rows}
+    else:
+        opp_map = {
+            r.country_code: r.bytes_transferred
+            for r in db.query(GeoTraffic).filter(GeoTraffic.direction == other).all()
+        }
 
     # Top-3 devices per country (in the requested direction) from the
-    # high-resolution conversations table. One grouped query; small
-    # Python post-processing to keep top-N per country.
+    # high-resolution conversations table, respecting the same filters.
     conv_rows = (
-        db.query(
-            GeoConversation.country_code,
-            GeoConversation.mac_address,
-            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+        _apply_conv_filters(
+            db.query(
+                GeoConversation.country_code,
+                GeoConversation.mac_address,
+                func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            ),
+            direction,
         )
-        .filter(GeoConversation.direction == direction)
         .group_by(GeoConversation.country_code, GeoConversation.mac_address)
         .all()
     )
@@ -2193,19 +2254,34 @@ def get_geo_traffic(
         top_by_cc[cc].sort(key=lambda x: -x["bytes"])
         top_by_cc[cc] = top_by_cc[cc][:3]
 
+    # Normalise the two row shapes (GeoTraffic model row vs aggregated
+    # conversations Row) into the same country dict.
+    countries_out = []
+    for r in rows:
+        if filters_active:
+            # Aggregated row from GeoConversation query: r.bytes, r.hits
+            country_code = r.country_code
+            byts = int(r.bytes or 0)
+            hits = int(r.hits or 0)
+            last_seen = str(r.last_seen) if r.last_seen else ""
+        else:
+            # GeoTraffic model row
+            country_code = r.country_code
+            byts = r.bytes_transferred
+            hits = r.hits
+            last_seen = str(r.last_seen)
+        countries_out.append({
+            "country_code": country_code,
+            "bytes": byts,
+            "hits": hits,
+            "last_seen": last_seen,
+            "opposite_bytes": int(opp_map.get(country_code, 0)),
+            "top_devices": top_by_cc.get(country_code, []),
+        })
+
     return {
         "direction": direction,
-        "countries": [
-            {
-                "country_code": r.country_code,
-                "bytes": r.bytes_transferred,
-                "hits": r.hits,
-                "last_seen": str(r.last_seen),
-                "opposite_bytes": int(opp_map.get(r.country_code, 0)),
-                "top_devices": top_by_cc.get(r.country_code, []),
-            }
-            for r in rows
-        ],
+        "countries": countries_out,
     }
 
 
@@ -2879,8 +2955,26 @@ async def alerts_ai_summary(
 EXCLUDED_CATEGORIES = {"ai", "cloud", "tracking"}
 
 @app.get("/api/analytics/category-tree")
-def category_tree(db: Session = Depends(get_db)):
-    rows = (
+def category_tree(
+    service: Optional[str] = Query(None, description="Filter to a single ai_service"),
+    source_ip: Optional[str] = Query(None, description="Filter to a single device IP"),
+    start: Optional[datetime] = Query(None, description="Only include events after this ISO timestamp"),
+    db: Session = Depends(get_db),
+):
+    # Resolve source_ip → all IPs owned by the same device, so filtering
+    # by the IPv4 address also catches the device's IPv6 counterpart.
+    source_ips = None
+    if source_ip:
+        dip = db.query(DeviceIP).filter(DeviceIP.ip == source_ip).first()
+        if dip:
+            source_ips = [
+                d.ip for d in
+                db.query(DeviceIP).filter(DeviceIP.mac_address == dip.mac_address).all()
+            ]
+        else:
+            source_ips = [source_ip]
+
+    q = (
         db.query(
             DetectionEvent.category,
             DetectionEvent.ai_service,
@@ -2889,8 +2983,16 @@ def category_tree(db: Session = Depends(get_db)):
             func.count().label("hits"),
         )
         .filter(~DetectionEvent.category.in_(EXCLUDED_CATEGORIES))
-        .group_by(DetectionEvent.category, DetectionEvent.ai_service, DetectionEvent.source_ip)
-        .all()
+    )
+    if service:
+        q = q.filter(DetectionEvent.ai_service == service)
+    if source_ips:
+        q = q.filter(DetectionEvent.source_ip.in_(source_ips))
+    if start:
+        q = q.filter(DetectionEvent.timestamp >= start)
+    rows = (
+        q.group_by(DetectionEvent.category, DetectionEvent.ai_service, DetectionEvent.source_ip)
+         .all()
     )
 
     # Resolve every source_ip to its owning MAC so dual-stack devices

@@ -2921,6 +2921,8 @@ function renderTrackerDetailsList() {
   }).join('');
 }
 
+let _otherFiltersPopulated = false;
+
 // ================================================================
 // OTHER USAGE — category tree accordion
 // ================================================================
@@ -2942,10 +2944,34 @@ function _fmtBytes(b) {
 }
 
 async function refreshOther() {
+  const filters = _buildInsightFilters('other');
   const [tree, devices] = await Promise.all([
-    fetch('/api/analytics/category-tree').then(r => r.json()),
+    fetch(`/api/analytics/category-tree?${filters}`).then(r => r.json()),
     fetch('/api/devices').then(r => r.json()),
   ]);
+
+  // Populate filter dropdowns on first render from the device list
+  // and the services surfaced in the tree response itself.
+  if (!_otherFiltersPopulated) {
+    _otherFiltersPopulated = true;
+    const ipList = [];
+    const nameByIp = {};
+    (devices || []).forEach(d => {
+      const name = _bestDeviceName(d.mac_address, d);
+      (d.ips || []).forEach(ipRec => {
+        ipList.push(ipRec.ip);
+        nameByIp[ipRec.ip] = name;
+      });
+    });
+    _populateFilterSelect('other-filter-device', ipList,
+      t('ai.allDevices') || 'All devices', ip => `${nameByIp[ip] || ip} (${ip})`);
+    // Services from the current tree response — everything under
+    // every category.
+    const svcList = [];
+    (tree || []).forEach(cat => (cat.services || []).forEach(s => svcList.push(s.service_name)));
+    _populateFilterSelect('other-filter-service', svcList,
+      t('ai.allServices') || 'All services', svc => svcDisplayName(svc));
+  }
 
   // Build IP → device name map
   const ipName = {};
@@ -3078,19 +3104,80 @@ async function refreshGeo() {
   return loadGeoTraffic(_geoDirection);
 }
 
+// Build filter params for the Geo and Other pages. Mirrors the AI
+// page pattern (service/device/period) so all three insight pages
+// behave the same way.
+function _buildInsightFilters(prefix) {
+  const p = new URLSearchParams();
+  const svc = document.getElementById(`${prefix}-filter-service`)?.value;
+  const dev = document.getElementById(`${prefix}-filter-device`)?.value;
+  const per = document.getElementById(`${prefix}-filter-period`)?.value;
+  if (svc) p.set('service', svc);
+  if (dev) p.set('source_ip', dev);
+  if (per) p.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
+  return p;
+}
+
+// Populate a <select> with an "All X" option and a sorted list of
+// values. Preserves the current selection where possible.
+function _populateFilterSelect(id, values, allLabel, displayFn) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${allLabel}</option>`;
+  [...new Set(values)].filter(Boolean).sort().forEach(v => {
+    const label = displayFn ? displayFn(v) : v;
+    sel.innerHTML += `<option value="${v}">${label}</option>`;
+  });
+  sel.value = cur;
+}
+
 async function loadGeoTraffic(direction) {
   _geoDirection = direction;
   try {
-    const res = await fetch(`/api/analytics/geo?direction=${encodeURIComponent(direction)}`);
+    const filters = _buildInsightFilters('geo');
+    filters.set('direction', direction);
+    const res = await fetch(`/api/analytics/geo?${filters}`);
     const data = await res.json();
     _geoData = data;
     _renderGeoStats(data);
     _renderGeoMap(data);
     _renderGeoTable(data);
+
+    // Populate filter dropdowns from the device list + the services
+    // we see in the conversations table (via a second lightweight
+    // request the first time). Only runs once per page visit.
+    if (!_geoFiltersPopulated) {
+      _geoFiltersPopulated = true;
+      try {
+        const devs = await fetch('/api/devices').then(r => r.json());
+        const ipList = [];
+        const nameByIp = {};
+        (devs || []).forEach(d => {
+          const name = _bestDeviceName(d.mac_address, d);
+          (d.ips || []).forEach(ipRec => {
+            ipList.push(ipRec.ip);
+            nameByIp[ipRec.ip] = name;
+          });
+        });
+        _populateFilterSelect('geo-filter-device', ipList,
+          t('ai.allDevices') || 'All devices', ip => `${nameByIp[ip] || ip} (${ip})`);
+      } catch (e) { console.warn('geo device filter:', e); }
+
+      // Services list: pull from a quick /api/events scan (any category)
+      try {
+        const evs = await fetch('/api/events?limit=1000').then(r => r.json());
+        _populateFilterSelect('geo-filter-service',
+          (evs || []).map(e => e.ai_service),
+          t('ai.allServices') || 'All services',
+          svc => svcDisplayName(svc));
+      } catch (e) { console.warn('geo service filter:', e); }
+    }
   } catch (err) {
     console.error('loadGeoTraffic:', err);
   }
 }
+let _geoFiltersPopulated = false;
 
 function switchGeoTab(direction) {
   const outBtn = document.getElementById('geo-tab-outbound');
