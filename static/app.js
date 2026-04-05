@@ -2192,7 +2192,7 @@ function switchAiTab(tab) {
   const btnRadar = document.getElementById('ai-tab-btn-radar');
   const btnAdopt = document.getElementById('ai-tab-btn-adoption');
 
-  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const activeClass = 'bg-blue-700 text-white shadow-sm';
   const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
 
   if (tab === 'radar') {
@@ -3069,8 +3069,12 @@ async function loadGeoTraffic(direction) {
 function switchGeoTab(direction) {
   const outBtn = document.getElementById('geo-tab-outbound');
   const inBtn  = document.getElementById('geo-tab-inbound');
-  const active = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-700 text-white shadow-sm';
-  const inactive = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+  // Shared tab classes — match the Rules / AI / Settings style
+  // so every sub-tab in the app looks identical.
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  // Preserve the icon+label markup by only rewriting className.
   if (direction === 'outbound') {
     if (outBtn) outBtn.className = active;
     if (inBtn) inBtn.className = inactive;
@@ -3320,8 +3324,10 @@ async function openCountryDrawer(cc) {
 function _syncCountryDirButtons() {
   const out = document.getElementById('country-dir-out');
   const inb = document.getElementById('country-dir-in');
-  const active = 'px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-700 text-white';
-  const inactive = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+  // Shared tab classes — match Rules / AI / Settings / Geo.
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
   if (!out || !inb) return;
   if (_countryDrawerDirection === 'outbound') { out.className = active; inb.className = inactive; }
   else                                         { inb.className = active; out.className = inactive; }
@@ -4386,7 +4392,7 @@ function switchRulesTab(tab) {
   const btnOut = document.getElementById('rules-tab-btn-outbound');
   const btnIn  = document.getElementById('rules-tab-btn-inbound');
 
-  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const activeClass = 'bg-blue-700 text-white shadow-sm';
   const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
 
   if (tab === 'outbound') {
@@ -4808,18 +4814,32 @@ function switchIpsTab(tab) {
   const blocklistPanel = document.getElementById('ips-panel-blocklist');
   if (!alertsTab || !blocklistTab) return;
 
-  const activeClass = 'px-5 py-3 text-sm font-semibold border-b-2 border-red-500 text-red-600 dark:text-red-400';
-  const inactiveClass = 'px-5 py-3 text-sm font-medium text-slate-400 dark:text-slate-500 border-b-2 border-transparent hover:text-slate-600 dark:hover:text-slate-300';
+  // Shared tab classes — match the Rules / AI / Settings style.
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+
+  // Children (the count pills) live inside the <button> via innerHTML,
+  // so we must rebuild the markup rather than just rewrite className.
+  const alertsCount = document.getElementById('ips-tab-alerts-count')?.textContent || '0';
+  const blocklistCount = document.getElementById('ips-tab-blocklist-count')?.textContent || '0';
+  const activePill = `<span class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
+  const inactivePill = `<span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">${alertsCount}</span>`;
+  const activeBlocklistPill = `<span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${blocklistCount}</span>`;
+  const inactiveBlocklistPill = `<span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">${blocklistCount}</span>`;
 
   if (tab === 'alerts') {
-    alertsTab.className = activeClass;
-    blocklistTab.className = inactiveClass;
+    alertsTab.className = active;
+    alertsTab.innerHTML = `Attacks on your network <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
+    blocklistTab.className = inactive;
+    blocklistTab.innerHTML = `Community Blocklist ${inactiveBlocklistPill}`;
     alertsPanel.classList.remove('hidden');
     blocklistPanel.classList.add('hidden');
   } else {
-    alertsTab.className = inactiveClass.replace('border-transparent', 'border-slate-500');
-    alertsTab.className = inactiveClass;
-    blocklistTab.className = activeClass.replace('border-red-500 text-red-600 dark:text-red-400', 'border-slate-500 text-slate-700 dark:text-slate-200');
+    alertsTab.className = inactive;
+    alertsTab.innerHTML = `Attacks on your network ${inactivePill}`;
+    blocklistTab.className = active;
+    blocklistTab.innerHTML = `Community Blocklist ${activeBlocklistPill}`;
     alertsPanel.classList.add('hidden');
     blocklistPanel.classList.remove('hidden');
   }
@@ -5469,7 +5489,7 @@ function switchSettingsTab(tab) {
   if (!tabs.includes(tab)) tab = 'protection';
   _currentSettingsTab = tab;
 
-  const activeClass = 'bg-white dark:bg-white/[0.08] text-slate-800 dark:text-white shadow-sm';
+  const activeClass = 'bg-blue-700 text-white shadow-sm';
   const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
 
   tabs.forEach(t => {
