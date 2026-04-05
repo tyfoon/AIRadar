@@ -1751,6 +1751,102 @@ def get_active_alerts(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/alerts/ai-summary — Gemini-generated plain-language summary
+# ---------------------------------------------------------------------------
+@app.get("/api/alerts/ai-summary")
+async def alerts_ai_summary(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return a short, non-technical Dutch summary of active alerts.
+
+    Calls the same resolver as /api/alerts/active, then asks Gemini to
+    turn the structured list into 3 sentences the homeowner can act on.
+    """
+    # Reuse the resolver so the summary is always in sync with what the
+    # user sees in the inbox.
+    active = get_active_alerts(hours=hours, db=db)
+    alerts = active["alerts"]
+
+    if not alerts:
+        return {
+            "summary": "Alles rustig op je netwerk. Er zijn op dit moment geen meldingen die actie vereisen.",
+            "alert_count": 0,
+            "model": None,
+            "tokens": None,
+        }
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_key:
+        # Graceful fallback: return a deterministic one-liner so the UI
+        # still has something to show even without an API key.
+        return {
+            "summary": f"Er zijn {len(alerts)} actieve meldingen die om aandacht vragen. "
+                       f"Configureer GEMINI_API_KEY in .env om een uitgebreide samenvatting te krijgen.",
+            "alert_count": len(alerts),
+            "model": None,
+            "tokens": None,
+        }
+
+    # Build a compact text block for the LLM
+    lines = []
+    for a in alerts[:20]:  # cap at 20 to keep prompt small
+        device_name = a.get("display_name") or a.get("hostname") or a.get("mac_address")
+        svc = a.get("service_or_dest")
+        atype = a.get("alert_type")
+        hits = a.get("hits", 0)
+        last_seen = a.get("timestamp")
+        if hasattr(last_seen, "strftime"):
+            last_seen = last_seen.strftime("%Y-%m-%d %H:%M")
+        lines.append(f"- {device_name} | {atype} → {svc} | {hits} hits | laatst {last_seen}")
+    alert_block = "\n".join(lines)
+
+    system_prompt = (
+        "Je bent een netwerkbeveiligingsassistent voor een kleine ondernemer of gezin. "
+        "Vat de volgende actieve netwerkmeldingen samen in MAXIMAAL 3 eenvoudige, "
+        "niet-technische Nederlandse zinnen. Leg uit welke apparaten aandacht nodig "
+        "hebben en waarom. Gebruik geen jargon. Als er geen meldingen zijn, zeg je dat "
+        "alles in orde is. Geef GEEN opsomming — alleen lopende zinnen. Begin met het "
+        "belangrijkste."
+    )
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=gemini_key)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-flash",
+                contents=f"{system_prompt}\n\n=== ACTIEVE MELDINGEN ({len(alerts)} totaal) ===\n{alert_block}",
+            ),
+            timeout=45,
+        )
+        summary = (response.text or "").strip()
+        usage = getattr(response, "usage_metadata", None)
+        tokens = None
+        if usage:
+            tokens = {
+                "prompt": getattr(usage, "prompt_token_count", 0),
+                "response": getattr(usage, "candidates_token_count", 0),
+                "total": getattr(usage, "total_token_count", 0),
+            }
+    except Exception as exc:
+        print(f"[ai-summary] Gemini call failed: {exc}")
+        summary = (
+            f"Er zijn {len(alerts)} actieve meldingen in je netwerk. "
+            f"Controleer het Actie Inbox-overzicht voor details."
+        )
+        tokens = None
+
+    return {
+        "summary": summary,
+        "alert_count": len(alerts),
+        "model": "gemini-2.5-flash",
+        "tokens": tokens,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /api/analytics/category-tree — hierarchical view of non-AI traffic
 # ---------------------------------------------------------------------------
 EXCLUDED_CATEGORIES = {"ai", "cloud", "tracking"}

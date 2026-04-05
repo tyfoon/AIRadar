@@ -18,6 +18,7 @@ const TRANSLATIONS = {
   // ========== ENGLISH ==========
   en: {
     // Navigation
+    'nav.summary':         'Summary',
     'nav.dashboard':       'Dashboard',
     'nav.ai':              'AI Radar',
     'nav.cloud':           'Cloud Storage',
@@ -46,6 +47,7 @@ const TRANSLATIONS = {
     'mob.ips':             'Protect',
 
     // Page titles
+    'page.summary':        'Network Summary',
     'page.dashboard':      'Dashboard',
     'page.ai':             'AI Radar',
     'page.cloud':          'Cloud Storage',
@@ -116,6 +118,40 @@ const TRANSLATIONS = {
 
     // Heartbeat / ping filter toggle
     'filter.showHeartbeats':   'Show pings',
+
+    // Summary / Action Inbox
+    'summary.title':       'Network Summary',
+    'summary.subtitle':    'Which alerts need your attention right now?',
+    'summary.refresh':     'Refresh',
+    'summary.aiTitle':     'AI Summary',
+    'summary.aiSubtitle':  'Let Gemini explain the active alerts in plain language.',
+    'summary.aiButton':    'Generate AI Summary',
+    'summary.aiGenerating':'Analysing...',
+    'summary.aiFailed':    'AI summary failed',
+    'summary.inboxTitle':  'Action Inbox',
+    'summary.loading':     'Loading alerts...',
+    'summary.allClear':    'All clear',
+    'summary.allClearSub': 'No action required.',
+    'summary.error':       'Could not load alerts',
+    'summary.review':      'Review',
+    'summary.firstSeen':   'first',
+    'summary.lastSeen':    'last',
+
+    // Alert action modal
+    'alertModal.eyebrow':      'Review alert',
+    'alertModal.policyTitle':  'Permanent decision',
+    'alertModal.allowAlways':  'Always allow',
+    'alertModal.blockNow':     'Block now',
+    'alertModal.globalScope':  'For all devices (instead of just this one)',
+    'alertModal.snoozeTitle':  'Temporary snooze',
+    'alertModal.snooze1h':     'Snooze 1 hour',
+    'alertModal.snooze4h':     'Snooze 4 hours',
+    'alertModal.snooze8h':     'Snooze 8 hours',
+    'alertModal.ignoreForever':'Ignore forever (permanent whitelist)',
+    'alertModal.cancel':       'Cancel',
+    'alertModal.submitting':   'Working...',
+    'alertModal.success':      'Alert handled',
+    'alertModal.failed':       'Failed',
 
     // Geo Traffic
     'geo.title':           'Geo Traffic',
@@ -575,6 +611,7 @@ const TRANSLATIONS = {
   // ========== DUTCH ==========
   nl: {
     // Navigatie
+    'nav.summary':         'Overzicht',
     'nav.dashboard':       'Dashboard',
     'nav.ai':              'AI Radar',
     'nav.cloud':           'Cloudopslag',
@@ -603,6 +640,7 @@ const TRANSLATIONS = {
     'mob.ips':             'Bescherm',
 
     // Paginatitels
+    'page.summary':        'Netwerk Overzicht',
     'page.dashboard':      'Dashboard',
     'page.ai':             'AI Radar',
     'page.cloud':          'Cloudopslag',
@@ -673,6 +711,40 @@ const TRANSLATIONS = {
 
     // Heartbeat / ping filter toggle
     'filter.showHeartbeats':   'Toon pings',
+
+    // Overzicht / Actie Inbox
+    'summary.title':       'Netwerk Overzicht',
+    'summary.subtitle':    'Welke meldingen vragen nu om jouw aandacht?',
+    'summary.refresh':     'Vernieuwen',
+    'summary.aiTitle':     'AI Samenvatting',
+    'summary.aiSubtitle':  'Laat Gemini de actieve meldingen in gewone taal uitleggen.',
+    'summary.aiButton':    'Genereer AI Samenvatting',
+    'summary.aiGenerating':'Bezig met analyseren...',
+    'summary.aiFailed':    'AI-samenvatting mislukt',
+    'summary.inboxTitle':  'Actie Inbox',
+    'summary.loading':     'Meldingen ophalen...',
+    'summary.allClear':    'Alles is veilig',
+    'summary.allClearSub': 'Geen actie vereist.',
+    'summary.error':       'Kon meldingen niet laden',
+    'summary.review':      'Beoordeel',
+    'summary.firstSeen':   'eerst',
+    'summary.lastSeen':    'laatst',
+
+    // Actiemodal
+    'alertModal.eyebrow':      'Beoordeel melding',
+    'alertModal.policyTitle':  'Permanente beslissing',
+    'alertModal.allowAlways':  'Sta altijd toe',
+    'alertModal.blockNow':     'Blokkeer direct',
+    'alertModal.globalScope':  'Voor alle apparaten (in plaats van alleen dit apparaat)',
+    'alertModal.snoozeTitle':  'Tijdelijk negeren',
+    'alertModal.snooze1h':     'Snooze 1 uur',
+    'alertModal.snooze4h':     'Snooze 4 uur',
+    'alertModal.snooze8h':     'Snooze 8 uur',
+    'alertModal.ignoreForever':'Negeer voor altijd (permanente whitelist)',
+    'alertModal.cancel':       'Annuleer',
+    'alertModal.submitting':   'Bezig...',
+    'alertModal.success':      'Melding verwerkt',
+    'alertModal.failed':       'Mislukt',
 
     // Geo Traffic
     'geo.title':           'Geo-verkeer',

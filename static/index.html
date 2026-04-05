@@ -36,6 +36,12 @@
 
     <!-- Group: Monitor -->
     <p class="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-3 mb-1" data-i18n="nav.groupMonitor">Monitor</p>
+    <a href="#/summary" data-page="summary" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>
+      <span class="nav-label" data-i18n="nav.summary">Overzicht</span>
+      <span class="nav-tooltip" data-i18n="nav.summary">Overzicht</span>
+      <span id="nav-badge-summary" class="nav-badge hidden absolute top-1 right-2 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">0</span>
+    </a>
     <a href="#/dashboard" data-page="dashboard" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
       <span class="nav-label" data-i18n="nav.dashboard">Dashboard</span>
@@ -208,7 +214,58 @@
     <!-- ============================================================= -->
     <!-- PAGE: DASHBOARD                                                -->
     <!-- ============================================================= -->
-    <section id="page-dashboard" class="page active space-y-6">
+    <!-- ============================================================= -->
+    <!-- PAGE: SUMMARY / ACTION INBOX                                   -->
+    <!-- ============================================================= -->
+    <section id="page-summary" class="page space-y-6">
+
+      <!-- Header -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-800 dark:text-white" data-i18n="summary.title">Netwerk Overzicht</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="summary.subtitle">Welke meldingen vragen nu om jouw aandacht?</p>
+          </div>
+          <button onclick="refreshPage('summary')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors" data-i18n="summary.refresh">Vernieuwen</button>
+        </div>
+      </div>
+
+      <!-- AI Assistant Card -->
+      <div class="relative overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-950/30 dark:via-white/[0.03] dark:to-purple-950/30 border border-indigo-200 dark:border-indigo-700/30 rounded-xl p-6">
+        <div class="absolute -top-8 -right-8 w-32 h-32 bg-indigo-500/10 dark:bg-indigo-500/15 rounded-full blur-3xl"></div>
+        <div class="relative flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3 min-w-0 flex-1">
+            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-indigo-500/30">
+              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-base font-semibold text-slate-800 dark:text-white" data-i18n="summary.aiTitle">AI Samenvatting</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" data-i18n="summary.aiSubtitle">Laat Gemini de actieve meldingen in gewone taal uitleggen.</p>
+            </div>
+          </div>
+          <button id="summary-ai-btn" onclick="generateSummaryAI()" class="flex-shrink-0 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-semibold shadow-lg shadow-indigo-500/30 transition-all active:scale-95">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="text-sm">&#10024;</span>
+              <span data-i18n="summary.aiButton">Genereer AI Samenvatting</span>
+            </span>
+          </button>
+        </div>
+        <div id="summary-ai-response" class="mt-4 hidden"></div>
+      </div>
+
+      <!-- Action Inbox -->
+      <div>
+        <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-3 uppercase tracking-wider" data-i18n="summary.inboxTitle">Actie Inbox</h3>
+        <div id="summary-alerts-container" class="space-y-3">
+          <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
+            <p class="text-sm text-slate-400 dark:text-slate-500" data-i18n="summary.loading">Meldingen ophalen...</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section id="page-dashboard" class="page space-y-6">
 
       <!-- Metric cards -->
       <div class="stat-grid grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -1615,6 +1672,72 @@
     </div>
   </div>
 </div>
+
+<!-- ============================================================= -->
+<!-- Alert Action Modal — opens when reviewing an alert             -->
+<!-- ============================================================= -->
+<div id="alert-action-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="if (event.target === this) closeAlertActionModal()">
+  <div class="w-full max-w-lg bg-white dark:bg-[#0f1117] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-slate-200 dark:border-white/[0.05] flex items-start justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold" data-i18n="alertModal.eyebrow">Beoordeel melding</p>
+        <h3 id="alert-modal-title" class="text-lg font-semibold text-slate-800 dark:text-white mt-0.5 truncate">—</h3>
+        <p id="alert-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-1">—</p>
+      </div>
+      <button onclick="closeAlertActionModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Body: Policy action group (shown for service_access / upload) -->
+    <div id="alert-modal-policy-group" class="px-6 py-5 border-b border-slate-200 dark:border-white/[0.05] hidden">
+      <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.policyTitle">Permanente beslissing</p>
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="submitAlertAction('policy_allow')"
+                class="px-3 py-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium transition-colors flex flex-col items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          <span data-i18n="alertModal.allowAlways">Sta altijd toe</span>
+        </button>
+        <button onclick="submitAlertAction('policy_block')"
+                class="px-3 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-300 text-sm font-medium transition-colors flex flex-col items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          <span data-i18n="alertModal.blockNow">Blokkeer direct</span>
+        </button>
+      </div>
+      <label class="mt-3 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+        <input type="checkbox" id="alert-modal-global-scope" class="rounded border-slate-300 dark:border-slate-600">
+        <span data-i18n="alertModal.globalScope">Voor alle apparaten (in plaats van alleen dit apparaat)</span>
+      </label>
+    </div>
+
+    <!-- Body: Snooze / exception group (shown for anomalies) -->
+    <div id="alert-modal-snooze-group" class="px-6 py-5 hidden">
+      <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.snoozeTitle">Tijdelijk negeren</p>
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <button onclick="submitAlertAction('snooze_1')"
+                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze1h">Snooze 1 uur</button>
+        <button onclick="submitAlertAction('snooze_4')"
+                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze4h">Snooze 4 uur</button>
+        <button onclick="submitAlertAction('snooze_8')"
+                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze8h">Snooze 8 uur</button>
+      </div>
+      <button onclick="submitAlertAction('whitelist_forever')"
+              class="w-full px-3 py-2.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors" data-i18n="alertModal.ignoreForever">Negeer voor altijd (permanente whitelist)</button>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-3 border-t border-slate-200 dark:border-white/[0.05] flex items-center justify-between">
+      <p id="alert-modal-status" class="text-[11px] text-slate-400 dark:text-slate-500"></p>
+      <button onclick="closeAlertActionModal()" class="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium transition-colors" data-i18n="alertModal.cancel">Annuleer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- Toast notification host                                        -->
+<!-- ============================================================= -->
+<div id="toast-host" class="fixed bottom-6 right-6 z-[110] space-y-2 pointer-events-none"></div>
 
 <script src="/static/app.js"></script>
 </body>

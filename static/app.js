@@ -194,12 +194,12 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['dashboard','ai','cloud','privacy','other','geo','devices','ips','rules','settings'];
+const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','other','geo','devices','ips','rules','settings'];
 
-let currentPage = 'dashboard';
+let currentPage = 'summary';
 
 function navigate(page) {
-  if (!VALID_PAGES.includes(page)) page = 'dashboard';
+  if (!VALID_PAGES.includes(page)) page = 'summary';
   currentPage = page;
 
   // Close mobile overflow panel if open
@@ -240,10 +240,10 @@ function navigate(page) {
 
 function initRouter() {
   window.addEventListener('hashchange', () => {
-    const raw = location.hash.replace('#/', '') || 'dashboard';
+    const raw = location.hash.replace('#/', '') || 'summary';
     _routeFromHash(raw);
   });
-  const initial = location.hash.replace('#/', '') || 'dashboard';
+  const initial = location.hash.replace('#/', '') || 'summary';
   _routeFromHash(initial);
 }
 
@@ -1207,7 +1207,8 @@ async function refreshPage(page) {
   else if (page === 'cloud') { _showStatSkeletons('cloud'); _showTableSkeleton('cloud-tbody', 5); }
 
   try {
-    if (page === 'dashboard') await refreshDashboard();
+    if (page === 'summary') await loadSummaryDashboard();
+    else if (page === 'dashboard') await refreshDashboard();
     else if (page === 'ai') await refreshAI();
     else if (page === 'cloud') await refreshCloud();
     else if (page === 'privacy') await refreshPrivacy();
@@ -1276,6 +1277,314 @@ function renderDashHealthServices() {
     </div>`;
   }).join('');
 }
+
+// ================================================================
+// SUMMARY / ACTION INBOX — the new default landing view
+// ================================================================
+// Architecture:
+//   - loadSummaryDashboard()  fetches /api/alerts/active and renders
+//     each group as a card with device name, alert type, hit count,
+//     and a "Beoordeel" button.
+//   - Clicking the button opens #alert-action-modal with the alert
+//     context stored in _currentAlertContext.
+//   - submitAlertAction() translates button presses into POSTs to
+//     /api/policies (allow/block) or /api/exceptions (snooze/ignore).
+//   - generateSummaryAI() calls /api/alerts/ai-summary for a Gemini-
+//     generated non-technical summary.
+// ================================================================
+
+let _currentAlertContext = null;
+let _summaryAlerts = [];
+
+const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel']);
+
+function _alertTypeLabel(type) {
+  const map = {
+    'beaconing_threat': { icon: '🚨', label: 'Malware beacon', color: 'red' },
+    'vpn_tunnel':       { icon: '🔒', label: 'VPN tunnel',     color: 'orange' },
+    'stealth_vpn_tunnel':{ icon: '🥷', label: 'Stealth tunnel', color: 'red' },
+    'upload':           { icon: '📤', label: 'Data upload',    color: 'amber' },
+    'service_access':   { icon: '🌐', label: 'Service access', color: 'indigo' },
+  };
+  return map[type] || { icon: '❓', label: type, color: 'slate' };
+}
+
+function _updateNavBadge(count) {
+  const badge = document.getElementById('nav-badge-summary');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function loadSummaryDashboard() {
+  const container = document.getElementById('summary-alerts-container');
+  if (!container) return;
+
+  // Skeleton
+  container.innerHTML = `
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
+      <div class="inline-block w-6 h-6 border-2 border-slate-300 dark:border-slate-600 border-t-indigo-500 rounded-full animate-spin"></div>
+      <p class="text-sm text-slate-400 dark:text-slate-500 mt-3">${t('summary.loading') || 'Meldingen ophalen...'}</p>
+    </div>`;
+
+  try {
+    const res = await fetch('/api/alerts/active');
+    const data = await res.json();
+    _summaryAlerts = data.alerts || [];
+    _updateNavBadge(_summaryAlerts.length);
+
+    if (_summaryAlerts.length === 0) {
+      container.innerHTML = `
+        <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-xl p-8 text-center">
+          <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 mb-3">
+            <svg class="w-7 h-7 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-emerald-700 dark:text-emerald-300">${t('summary.allClear') || 'Alles is veilig'}</h3>
+          <p class="text-sm text-emerald-600/80 dark:text-emerald-400/70 mt-1">${t('summary.allClearSub') || 'Geen actie vereist.'}</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = _summaryAlerts.map((a, idx) => {
+      const meta = _alertTypeLabel(a.alert_type);
+      const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
+                    || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
+                    || a.mac_address;
+      const macTag = a.mac_address && a.mac_address !== devName
+        ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1.5">${a.mac_address}</span>`
+        : '';
+      const lastSeen = a.timestamp ? fmtTime(a.timestamp) : '';
+      const firstSeen = a.first_seen ? fmtTime(a.first_seen) : '';
+      const isAnomaly = _ANOMALY_ALERT_TYPES.has(a.alert_type);
+      const borderClass = isAnomaly
+        ? 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10'
+        : 'border-slate-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]';
+      return `
+        <div class="${borderClass} border rounded-xl p-5 card-hover transition-all">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start gap-3 min-w-0 flex-1">
+              <div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">
+                ${meta.icon}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
+                  ${macTag}
+                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
+                </div>
+                <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                  <span class="font-medium">${svcDisplayName(a.service_or_dest) || a.service_or_dest}</span>
+                  ${a.category ? `<span class="text-slate-400 dark:text-slate-500 ml-1">· ${a.category}</span>` : ''}
+                </p>
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 tabular-nums">
+                  ${a.hits} hits · ${t('summary.firstSeen') || 'eerst'} ${firstSeen} · ${t('summary.lastSeen') || 'laatst'} ${lastSeen}
+                </p>
+              </div>
+            </div>
+            <button onclick="openAlertActionModal(${idx})"
+                    class="flex-shrink-0 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
+              ${t('summary.review') || 'Beoordeel'}
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('loadSummaryDashboard:', err);
+    container.innerHTML = `
+      <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 rounded-xl p-6 text-center">
+        <p class="text-sm text-red-600 dark:text-red-400">${t('summary.error') || 'Kon meldingen niet laden'}: ${err.message}</p>
+      </div>`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Alert action modal
+// ---------------------------------------------------------------------------
+function openAlertActionModal(idx) {
+  const alert = _summaryAlerts[idx];
+  if (!alert) return;
+  _currentAlertContext = alert;
+
+  const modal = document.getElementById('alert-action-modal');
+  const title = document.getElementById('alert-modal-title');
+  const subtitle = document.getElementById('alert-modal-subtitle');
+  const policyGroup = document.getElementById('alert-modal-policy-group');
+  const snoozeGroup = document.getElementById('alert-modal-snooze-group');
+  const status = document.getElementById('alert-modal-status');
+  const globalScope = document.getElementById('alert-modal-global-scope');
+
+  const devName = alert.display_name || (alert.hostname && !_isJunkHostname(alert.hostname) ? alert.hostname : null)
+                || (alert.vendor ? `${_shortVendor(alert.vendor)} device` : null)
+                || alert.mac_address;
+  const svcName = svcDisplayName(alert.service_or_dest) || alert.service_or_dest;
+
+  if (title) title.textContent = `${devName} → ${svcName}`;
+  const meta = _alertTypeLabel(alert.alert_type);
+  if (subtitle) subtitle.textContent = `${meta.icon} ${meta.label} · ${alert.hits} hits`;
+  if (status) status.textContent = '';
+  if (globalScope) globalScope.checked = false;
+
+  const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
+  // Anomalies: only snooze/whitelist makes sense
+  // Standard service access / upload: show both policy and snooze groups
+  if (isAnomaly) {
+    if (policyGroup) policyGroup.classList.add('hidden');
+    if (snoozeGroup) snoozeGroup.classList.remove('hidden');
+  } else {
+    if (policyGroup) policyGroup.classList.remove('hidden');
+    if (snoozeGroup) snoozeGroup.classList.remove('hidden');
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeAlertActionModal() {
+  const modal = document.getElementById('alert-action-modal');
+  if (modal) modal.classList.add('hidden');
+  _currentAlertContext = null;
+}
+
+async function submitAlertAction(action) {
+  if (!_currentAlertContext) return;
+  const alert = _currentAlertContext;
+  const status = document.getElementById('alert-modal-status');
+  const globalScopeEl = document.getElementById('alert-modal-global-scope');
+  const globalScope = globalScopeEl ? globalScopeEl.checked : false;
+  if (status) status.textContent = t('alertModal.submitting') || 'Bezig...';
+
+  try {
+    let endpoint, body;
+    if (action === 'policy_allow' || action === 'policy_block') {
+      endpoint = '/api/policies';
+      body = {
+        scope: globalScope ? 'global' : 'device',
+        mac_address: globalScope ? null : alert.mac_address,
+        service_name: alert.service_or_dest,
+        category: alert.category,
+        action: action === 'policy_allow' ? 'allow' : 'block',
+      };
+    } else if (action.startsWith('snooze_')) {
+      const hours = parseInt(action.split('_')[1], 10);
+      const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+      endpoint = '/api/exceptions';
+      body = {
+        mac_address: alert.mac_address,
+        alert_type: alert.alert_type,
+        destination: alert.service_or_dest,
+        expires_at: expires,
+      };
+    } else if (action === 'whitelist_forever') {
+      endpoint = '/api/exceptions';
+      body = {
+        mac_address: alert.mac_address,
+        alert_type: alert.alert_type,
+        destination: alert.service_or_dest,
+        expires_at: null,
+      };
+    } else {
+      throw new Error('Unknown action: ' + action);
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    // Success — close modal, toast, reload
+    closeAlertActionModal();
+    showToast(t('alertModal.success') || 'Melding verwerkt', 'success');
+    await loadSummaryDashboard();
+  } catch (err) {
+    console.error('submitAlertAction:', err);
+    if (status) status.textContent = `${t('alertModal.failed') || 'Mislukt'}: ${err.message}`;
+  }
+}
+
+window.openAlertActionModal = openAlertActionModal;
+window.closeAlertActionModal = closeAlertActionModal;
+window.submitAlertAction = submitAlertAction;
+
+// ---------------------------------------------------------------------------
+// AI summary button
+// ---------------------------------------------------------------------------
+async function generateSummaryAI() {
+  const btn = document.getElementById('summary-ai-btn');
+  const responseBox = document.getElementById('summary-ai-response');
+  if (!btn || !responseBox) return;
+
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="inline-flex items-center gap-1.5"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg><span>${t('summary.aiGenerating') || 'Bezig met analyseren...'}</span></span>`;
+
+  responseBox.classList.remove('hidden');
+  responseBox.innerHTML = `
+    <div class="space-y-2">
+      <div class="h-3 rounded bg-slate-200 dark:bg-white/[0.06] animate-pulse"></div>
+      <div class="h-3 rounded bg-slate-200 dark:bg-white/[0.06] animate-pulse w-11/12"></div>
+      <div class="h-3 rounded bg-slate-200 dark:bg-white/[0.06] animate-pulse w-9/12"></div>
+    </div>`;
+
+  try {
+    const res = await fetch('/api/alerts/ai-summary');
+    const data = await res.json();
+    const summary = data.summary || '';
+    const count = data.alert_count || 0;
+    const html = renderSimpleMarkdown(summary);
+    const meta = data.tokens
+      ? `<div class="mt-3 pt-3 border-t border-indigo-200/30 dark:border-indigo-700/20 text-[10px] text-indigo-400/70 dark:text-indigo-500/50 flex items-center justify-between">
+           <span>Gemini 2.5 Flash · ${formatNumber(data.tokens.total || 0)} tokens</span>
+           <span>${count} ${count === 1 ? 'melding' : 'meldingen'}</span>
+         </div>`
+      : '';
+    responseBox.innerHTML = `<div class="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">${html}</div>${meta}`;
+  } catch (err) {
+    responseBox.innerHTML = `<div class="text-sm text-red-500 dark:text-red-400">${t('summary.aiFailed') || 'AI-samenvatting mislukt'}: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+  }
+}
+window.generateSummaryAI = generateSummaryAI;
+
+// ---------------------------------------------------------------------------
+// Simple toast notification
+// ---------------------------------------------------------------------------
+function showToast(message, type = 'info') {
+  const host = document.getElementById('toast-host');
+  if (!host) return;
+  const colors = {
+    success: 'bg-emerald-500 text-white',
+    error:   'bg-red-500 text-white',
+    info:    'bg-slate-800 text-white dark:bg-white dark:text-slate-800',
+  };
+  const cls = colors[type] || colors.info;
+  const toast = document.createElement('div');
+  toast.className = `pointer-events-auto px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${cls} transform transition-all duration-300 translate-y-2 opacity-0`;
+  toast.textContent = message;
+  host.appendChild(toast);
+  // Trigger in animation
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-y-2', 'opacity-0');
+  });
+  // Remove after 3s
+  setTimeout(() => {
+    toast.classList.add('translate-y-2', 'opacity-0');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+window.showToast = showToast;
+
 
 // --- DASHBOARD ---
 async function refreshDashboard() {
