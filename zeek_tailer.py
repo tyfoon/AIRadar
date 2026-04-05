@@ -1106,6 +1106,8 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
     """
     print(f"[*] Tailing conn.log: {log_path}")
     fields: list[str] = []
+    _conn_lines_processed = 0
+    _conn_mismatch_count = 0
 
     while True:
         if not log_path.exists():
@@ -1120,8 +1122,10 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 else:
                     break
             fields = parse_zeek_header(header_lines) or []
+            print(f"[conn.log debug] opened file, parsed {len(fields)} header fields: {fields[:8]}...")
 
             f.seek(0, 2)
+            print(f"[conn.log debug] seeked to end ({f.tell()} bytes), entering tail loop")
 
             while True:
                 line = f.readline()
@@ -1145,7 +1149,14 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 parts = line.split("\t")
                 if len(parts) != len(fields):
+                    _conn_mismatch_count += 1
+                    if _conn_mismatch_count <= 3:
+                        print(f"[conn.log debug] field count mismatch: {len(parts)} vs {len(fields)} header fields")
                     continue
+
+                _conn_lines_processed += 1
+                if _conn_lines_processed <= 5 or _conn_lines_processed % 500 == 0:
+                    print(f"[conn.log debug] line #{_conn_lines_processed}: {line[:120]}")
 
                 record = dict(zip(fields, parts))
 
