@@ -463,10 +463,10 @@ function _vendorFallbackName(device) {
   // Build a friendly "Vendor device (xx:yy)" label from MAC + vendor.
   // When a JA4 TLS fingerprint label is available, prefer that over the
   // generic "device" wording (e.g. "Apple Safari (a2:3e)").
+  if (!device) return null;
   const macTail = (device.mac_address || '').split(':').slice(-2).join(':') || '??';
   const vendor = _shortVendor(device.vendor);
   if (device.ja4_label) {
-    // JA4 label already implies the vendor/app, so show it directly
     return `${device.ja4_label} (${macTail})`;
   }
   if (vendor) {
@@ -475,25 +475,16 @@ function _vendorFallbackName(device) {
   return `Device ${macTail}`;
 }
 
-function _bestDeviceName(device) {
-  // Priority: user-set display_name > clean hostname > vendor+JA4+MAC fallback > IP
-  if (device.display_name) return device.display_name;
-  if (device.hostname && !_isJunkHostname(device.hostname)) return device.hostname;
-  const fallback = _vendorFallbackName(device);
-  if (fallback) return fallback;
-  return _latestIp(device);
-}
-
 function deviceName(ip) {
   const d = _deviceByIp(ip);
   if (!d) return ip;
-  return _bestDeviceName(d);
+  return _bestDeviceName(d.mac_address, d);
 }
 
 function deviceLabel(ip) {
   const d = _deviceByIp(ip);
   if (!d) return ip;
-  const name = _bestDeviceName(d);
+  const name = _bestDeviceName(d.mac_address, d);
   const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">(${d.vendor})</span>` : '';
   return name + vendor;
 }
@@ -627,7 +618,7 @@ async function loadDevices() {
         sel.innerHTML = `<option value="">${t('ai.allDevices')}</option>`;
         devices.forEach(d => {
           const allIps = (d.ips || []).map(i => i.ip).join(',');
-          const label = _bestDeviceName(d);
+          const label = _bestDeviceName(d.mac_address, d);
           sel.innerHTML += `<option value="${allIps}">${label}</option>`;
         });
         sel.value = cur;
@@ -1876,7 +1867,7 @@ function renderAiAdoption(events) {
 
   const deviceRows = Object.entries(deviceEvents).map(([mac, evts]) => {
     const dev = deviceMap[mac];
-    const name = dev ? _bestDeviceName(dev) : mac.replace('_ip_', '');
+    const name = dev ? _bestDeviceName(mac, dev) : mac.replace('_ip_', '');
     const dt = _detectDeviceType(dev);
     const count = evts.length;
     const svcs = [...new Set(evts.map(e => e.ai_service))];
@@ -2274,7 +2265,7 @@ async function refreshOther() {
   // Build IP → device name map
   const ipName = {};
   (devices || []).forEach(d => {
-    const name = _bestDeviceName(d);
+    const name = _bestDeviceName(d.mac_address, d);
     (d.ips || []).forEach(ipRec => { ipName[ipRec.ip] = name; });
   });
 
@@ -2397,13 +2388,21 @@ function _getFriendlyName(mac) {
   return _loadFriendlyNames()[mac] || null;
 }
 
-// Get the best display name for a device (friendly > display_name > hostname > IP)
+// Get the best display name for a device.
+// Priority:
+//   1. User-set friendly name (localStorage, legacy)
+//   2. User-set display_name (from /api/devices PUT)
+//   3. Clean hostname from DHCP/mDNS (junk hostnames like UUIDs/PTRs are skipped)
+//   4. Vendor + JA4 label + MAC tail fallback (e.g. "Apple Safari (a2:3e)")
+//   5. Latest IP
 function _bestDeviceName(mac, device) {
   const friendly = _getFriendlyName(mac);
   if (friendly) return friendly;
   if (device?.display_name) return device.display_name;
-  if (device?.hostname) return device.hostname;
-  return device ? _latestIp(device) : mac.replace('_ip_', '');
+  if (device?.hostname && !_isJunkHostname(device.hostname)) return device.hostname;
+  const fallback = _vendorFallbackName(device);
+  if (fallback) return fallback;
+  return device ? _latestIp(device) : (typeof mac === 'string' ? mac.replace('_ip_', '') : '');
 }
 
 function _originalDeviceName(device) {
@@ -3032,8 +3031,8 @@ async function refreshDevices() {
     const totalB = Object.values(matrix[b] || {}).reduce((s, v) => s + v.count, 0);
     // Devices with events first (sorted by count desc), then devices without events (sorted by name)
     if (totalA === 0 && totalB === 0) {
-      const nameA = deviceMap[a] ? _bestDeviceName(deviceMap[a]) : a;
-      const nameB = deviceMap[b] ? _bestDeviceName(deviceMap[b]) : b;
+      const nameA = deviceMap[a] ? _bestDeviceName(a, deviceMap[a]) : a;
+      const nameB = deviceMap[b] ? _bestDeviceName(b, deviceMap[b]) : b;
       return nameA.localeCompare(nameB);
     }
     return totalB - totalA;

@@ -425,23 +425,59 @@ def _backfill_vendors():
 
 @asynccontextmanager
 def _cleanup_junk_hostnames():
-    """One-shot sweep: null out any device.hostname that matches junk patterns.
+    """One-shot sweep on startup: null out junk hostnames and hostname
+    collisions left by the earlier too-aggressive mDNS overwrite logic.
 
-    Runs on every startup so legacy data collected before the tailer filter
-    was added gets cleaned up. display_name is never touched — the user's
-    manually set names are preserved.
+    1. Any hostname matching a junk pattern (UUID, hex ID, *.arpa, etc.)
+       is nulled.
+    2. When the same hostname is attached to multiple MACs and the MAC
+       suffix of one of them matches the hostname suffix (e.g. MAC
+       24:6f:28:49:63:f0 → hostname "slide-246f284963f0"), keep that
+       match and null the others — they got polluted via a stale
+       ip→mac lookup.
+
+    display_name is never touched.
     """
     db = SessionLocal()
     try:
         cleared = 0
+        # Step 1: junk hostnames
         for dev in db.query(Device).filter(Device.hostname.isnot(None)).all():
             if _is_junk_hostname(dev.hostname):
                 print(f"[cleanup] Nulling junk hostname '{dev.hostname}' on {dev.mac_address}")
                 dev.hostname = None
                 cleared += 1
+
+        # Step 2: hostname collisions (same hostname on multiple MACs).
+        # Keep the device whose MAC suffix appears in the hostname, or
+        # the first-seen one if no MAC matches.
+        from collections import defaultdict
+        groups: dict = defaultdict(list)
+        for dev in db.query(Device).filter(Device.hostname.isnot(None)).all():
+            groups[dev.hostname.lower()].append(dev)
+        for hostname, devs in groups.items():
+            if len(devs) < 2:
+                continue
+            # Find the device whose MAC (without colons) appears in the hostname
+            host_nocolon = hostname.replace("-", "").replace("_", "").replace(":", "")
+            best = None
+            for dev in devs:
+                mac_flat = dev.mac_address.replace(":", "").lower()
+                if mac_flat and mac_flat in host_nocolon:
+                    best = dev
+                    break
+            # If no MAC match, keep the earliest first_seen
+            if best is None:
+                best = min(devs, key=lambda d: d.first_seen or datetime.max)
+            for dev in devs:
+                if dev.mac_address != best.mac_address:
+                    print(f"[cleanup] Hostname collision: nulling '{dev.hostname}' on {dev.mac_address} (kept on {best.mac_address})")
+                    dev.hostname = None
+                    cleared += 1
+
         if cleared:
             db.commit()
-            print(f"[cleanup] Cleared {cleared} junk hostname(s)")
+            print(f"[cleanup] Cleared {cleared} hostname entries")
     except Exception as exc:
         print(f"[cleanup] Junk hostname sweep failed: {exc}")
     finally:
@@ -865,15 +901,15 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         # Stronger-wins hostname logic:
         # - fill if currently empty
         # - overwrite if the stored one is junk and the new one is clean
-        # - never replace a clean hostname with junk (already filtered above,
-        #   but guard anyway in case new junk patterns slip through)
+        # - NEVER silently overwrite one clean hostname with another. That
+        #   used to happen when mDNS cache had a stale ip→mac mapping and a
+        #   "slide-xxx" hostname from one device ended up on a completely
+        #   different MAC. If both are clean but differ, keep the existing
+        #   one — it was set first and is probably correct.
         if payload.hostname:
             if not device.hostname:
                 device.hostname = payload.hostname
             elif _is_junk_hostname(device.hostname) and not _is_junk_hostname(payload.hostname):
-                device.hostname = payload.hostname
-            elif payload.hostname != device.hostname and not _is_junk_hostname(payload.hostname):
-                # Both are clean but different — prefer the newer one (DHCP/mDNS refresh)
                 device.hostname = payload.hostname
         # Re-resolve vendor — hostname match may be more accurate than stale OUI
         new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
