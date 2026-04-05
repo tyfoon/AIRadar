@@ -1080,8 +1080,19 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
 
     try:
         from google import genai
+        from google.genai import types
 
         client = genai.Client(api_key=gemini_key)
+        # Disable Gemini 2.5 Flash "thinking mode" for this summarisation
+        # task. Thinking mode can take 30-60+ seconds on complex prompts,
+        # which is the root cause of timeouts on device reports. For a
+        # pure summarisation job we don't need chain-of-thought reasoning
+        # — non-thinking mode responds in 5-10 seconds and produces the
+        # same quality output for this use case.
+        gen_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
+
         # Run the blocking Gemini SDK call in a thread pool so it doesn't
         # freeze the asyncio event loop (which would block all other
         # requests including healthchecks and crash the container).
@@ -1090,8 +1101,9 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
                 client.models.generate_content,
                 model="gemini-2.5-flash",
                 contents=f"{system_prompt}\n\n{data_block}",
+                config=gen_config,
             ),
-            timeout=60,
+            timeout=90,
         )
         report_md = response.text
 
@@ -2038,12 +2050,19 @@ async def alerts_ai_summary(
 
     try:
         from google import genai
+        from google.genai import types
         client = genai.Client(api_key=gemini_key)
+        # Thinking mode off — simple summarisation task, non-thinking
+        # mode responds in 5-10s instead of 30-60s+.
+        gen_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.models.generate_content,
                 model="gemini-2.5-flash",
                 contents=f"{system_prompt}\n\n=== ACTIEVE MELDINGEN ({len(alerts)} totaal) ===\n{alert_block}",
+                config=gen_config,
             ),
             timeout=45,
         )
