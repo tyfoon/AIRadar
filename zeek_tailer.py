@@ -575,11 +575,17 @@ def _is_local_ip(ip: str) -> bool:
         return False
 
 
-# Dedup cache for JA4 observations: (ip, ja4) → timestamp.
-# A device can have multiple JA4s (different apps use different TLS libs),
-# so we key on the pair. Only send each pair once per JA4_TTL.
-_ja4_sent: dict[tuple[str, str], float] = {}
+# Dedup cache for TLS fingerprint observations:
+# (ip, ja4, ja4s, sni) → timestamp. A device can produce many unique
+# (ja4, ja4s, sni) tuples (different apps, different backends) so we
+# key on the full tuple — each unique tuple is reported once per TTL.
+_ja4_sent: dict[tuple[str, str | None, str | None, str | None], float] = {}
 JA4_TTL_SECONDS = 3600  # 1 hour — plenty to survive log rotation
+
+# Separate dedup cache for DHCP vendor_class_id so we don't re-send
+# the same fingerprint for the same MAC on every DHCP request.
+_dhcp_fp_sent: dict[str, float] = {}
+DHCP_FP_TTL_SECONDS = 86400  # 1 day — DHCP fingerprints rarely change
 
 
 async def register_device(
@@ -587,6 +593,10 @@ async def register_device(
     ip: str,
     mac: str | None = None,
     ja4: str | None = None,
+    ja4s: str | None = None,
+    sni: str | None = None,
+    dhcp_vendor_class: str | None = None,
+    dhcp_fingerprint: str | None = None,
 ) -> None:
     """Register/update a device on the API (non-blocking).
 
@@ -606,23 +616,28 @@ async def register_device(
 
     now = time.time()
 
-    # JA4 dedup: skip the call entirely if we've already reported this
-    # exact (ip, ja4) pair recently AND there's no other reason to register
-    # (general device cache is still warm).
-    if ja4:
-        ja4_key = (ip, ja4)
-        last_ja4 = _ja4_sent.get(ja4_key, 0)
-        if now - last_ja4 < JA4_TTL_SECONDS:
-            # Same JA4 already sent recently — also skip if general cache warm
+    # TLS tuple dedup: skip the call if we've already reported this exact
+    # (ip, ja4, ja4s, sni) combination recently AND the general device
+    # cache is still warm. This allows frequently-recurring tuples
+    # (e.g. "device X talks to storage.googleapis.com") to be reported
+    # once per JA4_TTL window instead of on every connection.
+    has_tls = bool(ja4 or ja4s or sni)
+    if has_tls:
+        tls_key = (ip, ja4, ja4s, sni)
+        last_tls = _ja4_sent.get(tls_key, 0)
+        if now - last_tls < JA4_TTL_SECONDS:
             last_dev = _device_cache.get(ip, 0)
             if now - last_dev < DEVICE_CACHE_TTL:
                 return
-            # Fall through to do a normal keep-alive registration without JA4
-            ja4 = None
+            # Fall through for keep-alive — but drop the TLS fields
+            # so we don't re-record the same tuple counter.
+            ja4 = ja4s = sni = None
+            has_tls = False
         else:
-            _ja4_sent[ja4_key] = now
-    else:
-        # No JA4 → use the normal TTL to avoid spamming
+            _ja4_sent[tls_key] = now
+
+    if not has_tls and not dhcp_vendor_class and not dhcp_fingerprint:
+        # No enrichment payload → only send occasional keep-alive
         last = _device_cache.get(ip, 0)
         if now - last < DEVICE_CACHE_TTL:
             return
@@ -642,11 +657,28 @@ async def register_device(
         payload["mac_address"] = mac
     if ja4:
         payload["ja4"] = ja4
+    if ja4s:
+        payload["ja4s"] = ja4s
+    if sni:
+        payload["sni"] = sni
+    if dhcp_vendor_class:
+        payload["dhcp_vendor_class"] = dhcp_vendor_class
+    if dhcp_fingerprint:
+        payload["dhcp_fingerprint"] = dhcp_fingerprint
     try:
         await client.post(DEVICE_API_URL, json=payload, timeout=5)
         name = mac or ip
-        tag = f" [ja4={ja4[:18]}...]" if ja4 else ""
-        print(f"[*] Device registered: {ip} -> {name}{tag}")
+        tags = []
+        if ja4:
+            tags.append(f"ja4={ja4[:12]}")
+        if ja4s:
+            tags.append(f"ja4s={ja4s[:12]}")
+        if sni:
+            tags.append(f"sni={sni}")
+        if dhcp_vendor_class:
+            tags.append(f"vci={dhcp_vendor_class[:20]}")
+        tag_str = f" [{', '.join(tags)}]" if tags else ""
+        print(f"[*] Device registered: {ip} -> {name}{tag_str}")
     except httpx.HTTPError:
         pass
 
@@ -877,20 +909,35 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 src_ip = record.get("id.orig_h", "unknown")
 
-                # ── JA4 fingerprint extraction (BEFORE domain match) ──
-                # Every TLS handshake carries a JA4 we can use for device
-                # fingerprinting, even if the SNI is not in our AI/Cloud list.
-                # This gives us an OS/app label (Chrome, Safari, ESP32, etc.)
-                # for devices that otherwise only have vendor + MAC.
+                # ── JA4 + JA4S fingerprint extraction (BEFORE domain match) ──
+                # Every TLS handshake carries a JA4 (client fingerprint) and
+                # sometimes a JA4S (server fingerprint). We record tuples of
+                # (client, server, SNI) per device so we can later do
+                # context-aware classification — e.g. distinguish a Google
+                # Nest talking to storage.googleapis.com from a browser.
                 ja4 = record.get("ja4", "-")
                 if ja4 == "-" or not ja4:
                     ja4 = None
-                if ja4 and _is_local_ip(src_ip):
-                    cached_mac = _ip_to_mac.get(src_ip)
-                    asyncio.create_task(register_device(client, src_ip, cached_mac, ja4=ja4))
+                ja4s = record.get("ja4s", "-")
+                if ja4s == "-" or not ja4s:
+                    ja4s = None
 
                 # Pass source_ip so ambiguous Google domains can be resolved
                 match = match_domain(sni, source_ip=src_ip)
+
+                # Always report (ja4, ja4s) even if the SNI isn't in our
+                # domain map — the naming fallback uses just the JA4 label.
+                # When we DO have a match, include the SNI in the tuple so
+                # the backend can store it in tls_fingerprints for later
+                # context-aware classification.
+                if ja4 and _is_local_ip(src_ip):
+                    cached_mac = _ip_to_mac.get(src_ip)
+                    tuple_sni = sni if match else None
+                    asyncio.create_task(register_device(
+                        client, src_ip, cached_mac,
+                        ja4=ja4, ja4s=ja4s, sni=tuple_sni,
+                    ))
+
                 if not match:
                     continue
 
@@ -901,9 +948,8 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 if resp_ip and resp_ip != "-":
                     _known_ips[resp_ip] = (service, category, time.time())
 
-                # Register the device if it's a local source (use cached MAC from conn.log)
-                cached_mac = _ip_to_mac.get(src_ip)
-                asyncio.create_task(register_device(client, src_ip, cached_mac))
+                # The JA4 call above already registered the device for us;
+                # no separate plain register_device call needed.
 
                 # --- SNI deduplication ---
                 # Suppress repeated TLS handshakes (heartbeats / keep-alives)
@@ -1382,6 +1428,19 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if hostname == "-":
                         hostname = None
 
+                    # vendor_class_id is extremely valuable for device type
+                    # identification — e.g. "MSFT 5.0", "android-dhcp-14",
+                    # "dhcpcd-10.0.0", "LG_webOS", "Google Nest". More
+                    # reliable than OUI for distinguishing Google device
+                    # types (Nest vs Chromecast vs Pixel).
+                    vendor_class = record.get("vendor_class_id") or record.get("vendor_class")
+                    if vendor_class == "-" or not vendor_class:
+                        vendor_class = None
+
+                    ja4d_hash = record.get("ja4d")
+                    if ja4d_hash == "-" or not ja4d_hash:
+                        ja4d_hash = None
+
                     assigned_ip = record.get("assigned_addr") or record.get("requested_ip")
                     if assigned_ip and assigned_ip == "-":
                         assigned_ip = None
@@ -1402,11 +1461,16 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         payload["hostname"] = hostname
                     else:
                         hostname = None
+                    if vendor_class:
+                        payload["dhcp_vendor_class"] = vendor_class
+                    if ja4d_hash:
+                        payload["dhcp_fingerprint"] = ja4d_hash
 
                     try:
                         await client.post(DEVICE_API_URL, json=payload, timeout=5)
                         label = hostname or mac
-                        print(f"[JA4D] Device: {label} → {ip} (MAC: {mac}, JA4D: {record.get('ja4d', '?')})")
+                        vci_tag = f", VCI={vendor_class[:30]}" if vendor_class else ""
+                        print(f"[JA4D] Device: {label} → {ip} (MAC: {mac}, JA4D: {ja4d_hash or '?'}{vci_tag})")
                     except httpx.HTTPError as exc:
                         print(f"[!] JA4D device registration failed: {exc}")
 

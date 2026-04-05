@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
 from beacon_analyzer import run_beacon_analysis
-from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, init_db
+from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, TlsFingerprint, init_db
 
 # MAC Vendor lookup — sync dict-based OUI lookup (avoids async issues with MacLookup)
 _oui_db: dict[str, str] = {}
@@ -985,6 +985,11 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         if payload.ja4:
             device.ja4_fingerprint = payload.ja4
             device.ja4_last_seen = now
+        # DHCP vendor class ID from ja4d.log — high-confidence device type
+        if payload.dhcp_vendor_class:
+            device.dhcp_vendor_class = payload.dhcp_vendor_class
+        if payload.dhcp_fingerprint:
+            device.dhcp_fingerprint = payload.dhcp_fingerprint
         device.last_seen = now
     else:
         vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
@@ -994,6 +999,8 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
             vendor=vendor,
             ja4_fingerprint=payload.ja4,
             ja4_last_seen=now if payload.ja4 else None,
+            dhcp_vendor_class=payload.dhcp_vendor_class,
+            dhcp_fingerprint=payload.dhcp_fingerprint,
             first_seen=now,
             last_seen=now,
         )
@@ -1015,9 +1022,82 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         )
         db.add(dev_ip)
 
+    # ── TLS fingerprint tuple recording ─────────────────────────────
+    # When the sensor reports (ja4, ja4s, sni), upsert a row in
+    # tls_fingerprints keyed on (mac, ja4, ja4s, sni). Hit count grows,
+    # last_seen updates. This builds the dataset for later context-aware
+    # service classification (Phase 2).
+    if payload.ja4 or payload.ja4s or payload.sni:
+        tls_row = (
+            db.query(TlsFingerprint)
+            .filter(
+                TlsFingerprint.mac_address == mac,
+                TlsFingerprint.ja4 == payload.ja4,
+                TlsFingerprint.ja4s == payload.ja4s,
+                TlsFingerprint.sni == payload.sni,
+            )
+            .first()
+        )
+        if tls_row:
+            tls_row.hit_count += 1
+            tls_row.last_seen = now
+        else:
+            db.add(TlsFingerprint(
+                mac_address=mac,
+                ja4=payload.ja4,
+                ja4s=payload.ja4s,
+                sni=payload.sni,
+                first_seen=now,
+                last_seen=now,
+                hit_count=1,
+            ))
+
     db.commit()
     db.refresh(device)
     return device
+
+
+@app.get("/api/debug/tls-fingerprints")
+def debug_tls_fingerprints(
+    mac: Optional[str] = None,
+    sni: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=2000),
+    db: Session = Depends(get_db),
+):
+    """Inspect the (mac, ja4, ja4s, sni) tuples observed so far.
+
+    Used to verify that Phase 1 data collection is working and to
+    explore which tuples exist before we wire up Phase 2 classification.
+    """
+    q = db.query(TlsFingerprint)
+    if mac:
+        q = q.filter(TlsFingerprint.mac_address == mac)
+    if sni:
+        q = q.filter(TlsFingerprint.sni == sni)
+    rows = q.order_by(TlsFingerprint.hit_count.desc()).limit(limit).all()
+
+    # Enrich with device info so the dataset is readable in the browser
+    result = []
+    for r in rows:
+        dev = db.query(Device).filter(Device.mac_address == r.mac_address).first()
+        result.append({
+            "mac_address": r.mac_address,
+            "hostname": dev.hostname if dev else None,
+            "display_name": dev.display_name if dev else None,
+            "vendor": dev.vendor if dev else None,
+            "device_class": dev.device_class if dev else None,
+            "dhcp_vendor_class": dev.dhcp_vendor_class if dev else None,
+            "ja4": r.ja4,
+            "ja4s": r.ja4s,
+            "sni": r.sni,
+            "hit_count": r.hit_count,
+            "first_seen": str(r.first_seen),
+            "last_seen": str(r.last_seen),
+        })
+    return {
+        "total_rows": len(result),
+        "tuples": result,
+    }
 
 
 @app.post("/api/devices/fingerprint")

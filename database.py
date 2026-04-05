@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String,
-    create_engine, inspect, text,
+    UniqueConstraint, create_engine, inspect, text,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
@@ -60,6 +60,8 @@ class Device(Base):
     p0f_last_seen = Column(DateTime, nullable=True) # Last p0f fingerprint update
     ja4_fingerprint = Column(String, nullable=True) # Most recent JA4 TLS hash observed
     ja4_last_seen = Column(DateTime, nullable=True) # Last time a JA4 was recorded
+    dhcp_vendor_class = Column(String, nullable=True)   # DHCP vendor_class_id (e.g. "MSFT 5.0", "android-dhcp-14")
+    dhcp_fingerprint = Column(String, nullable=True)    # JA4D hash from ja4d.log
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime, nullable=False,
@@ -82,6 +84,37 @@ class DeviceIP(Base):
                        default=lambda: datetime.now(timezone.utc))
 
     device = relationship("Device", back_populates="ips")
+
+
+class TlsFingerprint(Base):
+    """Observed (JA4 client, JA4S server, SNI) tuples per device.
+
+    Phase 1 of context-aware service classification. Each row is a unique
+    combination of client TLS fingerprint, server TLS fingerprint, and
+    server name. The hit_count tracks how often the tuple was seen so we
+    can later derive which tuples are "typical" for a device type (e.g. a
+    Google Nest speaker has a specific (ja4, ja4s) combination for
+    storage.googleapis.com that is distinct from a browser pulling Drive).
+    """
+
+    __tablename__ = "tls_fingerprints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mac_address = Column(String, ForeignKey("devices.mac_address"),
+                         nullable=False, index=True)
+    ja4 = Column(String, nullable=True, index=True)
+    ja4s = Column(String, nullable=True)
+    sni = Column(String, nullable=True, index=True)
+    first_seen = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+    hit_count = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint("mac_address", "ja4", "ja4s", "sni",
+                         name="uq_tls_fingerprint_tuple"),
+    )
 
 
 class BlockRule(Base):
@@ -211,6 +244,8 @@ def init_db() -> None:
             "p0f_last_seen": "DATETIME",
             "ja4_fingerprint": "TEXT",
             "ja4_last_seen": "DATETIME",
+            "dhcp_vendor_class": "TEXT",
+            "dhcp_fingerprint": "TEXT",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:

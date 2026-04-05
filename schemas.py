@@ -62,6 +62,8 @@ class DeviceRead(BaseModel):
     network_distance: Optional[int] = None # Hops
     ja4_fingerprint: Optional[str] = None  # Most recent JA4 TLS hash
     ja4_label: Optional[str] = None        # Friendly name resolved from ja4
+    dhcp_vendor_class: Optional[str] = None  # e.g. "MSFT 5.0", "android-dhcp-14"
+    dhcp_fingerprint: Optional[str] = None   # JA4D DHCP hash
     first_seen: datetime
     last_seen: datetime
     ips: List[DeviceIPRead] = []
@@ -76,6 +78,10 @@ class DeviceRegister(BaseModel):
     hostname: Optional[str] = None
     mac_address: Optional[str] = None
     ja4: Optional[str] = None              # JA4 TLS fingerprint from ssl.log
+    ja4s: Optional[str] = None             # JA4S TLS server fingerprint
+    sni: Optional[str] = None              # Server Name Indication (matched)
+    dhcp_vendor_class: Optional[str] = None  # DHCP vendor_class_id from ja4d.log
+    dhcp_fingerprint: Optional[str] = None   # JA4D hash from ja4d.log
 
 
 class DeviceUpdate(BaseModel):
