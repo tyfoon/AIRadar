@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
 from beacon_analyzer import run_beacon_analysis
-from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, TlsFingerprint, init_db
+from database import BlockRule, DetectionEvent, Device, DeviceIP, GeoTraffic, SessionLocal, TlsFingerprint, init_db
 
 # MAC Vendor lookup — sync dict-based OUI lookup (avoids async issues with MacLookup)
 _oui_db: dict[str, str] = {}
@@ -1288,6 +1288,85 @@ def update_hostname_vendors(entries: list[dict]):
         raise HTTPException(500, f"Could not save: {exc}")
     _hostname_vendors = entries
     return {"status": "ok", "count": len(entries)}
+
+
+# ---------------------------------------------------------------------------
+# Geo Traffic — aggregated country-level inbound/outbound bytes
+# ---------------------------------------------------------------------------
+@app.post("/api/geo/ingest")
+def geo_ingest(payload: dict, db: Session = Depends(get_db)):
+    """Batch ingest endpoint for the Zeek tailer's geo buffer.
+
+    Body: {"updates": [{"country_code": "NL", "direction": "outbound",
+                        "bytes": 12345, "hits": 3}, ...]}
+    """
+    updates = payload.get("updates") or []
+    if not isinstance(updates, list):
+        raise HTTPException(status_code=400, detail="updates must be a list")
+    now = datetime.utcnow()
+    for u in updates:
+        cc = (u.get("country_code") or "").upper()[:2]
+        direction = u.get("direction") or ""
+        if direction not in ("outbound", "inbound") or not cc:
+            continue
+        byts = int(u.get("bytes") or 0)
+        hits = int(u.get("hits") or 0)
+        if byts <= 0 and hits <= 0:
+            continue
+        row = (
+            db.query(GeoTraffic)
+            .filter(
+                GeoTraffic.country_code == cc,
+                GeoTraffic.direction == direction,
+            )
+            .first()
+        )
+        if row:
+            row.bytes_transferred += byts
+            row.hits += hits
+            row.last_seen = now
+        else:
+            db.add(GeoTraffic(
+                country_code=cc,
+                direction=direction,
+                bytes_transferred=byts,
+                hits=hits,
+                last_seen=now,
+            ))
+    db.commit()
+    return {"status": "ok", "accepted": len(updates)}
+
+
+@app.get("/api/analytics/geo")
+def get_geo_traffic(
+    direction: str = Query("outbound", description="outbound or inbound"),
+    db: Session = Depends(get_db),
+):
+    """Return per-country bandwidth totals for the dashboard map.
+
+    Sorted by bytes_transferred descending so the heaviest-traffic
+    countries appear first in the table and drive the color gradient.
+    """
+    if direction not in ("outbound", "inbound"):
+        raise HTTPException(status_code=400, detail="direction must be outbound or inbound")
+    rows = (
+        db.query(GeoTraffic)
+        .filter(GeoTraffic.direction == direction)
+        .order_by(GeoTraffic.bytes_transferred.desc())
+        .all()
+    )
+    return {
+        "direction": direction,
+        "countries": [
+            {
+                "country_code": r.country_code,
+                "bytes": r.bytes_transferred,
+                "hits": r.hits,
+                "last_seen": str(r.last_seen),
+            }
+            for r in rows
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

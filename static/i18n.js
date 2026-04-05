@@ -24,6 +24,7 @@ const TRANSLATIONS = {
     'nav.privacy':         'Privacy',
     'nav.attacks':         'Attacks',
     'nav.other':           'Other Usage',
+    'nav.geo':             'Geo Traffic',
     'nav.devices':         'Devices',
     'nav.rules':           'Rules',
     'nav.settings':        'Settings',
@@ -52,6 +53,7 @@ const TRANSLATIONS = {
     'page.devices':        'Devices',
     'page.ips':            'Attacks',
     'page.other':          'Other Usage',
+    'page.geo':            'Geo Traffic',
     'page.rules':          'Rules & Access Control',
     'page.settings':       'Settings',
 
@@ -114,6 +116,27 @@ const TRANSLATIONS = {
 
     // Heartbeat / ping filter toggle
     'filter.showHeartbeats':   'Show pings',
+
+    // Geo Traffic
+    'geo.title':           'Geo Traffic',
+    'geo.subtitle':        'Where your network traffic is going to and coming from',
+    'geo.refresh':         'Refresh',
+    'geo.outbound':        'Outbound (To Internet)',
+    'geo.inbound':         'Inbound (From Internet)',
+    'geo.outboundShort':   'Outbound',
+    'geo.inboundShort':    'Inbound',
+    'geo.mapTitle':        'World map',
+    'geo.tableTitle':      'Top countries',
+    'geo.scaleMax':        'Darker = more traffic',
+    'geo.noData':          'No geo traffic data yet. The sensor needs a few minutes to populate this.',
+    'geo.statCountries':   'Countries',
+    'geo.statBandwidth':   'Total bandwidth',
+    'geo.statConnections': 'Connections',
+    'geo.statTop':         'Top destination',
+    'geo.thCountry':       'Country',
+    'geo.thBandwidth':     'Bandwidth',
+    'geo.thHits':          'Connections',
+    'geo.thShare':         'Share',
 
     // Top bar
     'topbar.checking':     'Checking...',
@@ -558,6 +581,7 @@ const TRANSLATIONS = {
     'nav.privacy':         'Privacy',
     'nav.attacks':         'Aanvallen',
     'nav.other':           'Overig Gebruik',
+    'nav.geo':             'Geo-verkeer',
     'nav.devices':         'Apparaten',
     'nav.rules':           'Regels',
     'nav.settings':        'Instellingen',
@@ -586,6 +610,7 @@ const TRANSLATIONS = {
     'page.devices':        'Apparaten',
     'page.ips':            'Aanvallen',
     'page.other':          'Overig Gebruik',
+    'page.geo':            'Geo-verkeer',
     'page.rules':          'Regels & Toegangsbeheer',
     'page.settings':       'Instellingen',
 
@@ -648,6 +673,27 @@ const TRANSLATIONS = {
 
     // Heartbeat / ping filter toggle
     'filter.showHeartbeats':   'Toon pings',
+
+    // Geo Traffic
+    'geo.title':           'Geo-verkeer',
+    'geo.subtitle':        'Waar je netwerkverkeer naartoe gaat en vandaan komt',
+    'geo.refresh':         'Vernieuwen',
+    'geo.outbound':        'Uitgaand (naar internet)',
+    'geo.inbound':         'Inkomend (vanaf internet)',
+    'geo.outboundShort':   'Uitgaand',
+    'geo.inboundShort':    'Inkomend',
+    'geo.mapTitle':        'Wereldkaart',
+    'geo.tableTitle':      'Top landen',
+    'geo.scaleMax':        'Donkerder = meer verkeer',
+    'geo.noData':          'Nog geen geografische data. De sensor heeft een paar minuten nodig.',
+    'geo.statCountries':   'Landen',
+    'geo.statBandwidth':   'Totaal verkeer',
+    'geo.statConnections': 'Verbindingen',
+    'geo.statTop':         'Top bestemming',
+    'geo.thCountry':       'Land',
+    'geo.thBandwidth':     'Bandbreedte',
+    'geo.thHits':          'Verbindingen',
+    'geo.thShare':         'Aandeel',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',

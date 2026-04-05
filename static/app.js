@@ -194,7 +194,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['dashboard','ai','cloud','privacy','other','devices','ips','rules','settings'];
+const VALID_PAGES = ['dashboard','ai','cloud','privacy','other','geo','devices','ips','rules','settings'];
 
 let currentPage = 'dashboard';
 
@@ -1215,6 +1215,7 @@ async function refreshPage(page) {
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
     else if (page === 'other') await refreshOther();
+    else if (page === 'geo') await refreshGeo();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
@@ -2569,6 +2570,228 @@ async function refreshOther() {
         ${servicesHtml}
       </div>
     </div>`;
+  }).join('');
+}
+
+
+// ================================================================
+// GEO TRAFFIC — world map + country table with inbound/outbound tabs
+// ================================================================
+let _geoDirection = 'outbound';
+let _geoMap = null;
+let _geoData = null;
+
+// Convert a 2-letter ISO country code to a flag emoji using Unicode
+// regional indicator symbols (0x1F1E6 + letter offset).
+function _flagEmoji(cc) {
+  if (!cc || cc.length !== 2) return '🏳️';
+  const base = 0x1F1E6;
+  const A = 'A'.charCodeAt(0);
+  return String.fromCodePoint(
+    base + cc.toUpperCase().charCodeAt(0) - A,
+    base + cc.toUpperCase().charCodeAt(1) - A,
+  );
+}
+
+function _geoFmtBytes(b) {
+  if (!b || b <= 0) return '0 B';
+  if (b >= 1099511627776) return (b / 1099511627776).toFixed(2) + ' TB';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+async function refreshGeo() {
+  return loadGeoTraffic(_geoDirection);
+}
+
+async function loadGeoTraffic(direction) {
+  _geoDirection = direction;
+  try {
+    const res = await fetch(`/api/analytics/geo?direction=${encodeURIComponent(direction)}`);
+    const data = await res.json();
+    _geoData = data;
+    _renderGeoStats(data);
+    _renderGeoMap(data);
+    _renderGeoTable(data);
+  } catch (err) {
+    console.error('loadGeoTraffic:', err);
+  }
+}
+
+function switchGeoTab(direction) {
+  const outBtn = document.getElementById('geo-tab-outbound');
+  const inBtn  = document.getElementById('geo-tab-inbound');
+  const active = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-indigo-600 text-white shadow-sm';
+  const inactive = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+  if (direction === 'outbound') {
+    if (outBtn) outBtn.className = active;
+    if (inBtn) inBtn.className = inactive;
+  } else {
+    if (outBtn) outBtn.className = inactive;
+    if (inBtn) inBtn.className = active;
+  }
+  loadGeoTraffic(direction);
+}
+window.switchGeoTab = switchGeoTab;
+
+function _renderGeoStats(data) {
+  const container = document.getElementById('geo-stats');
+  if (!container) return;
+  const countries = data.countries || [];
+  const totalBytes = countries.reduce((s, c) => s + c.bytes, 0);
+  const totalHits = countries.reduce((s, c) => s + c.hits, 0);
+  const top = countries[0];
+  const topLabel = top ? `${_flagEmoji(top.country_code)} ${top.country_code}` : '—';
+  const dirLabel = data.direction === 'outbound'
+    ? (t('geo.outboundShort') || 'Outbound')
+    : (t('geo.inboundShort') || 'Inbound');
+
+  container.innerHTML = `
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statCountries') || 'Countries'}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums">${countries.length}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statBandwidth') || 'Total bandwidth'} (${dirLabel})</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums">${_geoFmtBytes(totalBytes)}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statConnections') || 'Connections'}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums">${formatNumber(totalHits)}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statTop') || 'Top destination'}</p>
+      <p class="text-2xl font-bold mt-2">${topLabel}</p>
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${top ? _geoFmtBytes(top.bytes) : ''}</p>
+    </div>
+  `;
+}
+
+function _renderGeoMap(data) {
+  const wrap = document.getElementById('geo-map-wrap');
+  const empty = document.getElementById('geo-map-empty');
+  if (!wrap || !empty) return;
+
+  const countries = data.countries || [];
+  if (countries.length === 0) {
+    wrap.classList.add('hidden');
+    empty.classList.remove('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  empty.classList.add('hidden');
+
+  // Build country → bytes map for jsVectorMap. jsVectorMap uses uppercase
+  // ISO-3166-1 alpha-2 codes to identify countries on the world map.
+  const values = {};
+  countries.forEach(c => { values[c.country_code] = c.bytes; });
+
+  // Legend
+  const max = countries[0]?.bytes || 0;
+  const legend = document.getElementById('geo-map-legend');
+  if (legend) legend.textContent = `${t('geo.scaleMax') || 'Darker = more traffic'} (max ${_geoFmtBytes(max)})`;
+
+  // Tear down previous map if present (jsVectorMap doesn't support data swap)
+  const container = document.getElementById('geo-map');
+  if (!container) return;
+  if (_geoMap) {
+    try { _geoMap.destroy(); } catch (e) { /* ignore */ }
+    _geoMap = null;
+  }
+  container.innerHTML = '';
+
+  const dark = isDark();
+  const bg = dark ? '#0B0C10' : '#f8fafc';
+  const scaleColors = dark ? ['#334155', '#7c3aed', '#ef4444'] : ['#e2e8f0', '#a78bfa', '#dc2626'];
+
+  // jsVectorMap v1.x uses jsVectorMap global. Some builds expose it as
+  // window.jsVectorMap or as a default export.
+  const JVM = window.jsVectorMap || window.jsvectormap;
+  if (!JVM) {
+    console.warn('jsVectorMap not loaded');
+    return;
+  }
+
+  try {
+    _geoMap = new JVM({
+      selector: '#geo-map',
+      map: 'world',
+      backgroundColor: bg,
+      zoomOnScroll: false,
+      zoomButtons: true,
+      regionStyle: {
+        initial: {
+          fill: dark ? '#1e293b' : '#e2e8f0',
+          stroke: dark ? '#0f172a' : '#cbd5e1',
+          strokeWidth: 0.4,
+        },
+        hover: {
+          fill: dark ? '#6366f1' : '#818cf8',
+          cursor: 'pointer',
+        },
+      },
+      visualizeData: {
+        scale: scaleColors,
+        values: values,
+      },
+      onRegionTooltipShow(event, tooltip, code) {
+        const bytes = values[code] || 0;
+        const entry = countries.find(c => c.country_code === code);
+        const hits = entry ? entry.hits : 0;
+        const name = tooltip.text();
+        if (bytes > 0) {
+          tooltip.text(
+            `<div class="font-semibold">${_flagEmoji(code)} ${name}</div>` +
+            `<div class="text-xs">${_geoFmtBytes(bytes)} &middot; ${formatNumber(hits)} conn.</div>`,
+            true
+          );
+        } else {
+          tooltip.text(`${_flagEmoji(code)} ${name}`, false);
+        }
+      },
+    });
+  } catch (err) {
+    console.error('jsVectorMap init failed:', err);
+    container.innerHTML = `<p class="text-center text-sm text-red-500 py-12">Map error: ${err.message}</p>`;
+  }
+}
+
+function _renderGeoTable(data) {
+  const tbody = document.getElementById('geo-table-body');
+  if (!tbody) return;
+  const countries = data.countries || [];
+  if (countries.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
+    return;
+  }
+  const totalBytes = countries.reduce((s, c) => s + c.bytes, 0) || 1;
+  tbody.innerHTML = countries.map((c, i) => {
+    const pct = (c.bytes / totalBytes) * 100;
+    const pctLabel = pct.toFixed(1);
+    const barColor = i === 0 ? 'from-red-500 to-orange-500'
+                   : i < 3 ? 'from-orange-500 to-amber-500'
+                   : 'from-indigo-500 to-purple-500';
+    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
+      <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">#${i + 1}</td>
+      <td class="py-3 px-4">
+        <span class="inline-flex items-center gap-2">
+          <span class="text-lg leading-none">${_flagEmoji(c.country_code)}</span>
+          <span class="font-mono font-semibold text-slate-700 dark:text-slate-200">${c.country_code}</span>
+        </span>
+      </td>
+      <td class="py-3 px-4 text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(c.bytes)}</td>
+      <td class="py-3 px-4 text-xs tabular-nums text-slate-500 dark:text-slate-400">${formatNumber(c.hits)}</td>
+      <td class="py-3 px-4 min-w-[140px]">
+        <div class="flex items-center gap-2">
+          <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.04] overflow-hidden">
+            <div class="h-full rounded-full bg-gradient-to-r ${barColor}" style="width:${Math.max(2, pct).toFixed(1)}%"></div>
+          </div>
+          <span class="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 w-10 text-right">${pctLabel}%</span>
+        </div>
+      </td>
+    </tr>`;
   }).join('');
 }
 

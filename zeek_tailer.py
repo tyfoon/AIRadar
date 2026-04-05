@@ -30,6 +30,7 @@ import httpx
 
 API_URL = os.environ.get("AIRADAR_API_URL", "http://localhost:8000/api/ingest")
 DEVICE_API_URL = os.environ.get("AIRADAR_DEVICE_API_URL", "http://localhost:8000/api/devices")
+GEO_API_URL = os.environ.get("AIRADAR_GEO_API_URL", "http://localhost:8000/api/geo/ingest")
 SENSOR_ID = socket.gethostname()
 
 # Volumetric upload threshold (bytes)
@@ -996,6 +997,92 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GeoIP country lookups + traffic accumulation
+# ---------------------------------------------------------------------------
+# Resolves public IPs to country codes via a local MMDB (DB-IP Country Lite,
+# MaxMind-format compatible). The conn.log tailer accumulates byte totals per
+# (country_code, direction) into an in-memory buffer, and a background task
+# flushes this buffer to the geo_traffic table every 15 seconds so the UI
+# gets near-real-time updates without one DB write per packet.
+
+GEO_DB_CANDIDATES = [
+    os.environ.get("GEOIP_DB_PATH", ""),
+    "/app/data/GeoLite2-Country.mmdb",
+    str(Path(__file__).parent / "data" / "GeoLite2-Country.mmdb"),
+]
+_geo_reader = None
+try:
+    import geoip2.database  # type: ignore
+    for _p in GEO_DB_CANDIDATES:
+        if _p and os.path.exists(_p):
+            try:
+                _geo_reader = geoip2.database.Reader(_p)
+                print(f"[geo] GeoIP country DB loaded from {_p}")
+                break
+            except Exception as _exc:
+                print(f"[geo] Failed to open {_p}: {_exc}")
+    if not _geo_reader:
+        print("[geo] No GeoIP database found — Geo Traffic dashboard will be empty")
+except ImportError:
+    print("[geo] geoip2 library not installed — Geo Traffic dashboard disabled")
+
+
+def _resolve_country(ip: str) -> str | None:
+    """Return ISO-3166-1 alpha-2 country code for a public IP, or None."""
+    if not _geo_reader or not ip or ip == "-":
+        return None
+    try:
+        result = _geo_reader.country(ip)
+        return result.country.iso_code  # e.g. "US", "NL"
+    except Exception:
+        return None
+
+
+# Per-(country_code, direction) byte/hit accumulator. Flushed to SQL every
+# GEO_FLUSH_INTERVAL seconds by flush_geo_buckets.
+_geo_buckets: dict[tuple[str, str], dict] = {}
+_geo_lock = asyncio.Lock()
+GEO_FLUSH_INTERVAL = 15  # seconds
+
+
+async def _record_geo_traffic(country_code: str, direction: str, total_bytes: int) -> None:
+    """Add a connection's bytes to the in-memory buffer."""
+    if not country_code:
+        return
+    key = (country_code, direction)
+    async with _geo_lock:
+        bucket = _geo_buckets.get(key)
+        if bucket:
+            bucket["bytes"] += total_bytes
+            bucket["hits"] += 1
+        else:
+            _geo_buckets[key] = {"bytes": total_bytes, "hits": 1}
+
+
+async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
+    """Background task: flush the geo traffic buffer to the API periodically."""
+    while True:
+        await asyncio.sleep(GEO_FLUSH_INTERVAL)
+        async with _geo_lock:
+            if not _geo_buckets:
+                continue
+            # Snapshot and clear
+            snapshot = [
+                {"country_code": cc, "direction": d, "bytes": v["bytes"], "hits": v["hits"]}
+                for (cc, d), v in _geo_buckets.items()
+            ]
+            _geo_buckets.clear()
+        try:
+            await client.post(
+                GEO_API_URL,
+                json={"updates": snapshot},
+                timeout=10,
+            )
+        except httpx.HTTPError as exc:
+            print(f"[geo] Flush failed ({len(snapshot)} updates): {exc}")
+
+
+# ---------------------------------------------------------------------------
 # conn.log tailer — detects volumetric uploads to known AI/Cloud IPs
 # ---------------------------------------------------------------------------
 
@@ -1071,6 +1158,38 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     resp_port = int(resp_port_str) if resp_port_str != "-" else 0
                 except ValueError:
                     resp_port = 0
+
+                # --- Geo traffic accumulation ---
+                # For every connection where one side is local and the
+                # other is public, resolve the public IP to a country and
+                # add the total bytes to the in-memory buffer. The buffer
+                # is flushed to the DB by flush_geo_buckets() every 15s.
+                if _geo_reader and resp_ip and resp_ip != "-":
+                    src_local = _is_local_ip(src_ip)
+                    dst_local = _is_local_ip(resp_ip)
+                    direction = None
+                    public_ip = None
+                    if src_local and not dst_local:
+                        direction = "outbound"
+                        public_ip = resp_ip
+                    elif dst_local and not src_local:
+                        direction = "inbound"
+                        public_ip = src_ip
+                    if direction and public_ip:
+                        try:
+                            _ob = record.get("orig_bytes", "0")
+                            _rb = record.get("resp_bytes", "0")
+                            _ob = int(_ob) if _ob and _ob != "-" else 0
+                            _rb = int(_rb) if _rb and _rb != "-" else 0
+                        except ValueError:
+                            _ob = _rb = 0
+                        total = _ob + _rb
+                        if total > 0:
+                            cc = _resolve_country(public_ip)
+                            if cc:
+                                asyncio.create_task(
+                                    _record_geo_traffic(cc, direction, total)
+                                )
 
                 # --- VPN / tunnel detection ---
                 vpn_key = (proto, resp_port)
@@ -1667,6 +1786,7 @@ async def main(zeek_log_dir: str) -> None:
         tail_ja4d_log(ja4d_log, client),
         tail_mdns_log(mdns_log, client),
         flush_upload_buckets(client),  # background flusher
+        flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)

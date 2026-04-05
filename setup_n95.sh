@@ -33,7 +33,7 @@ ok()   { echo -e "    ${GREEN}✓${NC}  $1"; }
 err()  { echo -e "    ${RED}✗${NC}  $1"; }
 
 AIRADAR_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOTAL_STEPS=8
+TOTAL_STEPS=9
 
 banner
 
@@ -211,6 +211,26 @@ else
 fi
 
 ok "Directory structure ready"
+
+# ── Step 6b: GeoIP country database ──────────────────────────
+# Download DB-IP Country (free, MMDB compatible with the maxminddb/geoip2
+# Python library). Used by zeek_tailer to resolve country codes for the
+# Geo Traffic dashboard. Covers both IPv4 and IPv6.
+GEO_DB_PATH="$AIRADAR_DIR/data/GeoLite2-Country.mmdb"
+GEO_DB_URL="https://raw.githubusercontent.com/sapics/ip-location-db/main/dbip-country-mmdb/dbip-country.mmdb"
+if [ ! -f "$GEO_DB_PATH" ]; then
+    info "Downloading DB-IP Country database (~8 MB)..."
+    if curl -sSL --max-time 120 -o "$GEO_DB_PATH" "$GEO_DB_URL"; then
+        ok "GeoIP country database installed at $GEO_DB_PATH"
+    else
+        rm -f "$GEO_DB_PATH"
+        warn "GeoIP database download failed — Geo Traffic dashboard will be empty"
+        info "Retry manually:"
+        info "  curl -sSL -o $GEO_DB_PATH '$GEO_DB_URL'"
+    fi
+else
+    ok "GeoIP database already present at $GEO_DB_PATH"
+fi
 
 # ── Step 7: SQLite backup cron ───────────────────────────────
 step 7 "Setting up automated database backup"

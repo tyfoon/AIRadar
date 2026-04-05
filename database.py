@@ -117,6 +117,29 @@ class TlsFingerprint(Base):
     )
 
 
+class GeoTraffic(Base):
+    """Aggregated bandwidth per country + direction.
+
+    Populated by the Zeek conn.log tailer via an in-memory buffer that
+    flushes every ~15 seconds. One row per (country_code, direction)
+    pair — bytes_transferred and hits accumulate over time.
+    """
+
+    __tablename__ = "geo_traffic"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String, nullable=False, index=True)   # e.g. "US", "NL"
+    direction = Column(String, nullable=False, index=True)      # "inbound" | "outbound"
+    bytes_transferred = Column(Integer, nullable=False, default=0)
+    hits = Column(Integer, nullable=False, default=0)
+    last_seen = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("country_code", "direction", name="uq_geo_traffic_cc_dir"),
+    )
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 
