@@ -642,7 +642,7 @@ function _startDeviceRename(mac) {
   container.innerHTML = `
     <form onsubmit="event.preventDefault();_saveDeviceRename('${mac}')" class="flex items-center gap-1.5 w-full">
       <input type="text" id="dev-rename-input-${safeMac}" value="${currentName.replace(/"/g, '&quot;')}" class="flex-1 min-w-0 text-sm py-0.5 px-1.5 rounded border border-indigo-300 dark:border-indigo-600 focus:ring-2 focus:ring-indigo-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200" autofocus>
-      <button type="submit" class="px-2 py-0.5 text-[10px] font-semibold rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dev.saveName')}</button>
+      <button type="submit" class="px-2 py-0.5 text-[10px] font-semibold rounded bg-blue-700 hover:bg-blue-600 text-white transition-colors">${t('dev.saveName')}</button>
       <button type="button" onclick="_cancelDeviceRename()" class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">${t('dev.cancelEdit')}</button>
     </form>`;
 
@@ -1339,9 +1339,9 @@ function renderDashHealthServices() {
       </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 leading-snug">${s.details || ''}</p>
       ${(!isOk && s.service === 'Zeek (Packet Capture)')
-        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dash.restartZeek')}</button>` : ''}
+        ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-blue-700 hover:bg-blue-600 text-white transition-colors">${t('dash.restartZeek')}</button>` : ''}
       ${(!isOk && s.service === 'Zeek Tailer')
-        ? `<button onclick="restartService('tailer', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">${t('dash.restartTailer')}</button>` : ''}
+        ? `<button onclick="restartService('tailer', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-blue-700 hover:bg-blue-600 text-white transition-colors">${t('dash.restartTailer')}</button>` : ''}
       ${(!isOk && s.service.startsWith('Zeek ') && s.service.endsWith('.log'))
         ? `<button onclick="restartService('zeek', this)" class="mt-1.5 w-full px-2 py-1 rounded text-[10px] font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors">${t('dash.restartZeek')}</button>` : ''}
     </div>`;
@@ -1435,13 +1435,34 @@ async function loadSummaryDashboard() {
       const borderClass = isAnomaly
         ? 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10'
         : 'border-slate-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]';
+      // Icon priority: for service-scoped alerts (AI/cloud/tracker/etc.)
+      // show the product's own logo via Google's favicon service — same
+      // brand-icon source used throughout the UI (svcLogo()), but sized
+      // up to fit the 40×40 card slot. Anomaly alerts (beaconing, VPN,
+      // stealth tunnel) aren't tied to a product, so those keep the
+      // alert-type emoji.
+      const isAnomalyIcon = isAnomaly || !a.service_or_dest;
+      let iconHtml;
+      if (isAnomalyIcon) {
+        iconHtml = `<div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">${meta.icon}</div>`;
+      } else {
+        const svc = a.service_or_dest;
+        const logoDomain = (SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com');
+        const fallbackColor = svcColor(svc);
+        const fallbackLetter = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
+        // 28px icon inside a 40px white tile with subtle border, so the
+        // logo reads clearly against both light and dark card backgrounds.
+        iconHtml = `<div class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="${svc}"
+            style="width:28px;height:28px;object-fit:contain;"
+            onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fallbackColor};color:white;font-weight:700;font-size:14px;\\'>${fallbackLetter}</span>'"/>
+        </div>`;
+      }
       return `
         <div class="${borderClass} border rounded-xl p-5 card-hover transition-all">
           <div class="flex items-start justify-between gap-4">
             <div class="flex items-start gap-3 min-w-0 flex-1">
-              <div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">
-                ${meta.icon}
-              </div>
+              ${iconHtml}
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
@@ -1458,7 +1479,7 @@ async function loadSummaryDashboard() {
               </div>
             </div>
             <button onclick="openAlertActionModal(${idx})"
-                    class="flex-shrink-0 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
+                    class="flex-shrink-0 px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
               ${t('summary.review') || 'Beoordeel'}
             </button>
           </div>
@@ -3048,7 +3069,7 @@ async function loadGeoTraffic(direction) {
 function switchGeoTab(direction) {
   const outBtn = document.getElementById('geo-tab-outbound');
   const inBtn  = document.getElementById('geo-tab-inbound');
-  const active = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-indigo-600 text-white shadow-sm';
+  const active = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-blue-700 text-white shadow-sm';
   const inactive = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
   if (direction === 'outbound') {
     if (outBtn) outBtn.className = active;
@@ -3299,7 +3320,7 @@ async function openCountryDrawer(cc) {
 function _syncCountryDirButtons() {
   const out = document.getElementById('country-dir-out');
   const inb = document.getElementById('country-dir-in');
-  const active = 'px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white';
+  const active = 'px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-700 text-white';
   const inactive = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
   if (!out || !inb) return;
   if (_countryDrawerDirection === 'outbound') { out.className = active; inb.className = inactive; }
@@ -5389,11 +5410,11 @@ async function runHealthCheck() {
       let restartBtn = '';
       if (s.service === 'Zeek (Packet Capture)') {
         restartBtn = `<button onclick="restartService('zeek', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
-          ${s.status !== 'ok' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
+          ${s.status !== 'ok' ? 'bg-blue-700 hover:bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
           ${s.status !== 'ok' ? '⚡ Restart Zeek' : '↻ Restart'}</button>`;
       } else if (s.service === 'Zeek Tailer') {
         restartBtn = `<button onclick="restartService('tailer', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium transition-colors
-          ${s.status !== 'ok' ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
+          ${s.status !== 'ok' ? 'bg-blue-700 hover:bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}">
           ${s.status !== 'ok' ? '⚡ Restart Tailer' : '↻ Restart'}</button>`;
       } else if (s.service.startsWith('Zeek ') && s.service.endsWith('.log') && s.status !== 'ok') {
         restartBtn = `<button onclick="restartService('zeek', this)" class="mt-2 w-full px-2 py-1 rounded-lg text-[10px] font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors">⚡ Restart Zeek</button>`;
