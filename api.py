@@ -973,7 +973,7 @@ async def device_ai_report(
 
     # 2. Fetch detection events (last 24h)
     cutoff = datetime.utcnow() - timedelta(hours=24)
-    events = (
+    all_events = (
         db.query(DetectionEvent)
         .filter(
             DetectionEvent.source_ip.in_(device_ips),
@@ -983,6 +983,35 @@ async def device_ai_report(
         .all()
     )
 
+    # Split into "meaningful" events (actual data transfer or flagged
+    # anomalies) and "heartbeats" (zero-byte sni_hello keep-alives).
+    # The AI prompt should be built from meaningful events only —
+    # heartbeats only prove a service is *configured*, not that it's
+    # being *used*. Treating heartbeats as usage leads Gemini to
+    # hallucinate user activity ("Spotify was streaming music!" when
+    # the Spotify app was just idle in the background).
+    anomaly_types = {"vpn_tunnel", "stealth_vpn_tunnel", "beaconing_threat"}
+    def _is_meaningful(e):
+        if e.bytes_transferred and e.bytes_transferred > 0:
+            return True
+        if e.possible_upload:
+            return True
+        if e.detection_type in anomaly_types:
+            return True
+        return False
+    events = [e for e in all_events if _is_meaningful(e)]
+    heartbeat_events = [e for e in all_events if not _is_meaningful(e)]
+
+    # Services that ONLY produced heartbeats (app is running but user
+    # isn't actually using it) go into a separate "idle services" list
+    # with a one-line note — Gemini should know the app is reachable
+    # but not claim the user engaged with it.
+    meaningful_svcs = {e.ai_service for e in events}
+    idle_svcs: dict[str, int] = {}
+    for e in heartbeat_events:
+        if e.ai_service not in meaningful_svcs:
+            idle_svcs[e.ai_service] = idle_svcs.get(e.ai_service, 0) + 1
+
     # Prompt budget: hard caps so the LLM prompt stays under Gemini's
     # context window even for extremely active devices. Before these
     # limits, an iPhone with hundreds of iCloud sync events could
@@ -991,8 +1020,9 @@ async def device_ai_report(
     MAX_UPLOAD_EVENTS = 20             # most recent 20 uploads only
     MAX_DNS_DOMAINS = 20               # top 20 requested domains
     MAX_PROMPT_CHARS = 18000           # safety net on total prompt size
+    MAX_IDLE_SERVICES = 25             # idle-only services listed separately
 
-    # Summarize events by service + type
+    # Summarize meaningful events by service + type
     svc_totals: dict[str, dict] = {}
     for e in events:
         svc = e.ai_service
@@ -1013,6 +1043,22 @@ async def device_ai_report(
             line += f", {t['uploads']} uploads"
         line += f" | actief {t['first'].strftime('%H:%M')}–{t['last'].strftime('%H:%M')} UTC"
         event_summary_lines.append(line)
+
+    # Compute an activity level the prompt can use to set tone. Avoid
+    # claiming the user was "active" when we only see background sync.
+    total_bytes = sum(t["bytes"] for t in svc_totals.values())
+    total_uploads_meaningful = sum(1 for e in events if e.possible_upload)
+    if total_bytes == 0 and total_uploads_meaningful == 0:
+        activity_level = "IDLE — alleen achtergrond-heartbeats, geen data-overdracht"
+    elif total_bytes < 10 * 1024 * 1024 and len(events) < 10:
+        activity_level = (
+            "BACKGROUND-ONLY — kleine byte-overdrachten zonder gebruikspatroon, "
+            "waarschijnlijk automatische sync/telemetrie (geen actieve gebruiker)"
+        )
+    elif total_bytes < 100 * 1024 * 1024:
+        activity_level = "LIGHT — lichte actieve sessie of grote background sync"
+    else:
+        activity_level = "ACTIVE — duidelijk gebruikerspatroon met significante data-overdracht"
     extra_svcs = len(sorted_svcs) - MAX_SERVICES_IN_PROMPT
     if extra_svcs > 0:
         event_summary_lines.append(f"- ... +{extra_svcs} andere services (niet getoond)")
@@ -1071,17 +1117,37 @@ async def device_ai_report(
     )
     device_lines.append(f"Rapport gegenereerd: {now_str}")
 
+    # Idle services block — apps that only produced zero-byte
+    # heartbeats, meaning they're running / configured but NOT
+    # actively transferring data.
+    idle_sorted = sorted(idle_svcs.items(), key=lambda x: -x[1])[:MAX_IDLE_SERVICES]
+    idle_lines = [f"- {svc} ({cnt} heartbeats)" for svc, cnt in idle_sorted]
+    extra_idle = len(idle_svcs) - MAX_IDLE_SERVICES
+    if extra_idle > 0:
+        idle_lines.append(f"- ... +{extra_idle} andere apps in background (niet getoond)")
+
     data_block = f"""=== APPARAAT INFO ===
 {chr(10).join(device_lines)}
 
-=== AI/CLOUD ACTIVITEIT (afgelopen 24u) ===
-Totaal events: {len(events)}
-Totaal uploads: {sum(1 for e in events if e.possible_upload)}
+=== ACTIVITEITSNIVEAU ===
+{activity_level}
+Meaningful events (byte-transfer, uploads, of anomalies): {len(events)}
+Heartbeat-only events (TLS pings, 0 bytes, NIET actieve gebruik): {len(heartbeat_events)}
+Totale uitgaande bytes (meaningful): {total_bytes:,}
+Totale uploads: {total_uploads_meaningful}
 
-Per service (top {MAX_SERVICES_IN_PROMPT} op bytes):
-{chr(10).join(event_summary_lines) if event_summary_lines else '- Geen activiteit gedetecteerd'}
+=== ACTIEF GEBRUIKTE SERVICES (top {MAX_SERVICES_IN_PROMPT} op bytes) ===
+DEZE services hebben écht data overgedragen en zijn ACTIEF GEBRUIKT:
+{chr(10).join(event_summary_lines) if event_summary_lines else '- Geen services met daadwerkelijke data-overdracht'}
 
-Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
+=== APPS IN BACKGROUND (alleen heartbeats, NIET actief gebruikt) ===
+DEZE apps draaien op het apparaat maar hebben alleen keep-alive pings
+gestuurd — de gebruiker heeft ze NIET actief gebruikt. Noem deze
+alleen als "geïnstalleerd / draait op achtergrond", nooit als
+"gebruikt" of "gestreamd" of "bekeken":
+{chr(10).join(idle_lines) if idle_lines else '- (geen)'}
+
+=== UPLOAD TIJDLIJN (recentste {MAX_UPLOAD_EVENTS}) ===
 {chr(10).join(upload_timeline) if upload_timeline else '- Geen uploads gedetecteerd'}
 
 === DNS VERZOEKEN (top {MAX_DNS_DOMAINS} domeinen, afgelopen 24u) ===
@@ -1110,6 +1176,27 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
         "Je bent een netwerk-analist die een eindgebruiker (niet-technisch, "
         "huishouden of kleine ondernemer) uitlegt wat een specifiek apparaat "
         "op z'n netwerk heeft gedaan. Schrijf in het Nederlands, in markdown.\n\n"
+
+        "KRITIEK — LEES EERST HET ACTIVITEITSNIVEAU:\n"
+        "Het data-blok bevat een ACTIVITEITSNIVEAU veld (IDLE / "
+        "BACKGROUND-ONLY / LIGHT / ACTIVE). Stem je beschrijving daar "
+        "strikt op af. Maak NOOIT claims over actief gebruik als het "
+        "niveau IDLE of BACKGROUND-ONLY is — dan heeft de gebruiker "
+        "het apparaat niet bewust gebruikt.\n\n"
+
+        "ONDERSCHEID TUSSEN TWEE LIJSTEN:\n"
+        "  - 'ACTIEF GEBRUIKTE SERVICES' = services met echte data-"
+        "overdracht. Alleen hierover mag je zeggen dat de gebruiker ze "
+        "'gebruikt', 'streamt', 'bekijkt', 'upload', etc.\n"
+        "  - 'APPS IN BACKGROUND' = alleen TLS keep-alive pings zonder "
+        "data. Noem deze alleen als 'draait op de achtergrond', "
+        "'geïnstalleerd', 'reachable'. Gebruik NOOIT werkwoorden als "
+        "'streamen', 'kijken', 'chatten' voor deze apps.\n"
+        "Voorbeeld van een FOUTIEVE zin: 'De gebruiker luisterde naar "
+        "Spotify' — terwijl Spotify alleen in background stond.\n"
+        "Voorbeeld van een GOEDE zin: 'Spotify staat open op de "
+        "achtergrond maar speelt geen muziek af.'\n\n"
+
         "VERPLICHTE STRUCTUUR — houd je hier strikt aan:\n\n"
         "## Samenvatting\n"
         "2 tot 3 zinnen in gewone taal die meteen duidelijk maken:\n"
@@ -1118,24 +1205,24 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
         "de OS, device class, vendor en JA4 TLS stack signals uit APPARAAT "
         "INFO om dit te bepalen. Wees concreet — niet 'dit apparaat' maar "
         "'deze Windows laptop'.\n"
-        "  - Welke apps of diensten er ACTIEF gebruikt worden (top 2-3, "
-        "zoals 'Ubisoft Connect en Epic Games launcher staan open', "
-        "'Spotify streamt muziek', 'Discord voor voice chat'). Vertaal "
-        "technische service-namen naar wat een mens herkent.\n"
-        "  - Eventuele opvallende patronen (bv. 'NordVPN is geïnstalleerd "
-        "maar niet actief', 'er is geen upload-activiteit', 'het apparaat "
-        "staat onder een VPN-tunnel', 'veel Windows telemetrie').\n"
+        "  - Wat de HUIDIGE STAAT van het apparaat is: 'wordt actief "
+        "gebruikt voor X en Y', of 'staat idle met alleen achtergrond-"
+        "syncs', of 'niet actief gebruikt — alleen TLS heartbeats'. Baseer "
+        "dit op het ACTIVITEITSNIVEAU veld.\n"
+        "  - Alleen ACHTERGROND-sync uploads vermelden als 'automatische "
+        "sync / telemetrie' — niet als gebruikersactie.\n"
         "Schrijf deze samenvatting alsof je het tegen een collega in 10 "
         "seconden vertelt. Geen jargon tenzij echt nodig.\n\n"
         "## Dagverloop\n"
-        "Korte chronologische samenvatting van ochtend / middag / avond: "
-        "wanneer was het apparaat actief, wanneer stil, welke diensten "
-        "domineerden in welk dagdeel. Blijf kort, max een alinea.\n\n"
+        "Korte chronologische samenvatting van ochtend / middag / avond. "
+        "Als het niveau IDLE of BACKGROUND-ONLY is, beschrijf dan dat er "
+        "geen gebruikersessie heeft plaatsgevonden — noem alleen "
+        "automatische activiteit. Max een alinea.\n\n"
         "## Opvallende observaties\n"
         "Exact 3 bullets met specifieke dingen die de moeite waard zijn "
-        "om te weten (uploads, onverwachte bestemmingen, veranderingen in "
-        "gebruik, privacy-gevoelige diensten). Elke bullet begint met een "
-        "korte kop in vet.\n"
+        "om te weten. Als het apparaat idle is, focus dan op WAT er WEL "
+        "op achtergrond gebeurt (sync targets, telemetrie, privacy "
+        "features). Elke bullet begint met een korte kop in vet.\n"
     )
 
     prompt_chars = len(system_prompt) + len(data_block)
