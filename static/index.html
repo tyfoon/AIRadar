@@ -848,11 +848,12 @@
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thCountry">Country</th>
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thBandwidth">Bandwidth</th>
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thHits">Connections</th>
+                <th class="py-3 px-4 font-medium hidden md:table-cell" data-i18n="geo.thTopDevices">Top devices</th>
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thShare">Share</th>
               </tr>
             </thead>
             <tbody id="geo-table-body" class="text-slate-600 dark:text-slate-300 striped-rows">
-              <tr><td colspan="5" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500" data-i18n="priv.waitingData">Waiting for data...</td></tr>
+              <tr><td colspan="6" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500" data-i18n="priv.waitingData">Waiting for data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1616,6 +1617,49 @@
       <div id="drawer-load-more" class="hidden py-3 text-center border-t border-slate-100 dark:border-white/[0.04]">
         <button onclick="drawerLoadMore()" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dev.loadMore">Load more</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- COUNTRY DETAIL DRAWER (Geo page drilldown)                      -->
+<!-- ============================================================= -->
+<div id="country-drawer-backdrop" class="drawer-backdrop" onclick="closeCountryDrawer()"></div>
+<div id="country-drawer-panel" class="drawer-panel">
+  <!-- Header -->
+  <div class="flex-shrink-0 border-b border-slate-200 dark:border-white/[0.05] px-5 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <span id="country-drawer-flag" class="text-2xl flex-shrink-0"></span>
+        <div class="min-w-0">
+          <h2 id="country-drawer-name" class="text-base font-semibold truncate"></h2>
+          <p id="country-drawer-meta" class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5"></p>
+        </div>
+      </div>
+      <button onclick="closeCountryDrawer()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg">&times;</button>
+    </div>
+  </div>
+  <!-- Body -->
+  <div class="flex-1 overflow-y-auto p-5 space-y-6" id="country-drawer-body">
+    <!-- Direction toggle -->
+    <div class="flex items-center gap-2">
+      <button id="country-dir-out" onclick="setCountryDrawerDirection('outbound')" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white">&#8593; <span data-i18n="geo.outbound">Outbound</span></button>
+      <button id="country-dir-in" onclick="setCountryDrawerDirection('inbound')" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">&#8595; <span data-i18n="geo.inbound">Inbound</span></button>
+    </div>
+    <!-- Top devices -->
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topDevices">Top devices</h3>
+      <div id="country-top-devices"></div>
+    </div>
+    <!-- Top services -->
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topServices">Top services</h3>
+      <div id="country-top-services"></div>
+    </div>
+    <!-- Top IPs -->
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topIps">Top remote IPs</h3>
+      <div id="country-top-ips"></div>
     </div>
   </div>
 </div>

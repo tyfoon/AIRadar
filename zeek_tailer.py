@@ -31,6 +31,14 @@ import httpx
 API_URL = os.environ.get("AIRADAR_API_URL", "http://localhost:8000/api/ingest")
 DEVICE_API_URL = os.environ.get("AIRADAR_DEVICE_API_URL", "http://localhost:8000/api/devices")
 GEO_API_URL = os.environ.get("AIRADAR_GEO_API_URL", "http://localhost:8000/api/geo/ingest")
+GEO_CONV_API_URL = os.environ.get(
+    "AIRADAR_GEO_CONV_API_URL",
+    "http://localhost:8000/api/geo/conversations/ingest",
+)
+GEO_META_API_URL = os.environ.get(
+    "AIRADAR_GEO_META_API_URL",
+    "http://localhost:8000/api/geo/metadata/ingest",
+)
 SENSOR_ID = socket.gethostname()
 
 # Volumetric upload threshold (bytes)
@@ -1312,6 +1320,56 @@ except ImportError:
 
 _geo_lookup_errors = 0
 
+# ---------------------------------------------------------------------------
+# ASN lookup (separate MMDB from the country DB)
+# ---------------------------------------------------------------------------
+ASN_DB_CANDIDATES = [
+    os.environ.get("ASN_DB_PATH", ""),
+    "/app/data/GeoLite2-ASN.mmdb",
+    "/app/data/dbip-asn.mmdb",
+    str(Path(__file__).parent / "data" / "GeoLite2-ASN.mmdb"),
+    str(Path(__file__).parent / "data" / "dbip-asn.mmdb"),
+]
+_asn_reader = None
+try:
+    import maxminddb  # type: ignore  # already imported above, harmless
+    for _p in ASN_DB_CANDIDATES:
+        if _p and os.path.exists(_p):
+            try:
+                _asn_reader = maxminddb.open_database(_p)
+                print(f"[asn] ASN DB loaded from {_p} (type: {_asn_reader.metadata().database_type})")
+                break
+            except Exception as _exc:
+                print(f"[asn] Failed to open {_p}: {_exc}")
+    if not _asn_reader:
+        print("[asn] No ASN database found — IP enrichment will use PTR only")
+except ImportError:
+    pass
+
+
+def _resolve_asn(ip: str) -> tuple[int | None, str | None]:
+    """Return (asn_number, asn_org) for an IP or (None, None)."""
+    if not _asn_reader or not ip:
+        return None, None
+    try:
+        result = _asn_reader.get(ip)
+        if not result or not isinstance(result, dict):
+            return None, None
+        # MaxMind GeoLite2-ASN schema:
+        asn_num = result.get("autonomous_system_number")
+        asn_org = result.get("autonomous_system_organization")
+        if asn_num or asn_org:
+            return (int(asn_num) if asn_num else None, asn_org)
+        # DB-IP ASN-Lite alternative schema:
+        if "asn" in result:
+            try:
+                return int(result["asn"]), result.get("as_name") or result.get("organization")
+            except (TypeError, ValueError):
+                pass
+        return None, None
+    except Exception:
+        return None, None
+
 
 def _resolve_country(ip: str) -> str | None:
     """Return ISO-3166-1 alpha-2 country code for a public IP, or None.
@@ -1351,6 +1409,17 @@ _geo_buckets: dict[tuple[str, str], dict] = {}
 _geo_lock = asyncio.Lock()
 GEO_FLUSH_INTERVAL = 15  # seconds
 
+# High-resolution conversations buffer — keyed on the full 5-tuple so we
+# can later tell "which device used which service to talk to which IP in
+# which country". Same flush cadence as the rollup buffer.
+# Key: (country_code, direction, mac_or_none, ai_service, resp_ip)
+_geo_conv_buckets: dict[tuple[str, str, str | None, str, str], dict] = {}
+
+# IPs awaiting PTR/ASN enrichment. Populated by the ingest endpoint's
+# response and drained by enrich_ip_metadata_loop.
+_ip_enrich_queue: set[str] = set()
+_ip_enrich_lock = asyncio.Lock()
+
 
 async def _record_geo_traffic(country_code: str, direction: str, total_bytes: int) -> None:
     """Add a connection's bytes to the in-memory buffer."""
@@ -1366,8 +1435,29 @@ async def _record_geo_traffic(country_code: str, direction: str, total_bytes: in
             _geo_buckets[key] = {"bytes": total_bytes, "hits": 1}
 
 
+async def _record_geo_conversation(
+    country_code: str,
+    direction: str,
+    mac: str | None,
+    service: str,
+    resp_ip: str,
+    total_bytes: int,
+) -> None:
+    """Record one conversation row keyed on (cc, dir, mac, svc, resp_ip)."""
+    if not country_code or not resp_ip:
+        return
+    key = (country_code, direction, mac, service or "unknown", resp_ip)
+    async with _geo_lock:
+        bucket = _geo_conv_buckets.get(key)
+        if bucket:
+            bucket["bytes"] += total_bytes
+            bucket["hits"] += 1
+        else:
+            _geo_conv_buckets[key] = {"bytes": total_bytes, "hits": 1}
+
+
 async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
-    """Background task: flush the geo traffic buffer to the API periodically."""
+    """Background task: flush both geo buffers to the API periodically."""
     while True:
         await asyncio.sleep(GEO_FLUSH_INTERVAL)
         async with _geo_lock:
@@ -1375,8 +1465,23 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                 {"country_code": cc, "direction": d, "bytes": v["bytes"], "hits": v["hits"]}
                 for (cc, d), v in _geo_buckets.items()
             ] if _geo_buckets else []
+            conv_snapshot = [
+                {
+                    "country_code": cc,
+                    "direction": d,
+                    "mac_address": mac,
+                    "ai_service": svc,
+                    "resp_ip": ip,
+                    "bytes": v["bytes"],
+                    "hits": v["hits"],
+                }
+                for (cc, d, mac, svc, ip), v in _geo_conv_buckets.items()
+            ] if _geo_conv_buckets else []
             if snapshot:
                 _geo_buckets.clear()
+            if conv_snapshot:
+                _geo_conv_buckets.clear()
+
         if snapshot:
             try:
                 await client.post(
@@ -1386,6 +1491,100 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                 )
             except httpx.HTTPError as exc:
                 print(f"[geo] Flush failed ({len(snapshot)} updates): {exc}")
+
+        if conv_snapshot:
+            try:
+                r = await client.post(
+                    GEO_CONV_API_URL,
+                    json={"updates": conv_snapshot},
+                    timeout=10,
+                )
+                # The backend tells us which IPs it has never seen before
+                # so we can queue them for ASN/PTR enrichment.
+                try:
+                    data = r.json()
+                    to_enrich = data.get("enrich") or []
+                    if to_enrich:
+                        async with _ip_enrich_lock:
+                            _ip_enrich_queue.update(to_enrich)
+                except Exception:
+                    pass
+            except httpx.HTTPError as exc:
+                print(f"[geo-conv] Flush failed ({len(conv_snapshot)} updates): {exc}")
+
+
+# ---------------------------------------------------------------------------
+# IP enrichment loop — resolve PTR + ASN for new remote IPs
+# ---------------------------------------------------------------------------
+IP_ENRICH_INTERVAL = 20      # seconds between enrichment batches
+IP_ENRICH_BATCH = 20         # max IPs resolved per batch
+IP_ENRICH_PTR_TIMEOUT = 1.5  # per-IP reverse-DNS timeout
+
+def _reverse_dns_blocking(ip: str) -> str | None:
+    """Synchronous reverse DNS lookup with a short timeout.
+
+    Runs in a thread pool via asyncio.to_thread so the event loop is
+    never blocked. Returns None on any failure (NXDOMAIN, timeout,
+    private IP, etc.) — enrichment is best-effort.
+    """
+    import socket as _socket
+    _socket.setdefaulttimeout(IP_ENRICH_PTR_TIMEOUT)
+    try:
+        host, _, _ = _socket.gethostbyaddr(ip)
+        return host
+    except Exception:
+        return None
+    finally:
+        _socket.setdefaulttimeout(None)
+
+
+async def enrich_ip_metadata_loop(client: httpx.AsyncClient) -> None:
+    """Background task: drain _ip_enrich_queue, resolve PTR + ASN + country,
+    and push the results to /api/geo/metadata/ingest in small batches.
+
+    Runs forever at IP_ENRICH_INTERVAL cadence. IPs that come back with
+    nothing useful are still recorded (with NULL asn/ptr) so we don't
+    retry them every cycle — the ingest endpoint stamps updated_at
+    regardless.
+    """
+    while True:
+        await asyncio.sleep(IP_ENRICH_INTERVAL)
+        async with _ip_enrich_lock:
+            if not _ip_enrich_queue:
+                continue
+            batch = []
+            for _ in range(min(IP_ENRICH_BATCH, len(_ip_enrich_queue))):
+                batch.append(_ip_enrich_queue.pop())
+
+        if not batch:
+            continue
+
+        entries = []
+        for ip in batch:
+            # ASN + country from MMDB (fast, offline)
+            asn_num, asn_org = _resolve_asn(ip)
+            cc = _resolve_country(ip)
+            # PTR via blocking call in a thread so the loop stays responsive
+            try:
+                ptr = await asyncio.to_thread(_reverse_dns_blocking, ip)
+            except Exception:
+                ptr = None
+            entries.append({
+                "ip": ip,
+                "ptr": ptr,
+                "asn": asn_num,
+                "asn_org": asn_org,
+                "country_code": cc,
+            })
+
+        try:
+            await client.post(
+                GEO_META_API_URL,
+                json={"entries": entries},
+                timeout=10,
+            )
+        except httpx.HTTPError as exc:
+            print(f"[ip-meta] ingest failed ({len(entries)} entries): {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1495,6 +1694,22 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             if cc:
                                 asyncio.create_task(
                                     _record_geo_traffic(cc, direction, total)
+                                )
+                                # Parallel high-res bucket: attribute bytes
+                                # to a specific (device, service, remote IP)
+                                # so the UI can drill into "who is talking
+                                # to UA and why". Service resolves via the
+                                # existing _known_ips cache; unknown IPs
+                                # fall into the 'unknown' bucket.
+                                conv_mac = _normalize_mac(l2_mac) if l2_mac else None
+                                conv_svc = "unknown"
+                                svc_info = _known_ips.get(public_ip)
+                                if svc_info:
+                                    conv_svc = svc_info[0] or "unknown"
+                                asyncio.create_task(
+                                    _record_geo_conversation(
+                                        cc, direction, conv_mac, conv_svc, public_ip, total,
+                                    )
                                 )
 
                 # --- VPN / tunnel detection ---
@@ -2108,6 +2323,7 @@ async def main(zeek_log_dir: str) -> None:
         tail_mdns_log(mdns_log, client),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
+        enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs
         _refresh_device_meta(client),  # pull device metadata for Phase 2
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh
     ]

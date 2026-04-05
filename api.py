@@ -85,6 +85,8 @@ from database import (
     Device,
     DeviceIP,
     GeoTraffic,
+    GeoConversation,
+    IpMetadata,
     ServicePolicy,
     SessionLocal,
     TlsFingerprint,
@@ -1959,6 +1961,126 @@ def geo_ingest(payload: dict, db: Session = Depends(get_db)):
     return {"status": "ok", "accepted": len(updates)}
 
 
+@app.post("/api/geo/conversations/ingest")
+def ingest_geo_conversations(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Tailer ingests buffered geo conversations (one row per
+    country/direction/mac/service/resp_ip tuple accumulated in the
+    15s window).
+
+    Body:
+      {"updates": [
+          {"country_code": "US", "direction": "outbound",
+           "mac_address": "aa:bb:...", "ai_service": "spotify",
+           "resp_ip": "35.186.x.x", "bytes": 12345, "hits": 3},
+          ...
+      ]}
+    """
+    updates = payload.get("updates") or []
+    if not isinstance(updates, list):
+        raise HTTPException(status_code=400, detail="updates must be a list")
+    now = datetime.utcnow()
+    unseen_ips: set[str] = set()
+    accepted = 0
+    for u in updates:
+        cc = (u.get("country_code") or "").upper()[:2]
+        direction = u.get("direction") or ""
+        resp_ip = u.get("resp_ip") or ""
+        if direction not in ("outbound", "inbound") or not cc or not resp_ip:
+            continue
+        mac = u.get("mac_address") or None
+        svc = u.get("ai_service") or "unknown"
+        byts = int(u.get("bytes") or 0)
+        hits = int(u.get("hits") or 0)
+        if byts <= 0 and hits <= 0:
+            continue
+        row = (
+            db.query(GeoConversation)
+            .filter(
+                GeoConversation.country_code == cc,
+                GeoConversation.direction == direction,
+                GeoConversation.mac_address == mac,
+                GeoConversation.ai_service == svc,
+                GeoConversation.resp_ip == resp_ip,
+            )
+            .first()
+        )
+        if row:
+            row.bytes_transferred += byts
+            row.hits += hits
+            row.last_seen = now
+        else:
+            db.add(GeoConversation(
+                country_code=cc,
+                direction=direction,
+                mac_address=mac,
+                ai_service=svc,
+                resp_ip=resp_ip,
+                bytes_transferred=byts,
+                hits=hits,
+                first_seen=now,
+                last_seen=now,
+            ))
+            unseen_ips.add(resp_ip)
+        accepted += 1
+    db.commit()
+
+    # Return the set of resp_ips that don't yet have metadata so the
+    # tailer can enrich them next cycle. Fetch in one IN query to
+    # avoid per-ip roundtrips.
+    to_enrich: list[str] = []
+    if unseen_ips:
+        have = {
+            r[0]
+            for r in db.query(IpMetadata.ip)
+            .filter(IpMetadata.ip.in_(list(unseen_ips)))
+            .all()
+        }
+        to_enrich = [ip for ip in unseen_ips if ip not in have]
+
+    return {"status": "ok", "accepted": accepted, "enrich": to_enrich}
+
+
+@app.post("/api/geo/metadata/ingest")
+def ingest_ip_metadata(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Tailer pushes resolved PTR/ASN data for a batch of IPs.
+
+    Body: {"entries": [{"ip": "...", "ptr": "...", "asn": 15169,
+                        "asn_org": "Google LLC", "country_code": "US"}, ...]}
+    """
+    entries = payload.get("entries") or []
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=400, detail="entries must be a list")
+    now = datetime.utcnow()
+    for e in entries:
+        ip = e.get("ip") or ""
+        if not ip:
+            continue
+        row = db.query(IpMetadata).filter(IpMetadata.ip == ip).first()
+        if row:
+            row.ptr = e.get("ptr") or row.ptr
+            row.asn = e.get("asn") if e.get("asn") is not None else row.asn
+            row.asn_org = e.get("asn_org") or row.asn_org
+            row.country_code = e.get("country_code") or row.country_code
+            row.updated_at = now
+        else:
+            db.add(IpMetadata(
+                ip=ip,
+                ptr=e.get("ptr"),
+                asn=e.get("asn"),
+                asn_org=e.get("asn_org"),
+                country_code=e.get("country_code"),
+                updated_at=now,
+            ))
+    db.commit()
+    return {"status": "ok", "accepted": len(entries)}
+
+
 @app.get("/api/analytics/geo")
 def get_geo_traffic(
     direction: str = Query("outbound", description="outbound or inbound"),
@@ -1968,6 +2090,9 @@ def get_geo_traffic(
 
     Sorted by bytes_transferred descending so the heaviest-traffic
     countries appear first in the table and drive the color gradient.
+    Also includes a compact inbound vs outbound ratio so the frontend
+    can shade rows, and the top 3 devices per country pulled from
+    GeoConversation for the 'who is talking' column.
     """
     if direction not in ("outbound", "inbound"):
         raise HTTPException(status_code=400, detail="direction must be outbound or inbound")
@@ -1977,6 +2102,43 @@ def get_geo_traffic(
         .order_by(GeoTraffic.bytes_transferred.desc())
         .all()
     )
+
+    # Pull the opposite direction in one query so we can compute the
+    # in/out ratio without an extra round-trip per row.
+    other = "inbound" if direction == "outbound" else "outbound"
+    opp_map = {
+        r.country_code: r.bytes_transferred
+        for r in db.query(GeoTraffic).filter(GeoTraffic.direction == other).all()
+    }
+
+    # Top-3 devices per country (in the requested direction) from the
+    # high-resolution conversations table. One grouped query; small
+    # Python post-processing to keep top-N per country.
+    conv_rows = (
+        db.query(
+            GeoConversation.country_code,
+            GeoConversation.mac_address,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+        )
+        .filter(GeoConversation.direction == direction)
+        .group_by(GeoConversation.country_code, GeoConversation.mac_address)
+        .all()
+    )
+    # Resolve MAC → display name once
+    devs = {d.mac_address: d for d in db.query(Device).all()}
+    top_by_cc: dict[str, list[dict]] = {}
+    for cc, mac, byts in conv_rows:
+        if not mac:
+            continue
+        top_by_cc.setdefault(cc, []).append({
+            "mac": mac,
+            "name": (devs.get(mac).display_name or devs.get(mac).hostname or mac) if mac in devs else mac,
+            "bytes": int(byts or 0),
+        })
+    for cc in top_by_cc:
+        top_by_cc[cc].sort(key=lambda x: -x["bytes"])
+        top_by_cc[cc] = top_by_cc[cc][:3]
+
     return {
         "direction": direction,
         "countries": [
@@ -1985,9 +2147,142 @@ def get_geo_traffic(
                 "bytes": r.bytes_transferred,
                 "hits": r.hits,
                 "last_seen": str(r.last_seen),
+                "opposite_bytes": int(opp_map.get(r.country_code, 0)),
+                "top_devices": top_by_cc.get(r.country_code, []),
             }
             for r in rows
         ],
+    }
+
+
+@app.get("/api/analytics/geo/country/{country_code}")
+def get_country_detail(
+    country_code: str,
+    direction: str = Query("outbound", description="outbound or inbound"),
+    db: Session = Depends(get_db),
+):
+    """Drilldown for one country: top devices, top services, top remote
+    IPs (with cached ASN / PTR), and an hourly timeline.
+    """
+    cc = (country_code or "").upper()[:2]
+    if not cc:
+        raise HTTPException(status_code=400, detail="country_code required")
+    if direction not in ("outbound", "inbound"):
+        raise HTTPException(status_code=400, detail="direction must be outbound or inbound")
+
+    base = db.query(GeoConversation).filter(
+        GeoConversation.country_code == cc,
+        GeoConversation.direction == direction,
+    )
+
+    # Totals
+    total_bytes = db.query(
+        func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
+    ).filter(
+        GeoConversation.country_code == cc,
+        GeoConversation.direction == direction,
+    ).scalar() or 0
+    total_hits = db.query(
+        func.coalesce(func.sum(GeoConversation.hits), 0)
+    ).filter(
+        GeoConversation.country_code == cc,
+        GeoConversation.direction == direction,
+    ).scalar() or 0
+
+    # Top devices
+    dev_rows = (
+        db.query(
+            GeoConversation.mac_address,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(GeoConversation.hits).label("hits"),
+            func.max(GeoConversation.last_seen).label("last_seen"),
+        )
+        .filter(
+            GeoConversation.country_code == cc,
+            GeoConversation.direction == direction,
+        )
+        .group_by(GeoConversation.mac_address)
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .limit(15)
+        .all()
+    )
+    devs = {d.mac_address: d for d in db.query(Device).all()}
+    top_devices = []
+    for mac, byts, hits, lseen in dev_rows:
+        d = devs.get(mac) if mac else None
+        top_devices.append({
+            "mac": mac,
+            "name": (d.display_name or d.hostname or mac) if d else (mac or "unknown"),
+            "vendor": d.vendor if d else None,
+            "bytes": int(byts or 0),
+            "hits": int(hits or 0),
+            "last_seen": str(lseen) if lseen else None,
+        })
+
+    # Top services
+    svc_rows = (
+        db.query(
+            GeoConversation.ai_service,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(GeoConversation.hits).label("hits"),
+        )
+        .filter(
+            GeoConversation.country_code == cc,
+            GeoConversation.direction == direction,
+        )
+        .group_by(GeoConversation.ai_service)
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .limit(15)
+        .all()
+    )
+    top_services = [
+        {"service": s, "bytes": int(b or 0), "hits": int(h or 0)}
+        for s, b, h in svc_rows
+    ]
+
+    # Top IPs with ASN/PTR join
+    ip_rows = (
+        db.query(
+            GeoConversation.resp_ip,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(GeoConversation.hits).label("hits"),
+            func.max(GeoConversation.last_seen).label("last_seen"),
+        )
+        .filter(
+            GeoConversation.country_code == cc,
+            GeoConversation.direction == direction,
+        )
+        .group_by(GeoConversation.resp_ip)
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .limit(20)
+        .all()
+    )
+    ip_list = [ip for ip, *_ in ip_rows]
+    meta_map = {
+        m.ip: m
+        for m in db.query(IpMetadata).filter(IpMetadata.ip.in_(ip_list)).all()
+    } if ip_list else {}
+    top_ips = []
+    for ip, byts, hits, lseen in ip_rows:
+        m = meta_map.get(ip)
+        top_ips.append({
+            "ip": ip,
+            "bytes": int(byts or 0),
+            "hits": int(hits or 0),
+            "last_seen": str(lseen) if lseen else None,
+            "ptr": m.ptr if m else None,
+            "asn": m.asn if m else None,
+            "asn_org": m.asn_org if m else None,
+        })
+
+    return {
+        "country_code": cc,
+        "direction": direction,
+        "total_bytes": int(total_bytes),
+        "total_hits": int(total_hits),
+        "top_devices": top_devices,
+        "top_services": top_services,
+        "top_ips": top_ips,
     }
 
 

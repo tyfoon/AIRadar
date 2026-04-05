@@ -3133,12 +3133,19 @@ function _renderGeoMap(data) {
         if (bytes > 0) {
           tooltip.text(
             `<div class="font-semibold">${_flagEmoji(code)} ${name}</div>` +
-            `<div class="text-xs">${_geoFmtBytes(bytes)} &middot; ${formatNumber(hits)} conn.</div>`,
+            `<div class="text-xs">${_geoFmtBytes(bytes)} &middot; ${formatNumber(hits)} conn.</div>` +
+            `<div class="text-[10px] opacity-70 mt-0.5">${t('geo.clickForDetails') || 'Click for details'}</div>`,
             true
           );
         } else {
           tooltip.text(`${_flagEmoji(code)} ${name}`, false);
         }
+      },
+      onRegionClick(event, code) {
+        if (!code) return;
+        // Only drill into countries we actually have data for.
+        if (!values[code] || values[code] <= 0) return;
+        openCountryDrawer(code);
       },
     });
   } catch (err) {
@@ -3147,12 +3154,30 @@ function _renderGeoMap(data) {
   }
 }
 
+// Classify a country row by its inbound/outbound ratio into one of
+// three buckets used for left-border coloring on the geo table.
+//   outbound >> inbound (>3x) → orange  (upload / push / sync heavy)
+//   inbound  >> outbound (>3x) → blue    (streaming / download heavy)
+//   otherwise                  → slate   (balanced)
+// Called with the row's bytes (matches the currently-selected
+// direction) and opposite_bytes from the API.
+function _geoRatioClass(bytes, opposite, direction) {
+  const a = bytes || 0;
+  const b = opposite || 0;
+  if (a === 0 && b === 0) return 'border-l-2 border-slate-200 dark:border-white/[0.04]';
+  const outBytes = direction === 'outbound' ? a : b;
+  const inBytes  = direction === 'outbound' ? b : a;
+  if (outBytes > inBytes * 3) return 'border-l-2 border-orange-400';
+  if (inBytes  > outBytes * 3) return 'border-l-2 border-sky-400';
+  return 'border-l-2 border-slate-300 dark:border-slate-600';
+}
+
 function _renderGeoTable(data) {
   const tbody = document.getElementById('geo-table-body');
   if (!tbody) return;
   const countries = data.countries || [];
   if (countries.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
     return;
   }
   const totalBytes = countries.reduce((s, c) => s + c.bytes, 0) || 1;
@@ -3162,7 +3187,14 @@ function _renderGeoTable(data) {
     const barColor = i === 0 ? 'from-red-500 to-orange-500'
                    : i < 3 ? 'from-orange-500 to-amber-500'
                    : 'from-indigo-500 to-purple-500';
-    return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
+    const ratioCls = _geoRatioClass(c.bytes, c.opposite_bytes, data.direction);
+    // Top-3 devices line — stacked chips with truncation
+    const devChips = (c.top_devices || []).slice(0, 3).map(d => {
+      const name = (d.name || d.mac || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      return `<span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-[10px] text-slate-600 dark:text-slate-300 truncate max-w-[120px]" title="${name}">${name}</span>`;
+    }).join(' ');
+    const devCell = devChips || `<span class="text-[10px] text-slate-400 dark:text-slate-600">—</span>`;
+    return `<tr class="${ratioCls} border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors cursor-pointer" onclick="openCountryDrawer('${c.country_code}')">
       <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">#${i + 1}</td>
       <td class="py-3 px-4">
         <span class="inline-flex items-center gap-2">
@@ -3172,6 +3204,7 @@ function _renderGeoTable(data) {
       </td>
       <td class="py-3 px-4 text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(c.bytes)}</td>
       <td class="py-3 px-4 text-xs tabular-nums text-slate-500 dark:text-slate-400">${formatNumber(c.hits)}</td>
+      <td class="py-3 px-4 hidden md:table-cell"><div class="flex flex-wrap gap-1">${devCell}</div></td>
       <td class="py-3 px-4 min-w-[140px]">
         <div class="flex items-center gap-2">
           <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.04] overflow-hidden">
@@ -3183,6 +3216,185 @@ function _renderGeoTable(data) {
     </tr>`;
   }).join('');
 }
+
+// ---------------------------------------------------------------------------
+// Country Drawer — drilldown for a single country from the Geo page
+// ---------------------------------------------------------------------------
+// Mirrors the device drawer UX but focused on a country. Reachable from:
+//   1. Clicking a country on the vector map (onRegionClick)
+//   2. Clicking a row in the geo table
+// Reuses the existing .drawer-panel CSS for the slide-in animation.
+
+let _countryDrawerCC = null;
+let _countryDrawerDirection = 'outbound';
+
+// Full country name lookup via the browser's built-in Intl API. Falls
+// back to the raw ISO code if the runtime doesn't support it.
+function _countryName(cc) {
+  try {
+    const dn = new Intl.DisplayNames([getLocale ? getLocale() : 'en'], { type: 'region' });
+    return dn.of(cc) || cc;
+  } catch (e) {
+    return cc;
+  }
+}
+
+async function openCountryDrawer(cc) {
+  if (!cc) return;
+  _countryDrawerCC = cc;
+  _countryDrawerDirection = _geoDirection || 'outbound';
+
+  document.getElementById('country-drawer-flag').textContent = _flagEmoji(cc);
+  document.getElementById('country-drawer-name').textContent = `${_countryName(cc)} (${cc})`;
+  document.getElementById('country-drawer-meta').textContent = t('country.loading') || 'Loading…';
+
+  // Mark the direction toggle visually
+  _syncCountryDirButtons();
+
+  document.getElementById('country-drawer-backdrop').classList.add('open');
+  const panel = document.getElementById('country-drawer-panel');
+  panel.style.transform = '';
+  panel.classList.add('open');
+  document.body.classList.add('overflow-hidden');
+
+  await _loadCountryDrawer();
+}
+
+function _syncCountryDirButtons() {
+  const out = document.getElementById('country-dir-out');
+  const inb = document.getElementById('country-dir-in');
+  const active = 'px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white';
+  const inactive = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+  if (!out || !inb) return;
+  if (_countryDrawerDirection === 'outbound') { out.className = active; inb.className = inactive; }
+  else                                         { inb.className = active; out.className = inactive; }
+}
+
+function setCountryDrawerDirection(dir) {
+  if (dir !== 'outbound' && dir !== 'inbound') return;
+  _countryDrawerDirection = dir;
+  _syncCountryDirButtons();
+  _loadCountryDrawer();
+}
+
+async function _loadCountryDrawer() {
+  const cc = _countryDrawerCC;
+  const dir = _countryDrawerDirection;
+  if (!cc) return;
+  try {
+    const res = await fetch(`/api/analytics/geo/country/${encodeURIComponent(cc)}?direction=${encodeURIComponent(dir)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (_countryDrawerCC !== cc) return; // user navigated away
+    _renderCountryDrawer(data);
+  } catch (err) {
+    console.error('loadCountryDrawer:', err);
+    document.getElementById('country-drawer-meta').textContent = t('country.loadError') || 'Failed to load country data';
+  }
+}
+
+function _renderCountryDrawer(data) {
+  const dirLabel = data.direction === 'outbound'
+    ? (t('geo.outbound') || 'Outbound')
+    : (t('geo.inbound') || 'Inbound');
+  document.getElementById('country-drawer-meta').textContent =
+    `${dirLabel} · ${_geoFmtBytes(data.total_bytes)} · ${formatNumber(data.total_hits)} ${t('geo.connectionsShort') || 'conn.'}`;
+
+  // --- Top devices ---
+  const devEl = document.getElementById('country-top-devices');
+  const devs = data.top_devices || [];
+  if (devs.length === 0) {
+    devEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noDevices') || 'No devices recorded.'}</div>`;
+  } else {
+    const maxB = devs[0].bytes || 1;
+    devEl.innerHTML = devs.map(d => {
+      const w = Math.max(2, (d.bytes / maxB * 100));
+      const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">${d.vendor}</span>` : '';
+      const onClick = d.mac ? `onclick="closeCountryDrawer();openDeviceDrawer('${d.mac}', null, null)"` : '';
+      return `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] ${d.mac ? 'cursor-pointer' : ''}" ${onClick}>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${d.name}${vendor}</span>
+            <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_geoFmtBytes(d.bytes)}</span>
+          </div>
+          <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500" style="width:${w}%"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // --- Top services ---
+  const svcEl = document.getElementById('country-top-services');
+  const svcs = data.top_services || [];
+  if (svcs.length === 0) {
+    svcEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noServices') || 'No services recorded.'}</div>`;
+  } else {
+    const maxB = svcs[0].bytes || 1;
+    svcEl.innerHTML = svcs.map(s => {
+      const w = Math.max(2, (s.bytes / maxB * 100));
+      return `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+        <div class="flex-shrink-0">${svcLogo(s.service)}</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${svcDisplayName(s.service)}</span>
+            <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_geoFmtBytes(s.bytes)}</span>
+          </div>
+          <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-emerald-500 to-teal-500" style="width:${w}%"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // --- Top IPs with ASN / PTR ---
+  const ipEl = document.getElementById('country-top-ips');
+  const ips = data.top_ips || [];
+  if (ips.length === 0) {
+    ipEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noIps') || 'No remote IPs recorded.'}</div>`;
+  } else {
+    ipEl.innerHTML = ips.map(ip => {
+      const asnLine = ip.asn_org
+        ? `<span class="text-[10px] text-slate-500 dark:text-slate-400">AS${ip.asn || '?'} · ${ip.asn_org}</span>`
+        : `<span class="text-[10px] text-slate-400 dark:text-slate-600 italic">${t('country.ipEnriching') || 'enriching…'}</span>`;
+      const ptrLine = ip.ptr
+        ? `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${ip.ptr}</div>`
+        : '';
+      return `<div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+        <div class="min-w-0 flex-1">
+          <div class="font-mono text-xs text-slate-700 dark:text-slate-200">${ip.ip}</div>
+          ${ptrLine}
+          <div class="mt-0.5">${asnLine}</div>
+        </div>
+        <div class="flex-shrink-0 text-right ml-3">
+          <div class="text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(ip.bytes)}</div>
+          <div class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${formatNumber(ip.hits)} ${t('geo.connectionsShort') || 'conn.'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function closeCountryDrawer() {
+  document.getElementById('country-drawer-backdrop').classList.remove('open');
+  document.getElementById('country-drawer-panel').classList.remove('open');
+  if (!document.getElementById('drawer-panel').classList.contains('open')) {
+    document.body.classList.remove('overflow-hidden');
+  }
+  _countryDrawerCC = null;
+}
+window.openCountryDrawer = openCountryDrawer;
+window.closeCountryDrawer = closeCountryDrawer;
+window.setCountryDrawerDirection = setCountryDrawerDirection;
+
+// Close country drawer on Escape
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('country-drawer-panel').classList.contains('open')) {
+    closeCountryDrawer();
+  }
+});
 
 
 // --- DEVICES ---

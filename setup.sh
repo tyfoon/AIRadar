@@ -420,6 +420,24 @@ else
     ok "GeoIP database already present at $GEO_DB_PATH"
 fi
 
+# ── ASN database for Geo Traffic country drilldown ──────────
+# Used by the tailer's IP enrichment loop to stamp 'AS15169 Google LLC'
+# next to remote IPs in the country drawer. Uses the same sapics mirror
+# as the country DB so there's nothing extra to configure.
+ASN_DB_PATH="$AIRADAR_DIR/data/dbip-asn.mmdb"
+ASN_DB_URL="https://raw.githubusercontent.com/sapics/ip-location-db/main/dbip-asn-mmdb/dbip-asn.mmdb"
+if [ ! -f "$ASN_DB_PATH" ]; then
+    info "Downloading DB-IP ASN database (~5 MB)..."
+    if curl -sSL --max-time 120 -o "$ASN_DB_PATH" "$ASN_DB_URL"; then
+        ok "ASN database installed at $ASN_DB_PATH"
+    else
+        rm -f "$ASN_DB_PATH"
+        warn "ASN database download failed — country drilldown will show raw IPs only"
+    fi
+else
+    ok "ASN database already present at $ASN_DB_PATH"
+fi
+
 # ── Step 8: SQLite backup cron ───────────────────────────────
 step 8 "Setting up automated database backup"
 

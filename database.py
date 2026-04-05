@@ -213,6 +213,69 @@ class GeoTraffic(Base):
     )
 
 
+class GeoConversation(Base):
+    """High-resolution geo traffic: per (country, direction, device, service, remote IP).
+
+    GeoTraffic answers "how much data goes to country X"; GeoConversation
+    answers "WHICH device, using WHICH service, talking to WHICH IP in
+    country X". The conn.log tailer buffers into both tables in parallel
+    and they flush together every ~15 seconds.
+
+    Rows are upserted on the full 5-tuple so repeated conversations
+    accumulate bytes/hits rather than producing new rows. mac_address
+    may be NULL for IPs the tailer couldn't resolve back to a known
+    device (rare — usually IPs seen before devices register).
+    """
+
+    __tablename__ = "geo_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String, nullable=False, index=True)
+    direction = Column(String, nullable=False, index=True)      # "inbound" | "outbound"
+    mac_address = Column(String, nullable=True, index=True)
+    ai_service = Column(String, nullable=False, default="unknown", index=True)
+    resp_ip = Column(String, nullable=False, index=True)        # the remote public IP
+    bytes_transferred = Column(Integer, nullable=False, default=0)
+    hits = Column(Integer, nullable=False, default=0)
+    first_seen = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "country_code", "direction", "mac_address", "ai_service", "resp_ip",
+            name="uq_geo_conv_full",
+        ),
+    )
+
+
+class IpMetadata(Base):
+    """Reverse-DNS and ASN cache for remote IPs seen in geo conversations.
+
+    Populated by a background enrichment task in the tailer that picks
+    unseen resp_ip values from geo_conversations, resolves PTR + ASN
+    from a local MMDB (and/or async DNS), and stores the result here so
+    subsequent renders can show 'AS15169 Google LLC · static.l.google.com'
+    next to the raw IP.
+
+    A row with updated_at set but asn NULL means lookup was attempted
+    and failed (private IP, no rDNS, no MMDB match) — used to avoid
+    repeatedly retrying dead IPs.
+    """
+
+    __tablename__ = "ip_metadata"
+
+    ip = Column(String, primary_key=True)
+    ptr = Column(String, nullable=True)                # reverse-DNS hostname
+    asn = Column(Integer, nullable=True)               # numeric AS (e.g. 15169)
+    asn_org = Column(String, nullable=True)            # org / netname (e.g. "Google LLC")
+    country_code = Column(String, nullable=True)       # mirror of geo lookup for convenience
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 
