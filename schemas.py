@@ -162,3 +162,77 @@ class PrivacyStats(BaseModel):
     block_percentage: float = 0.0
     top_blocked: list[dict] = []  # [{"domain": "...", "count": N}, ...]
     status: str = "ok"  # "ok" or "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# Policy Engine — ServicePolicy + AlertException
+# ---------------------------------------------------------------------------
+
+class ServicePolicyCreate(BaseModel):
+    """Payload for POST /api/policies."""
+
+    scope: str = "global"              # "global" or "device"
+    mac_address: Optional[str] = None  # required when scope == "device"
+    service_name: Optional[str] = None
+    category: Optional[str] = None
+    action: str = "alert"              # "allow" | "alert" | "block"
+
+
+class ServicePolicyRead(BaseModel):
+    """Policy record returned by GET /api/policies."""
+
+    id: int
+    scope: str
+    mac_address: Optional[str] = None
+    service_name: Optional[str] = None
+    category: Optional[str] = None
+    action: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AlertExceptionCreate(BaseModel):
+    """Payload for POST /api/exceptions."""
+
+    mac_address: str
+    alert_type: str
+    destination: Optional[str] = None
+    expires_at: Optional[datetime] = None   # None = permanent whitelist
+
+
+class AlertExceptionRead(BaseModel):
+    """Exception record returned by GET /api/exceptions."""
+
+    id: int
+    mac_address: str
+    alert_type: str
+    destination: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ActiveAlert(BaseModel):
+    """Single row returned by GET /api/alerts/active.
+
+    Represents one (mac_address, alert_type, service_or_dest) group
+    after the policy + exception resolver has run. Multiple raw events
+    in the same group are collapsed into one row with aggregated hits.
+    """
+
+    alert_id: str                       # stable synthetic id for the group
+    mac_address: str
+    hostname: Optional[str] = None
+    display_name: Optional[str] = None
+    vendor: Optional[str] = None
+    alert_type: str                     # e.g. "beaconing_threat", "vpn_tunnel", "upload", "service_access"
+    service_or_dest: str                # service_name or destination IP
+    category: Optional[str] = None
+    timestamp: datetime                 # last_seen
+    first_seen: datetime
+    hits: int
+    total_bytes: int = 0
+    details: dict = {}                  # free-form: policy_action, reason, etc.

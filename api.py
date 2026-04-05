@@ -45,7 +45,18 @@ from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
 from beacon_analyzer import run_beacon_analysis
-from database import BlockRule, DetectionEvent, Device, DeviceIP, GeoTraffic, SessionLocal, TlsFingerprint, init_db
+from database import (
+    AlertException,
+    BlockRule,
+    DetectionEvent,
+    Device,
+    DeviceIP,
+    GeoTraffic,
+    ServicePolicy,
+    SessionLocal,
+    TlsFingerprint,
+    init_db,
+)
 
 # MAC Vendor lookup — sync dict-based OUI lookup (avoids async issues with MacLookup)
 _oui_db: dict[str, str] = {}
@@ -273,6 +284,9 @@ def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -
 
 
 from schemas import (
+    ActiveAlert,
+    AlertExceptionCreate,
+    AlertExceptionRead,
     BlockRuleCreate,
     BlockRuleRead,
     BlockRuleUnblock,
@@ -283,6 +297,8 @@ from schemas import (
     EventRead,
     GlobalFilterToggle,
     PrivacyStats,
+    ServicePolicyCreate,
+    ServicePolicyRead,
     TimelineBucket,
 )
 
@@ -1366,6 +1382,371 @@ def get_geo_traffic(
             }
             for r in rows
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Policy Engine — ServicePolicy CRUD + AlertException CRUD + /api/alerts/active
+# ---------------------------------------------------------------------------
+#
+# Architecture:
+#
+#   ServicePolicy governs STANDARD traffic (ai, cloud, gaming, social,
+#   streaming, tracking). For each detection event we resolve a policy
+#   action in this priority order (most specific wins):
+#
+#       1. device + service_name match
+#       2. device + category match
+#       3. global + service_name match
+#       4. global + category match
+#
+#   The resolved action is one of {"allow", "alert", "block"}. For now,
+#   both "alert" and "block" cause the event to surface as an ActiveAlert
+#   (so the user sees attempted access even after blocking is active).
+#
+#   AlertException governs ANOMALY traffic (vpn_tunnel, stealth_vpn_tunnel,
+#   beaconing_threat). Anomalies are always alerted unless a matching
+#   exception snoozes or whitelists them.
+#
+#   Default behaviour when no policy exists:
+#     - Standard traffic → "allow"  (no alert)
+#     - possible_upload==True → "alert"  (exfiltration risk)
+#     - Anomalies → always alert (exception required to silence)
+# ---------------------------------------------------------------------------
+
+# Detection types that are treated as anomalies (policy-bypass, exception-only)
+_ANOMALY_DETECTION_TYPES = {
+    "vpn_tunnel",
+    "stealth_vpn_tunnel",
+    "beaconing_threat",
+}
+
+
+@app.get("/api/policies", response_model=list[ServicePolicyRead])
+def list_policies(
+    scope: Optional[str] = Query(None, description="filter by scope: global|device"),
+    mac_address: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    q = db.query(ServicePolicy)
+    if scope:
+        q = q.filter(ServicePolicy.scope == scope)
+    if mac_address:
+        q = q.filter(ServicePolicy.mac_address == mac_address)
+    return q.order_by(
+        ServicePolicy.scope.desc(),
+        ServicePolicy.updated_at.desc(),
+    ).all()
+
+
+@app.post("/api/policies", response_model=ServicePolicyRead, status_code=201)
+def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_db)):
+    """Create or update a service policy.
+
+    A policy is uniquely identified by (scope, mac_address, service_name,
+    category). If an existing row matches, it is updated in place instead
+    of duplicating — this keeps the UI idempotent ("turn on alert for
+    Roblox on Jantje's iPad" can be clicked multiple times safely).
+    """
+    if payload.scope not in ("global", "device"):
+        raise HTTPException(status_code=400, detail="scope must be 'global' or 'device'")
+    if payload.scope == "device" and not payload.mac_address:
+        raise HTTPException(status_code=400, detail="mac_address is required when scope='device'")
+    if payload.scope == "global" and payload.mac_address:
+        raise HTTPException(status_code=400, detail="mac_address must be null when scope='global'")
+    if payload.action not in ("allow", "alert", "block"):
+        raise HTTPException(status_code=400, detail="action must be 'allow', 'alert' or 'block'")
+    if not payload.service_name and not payload.category:
+        raise HTTPException(status_code=400, detail="either service_name or category must be set")
+
+    existing = (
+        db.query(ServicePolicy)
+        .filter(
+            ServicePolicy.scope == payload.scope,
+            ServicePolicy.mac_address == payload.mac_address,
+            ServicePolicy.service_name == payload.service_name,
+            ServicePolicy.category == payload.category,
+        )
+        .first()
+    )
+    now = datetime.utcnow()
+    if existing:
+        existing.action = payload.action
+        existing.updated_at = now
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    policy = ServicePolicy(
+        scope=payload.scope,
+        mac_address=payload.mac_address,
+        service_name=payload.service_name,
+        category=payload.category,
+        action=payload.action,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(policy)
+    db.commit()
+    db.refresh(policy)
+    return policy
+
+
+@app.delete("/api/policies/{policy_id}", status_code=204)
+def delete_policy(policy_id: int, db: Session = Depends(get_db)):
+    policy = db.query(ServicePolicy).filter(ServicePolicy.id == policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    db.delete(policy)
+    db.commit()
+    return None
+
+
+@app.get("/api/exceptions", response_model=list[AlertExceptionRead])
+def list_exceptions(
+    mac_address: Optional[str] = Query(None),
+    alert_type: Optional[str] = Query(None),
+    include_expired: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    q = db.query(AlertException)
+    if mac_address:
+        q = q.filter(AlertException.mac_address == mac_address)
+    if alert_type:
+        q = q.filter(AlertException.alert_type == alert_type)
+    if not include_expired:
+        now = datetime.utcnow()
+        q = q.filter(
+            (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
+        )
+    return q.order_by(AlertException.created_at.desc()).all()
+
+
+@app.post("/api/exceptions", response_model=AlertExceptionRead, status_code=201)
+def create_exception(payload: AlertExceptionCreate, db: Session = Depends(get_db)):
+    if not payload.mac_address or not payload.alert_type:
+        raise HTTPException(status_code=400, detail="mac_address and alert_type are required")
+    exc = AlertException(
+        mac_address=payload.mac_address,
+        alert_type=payload.alert_type,
+        destination=payload.destination,
+        expires_at=payload.expires_at,
+        created_at=datetime.utcnow(),
+    )
+    db.add(exc)
+    db.commit()
+    db.refresh(exc)
+    return exc
+
+
+@app.delete("/api/exceptions/{exception_id}", status_code=204)
+def delete_exception(exception_id: int, db: Session = Depends(get_db)):
+    exc = db.query(AlertException).filter(AlertException.id == exception_id).first()
+    if not exc:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    db.delete(exc)
+    db.commit()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Policy resolver + exception matcher (used by /api/alerts/active)
+# ---------------------------------------------------------------------------
+
+def _resolve_policy_action(
+    policies: list,
+    mac: Optional[str],
+    service_name: Optional[str],
+    category: Optional[str],
+) -> Optional[str]:
+    """Return the resolved action string ("allow"/"alert"/"block") or None.
+
+    Walks the policy list in priority order (most specific first).
+    Accepts a pre-fetched list so we don't hit the DB per event.
+    """
+    def _first(pred):
+        for p in policies:
+            if pred(p):
+                return p.action
+        return None
+
+    # 1. device + service_name
+    if mac and service_name:
+        hit = _first(lambda p: p.scope == "device"
+                     and p.mac_address == mac
+                     and p.service_name == service_name)
+        if hit:
+            return hit
+    # 2. device + category
+    if mac and category:
+        hit = _first(lambda p: p.scope == "device"
+                     and p.mac_address == mac
+                     and p.category == category
+                     and not p.service_name)
+        if hit:
+            return hit
+    # 3. global + service_name
+    if service_name:
+        hit = _first(lambda p: p.scope == "global"
+                     and not p.mac_address
+                     and p.service_name == service_name)
+        if hit:
+            return hit
+    # 4. global + category
+    if category:
+        hit = _first(lambda p: p.scope == "global"
+                     and not p.mac_address
+                     and p.category == category
+                     and not p.service_name)
+        if hit:
+            return hit
+    return None
+
+
+def _is_exception_active(
+    exceptions: list,
+    mac: Optional[str],
+    alert_type: str,
+    destination: Optional[str],
+    now: datetime,
+) -> bool:
+    """True if a non-expired AlertException matches this alert."""
+    for exc in exceptions:
+        if exc.mac_address != mac:
+            continue
+        if exc.alert_type != alert_type:
+            continue
+        # destination match: NULL in exception = wildcard
+        if exc.destination and exc.destination != destination:
+            continue
+        if exc.expires_at is not None and exc.expires_at <= now:
+            continue
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# GET /api/alerts/active — the unified alert feed
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts/active")
+def get_active_alerts(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return the currently-active alerts after policy + exception resolution.
+
+    Steps:
+      1. Load recent events (last N hours).
+      2. Pre-fetch all policies and active exceptions so we don't hit
+         the DB per event.
+      3. For each event, classify as anomaly vs standard traffic.
+         - Anomaly: alert unless a matching exception exists.
+         - Standard: consult ServicePolicy, alert if action is "alert"
+           or "block". Default is "allow" except for possible_upload
+           which defaults to "alert".
+      4. Group the resulting alerts by (mac_address, alert_type,
+         service_or_dest) so repeated hits collapse into one row.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    now = datetime.utcnow()
+
+    # Eager-load policies + exceptions once
+    policies = db.query(ServicePolicy).all()
+    exceptions = db.query(AlertException).filter(
+        (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
+    ).all()
+
+    # Build IP → (mac, device) lookup map
+    dev_ip_rows = db.query(DeviceIP).all()
+    ip_to_mac: dict[str, str] = {d.ip: d.mac_address for d in dev_ip_rows}
+    device_by_mac: dict[str, Device] = {
+        d.mac_address: d for d in db.query(Device).all()
+    }
+
+    events = (
+        db.query(DetectionEvent)
+        .filter(DetectionEvent.timestamp >= cutoff)
+        .order_by(DetectionEvent.timestamp.asc())
+        .all()
+    )
+
+    # Aggregate by (mac, alert_type, service_or_dest)
+    groups: dict[tuple, dict] = {}
+
+    for e in events:
+        mac = ip_to_mac.get(e.source_ip)
+
+        # ---------- Anomaly path ----------
+        if e.detection_type in _ANOMALY_DETECTION_TYPES:
+            alert_type = e.detection_type
+            destination = e.ai_service  # VPN service name or beacon dst IP
+            if _is_exception_active(exceptions, mac, alert_type, destination, now):
+                continue
+            reason = "anomaly"
+        else:
+            # ---------- Standard-service path ----------
+            action = _resolve_policy_action(
+                policies, mac, e.ai_service, e.category
+            )
+            if action is None:
+                # No explicit policy — default rules:
+                #   - possible_upload → alert (exfiltration risk)
+                #   - everything else → allow (no alert)
+                if e.possible_upload:
+                    action = "alert"
+                    reason = "default_upload"
+                else:
+                    continue  # allowed, don't surface
+            else:
+                if action == "allow":
+                    continue
+                reason = f"policy_{action}"
+
+            alert_type = "upload" if e.possible_upload else "service_access"
+            destination = e.ai_service
+
+        key = (mac or e.source_ip, alert_type, destination)
+        g = groups.get(key)
+        if g is None:
+            dev = device_by_mac.get(mac) if mac else None
+            groups[key] = {
+                "alert_id": f"{key[0]}|{alert_type}|{destination}",
+                "mac_address": mac or e.source_ip,
+                "hostname": dev.hostname if dev else None,
+                "display_name": dev.display_name if dev else None,
+                "vendor": dev.vendor if dev else None,
+                "alert_type": alert_type,
+                "service_or_dest": destination,
+                "category": e.category,
+                "first_seen": e.timestamp,
+                "timestamp": e.timestamp,
+                "hits": 0,
+                "total_bytes": 0,
+                "details": {
+                    "reason": reason,
+                    "detection_type": e.detection_type,
+                },
+            }
+            g = groups[key]
+        g["hits"] += 1
+        g["total_bytes"] += e.bytes_transferred or 0
+        if e.timestamp > g["timestamp"]:
+            g["timestamp"] = e.timestamp
+        if e.timestamp < g["first_seen"]:
+            g["first_seen"] = e.timestamp
+
+    # Sort: anomalies first, then by last_seen desc
+    def _priority(item):
+        a = item["alert_type"]
+        anomaly_rank = 0 if a in _ANOMALY_DETECTION_TYPES else (1 if a == "upload" else 2)
+        return (anomaly_rank, -item["timestamp"].timestamp())
+
+    result = sorted(groups.values(), key=_priority)
+    return {
+        "count": len(result),
+        "window_hours": hours,
+        "alerts": result,
     }
 
 

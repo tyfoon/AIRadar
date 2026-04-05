@@ -117,6 +117,75 @@ class TlsFingerprint(Base):
     )
 
 
+class ServicePolicy(Base):
+    """User-defined policy rules for services and categories.
+
+    Supports two scopes:
+      - "global": applies to every device on the network
+      - "device": applies only to a specific MAC address
+
+    A policy targets either a specific service (service_name) or an
+    entire category (category). Policies are consulted by the alert
+    engine to decide whether an event should be allowed, surfaced as
+    an alert, or (in future) actively blocked.
+
+    Resolution order (most specific wins):
+      1. device + service_name
+      2. device + category
+      3. global + service_name
+      4. global + category
+    """
+
+    __tablename__ = "service_policies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String, nullable=False, default="global", index=True)  # "global" | "device"
+    mac_address = Column(String, nullable=True, index=True)
+    service_name = Column(String, nullable=True, index=True)  # e.g. "openai", "roblox"
+    category = Column(String, nullable=True, index=True)      # e.g. "ai", "gaming"
+    action = Column(String, nullable=False, default="alert")  # "allow" | "alert" | "block"
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "scope", "mac_address", "service_name", "category",
+            name="uq_policy_scope_mac_svc_cat",
+        ),
+    )
+
+
+class AlertException(Base):
+    """Snooze / whitelist rules for anomaly alerts.
+
+    When an alert would normally be raised (e.g. beaconing_threat, VPN
+    tunnel), the alert engine first checks for a matching AlertException.
+    If one exists and has not yet expired, the alert is suppressed.
+
+    Match rule: (mac_address, alert_type) must match. If destination is
+    set on the exception, it must also match the event's destination;
+    if destination is NULL, the exception covers all destinations for
+    that (mac, alert_type) pair.
+
+    expires_at == NULL  →  permanent whitelist
+    expires_at > now    →  temporary snooze
+    expires_at <= now   →  expired, ignored
+    """
+
+    __tablename__ = "alert_exceptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mac_address = Column(String, nullable=False, index=True)
+    alert_type = Column(String, nullable=False, index=True)  # e.g. "beaconing_threat", "vpn_tunnel"
+    destination = Column(String, nullable=True)              # e.g. specific IP, country, service
+    expires_at = Column(DateTime, nullable=True)             # NULL = permanent
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
 class GeoTraffic(Base):
     """Aggregated bandwidth per country + direction.
 
