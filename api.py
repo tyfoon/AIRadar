@@ -9,6 +9,7 @@ import csv
 import io
 import json
 import os
+import re
 
 # Auto-load .env so credentials work regardless of how the server is started.
 # First try python-dotenv; if not installed, fall back to a simple manual parser.
@@ -126,6 +127,35 @@ def _load_hostname_vendors() -> list[dict]:
     return _HOSTNAME_VENDORS_DEFAULT
 
 _hostname_vendors: list[dict] = _load_hostname_vendors()
+
+
+# ---------------------------------------------------------------------------
+# Hostname sanitization — reject junk values from mDNS/DHCP tailers.
+# Must match the helper in zeek_tailer.py so both ends agree on what's junk.
+# ---------------------------------------------------------------------------
+_JUNK_HOSTNAME_LITERALS = {
+    "", "(empty)", "(null)", "null", "none", "unknown",
+    "localhost", "localhost.localdomain",
+    "espressif", "esp32", "esp8266", "esp-device",
+}
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_HEX_ID_RE = re.compile(r"^[0-9a-f]{16,}$")
+
+
+def _is_junk_hostname(name) -> bool:
+    """True if a hostname is meaningless (UUID, hex ID, reverse-DNS, placeholder)."""
+    if name is None or not isinstance(name, str):
+        return True
+    s = name.strip().lower()
+    if s in _JUNK_HOSTNAME_LITERALS:
+        return True
+    if s.endswith(".in-addr.arpa") or s.endswith(".ip6.arpa"):
+        return True
+    if _UUID_RE.match(s):
+        return True
+    if _HEX_ID_RE.match(s):
+        return True
+    return False
 
 
 def _resolve_vendor(mac: Optional[str] = None, hostname: Optional[str] = None) -> Optional[str]:
@@ -309,9 +339,34 @@ def _backfill_vendors():
 
 
 @asynccontextmanager
+def _cleanup_junk_hostnames():
+    """One-shot sweep: null out any device.hostname that matches junk patterns.
+
+    Runs on every startup so legacy data collected before the tailer filter
+    was added gets cleaned up. display_name is never touched — the user's
+    manually set names are preserved.
+    """
+    db = SessionLocal()
+    try:
+        cleared = 0
+        for dev in db.query(Device).filter(Device.hostname.isnot(None)).all():
+            if _is_junk_hostname(dev.hostname):
+                print(f"[cleanup] Nulling junk hostname '{dev.hostname}' on {dev.mac_address}")
+                dev.hostname = None
+                cleared += 1
+        if cleared:
+            db.commit()
+            print(f"[cleanup] Cleared {cleared} junk hostname(s)")
+    except Exception as exc:
+        print(f"[cleanup] Junk hostname sweep failed: {exc}")
+    finally:
+        db.close()
+
+
 async def lifespan(app: FastAPI):
     init_db()
     _backfill_vendors()
+    _cleanup_junk_hostnames()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
@@ -684,6 +739,10 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     mac = _normalize_mac(payload.mac_address)
 
+    # Sanitize incoming hostname — drop junk so it never lands in the DB
+    if payload.hostname and _is_junk_hostname(payload.hostname):
+        payload.hostname = None
+
     if not mac:
         # No MAC provided — check if this IP already belongs to a device
         existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
@@ -709,11 +768,19 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     # Upsert Device by MAC address
     device = db.query(Device).filter(Device.mac_address == mac).first()
     if device:
-        if payload.hostname and not device.hostname:
-            device.hostname = payload.hostname
-        elif payload.hostname and payload.hostname != device.hostname:
-            # DHCP hostname is usually more accurate than reverse DNS
-            device.hostname = payload.hostname
+        # Stronger-wins hostname logic:
+        # - fill if currently empty
+        # - overwrite if the stored one is junk and the new one is clean
+        # - never replace a clean hostname with junk (already filtered above,
+        #   but guard anyway in case new junk patterns slip through)
+        if payload.hostname:
+            if not device.hostname:
+                device.hostname = payload.hostname
+            elif _is_junk_hostname(device.hostname) and not _is_junk_hostname(payload.hostname):
+                device.hostname = payload.hostname
+            elif payload.hostname != device.hostname and not _is_junk_hostname(payload.hostname):
+                # Both are clean but different — prefer the newer one (DHCP/mDNS refresh)
+                device.hostname = payload.hostname
         # Re-resolve vendor — hostname match may be more accurate than stale OUI
         new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         if new_vendor and new_vendor != device.vendor:

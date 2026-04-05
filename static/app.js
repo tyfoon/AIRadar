@@ -430,16 +430,60 @@ function _deviceByIp(ip) {
   return mac ? deviceMap[mac] : null;
 }
 
+// ---------------------------------------------------------------------------
+// Junk hostname filter — mirrors _is_junk_hostname in api.py / zeek_tailer.py.
+// Catches UUIDs, long hex IDs (Spotify/Lumi), reverse-DNS PTRs, placeholders.
+// ---------------------------------------------------------------------------
+const _JUNK_HOSTNAME_LITERALS = new Set([
+  '', '(empty)', '(null)', 'null', 'none', 'unknown',
+  'localhost', 'localhost.localdomain',
+  'espressif', 'esp32', 'esp8266', 'esp-device',
+]);
+const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const _HEX_ID_RE = /^[0-9a-f]{16,}$/;
+
+function _isJunkHostname(name) {
+  if (!name || typeof name !== 'string') return true;
+  const s = name.trim().toLowerCase();
+  if (_JUNK_HOSTNAME_LITERALS.has(s)) return true;
+  if (s.endsWith('.in-addr.arpa') || s.endsWith('.ip6.arpa')) return true;
+  if (_UUID_RE.test(s)) return true;
+  if (_HEX_ID_RE.test(s)) return true;
+  return false;
+}
+
+function _vendorFallbackName(device) {
+  // Build a friendly "Vendor device (xx:yy)" label from MAC + vendor
+  const macTail = (device.mac_address || '').split(':').slice(-2).join(':') || '??';
+  if (device.vendor) {
+    // Shorten verbose vendor names: "Apple Inc." → "Apple", "Google, Inc." → "Google"
+    const vendor = device.vendor
+      .replace(/,?\s*(inc\.?|ltd\.?|corp\.?|corporation|limited|co\.?|llc|b\.v\.?|ag|gmbh)$/i, '')
+      .trim();
+    return `${vendor} device (${macTail})`;
+  }
+  return `Device ${macTail}`;
+}
+
+function _bestDeviceName(device) {
+  // Priority: user-set display_name > clean hostname > vendor+MAC fallback > IP
+  if (device.display_name) return device.display_name;
+  if (device.hostname && !_isJunkHostname(device.hostname)) return device.hostname;
+  const fallback = _vendorFallbackName(device);
+  if (fallback) return fallback;
+  return _latestIp(device);
+}
+
 function deviceName(ip) {
   const d = _deviceByIp(ip);
   if (!d) return ip;
-  return d.display_name || d.hostname || _latestIp(d);
+  return _bestDeviceName(d);
 }
 
 function deviceLabel(ip) {
   const d = _deviceByIp(ip);
   if (!d) return ip;
-  const name = d.display_name || d.hostname || _latestIp(d);
+  const name = _bestDeviceName(d);
   const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">(${d.vendor})</span>` : '';
   return name + vendor;
 }
@@ -573,7 +617,7 @@ async function loadDevices() {
         sel.innerHTML = `<option value="">${t('ai.allDevices')}</option>`;
         devices.forEach(d => {
           const allIps = (d.ips || []).map(i => i.ip).join(',');
-          const label = d.display_name || d.hostname || _latestIp(d);
+          const label = _bestDeviceName(d);
           sel.innerHTML += `<option value="${allIps}">${label}</option>`;
         });
         sel.value = cur;
@@ -1822,7 +1866,7 @@ function renderAiAdoption(events) {
 
   const deviceRows = Object.entries(deviceEvents).map(([mac, evts]) => {
     const dev = deviceMap[mac];
-    const name = dev ? (dev.display_name || dev.hostname || _latestIp(dev)) : mac.replace('_ip_', '');
+    const name = dev ? _bestDeviceName(dev) : mac.replace('_ip_', '');
     const dt = _detectDeviceType(dev);
     const count = evts.length;
     const svcs = [...new Set(evts.map(e => e.ai_service))];
@@ -2095,7 +2139,7 @@ function renderVpnAlerts(alerts) {
         </thead>
         <tbody class="text-slate-600 dark:text-slate-300">
           ${alerts.map(a => {
-            const name = a.display_name || a.hostname || a.source_ip;
+            const name = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null) || a.source_ip;
             const dtTag = typeof deviceTypeTag === 'function' ? deviceTypeTag(a) : '';
             const bytes = a.total_bytes >= 1048576
               ? (a.total_bytes / 1048576).toFixed(1) + ' MB'
@@ -2220,7 +2264,7 @@ async function refreshOther() {
   // Build IP → device name map
   const ipName = {};
   (devices || []).forEach(d => {
-    const name = d.display_name || d.hostname || d.mac_address;
+    const name = _bestDeviceName(d);
     (d.ips || []).forEach(ipRec => { ipName[ipRec.ip] = name; });
   });
 
@@ -2978,8 +3022,8 @@ async function refreshDevices() {
     const totalB = Object.values(matrix[b] || {}).reduce((s, v) => s + v.count, 0);
     // Devices with events first (sorted by count desc), then devices without events (sorted by name)
     if (totalA === 0 && totalB === 0) {
-      const nameA = deviceMap[a]?.display_name || deviceMap[a]?.hostname || a;
-      const nameB = deviceMap[b]?.display_name || deviceMap[b]?.hostname || b;
+      const nameA = deviceMap[a] ? _bestDeviceName(deviceMap[a]) : a;
+      const nameB = deviceMap[b] ? _bestDeviceName(deviceMap[b]) : b;
       return nameA.localeCompare(nameB);
     }
     return totalB - totalA;

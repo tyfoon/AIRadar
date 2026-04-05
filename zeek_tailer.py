@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import ipaddress
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -333,6 +334,44 @@ DEVICE_CACHE_TTL = 300  # 5 minutes
 # IP → MAC cache — populated from conn.log's orig_l2_addr field.
 # Used by ssl.log (which has no MAC) to link events to the correct device.
 _ip_to_mac: dict[str, str] = {}  # ip → normalized MAC
+
+
+# ---------------------------------------------------------------------------
+# Hostname sanitization — reject junk values that mDNS/DHCP tailers sometimes
+# pick up (service UUIDs, reverse-DNS PTRs, placeholder strings).
+# ---------------------------------------------------------------------------
+_JUNK_HOSTNAME_LITERALS = {
+    "", "(empty)", "(null)", "null", "none", "unknown",
+    "localhost", "localhost.localdomain",
+    "espressif", "esp32", "esp8266", "esp-device",
+}
+# UUID v4: 8-4-4-4-12
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# 16+ char pure hex (Spotify Connect IDs, Lumi hex device names)
+_HEX_ID_RE = re.compile(r"^[0-9a-f]{16,}$")
+
+
+def _is_junk_hostname(name) -> bool:
+    """Return True if a hostname string is meaningless noise we shouldn't store.
+
+    Catches: empty/placeholder strings, UUIDs, long hex IDs (Spotify/Lumi),
+    reverse-DNS PTR records (*.in-addr.arpa / *.ip6.arpa), and known
+    default/factory names like 'espressif'.
+    """
+    if name is None:
+        return True
+    if not isinstance(name, str):
+        return True
+    s = name.strip().lower()
+    if s in _JUNK_HOSTNAME_LITERALS:
+        return True
+    if s.endswith(".in-addr.arpa") or s.endswith(".ip6.arpa"):
+        return True
+    if _UUID_RE.match(s):
+        return True
+    if _HEX_ID_RE.match(s):
+        return True
+    return False
 
 
 def _normalize_mac(mac: str) -> str:
@@ -1201,8 +1240,10 @@ async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             break
 
                     payload: dict = {"ip": ip, "mac_address": mac}
-                    if hostname:
+                    if hostname and not _is_junk_hostname(hostname):
                         payload["hostname"] = hostname
+                    else:
+                        hostname = None
 
                     try:
                         await client.post(DEVICE_API_URL, json=payload, timeout=5)
@@ -1306,8 +1347,10 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         continue
 
                     payload: dict = {"ip": ip, "mac_address": mac}
-                    if hostname:
+                    if hostname and not _is_junk_hostname(hostname):
                         payload["hostname"] = hostname
+                    else:
+                        hostname = None
 
                     try:
                         await client.post(DEVICE_API_URL, json=payload, timeout=5)
@@ -1407,6 +1450,10 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                     # Skip too-short or numeric-only names
                     if len(hostname) < 2:
+                        continue
+
+                    # Skip junk hostnames (UUIDs, hex IDs, reverse-DNS PTRs)
+                    if _is_junk_hostname(hostname):
                         continue
 
                     # Dedup
