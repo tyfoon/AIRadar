@@ -976,13 +976,39 @@ async def device_ai_report(mac_address: str, db: Session = Depends(get_db)):
         dns_lines.append(f"- {domain}: {count}x")
 
     # 4. Build the data block for the LLM
+    # Include device type signals (OS, device class, DHCP fingerprint,
+    # JA4 label) so Gemini can open its report with a concrete
+    # "This is a Windows gaming PC / iPad / IoT speaker" classification
+    # instead of a vague "this device does traffic".
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    ja4_label_resolved = _resolve_ja4_label(device.ja4_fingerprint)
+
+    device_lines = [
+        f"Naam: {device_label}",
+        f"MAC: {mac_address}",
+        f"OUI Vendor: {device.vendor or 'Onbekend'}",
+    ]
+    if device.os_full or device.os_name:
+        os_str = device.os_full or device.os_name
+        if device.os_version and device.os_version not in os_str:
+            os_str = f"{os_str} {device.os_version}"
+        device_lines.append(f"OS (p0f): {os_str}")
+    if device.device_class:
+        device_lines.append(f"Device class (p0f): {device.device_class}")
+    if device.dhcp_vendor_class:
+        device_lines.append(f"DHCP vendor class: {device.dhcp_vendor_class}")
+    if ja4_label_resolved:
+        device_lines.append(f"JA4 TLS stack: {ja4_label_resolved}")
+    if device.network_distance is not None:
+        device_lines.append(f"Network distance: {device.network_distance} hops")
+    device_lines.append(
+        f"IP-adressen: {', '.join(device_ips[:5])}"
+        f"{' (+' + str(len(device_ips) - 5) + ' meer)' if len(device_ips) > 5 else ''}"
+    )
+    device_lines.append(f"Rapport gegenereerd: {now_str}")
+
     data_block = f"""=== APPARAAT INFO ===
-Naam: {device_label}
-MAC: {mac_address}
-Vendor: {device.vendor or 'Onbekend'}
-IP-adressen: {', '.join(device_ips[:5])}{' (+' + str(len(device_ips) - 5) + ' meer)' if len(device_ips) > 5 else ''}
-Rapport gegenereerd: {now_str}
+{chr(10).join(device_lines)}
 
 === AI/CLOUD ACTIVITEIT (afgelopen 24u) ===
 Totaal events: {len(events)}
@@ -1008,14 +1034,44 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
         print(f"[gemini] Prompt truncated to {MAX_PROMPT_CHARS} chars for {mac_address}")
 
     # 5. Call Gemini
+    # The prompt enforces a fixed structure:
+    #   1. Plain-language "TL;DR" paragraph (2-3 sentences max) that
+    #      reads like a human describing the device: what it is,
+    #      which apps/services it's running, anything that stands out.
+    #      This is the most valuable part — the user wants to scan it
+    #      in 5 seconds and know what's going on.
+    #   2. Chronological day breakdown (morning / afternoon / evening).
+    #   3. "Opvallende observaties" — 3 specific bullets.
     system_prompt = (
-        "You are a professional network analyst. Below is the network data "
-        "(DNS queries and AI/Cloud uploads) from a single device over the past 24 hours. "
-        "Write a clear, easy-to-read report in English. "
-        "Provide a chronological overview of the day (e.g. morning, afternoon, evening), "
-        "mention active and inactive periods, and conclude with a section titled "
-        "'Notable Events' highlighting 3 specific observations "
-        "(such as uploads, unusual browsing patterns, or noteworthy services). Use markdown."
+        "Je bent een netwerk-analist die een eindgebruiker (niet-technisch, "
+        "huishouden of kleine ondernemer) uitlegt wat een specifiek apparaat "
+        "op z'n netwerk heeft gedaan. Schrijf in het Nederlands, in markdown.\n\n"
+        "VERPLICHTE STRUCTUUR — houd je hier strikt aan:\n\n"
+        "## Samenvatting\n"
+        "2 tot 3 zinnen in gewone taal die meteen duidelijk maken:\n"
+        "  - Wat voor apparaat dit is (bv. 'een Windows gaming-PC', 'een "
+        "iPhone', 'een Google Nest speaker', 'een Philips Hue hub'). Gebruik "
+        "de OS, device class, vendor en JA4 TLS stack signals uit APPARAAT "
+        "INFO om dit te bepalen. Wees concreet — niet 'dit apparaat' maar "
+        "'deze Windows laptop'.\n"
+        "  - Welke apps of diensten er ACTIEF gebruikt worden (top 2-3, "
+        "zoals 'Ubisoft Connect en Epic Games launcher staan open', "
+        "'Spotify streamt muziek', 'Discord voor voice chat'). Vertaal "
+        "technische service-namen naar wat een mens herkent.\n"
+        "  - Eventuele opvallende patronen (bv. 'NordVPN is geïnstalleerd "
+        "maar niet actief', 'er is geen upload-activiteit', 'het apparaat "
+        "staat onder een VPN-tunnel', 'veel Windows telemetrie').\n"
+        "Schrijf deze samenvatting alsof je het tegen een collega in 10 "
+        "seconden vertelt. Geen jargon tenzij echt nodig.\n\n"
+        "## Dagverloop\n"
+        "Korte chronologische samenvatting van ochtend / middag / avond: "
+        "wanneer was het apparaat actief, wanneer stil, welke diensten "
+        "domineerden in welk dagdeel. Blijf kort, max een alinea.\n\n"
+        "## Opvallende observaties\n"
+        "Exact 3 bullets met specifieke dingen die de moeite waard zijn "
+        "om te weten (uploads, onverwachte bestemmingen, veranderingen in "
+        "gebruik, privacy-gevoelige diensten). Elke bullet begint met een "
+        "korte kop in vet.\n"
     )
 
     prompt_chars = len(system_prompt) + len(data_block)
