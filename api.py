@@ -1108,6 +1108,50 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         if val in ("(empty)", "-", ""):
             setattr(payload, field, None)
 
+    # Hostname uniqueness check. The mDNS tailer is vulnerable to a
+    # race condition where one device's mDNS record ("slide-<mac>")
+    # gets attributed to a different MAC via a stale IP→MAC cache,
+    # usually because Google Cast devices forward each other's mDNS
+    # announcements over their mesh. Refuse to set a hostname that's
+    # already owned by another MAC — unless the hostname's MAC suffix
+    # matches the current MAC (a legit device naming its own MAC).
+    if payload.hostname and mac:
+        # Quick-escape: if the hostname contains the current mac's flat
+        # form (without colons), it's definitely for this device.
+        mac_flat = mac.replace(":", "").lower()
+        host_flat = payload.hostname.replace("-", "").replace("_", "").replace(".", "").lower()
+        self_match = bool(mac_flat) and mac_flat in host_flat
+        if not self_match:
+            collision = (
+                db.query(Device)
+                .filter(
+                    Device.hostname == payload.hostname,
+                    Device.mac_address != mac,
+                )
+                .first()
+            )
+            if collision:
+                # Another device already claims this hostname. Check if
+                # that owner's MAC is actually in the hostname — if yes,
+                # it's the rightful owner and we refuse to steal it.
+                owner_flat = collision.mac_address.replace(":", "").lower()
+                owner_matches = bool(owner_flat) and owner_flat in host_flat
+                if owner_matches:
+                    print(
+                        f"[hostname-collision] Refusing '{payload.hostname}' for {mac} "
+                        f"— rightfully owned by {collision.mac_address} (mac suffix match)"
+                    )
+                    payload.hostname = None
+                else:
+                    # Neither device owns the hostname by MAC suffix.
+                    # Keep the first-seen one (the existing owner) and
+                    # drop the new assignment.
+                    print(
+                        f"[hostname-collision] Refusing '{payload.hostname}' for {mac} "
+                        f"— already claimed by {collision.mac_address}"
+                    )
+                    payload.hostname = None
+
     if not mac:
         # No MAC provided — check if this IP already belongs to a device
         existing_ip = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
