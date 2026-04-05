@@ -2539,7 +2539,22 @@ def category_tree(db: Session = Depends(get_db)):
         .all()
     )
 
-    # Build nested dict: category → service → [devices]
+    # Resolve every source_ip to its owning MAC so dual-stack devices
+    # (IPv4 + IPv6 on the same physical phone/laptop) aggregate into a
+    # single device row per service instead of appearing twice. IPs
+    # without a registered device fall back to their raw IP as a key.
+    ip_to_mac: dict[str, str] = {
+        d.ip: d.mac_address for d in db.query(DeviceIP).all()
+    }
+    # A representative IP per MAC — used for the device row's "ip" field
+    # so the frontend can still resolve a display name via ipName[ip].
+    mac_to_representative_ip: dict[str, str] = {}
+    for ip, mac in ip_to_mac.items():
+        # Prefer IPv4 (no colons) as the representative — cleaner display.
+        if mac not in mac_to_representative_ip or ":" in mac_to_representative_ip[mac]:
+            mac_to_representative_ip[mac] = ip
+
+    # Build nested dict: category → service → {device_key: aggregated}
     tree: dict = {}
     for cat, svc, ip, byt, hits in rows:
         if cat not in tree:
@@ -2547,18 +2562,30 @@ def category_tree(db: Session = Depends(get_db)):
         tree[cat]["total_bytes"] += byt or 0
         svcs = tree[cat]["services"]
         if svc not in svcs:
-            svcs[svc] = {"service_name": svc, "total_bytes": 0, "devices": []}
+            svcs[svc] = {"service_name": svc, "total_bytes": 0, "devices": {}}
         svcs[svc]["total_bytes"] += byt or 0
-        svcs[svc]["devices"].append({"ip": ip, "bytes": byt or 0, "hits": hits})
+
+        # Device key: MAC if known, otherwise raw IP. This collapses
+        # IPv4 + IPv6 + any other aliases into a single entry.
+        mac = ip_to_mac.get(ip)
+        dev_key = mac or ip
+        display_ip = mac_to_representative_ip.get(mac, ip) if mac else ip
+
+        dev_map = svcs[svc]["devices"]
+        if dev_key not in dev_map:
+            dev_map[dev_key] = {"ip": display_ip, "bytes": 0, "hits": 0}
+        dev_map[dev_key]["bytes"] += byt or 0
+        dev_map[dev_key]["hits"] += hits
 
     # Flatten services dict to list, sort by bytes desc
     result = []
     for cat_data in sorted(tree.values(), key=lambda c: -c["total_bytes"]):
-        cat_data["services"] = sorted(
+        services_list = sorted(
             cat_data["services"].values(), key=lambda s: -s["total_bytes"]
         )
-        for svc in cat_data["services"]:
-            svc["devices"].sort(key=lambda d: -d["bytes"])
+        for svc in services_list:
+            svc["devices"] = sorted(svc["devices"].values(), key=lambda d: -d["bytes"])
+        cat_data["services"] = services_list
         result.append(cat_data)
     return result
 
