@@ -1439,14 +1439,56 @@ def list_policies(
     ).all()
 
 
+async def _sync_policy_to_adguard(policy: ServicePolicy) -> None:
+    """Keep AdGuard's blocklist in sync with a ServicePolicy.
+
+    Only GLOBAL policies that target a specific service_name can translate
+    to DNS-level blocking (AdGuard has no per-device DNS rules and no
+    concept of "a whole category"). For those:
+      - action=="block"            → block all domains in SERVICE_DOMAINS[svc]
+      - action in ("allow","alert") → unblock all domains
+    For device-scoped or category-only policies, AdGuard is not touched —
+    those are handled at the alert/visibility layer only.
+    """
+    if policy.scope != "global":
+        return
+    if not policy.service_name:
+        return
+    info = SERVICE_DOMAINS.get(policy.service_name)
+    if not info:
+        # Unknown service — can't figure out its domains
+        return
+    domains = info.get("domains") or []
+    if not domains:
+        return
+
+    if policy.action == "block":
+        for domain in domains:
+            try:
+                await adguard.block_domain(domain)
+            except Exception as exc:
+                print(f"[policy] AdGuard block_domain({domain}) failed: {exc}")
+    else:
+        # allow or alert → ensure the domain is NOT blocked in AdGuard
+        for domain in domains:
+            try:
+                await adguard.unblock_domain(domain)
+            except Exception as exc:
+                print(f"[policy] AdGuard unblock_domain({domain}) failed: {exc}")
+
+
 @app.post("/api/policies", response_model=ServicePolicyRead, status_code=201)
-def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_db)):
+async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_db)):
     """Create or update a service policy.
 
     A policy is uniquely identified by (scope, mac_address, service_name,
     category). If an existing row matches, it is updated in place instead
     of duplicating — this keeps the UI idempotent ("turn on alert for
     Roblox on Jantje's iPad" can be clicked multiple times safely).
+
+    When a global per-service policy changes action, the AdGuard blocklist
+    is synced automatically so the ServicePolicy table is the single
+    source of truth for both dashboard alerts AND real DNS blocking.
     """
     if payload.scope not in ("global", "device"):
         raise HTTPException(status_code=400, detail="scope must be 'global' or 'device'")
@@ -1475,6 +1517,7 @@ def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_db)):
         existing.updated_at = now
         db.commit()
         db.refresh(existing)
+        await _sync_policy_to_adguard(existing)
         return existing
 
     policy = ServicePolicy(
@@ -1489,16 +1532,32 @@ def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_db)):
     db.add(policy)
     db.commit()
     db.refresh(policy)
+    await _sync_policy_to_adguard(policy)
     return policy
 
 
 @app.delete("/api/policies/{policy_id}", status_code=204)
-def delete_policy(policy_id: int, db: Session = Depends(get_db)):
+async def delete_policy(policy_id: int, db: Session = Depends(get_db)):
     policy = db.query(ServicePolicy).filter(ServicePolicy.id == policy_id).first()
     if not policy:
         raise HTTPException(status_code=404, detail="Policy not found")
+    # If we were actively blocking this service in AdGuard, unblock it
+    # before removing the policy row so the system returns to default.
+    was_blocking = (
+        policy.scope == "global"
+        and policy.action == "block"
+        and policy.service_name
+    )
     db.delete(policy)
     db.commit()
+    if was_blocking:
+        info = SERVICE_DOMAINS.get(policy.service_name)
+        if info:
+            for domain in info.get("domains", []):
+                try:
+                    await adguard.unblock_domain(domain)
+                except Exception as exc:
+                    print(f"[policy] AdGuard unblock_domain({domain}) on delete failed: {exc}")
     return None
 
 

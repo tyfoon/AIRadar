@@ -4313,14 +4313,37 @@ async function toggleIps(checkbox) {
 }
 
 // --- GRANULAR SERVICE CARDS ---
+// ---------------------------------------------------------------------------
+// Access Control — 3-way policy segmented control (allow / alert / block)
+// ---------------------------------------------------------------------------
+// Loads both the list of known services (with traffic stats) AND the
+// currently active global ServicePolicy rows. Each service card shows
+// a 3-way segmented control wired to POST /api/policies.
+
+let _policyByService = {};  // service_name → action ("allow"|"alert"|"block")
+
 async function loadAccessControl() {
   try {
-    const res = await fetch('/api/rules/services');
-    const services = await res.json();
+    // Fetch services and policies in parallel
+    const [servicesRes, policiesRes] = await Promise.all([
+      fetch('/api/rules/services').then(r => r.json()),
+      fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
+    ]);
+
+    // Index policies by service_name (only per-service global ones, no
+    // category-level or device-level — those are managed from the
+    // Action Inbox modal, not the Rules page)
+    _policyByService = {};
+    (Array.isArray(policiesRes) ? policiesRes : []).forEach(p => {
+      if (p.scope === 'global' && p.service_name && !p.category) {
+        _policyByService[p.service_name] = p.action;
+      }
+    });
+
     const aiContainer = document.getElementById('access-control-ai');
     const cloudContainer = document.getElementById('access-control-cloud');
-    const aiSvcs = services.filter(s => s.category === 'ai');
-    const cloudSvcs = services.filter(s => s.category === 'cloud');
+    const aiSvcs = servicesRes.filter(s => s.category === 'ai');
+    const cloudSvcs = servicesRes.filter(s => s.category === 'cloud');
     aiContainer.innerHTML = aiSvcs.length
       ? aiSvcs.map(renderServiceCard).join('')
       : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noAiServices')}</p>`;
@@ -4330,162 +4353,109 @@ async function loadAccessControl() {
   } catch(e) { console.error('loadAccessControl:', e); }
 }
 
-function remainingTime(expiresAt) {
-  if (!expiresAt) return null;
-  const exp = new Date(expiresAt.endsWith('Z') ? expiresAt : expiresAt + 'Z');
-  const diff = exp - new Date();
-  if (diff <= 0) return t('svc.expiring');
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return t('svc.minsLeft', { m: mins });
-  const hrs = Math.floor(mins / 60);
-  return t('svc.hrsLeft', { h: hrs, m: mins % 60 });
-}
-
 function renderServiceCard(svc) {
   const name = SERVICE_NAMES[svc.service_name] || svc.service_name;
-  const isAllowed = !svc.is_blocked;
-  const blockedClass = svc.is_blocked ? 'blocked' : '';
-  const remaining = svc.is_blocked && !svc.is_permanent ? remainingTime(svc.expires_at) : null;
-  const permLabel = svc.is_blocked ? (svc.is_permanent ? t('svc.permanent') : remaining || t('svc.temporary')) : '';
   const logo = svcLogo(svc.service_name);
 
-  // Status badge with tooltip
+  // Resolve current action. If no explicit policy row exists, fall back
+  // to the backend default: "allow" for standard traffic, "alert" for
+  // the AI category (high-risk for data exfiltration).
+  const defaultAction = svc.category === 'ai' ? 'alert' : 'allow';
+  const currentAction = _policyByService[svc.service_name] || defaultAction;
+
   const lastSeenFmt = svc.last_seen ? fmtTime(svc.last_seen) : '';
-  const activeTooltip = svc.seen ? t('svc.activeTooltip', { count: formatNumber(svc.hit_count), time: lastSeenFmt }) : '';
-  const preventiveTooltip = t('svc.preventiveTip');
+  const activeTooltip = svc.seen
+    ? t('svc.activeTooltip', { count: formatNumber(svc.hit_count), time: lastSeenFmt })
+    : t('svc.preventiveTip');
 
   const seenTag = svc.seen
     ? `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" title="${activeTooltip}"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span> ${t('svc.active')} (${formatNumber(svc.hit_count)})</span>`
-    : `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="${preventiveTooltip}"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> ${t('svc.preventive')}</span>`;
+    : `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/40 text-slate-400 dark:text-slate-500" title="${activeTooltip}"><span class="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 inline-block"></span> ${t('svc.preventive')}</span>`;
 
   const lastSeenText = svc.seen && svc.last_seen ? `Last: ${lastSeenFmt}` : t('svc.noTraffic');
 
-  // Toggle on/off label
-  const toggleLabel = isAllowed
-    ? `<span class="text-xs font-medium text-emerald-500">${t('svc.on')}</span>`
-    : `<span class="text-xs font-medium text-slate-400">${t('svc.off')}</span>`;
-
-  // Status line: allowed or blocked
-  const statusLine = svc.is_blocked
-    ? `<span class="text-[10px] px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">&times; ${t('svc.blocked')}${permLabel ? ' · ' + permLabel : ''}</span>`
-    : `<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">&check; ${t('svc.allowed')}</span>`;
+  // Border tint reflects the current action for visual clarity
+  const borderClass =
+    currentAction === 'block'  ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10' :
+    currentAction === 'alert'  ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10' :
+                                 'border-slate-200 dark:border-white/[0.05]';
 
   return `
-    <div class="svc-card bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ${blockedClass}">
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2">
-          ${logo}
-          <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${name}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          ${toggleLabel}
-          <label class="toggle" title="${isAllowed ? t('svc.allowedToBlock') : t('svc.blockedToAllow')}">
-            <input type="checkbox" ${isAllowed ? 'checked' : ''}
-                   onchange="toggleService('${svc.service_name}','${svc.domains[0]}','${svc.category}',this)"/>
-            <span class="slider"></span>
-          </label>
-        </div>
+    <div class="svc-card border ${borderClass} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors">
+      <div class="flex items-center gap-2 mb-2">
+        ${logo}
+        <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
       </div>
-      <div class="mb-2">${seenTag}</div>
-      <div class="flex items-center gap-2">
-        <select id="dur-${svc.service_name}" class="text-xs flex-1" ${svc.is_blocked ? 'disabled' : ''}>
-          <option value="0">${t('svc.alwaysAllow')}</option>
-          <option value="60">${t('svc.1hour')}</option>
-          <option value="120">${t('svc.2hours')}</option>
-          <option value="240">${t('svc.4hours')}</option>
-          <option value="360">${t('svc.6hours')}</option>
-          <option value="480">${t('svc.8hours')}</option>
-          <option value="custom">${t('svc.custom')}</option>
-          <option value="scheduled" disabled title="${t('svc.comingSoon')}">${t('svc.scheduled')} (${t('svc.comingSoon')})</option>
-        </select>
-        ${statusLine}
-      </div>
+      <div class="mb-3">${seenTag}</div>
+      ${renderPolicySegment(svc.service_name, currentAction)}
       <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2">${lastSeenText}</p>
     </div>`;
 }
 
-// Track pending custom block
-let _pendingCustomBlock = null;
+function renderPolicySegment(serviceName, currentAction) {
+  // 3-way segmented control — hardcoded class strings (not template
+  // interpolation) so Tailwind JIT from the Play CDN picks them up.
+  // Active segment has a saturated background, inactive ones use
+  // neutral text with a colored hover hint.
+  const allowActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-emerald-500 text-white shadow-sm';
+  const allowInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
+  const alertActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-amber-500 text-white shadow-sm';
+  const alertInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+  const blockActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-red-500 text-white shadow-sm';
+  const blockInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20';
 
-async function toggleService(serviceName, domain, category, checkbox) {
-  checkbox.disabled = true;
-  const isNowAllowed = checkbox.checked;
-  try {
-    if (isNowAllowed) {
-      await fetch('/api/rules/unblock', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ service_name: serviceName, domain }),
-      });
-    } else {
-      const durSelect = document.getElementById('dur-' + serviceName);
-      const durVal = durSelect?.value || '0';
+  const checkIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+  const alertIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M4.062 19h15.876c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L2.33 16c-.77 1.333.192 3 1.732 3z"/></svg>';
+  const blockIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
 
-      if (durVal === 'custom') {
-        // Open modal
-        _pendingCustomBlock = { serviceName, domain, category, checkbox };
-        document.getElementById('modal-backdrop').classList.remove('hidden');
-        const input = document.getElementById('modal-block-until');
-        // Default to 4 hours from now
-        const def = new Date(Date.now() + 4 * 3600000);
-        input.value = def.toISOString().slice(0, 16);
-        return; // Don't finalize yet
-      }
+  const allowLabel = t('rules.allow') || 'Toestaan';
+  const alertLabel = t('rules.alert') || 'Waarschuw';
+  const blockLabel = t('rules.block') || 'Blokkeer';
 
-      const dur = parseInt(durVal);
-      await fetch('/api/rules/block', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          service_name: serviceName, domain, category,
-          duration_minutes: dur || null,
-        }),
-      });
-    }
-    await loadAccessControl();
-  } catch(err) {
-    console.error('toggleService:', err);
-    checkbox.checked = !checkbox.checked;
-  } finally {
-    checkbox.disabled = false;
-  }
+  return `<div class="flex gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1" data-svc="${serviceName}">
+    <button type="button" onclick="setServicePolicy('${serviceName}','allow',this)" class="${currentAction === 'allow' ? allowActive : allowInactive}">${checkIcon}<span>${allowLabel}</span></button>
+    <button type="button" onclick="setServicePolicy('${serviceName}','alert',this)" class="${currentAction === 'alert' ? alertActive : alertInactive}">${alertIcon}<span>${alertLabel}</span></button>
+    <button type="button" onclick="setServicePolicy('${serviceName}','block',this)" class="${currentAction === 'block' ? blockActive : blockInactive}">${blockIcon}<span>${blockLabel}</span></button>
+  </div>`;
 }
 
-function closeModal() {
-  document.getElementById('modal-backdrop').classList.add('hidden');
-  if (_pendingCustomBlock) {
-    _pendingCustomBlock.checkbox.checked = true; // revert
-    _pendingCustomBlock.checkbox.disabled = false;
-    _pendingCustomBlock = null;
-  }
-}
-
-async function confirmCustomBlock() {
-  if (!_pendingCustomBlock) return;
-  const { serviceName, domain, category, checkbox } = _pendingCustomBlock;
-  const until = document.getElementById('modal-block-until').value;
-  if (!until) { alert('Please select a date/time.'); return; }
-
-  const untilDate = new Date(until);
-  const now = new Date();
-  const durationMin = Math.max(1, Math.round((untilDate - now) / 60000));
+async function setServicePolicy(serviceName, action, buttonEl) {
+  // Optimistic UI update: disable the segment while the POST is in flight
+  const segment = buttonEl?.closest('[data-svc]');
+  const buttons = segment ? segment.querySelectorAll('button') : [];
+  buttons.forEach(b => { b.disabled = true; });
 
   try {
-    await fetch('/api/rules/block', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+    const res = await fetch('/api/policies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        service_name: serviceName, domain, category,
-        duration_minutes: durationMin,
+        scope: 'global',
+        mac_address: null,
+        service_name: serviceName,
+        category: null,
+        action: action,
       }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    _policyByService[serviceName] = action;
+    const actionLabel =
+      action === 'allow' ? (t('rules.allow') || 'Toestaan') :
+      action === 'alert' ? (t('rules.alert') || 'Waarschuw') :
+                           (t('rules.block') || 'Blokkeer');
+    const svcLabel = SERVICE_NAMES[serviceName] || serviceName;
+    showToast(`${svcLabel}: ${actionLabel}`, 'success');
     await loadAccessControl();
-  } catch(err) {
-    console.error('confirmCustomBlock:', err);
-    checkbox.checked = true; // revert
-  } finally {
-    checkbox.disabled = false;
-    _pendingCustomBlock = null;
-    document.getElementById('modal-backdrop').classList.add('hidden');
+  } catch (err) {
+    console.error('setServicePolicy:', err);
+    showToast(`${t('rules.updateFailed') || 'Update mislukt'}: ${err.message}`, 'error');
+    buttons.forEach(b => { b.disabled = false; });
   }
 }
+window.setServicePolicy = setServicePolicy;
 
 // ================================================================
 // ABOUT & LEGAL

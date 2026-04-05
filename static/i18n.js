@@ -91,6 +91,10 @@ const TRANSLATIONS = {
     'rules.adguardFilteringDesc': 'Master switch for AdGuard Home\u2019s default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.',
     'rules.adguardFilteringNote': 'Default: off. Individual block rules and global filters below still work independently.',
     'rules.adguardToggleFailed':  'Failed to toggle AdGuard filtering: {msg}',
+    'rules.allow':         'Allow',
+    'rules.alert':         'Alert',
+    'rules.block':         'Block',
+    'rules.updateFailed':  'Update failed',
 
     // Privacy — Beaconing (malware C2) threat intelligence
     'beacon.title':        'Threat Intelligence: Beaconing',
@@ -684,6 +688,10 @@ const TRANSLATIONS = {
     'rules.adguardFilteringDesc': 'Hoofdschakelaar voor de standaard AdGuard Home blokkeerlijsten. Als deze uit staat werkt DNS-doorsturen nog wel, maar blokkeren de ingebouwde filters niets.',
     'rules.adguardFilteringNote': 'Standaard: uit. Individuele blokkeerregels en onderstaande filters werken nog gewoon.',
     'rules.adguardToggleFailed':  'Kon AdGuard-filtering niet omschakelen: {msg}',
+    'rules.allow':         'Toestaan',
+    'rules.alert':         'Waarschuw',
+    'rules.block':         'Blokkeer',
+    'rules.updateFailed':  'Update mislukt',
 
     // Privacy — Beaconing (malware C2) dreigingsdetectie
     'beacon.title':        'Dreigingsanalyse: Beaconing',
