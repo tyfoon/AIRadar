@@ -3475,7 +3475,8 @@ async function generateDeviceReport(macParam) {
     // The cached copy is shown automatically on drawer open via
     // _loadCachedDeviceReport() — the button is specifically for
     // refreshing it.
-    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?force=true`);
+    const lang = (typeof getLocale === 'function' ? getLocale() : 'en');
+    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?force=true&lang=${encodeURIComponent(lang)}`);
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -3500,7 +3501,8 @@ async function generateDeviceReport(macParam) {
 // the report box hidden and wait for the user to click Generate.
 async function _loadCachedDeviceReport(mac) {
   try {
-    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report`);
+    const lang = (typeof getLocale === 'function' ? getLocale() : 'en');
+    const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?lang=${encodeURIComponent(lang)}`);
     if (!resp.ok) return;  // 400/404 → no cache, let user click Generate
     const data = await resp.json();
     if (!data.cached || !data.report) return;

@@ -921,6 +921,7 @@ def list_devices(db: Session = Depends(get_db)):
 async def device_ai_report(
     mac_address: str,
     force: bool = Query(False, description="Regenerate the report even if a cached one exists"),
+    lang: str = Query("nl", description="Report language: 'nl' or 'en'"),
     db: Session = Depends(get_db),
 ):
     """Return the AI recap for a device.
@@ -936,9 +937,25 @@ async def device_ai_report(
     if not device:
         raise HTTPException(status_code=404, detail="Apparaat niet gevonden.")
 
-    # If we have a cached report and the caller didn't ask for a refresh,
-    # return it immediately — no Gemini call, no cost, instant.
-    if device.ai_report_md and not force:
+    # Detect the language of the cached report from its section headers.
+    # The Dutch prompt emits "## Samenvatting", the English prompt
+    # emits "## Summary". If the caller's requested language doesn't
+    # match the cache, fall through and regenerate so a locale switch
+    # in the UI immediately yields a report in the new language.
+    cached_lang = None
+    if device.ai_report_md:
+        if "## Summary" in device.ai_report_md:
+            cached_lang = "en"
+        elif "## Samenvatting" in device.ai_report_md:
+            cached_lang = "nl"
+    requested_lang = (lang or "nl").lower()
+    if requested_lang not in ("nl", "en"):
+        requested_lang = "nl"
+    lang_mismatch = cached_lang is not None and cached_lang != requested_lang
+
+    # If we have a cached report in the right language and the caller
+    # didn't ask for a refresh, return it — no Gemini call, instant.
+    if device.ai_report_md and not force and not lang_mismatch:
         return {
             "device": device.display_name or device.hostname or device.mac_address,
             "mac": device.mac_address,
@@ -983,85 +1000,121 @@ async def device_ai_report(
         .all()
     )
 
-    # Split into "meaningful" events (actual data transfer or flagged
-    # anomalies) and "heartbeats" (zero-byte sni_hello keep-alives).
-    # The AI prompt should be built from meaningful events only —
-    # heartbeats only prove a service is *configured*, not that it's
-    # being *used*. Treating heartbeats as usage leads Gemini to
-    # hallucinate user activity ("Spotify was streaming music!" when
-    # the Spotify app was just idle in the background).
+    # Aggregate every service over the full 24-hour window. We don't
+    # want to throw away sni_hello heartbeats here — for streaming and
+    # gaming apps, ssl.log doesn't report bytes so heartbeats are the
+    # ONLY usage signal we have (Spotify/Discord/Ubisoft Connect all
+    # show 0-byte sni_hello events when actively used, because the
+    # real traffic goes over UDP or is downstream).
+    #
+    # Classification rule (by hit count, not bytes):
+    #   count >= 3  → ACTIVE usage         (heavy in-session use)
+    #   count == 2  → LIGHT activity       (brief touch / keep-alive)
+    #   count == 1  → BACKGROUND only      (one-off ping)
+    # On top of that, any volumetric_upload event upgrades the service
+    # to ACTIVE regardless of hit count.
     anomaly_types = {"vpn_tunnel", "stealth_vpn_tunnel", "beaconing_threat"}
-    def _is_meaningful(e):
-        if e.bytes_transferred and e.bytes_transferred > 0:
-            return True
-        if e.possible_upload:
-            return True
-        if e.detection_type in anomaly_types:
-            return True
-        return False
-    events = [e for e in all_events if _is_meaningful(e)]
-    heartbeat_events = [e for e in all_events if not _is_meaningful(e)]
-
-    # Services that ONLY produced heartbeats (app is running but user
-    # isn't actually using it) go into a separate "idle services" list
-    # with a one-line note — Gemini should know the app is reachable
-    # but not claim the user engaged with it.
-    meaningful_svcs = {e.ai_service for e in events}
-    idle_svcs: dict[str, int] = {}
-    for e in heartbeat_events:
-        if e.ai_service not in meaningful_svcs:
-            idle_svcs[e.ai_service] = idle_svcs.get(e.ai_service, 0) + 1
-
-    # Prompt budget: hard caps so the LLM prompt stays under Gemini's
-    # context window even for extremely active devices. Before these
-    # limits, an iPhone with hundreds of iCloud sync events could
-    # produce a 50k-character prompt that crashed the call.
-    MAX_SERVICES_IN_PROMPT = 15        # top 15 services by bytes
-    MAX_UPLOAD_EVENTS = 20             # most recent 20 uploads only
-    MAX_DNS_DOMAINS = 20               # top 20 requested domains
-    MAX_PROMPT_CHARS = 18000           # safety net on total prompt size
-    MAX_IDLE_SERVICES = 25             # idle-only services listed separately
-
-    # Summarize meaningful events by service + type
     svc_totals: dict[str, dict] = {}
-    for e in events:
+    for e in all_events:
         svc = e.ai_service
         if svc not in svc_totals:
-            svc_totals[svc] = {"count": 0, "bytes": 0, "uploads": 0, "category": e.category, "first": e.timestamp, "last": e.timestamp}
-        svc_totals[svc]["count"] += 1
-        svc_totals[svc]["bytes"] += e.bytes_transferred or 0
+            svc_totals[svc] = {
+                "count": 0,
+                "bytes": 0,
+                "uploads": 0,
+                "category": e.category,
+                "first": e.timestamp,
+                "last": e.timestamp,
+                "has_anomaly": False,
+            }
+        t = svc_totals[svc]
+        t["count"] += 1
+        t["bytes"] += e.bytes_transferred or 0
         if e.possible_upload:
-            svc_totals[svc]["uploads"] += 1
-        svc_totals[svc]["last"] = e.timestamp
+            t["uploads"] += 1
+        if e.detection_type in anomaly_types:
+            t["has_anomaly"] = True
+        if e.timestamp > t["last"]:
+            t["last"] = e.timestamp
+        if e.timestamp < t["first"]:
+            t["first"] = e.timestamp
 
-    sorted_svcs = sorted(svc_totals.items(), key=lambda x: -x[1]["bytes"])
+    # Classify each service into ACTIVE / LIGHT / BACKGROUND buckets
+    active_svcs: list = []
+    light_svcs: list = []
+    background_svcs: list = []
+    for svc, t in svc_totals.items():
+        is_active = (t["count"] >= 3 or t["uploads"] > 0 or t["bytes"] > 1024*1024)
+        if is_active:
+            active_svcs.append((svc, t))
+        elif t["count"] == 2:
+            light_svcs.append((svc, t))
+        else:
+            background_svcs.append((svc, t))
+    active_svcs.sort(key=lambda x: -x[1]["count"])
+    light_svcs.sort(key=lambda x: -x[1]["count"])
+    background_svcs.sort(key=lambda x: x[0])
+
+    # --- Hourly distribution across the 24h window ---
+    # Gives Gemini the "shape of the day" so it can lead the summary
+    # with the dominant activity period instead of just describing
+    # "what's happening right now".
+    hourly: dict[int, dict] = {}
+    for e in all_events:
+        hr = e.timestamp.strftime("%Y-%m-%d %H:00 UTC")
+        if hr not in hourly:
+            hourly[hr] = {"events": 0, "bytes": 0, "services": set()}
+        hourly[hr]["events"] += 1
+        hourly[hr]["bytes"] += e.bytes_transferred or 0
+        hourly[hr]["services"].add(e.ai_service)
+    hourly_rows = sorted(hourly.items())  # chronological
+
+    # Prompt budget: hard caps so the LLM prompt stays under Gemini's
+    # context window even for extremely active devices.
+    MAX_SERVICES_IN_PROMPT = 15
+    MAX_LIGHT_SERVICES = 12
+    MAX_BACKGROUND_SERVICES = 25
+    MAX_UPLOAD_EVENTS = 20
+    MAX_DNS_DOMAINS = 20
+    MAX_PROMPT_CHARS = 20000
+
+    # Build event summary for the "actively used" bucket
+    events = all_events  # used later for upload timeline
     event_summary_lines = []
-    for svc, t in sorted_svcs[:MAX_SERVICES_IN_PROMPT]:
+    for svc, t in active_svcs[:MAX_SERVICES_IN_PROMPT]:
         kb = t["bytes"] / 1024
-        line = f"- {svc} ({t['category']}): {t['count']} events, {kb:,.0f} KB totaal"
+        line = f"- {svc} ({t['category']}): {t['count']} hits"
+        if t["bytes"] > 0:
+            line += f", {kb:,.0f} KB"
         if t["uploads"] > 0:
             line += f", {t['uploads']} uploads"
         line += f" | actief {t['first'].strftime('%H:%M')}–{t['last'].strftime('%H:%M')} UTC"
         event_summary_lines.append(line)
+    if len(active_svcs) > MAX_SERVICES_IN_PROMPT:
+        event_summary_lines.append(f"- ... +{len(active_svcs) - MAX_SERVICES_IN_PROMPT} more actively-used services")
 
-    # Compute an activity level the prompt can use to set tone. Avoid
-    # claiming the user was "active" when we only see background sync.
-    total_bytes = sum(t["bytes"] for t in svc_totals.values())
-    total_uploads_meaningful = sum(1 for e in events if e.possible_upload)
-    if total_bytes == 0 and total_uploads_meaningful == 0:
-        activity_level = "IDLE — alleen achtergrond-heartbeats, geen data-overdracht"
-    elif total_bytes < 10 * 1024 * 1024 and len(events) < 10:
-        activity_level = (
-            "BACKGROUND-ONLY — kleine byte-overdrachten zonder gebruikspatroon, "
-            "waarschijnlijk automatische sync/telemetrie (geen actieve gebruiker)"
-        )
-    elif total_bytes < 100 * 1024 * 1024:
-        activity_level = "LIGHT — lichte actieve sessie of grote background sync"
+    light_lines = [
+        f"- {svc}: {t['count']} hits | {t['first'].strftime('%H:%M')}–{t['last'].strftime('%H:%M')} UTC"
+        for svc, t in light_svcs[:MAX_LIGHT_SERVICES]
+    ]
+    background_lines = [
+        f"- {svc}: {t['count']} ping"
+        for svc, t in background_svcs[:MAX_BACKGROUND_SERVICES]
+    ]
+
+    # Activity level — computed from ACTIVE bucket size + total bytes
+    total_bytes = sum(t["bytes"] for _, t in active_svcs)
+    total_uploads_meaningful = sum(1 for e in all_events if e.possible_upload)
+    active_svc_count = len(active_svcs)
+
+    if active_svc_count == 0 and total_uploads_meaningful == 0:
+        activity_level = "IDLE — only background heartbeats, no sustained service usage"
+    elif active_svc_count <= 2 and total_bytes < 5 * 1024 * 1024:
+        activity_level = "LIGHT — brief touches, probably background sync or short checks"
+    elif active_svc_count <= 5:
+        activity_level = "MODERATE — several services in sustained use over the window"
     else:
-        activity_level = "ACTIVE — duidelijk gebruikerspatroon met significante data-overdracht"
-    extra_svcs = len(sorted_svcs) - MAX_SERVICES_IN_PROMPT
-    if extra_svcs > 0:
-        event_summary_lines.append(f"- ... +{extra_svcs} andere services (niet getoond)")
+        activity_level = "ACTIVE — heavy usage across many services, clear user session"
 
     # Upload timeline — cap to most recent N, sort by timestamp desc
     upload_events = [
@@ -1093,65 +1146,179 @@ async def device_ai_report(
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     ja4_label_resolved = _resolve_ja4_label(device.ja4_fingerprint)
 
+    # Language selection — 'en' falls back to NL for anything other than
+    # explicit 'en'. All user-facing labels in both the data block and
+    # the system prompt are branched on this flag.
+    lang = (lang or "nl").lower()
+    if lang not in ("nl", "en"):
+        lang = "nl"
+    is_en = lang == "en"
+
+    L = {
+        "name":        "Name"            if is_en else "Naam",
+        "mac":         "MAC",
+        "vendor":      "OUI Vendor",
+        "unknown":     "Unknown"         if is_en else "Onbekend",
+        "os":          "OS (p0f)",
+        "dclass":      "Device class (p0f)",
+        "dhcp":        "DHCP vendor class",
+        "ja4":         "JA4 TLS stack",
+        "dist":        "Network distance",
+        "hops":        "hops",
+        "ips":         "IP addresses"    if is_en else "IP-adressen",
+        "more":        "more"            if is_en else "meer",
+        "generated":   "Report generated"if is_en else "Rapport gegenereerd",
+    }
+
     device_lines = [
-        f"Naam: {device_label}",
-        f"MAC: {mac_address}",
-        f"OUI Vendor: {device.vendor or 'Onbekend'}",
+        f"{L['name']}: {device_label}",
+        f"{L['mac']}: {mac_address}",
+        f"{L['vendor']}: {device.vendor or L['unknown']}",
     ]
     if device.os_full or device.os_name:
         os_str = device.os_full or device.os_name
         if device.os_version and device.os_version not in os_str:
             os_str = f"{os_str} {device.os_version}"
-        device_lines.append(f"OS (p0f): {os_str}")
+        device_lines.append(f"{L['os']}: {os_str}")
     if device.device_class:
-        device_lines.append(f"Device class (p0f): {device.device_class}")
+        device_lines.append(f"{L['dclass']}: {device.device_class}")
     if device.dhcp_vendor_class:
-        device_lines.append(f"DHCP vendor class: {device.dhcp_vendor_class}")
+        device_lines.append(f"{L['dhcp']}: {device.dhcp_vendor_class}")
     if ja4_label_resolved:
-        device_lines.append(f"JA4 TLS stack: {ja4_label_resolved}")
+        device_lines.append(f"{L['ja4']}: {ja4_label_resolved}")
     if device.network_distance is not None:
-        device_lines.append(f"Network distance: {device.network_distance} hops")
+        device_lines.append(f"{L['dist']}: {device.network_distance} {L['hops']}")
     device_lines.append(
-        f"IP-adressen: {', '.join(device_ips[:5])}"
-        f"{' (+' + str(len(device_ips) - 5) + ' meer)' if len(device_ips) > 5 else ''}"
+        f"{L['ips']}: {', '.join(device_ips[:5])}"
+        f"{' (+' + str(len(device_ips) - 5) + ' ' + L['more'] + ')' if len(device_ips) > 5 else ''}"
     )
-    device_lines.append(f"Rapport gegenereerd: {now_str}")
+    device_lines.append(f"{L['generated']}: {now_str}")
 
-    # Idle services block — apps that only produced zero-byte
-    # heartbeats, meaning they're running / configured but NOT
-    # actively transferring data.
-    idle_sorted = sorted(idle_svcs.items(), key=lambda x: -x[1])[:MAX_IDLE_SERVICES]
-    idle_lines = [f"- {svc} ({cnt} heartbeats)" for svc, cnt in idle_sorted]
-    extra_idle = len(idle_svcs) - MAX_IDLE_SERVICES
-    if extra_idle > 0:
-        idle_lines.append(f"- ... +{extra_idle} andere apps in background (niet getoond)")
+    # Hourly activity lines — one line per hour with events, KB, and
+    # the top-3 services so Gemini can see which hours dominated the
+    # 24h window and lead the summary with that period.
+    hourly_lines = []
+    for hr, info in hourly_rows:
+        top3 = sorted(info["services"])[:3]
+        extra = len(info["services"]) - 3
+        svc_str = ", ".join(top3)
+        if extra > 0:
+            svc_str += f" (+{extra})"
+        kb = info["bytes"] / 1024
+        hourly_lines.append(
+            f"- {hr}: {info['events']} events, {kb:,.0f} KB | {svc_str}"
+        )
 
-    data_block = f"""=== APPARAAT INFO ===
+    # ---- Section labels (NL / EN) ----
+    if is_en:
+        hdr_device     = "=== DEVICE INFO ==="
+        hdr_activity   = "=== ACTIVITY LEVEL ==="
+        lbl_total_ev   = "Total events in 24h window"
+        lbl_total_by   = "Total outbound bytes"
+        lbl_total_up   = "Total uploads"
+        hdr_hourly     = "=== HOURLY ACTIVITY (24h window, UTC) ==="
+        hdr_hourly_hint= (
+            "This shows the shape of the day. Lead your summary with the "
+            "hours where most activity happened — do NOT focus only on the "
+            "most recent hour."
+        )
+        hourly_empty   = "- No activity recorded"
+        hdr_active     = f"=== ACTIVELY USED SERVICES (>=3 hits, top {MAX_SERVICES_IN_PROMPT}) ==="
+        hdr_active_hint= (
+            "These services were used repeatedly during the window. Treat "
+            "them as the dominant user activity. Bytes are often 0 for "
+            "streaming/gaming apps because real traffic runs over QUIC/UDP — "
+            "hit count is the reliable usage signal, not bytes."
+        )
+        active_empty   = "- No services with sustained usage"
+        hdr_light      = f"=== LIGHTLY TOUCHED (2 hits, top {MAX_LIGHT_SERVICES}) ==="
+        hdr_light_hint = (
+            "Brief interactions — mention only as 'briefly checked' or "
+            "'short touch', never as 'used' or 'streamed'."
+        )
+        light_empty    = "- (none)"
+        hdr_bg         = f"=== BACKGROUND ONLY (1 ping, top {MAX_BACKGROUND_SERVICES}) ==="
+        hdr_bg_hint    = (
+            "One-off keep-alive pings. These apps are installed / reachable "
+            "but NOT actively used. Only describe them as 'running in "
+            "background', never as 'used', 'streamed', 'watched', 'chatted'."
+        )
+        bg_empty       = "- (none)"
+        hdr_uploads    = f"=== UPLOAD TIMELINE (most recent {MAX_UPLOAD_EVENTS}) ==="
+        upload_empty   = "- No uploads detected"
+        hdr_dns        = f"=== DNS QUERIES (top {MAX_DNS_DOMAINS} domains, last 24h) ==="
+        dns_empty      = "- No DNS data available (AdGuard querylog empty or unreachable)"
+    else:
+        hdr_device     = "=== APPARAAT INFO ==="
+        hdr_activity   = "=== ACTIVITEITSNIVEAU ==="
+        lbl_total_ev   = "Totaal events in 24u-venster"
+        lbl_total_by   = "Totale uitgaande bytes"
+        lbl_total_up   = "Totale uploads"
+        hdr_hourly     = "=== UURLIJKSE ACTIVITEIT (24u-venster, UTC) ==="
+        hdr_hourly_hint= (
+            "Dit laat de vorm van de dag zien. Leid je samenvatting in met "
+            "de uren waar de meeste activiteit zat — focus NIET alleen op "
+            "het laatste uur."
+        )
+        hourly_empty   = "- Geen activiteit geregistreerd"
+        hdr_active     = f"=== ACTIEF GEBRUIKTE SERVICES (>=3 hits, top {MAX_SERVICES_IN_PROMPT}) ==="
+        hdr_active_hint= (
+            "Deze services zijn herhaaldelijk aangeraakt tijdens het venster. "
+            "Behandel ze als het zwaartepunt van het gebruik. Bytes zijn vaak "
+            "0 voor streaming/gaming apps omdat het echte verkeer via "
+            "QUIC/UDP loopt — hit count is het betrouwbare signaal, niet "
+            "bytes."
+        )
+        active_empty   = "- Geen services met duurzaam gebruik"
+        hdr_light      = f"=== LICHT AANGERAAKT (2 hits, top {MAX_LIGHT_SERVICES}) ==="
+        hdr_light_hint = (
+            "Korte interacties — alleen benoemen als 'kort gecheckt' of "
+            "'even aangeraakt', nooit als 'gebruikt' of 'gestreamd'."
+        )
+        light_empty    = "- (geen)"
+        hdr_bg         = f"=== ALLEEN ACHTERGROND (1 ping, top {MAX_BACKGROUND_SERVICES}) ==="
+        hdr_bg_hint    = (
+            "Eenmalige keep-alive pings. Deze apps zijn geïnstalleerd / "
+            "bereikbaar maar NIET actief gebruikt. Beschrijf ze alleen als "
+            "'draait op achtergrond', nooit als 'gebruikt', 'gestreamd', "
+            "'bekeken' of 'gechat'."
+        )
+        bg_empty       = "- (geen)"
+        hdr_uploads    = f"=== UPLOAD TIJDLIJN (recentste {MAX_UPLOAD_EVENTS}) ==="
+        upload_empty   = "- Geen uploads gedetecteerd"
+        hdr_dns        = f"=== DNS VERZOEKEN (top {MAX_DNS_DOMAINS} domeinen, afgelopen 24u) ==="
+        dns_empty      = "- Geen DNS-data beschikbaar (AdGuard querylog leeg of niet bereikbaar)"
+
+    data_block = f"""{hdr_device}
 {chr(10).join(device_lines)}
 
-=== ACTIVITEITSNIVEAU ===
+{hdr_activity}
 {activity_level}
-Meaningful events (byte-transfer, uploads, of anomalies): {len(events)}
-Heartbeat-only events (TLS pings, 0 bytes, NIET actieve gebruik): {len(heartbeat_events)}
-Totale uitgaande bytes (meaningful): {total_bytes:,}
-Totale uploads: {total_uploads_meaningful}
+{lbl_total_ev}: {len(all_events)}
+{lbl_total_by}: {total_bytes:,}
+{lbl_total_up}: {total_uploads_meaningful}
 
-=== ACTIEF GEBRUIKTE SERVICES (top {MAX_SERVICES_IN_PROMPT} op bytes) ===
-DEZE services hebben écht data overgedragen en zijn ACTIEF GEBRUIKT:
-{chr(10).join(event_summary_lines) if event_summary_lines else '- Geen services met daadwerkelijke data-overdracht'}
+{hdr_hourly}
+{hdr_hourly_hint}
+{chr(10).join(hourly_lines) if hourly_lines else hourly_empty}
 
-=== APPS IN BACKGROUND (alleen heartbeats, NIET actief gebruikt) ===
-DEZE apps draaien op het apparaat maar hebben alleen keep-alive pings
-gestuurd — de gebruiker heeft ze NIET actief gebruikt. Noem deze
-alleen als "geïnstalleerd / draait op achtergrond", nooit als
-"gebruikt" of "gestreamd" of "bekeken":
-{chr(10).join(idle_lines) if idle_lines else '- (geen)'}
+{hdr_active}
+{hdr_active_hint}
+{chr(10).join(event_summary_lines) if event_summary_lines else active_empty}
 
-=== UPLOAD TIJDLIJN (recentste {MAX_UPLOAD_EVENTS}) ===
-{chr(10).join(upload_timeline) if upload_timeline else '- Geen uploads gedetecteerd'}
+{hdr_light}
+{hdr_light_hint}
+{chr(10).join(light_lines) if light_lines else light_empty}
 
-=== DNS VERZOEKEN (top {MAX_DNS_DOMAINS} domeinen, afgelopen 24u) ===
-{chr(10).join(dns_lines) if dns_lines else '- Geen DNS-data beschikbaar (AdGuard querylog leeg of niet bereikbaar)'}
+{hdr_bg}
+{hdr_bg_hint}
+{chr(10).join(background_lines) if background_lines else bg_empty}
+
+{hdr_uploads}
+{chr(10).join(upload_timeline) if upload_timeline else upload_empty}
+
+{hdr_dns}
+{chr(10).join(dns_lines) if dns_lines else dns_empty}
 """
 
     # Hard safety net: if the prompt is still huge, trim the middle.
@@ -1172,58 +1339,127 @@ alleen als "geïnstalleerd / draait op achtergrond", nooit als
     #      in 5 seconds and know what's going on.
     #   2. Chronological day breakdown (morning / afternoon / evening).
     #   3. "Opvallende observaties" — 3 specific bullets.
-    system_prompt = (
-        "Je bent een netwerk-analist die een eindgebruiker (niet-technisch, "
-        "huishouden of kleine ondernemer) uitlegt wat een specifiek apparaat "
-        "op z'n netwerk heeft gedaan. Schrijf in het Nederlands, in markdown.\n\n"
+    if is_en:
+        system_prompt = (
+            "You are a network analyst explaining to a non-technical end "
+            "user (household or small-business owner) what a specific "
+            "device on their network has been doing. Write in English, "
+            "in markdown.\n\n"
 
-        "KRITIEK — LEES EERST HET ACTIVITEITSNIVEAU:\n"
-        "Het data-blok bevat een ACTIVITEITSNIVEAU veld (IDLE / "
-        "BACKGROUND-ONLY / LIGHT / ACTIVE). Stem je beschrijving daar "
-        "strikt op af. Maak NOOIT claims over actief gebruik als het "
-        "niveau IDLE of BACKGROUND-ONLY is — dan heeft de gebruiker "
-        "het apparaat niet bewust gebruikt.\n\n"
+            "CRITICAL — LEAD WITH THE 24H SHAPE, NOT THE LAST HOUR:\n"
+            "Use the HOURLY ACTIVITY section to find the dominant activity "
+            "period(s) in the 24h window. Your summary MUST start with "
+            "what happened in bulk over the day (e.g. 'spent most of the "
+            "afternoon and evening gaming'). Only AFTER that should you "
+            "mention the current state in the last few hours. Never let "
+            "the latest hour crowd out the day's main activity.\n\n"
 
-        "ONDERSCHEID TUSSEN TWEE LIJSTEN:\n"
-        "  - 'ACTIEF GEBRUIKTE SERVICES' = services met echte data-"
-        "overdracht. Alleen hierover mag je zeggen dat de gebruiker ze "
-        "'gebruikt', 'streamt', 'bekijkt', 'upload', etc.\n"
-        "  - 'APPS IN BACKGROUND' = alleen TLS keep-alive pings zonder "
-        "data. Noem deze alleen als 'draait op de achtergrond', "
-        "'geïnstalleerd', 'reachable'. Gebruik NOOIT werkwoorden als "
-        "'streamen', 'kijken', 'chatten' voor deze apps.\n"
-        "Voorbeeld van een FOUTIEVE zin: 'De gebruiker luisterde naar "
-        "Spotify' — terwijl Spotify alleen in background stond.\n"
-        "Voorbeeld van een GOEDE zin: 'Spotify staat open op de "
-        "achtergrond maar speelt geen muziek af.'\n\n"
+            "BYTES ARE UNRELIABLE FOR STREAMING/GAMING:\n"
+            "Spotify, Discord, Roblox, Ubisoft Connect, Steam downloads, "
+            "Twitch, etc. often show 0 bytes in TLS logs because the real "
+            "traffic runs over QUIC/UDP. Trust HIT COUNT as the primary "
+            "usage signal: a service with 30 hits across 4 hours is "
+            "actively used even if bytes are near zero.\n\n"
 
-        "VERPLICHTE STRUCTUUR — houd je hier strikt aan:\n\n"
-        "## Samenvatting\n"
-        "2 tot 3 zinnen in gewone taal die meteen duidelijk maken:\n"
-        "  - Wat voor apparaat dit is (bv. 'een Windows gaming-PC', 'een "
-        "iPhone', 'een Google Nest speaker', 'een Philips Hue hub'). Gebruik "
-        "de OS, device class, vendor en JA4 TLS stack signals uit APPARAAT "
-        "INFO om dit te bepalen. Wees concreet — niet 'dit apparaat' maar "
-        "'deze Windows laptop'.\n"
-        "  - Wat de HUIDIGE STAAT van het apparaat is: 'wordt actief "
-        "gebruikt voor X en Y', of 'staat idle met alleen achtergrond-"
-        "syncs', of 'niet actief gebruikt — alleen TLS heartbeats'. Baseer "
-        "dit op het ACTIVITEITSNIVEAU veld.\n"
-        "  - Alleen ACHTERGROND-sync uploads vermelden als 'automatische "
-        "sync / telemetrie' — niet als gebruikersactie.\n"
-        "Schrijf deze samenvatting alsof je het tegen een collega in 10 "
-        "seconden vertelt. Geen jargon tenzij echt nodig.\n\n"
-        "## Dagverloop\n"
-        "Korte chronologische samenvatting van ochtend / middag / avond. "
-        "Als het niveau IDLE of BACKGROUND-ONLY is, beschrijf dan dat er "
-        "geen gebruikersessie heeft plaatsgevonden — noem alleen "
-        "automatische activiteit. Max een alinea.\n\n"
-        "## Opvallende observaties\n"
-        "Exact 3 bullets met specifieke dingen die de moeite waard zijn "
-        "om te weten. Als het apparaat idle is, focus dan op WAT er WEL "
-        "op achtergrond gebeurt (sync targets, telemetrie, privacy "
-        "features). Elke bullet begint met een korte kop in vet.\n"
-    )
+            "THREE SERVICE BUCKETS — USE DIFFERENT VERBS FOR EACH:\n"
+            "  - ACTIVELY USED SERVICES (>=3 hits): use verbs like "
+            "'played', 'streamed', 'watched', 'chatted', 'used'.\n"
+            "  - LIGHTLY TOUCHED (2 hits): use 'briefly checked', "
+            "'short touch' — never 'used' or 'streamed'.\n"
+            "  - BACKGROUND ONLY (1 ping): say 'installed', 'running in "
+            "background', 'reachable'. NEVER say 'used', 'watched', "
+            "'streamed', 'chatted' for these.\n"
+            "Wrong example: 'The user listened to Spotify' — when "
+            "Spotify was background-only.\n"
+            "Correct: 'Spotify is installed and reachable but shows no "
+            "active playback signature.'\n\n"
+
+            "REQUIRED STRUCTURE — stick to it exactly:\n\n"
+            "## Summary\n"
+            "3 to 4 sentences in plain language, in this order:\n"
+            "  1. What the device is (e.g. 'a Windows gaming PC', 'an "
+            "iPhone', 'a Google Nest speaker'). Use OS, device class, "
+            "vendor and JA4 TLS stack from DEVICE INFO. Be concrete — "
+            "not 'this device' but 'this Windows laptop'.\n"
+            "  2. The 24h DOMINANT activity: what was the main thing "
+            "that happened over the day as a whole. Lead with this.\n"
+            "  3. The current state in the last few hours: 'right now "
+            "it's idle', 'still actively gaming', 'winding down', etc.\n"
+            "  4. Only mention background-sync uploads as 'automatic "
+            "sync / telemetry', never as user action.\n\n"
+            "## Timeline\n"
+            "Short chronological breakdown using the HOURLY ACTIVITY "
+            "data. Point out the busy windows by hour range (e.g. "
+            "'17:00–21:00 UTC: heavy gaming on Roblox + Discord voice'). "
+            "If the level is IDLE, say explicitly that there was no user "
+            "session. Max one paragraph.\n\n"
+            "## Notable observations\n"
+            "Exactly 3 bullets with specific noteworthy findings. Each "
+            "bullet starts with a short bold header.\n"
+        )
+    else:
+        system_prompt = (
+            "Je bent een netwerk-analist die een eindgebruiker (niet-"
+            "technisch, huishouden of kleine ondernemer) uitlegt wat een "
+            "specifiek apparaat op z'n netwerk heeft gedaan. Schrijf in "
+            "het Nederlands, in markdown.\n\n"
+
+            "KRITIEK — LEID IN MET DE 24U-VORM, NIET HET LAATSTE UUR:\n"
+            "Gebruik de UURLIJKSE ACTIVITEIT sectie om de dominante "
+            "periode(s) in het 24u-venster te vinden. Je samenvatting "
+            "MOET beginnen met wat er in hoofdlijnen over de dag is "
+            "gedaan (bv. 'heeft de hele middag en avond gegamed'). Pas "
+            "DAARNA noem je wat er nu in de laatste paar uur gebeurt. "
+            "Laat het laatste uur nooit het hoofdgebruik van de dag "
+            "verdringen.\n\n"
+
+            "BYTES ZIJN ONBETROUWBAAR VOOR STREAMING/GAMING:\n"
+            "Spotify, Discord, Roblox, Ubisoft Connect, Steam downloads, "
+            "Twitch, etc. tonen vaak 0 bytes in TLS logs omdat het echte "
+            "verkeer via QUIC/UDP loopt. Vertrouw op HIT COUNT als "
+            "primair signaal: een service met 30 hits verspreid over 4 "
+            "uur wordt actief gebruikt, ook als bytes bijna nul zijn.\n\n"
+
+            "DRIE SERVICE-BAKKEN — GEBRUIK ANDERE WERKWOORDEN PER BAK:\n"
+            "  - ACTIEF GEBRUIKTE SERVICES (>=3 hits): werkwoorden als "
+            "'gespeeld', 'gestreamd', 'gekeken', 'gechat', 'gebruikt'.\n"
+            "  - LICHT AANGERAAKT (2 hits): 'kort gecheckt', 'even "
+            "aangeraakt' — nooit 'gebruikt' of 'gestreamd'.\n"
+            "  - ALLEEN ACHTERGROND (1 ping): 'geïnstalleerd', 'draait "
+            "op achtergrond', 'bereikbaar'. NOOIT 'gebruikt', 'bekeken', "
+            "'gestreamd' of 'gechat' voor deze services.\n"
+            "Foutief: 'De gebruiker luisterde naar Spotify' — terwijl "
+            "Spotify alleen in background stond.\n"
+            "Goed: 'Spotify is geïnstalleerd en bereikbaar, maar er is "
+            "geen actieve afspeelsignatuur te zien.'\n\n"
+
+            "VERPLICHTE STRUCTUUR — houd je hier strikt aan:\n\n"
+            "## Samenvatting\n"
+            "3 tot 4 zinnen in gewone taal, in deze volgorde:\n"
+            "  1. Wat voor apparaat dit is (bv. 'een Windows gaming-PC', "
+            "'een iPhone', 'een Google Nest speaker'). Gebruik de OS, "
+            "device class, vendor en JA4 TLS stack uit APPARAAT INFO. "
+            "Wees concreet — niet 'dit apparaat' maar 'deze Windows "
+            "laptop'.\n"
+            "  2. Het 24u-HOOFDGEBRUIK: waar ging de dag in hoofdlijnen "
+            "over. Begin hier mee.\n"
+            "  3. De huidige staat in de laatste paar uur: 'nu idle', "
+            "'nog steeds aan het gamen', 'aan het afbouwen', etc.\n"
+            "  4. Alleen ACHTERGROND-sync uploads vermelden als "
+            "'automatische sync / telemetrie', nooit als "
+            "gebruikersactie.\n\n"
+            "## Dagverloop\n"
+            "Korte chronologische samenvatting op basis van de UURLIJKSE "
+            "ACTIVITEIT. Benoem de drukke vensters per uurrange (bv. "
+            "'17:00–21:00 UTC: zware gaming-sessie op Roblox + Discord "
+            "voice'). Als het niveau IDLE is, zeg dan expliciet dat er "
+            "geen gebruikersessie heeft plaatsgevonden. Max een "
+            "alinea.\n\n"
+            "## Opvallende observaties\n"
+            "Exact 3 bullets met specifieke dingen die de moeite waard "
+            "zijn om te weten. Elke bullet begint met een korte kop in "
+            "vet.\n"
+        )
 
     prompt_chars = len(system_prompt) + len(data_block)
     print(f"[gemini] Device report prompt for {mac_address}: {prompt_chars} chars, "
