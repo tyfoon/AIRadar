@@ -1078,20 +1078,22 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
     print(f"[gemini] Device report prompt for {mac_address}: {prompt_chars} chars, "
           f"{len(events)} events, {total_uploads} uploads")
 
+    # Use gemini-2.0-flash because gemini-2.5-flash has "thinking mode"
+    # enabled by default which adds 30-60+ seconds of chain-of-thought
+    # before responding. For pure summarisation we don't need reasoning
+    # and 2.0-flash is always fast (5-10s) and same quality for this
+    # use case. Override with env var if you want to experiment.
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    gemini_timeout = int(os.environ.get("GEMINI_TIMEOUT_S", "90"))
+
     try:
         from google import genai
-        from google.genai import types
+        import time as _time
 
         client = genai.Client(api_key=gemini_key)
-        # Disable Gemini 2.5 Flash "thinking mode" for this summarisation
-        # task. Thinking mode can take 30-60+ seconds on complex prompts,
-        # which is the root cause of timeouts on device reports. For a
-        # pure summarisation job we don't need chain-of-thought reasoning
-        # — non-thinking mode responds in 5-10 seconds and produces the
-        # same quality output for this use case.
-        gen_config = types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        )
+        _t0 = _time.time()
+        print(f"[gemini] Calling {gemini_model} for {mac_address} "
+              f"(prompt {prompt_chars} chars, timeout {gemini_timeout}s)...")
 
         # Run the blocking Gemini SDK call in a thread pool so it doesn't
         # freeze the asyncio event loop (which would block all other
@@ -1099,12 +1101,12 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.models.generate_content,
-                model="gemini-2.5-flash",
+                model=gemini_model,
                 contents=f"{system_prompt}\n\n{data_block}",
-                config=gen_config,
             ),
-            timeout=90,
+            timeout=gemini_timeout,
         )
+        elapsed = _time.time() - _t0
         report_md = response.text
 
         # Extract token usage for cost transparency
@@ -1115,13 +1117,13 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
             "thinking_tokens": getattr(usage, "thoughts_token_count", 0),
             "total_tokens": getattr(usage, "total_token_count", 0),
         }
-        print(f"[gemini] Report for {mac_address}: {token_info}")
+        print(f"[gemini] Report for {mac_address} done in {elapsed:.1f}s: {token_info}")
     except asyncio.TimeoutError:
-        print(f"[gemini] Device report timed out after 60s for {mac_address}")
+        print(f"[gemini] Device report timed out after {gemini_timeout}s for {mac_address}")
         raise HTTPException(
             status_code=504,
-            detail="Gemini timed out na 60 seconden. Het apparaat heeft mogelijk te veel data — "
-                   "probeer het later opnieuw of kies een specifieker tijdvenster.",
+            detail=f"Gemini timed out na {gemini_timeout} seconden (model: {gemini_model}). "
+                   f"Probeer het later opnieuw.",
         )
     except Exception as exc:
         # Surface the actual error type + message so the user can see
@@ -2048,24 +2050,24 @@ async def alerts_ai_summary(
         "belangrijkste."
     )
 
+    # gemini-2.0-flash: non-thinking, always fast. See device report
+    # endpoint for the rationale. Override via GEMINI_MODEL env var.
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
     try:
         from google import genai
-        from google.genai import types
+        import time as _time
         client = genai.Client(api_key=gemini_key)
-        # Thinking mode off — simple summarisation task, non-thinking
-        # mode responds in 5-10s instead of 30-60s+.
-        gen_config = types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        )
+        _t0 = _time.time()
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.models.generate_content,
-                model="gemini-2.5-flash",
+                model=gemini_model,
                 contents=f"{system_prompt}\n\n=== ACTIEVE MELDINGEN ({len(alerts)} totaal) ===\n{alert_block}",
-                config=gen_config,
             ),
             timeout=45,
         )
+        elapsed = _time.time() - _t0
         summary = (response.text or "").strip()
         usage = getattr(response, "usage_metadata", None)
         tokens = None
@@ -2075,8 +2077,9 @@ async def alerts_ai_summary(
                 "response": getattr(usage, "candidates_token_count", 0),
                 "total": getattr(usage, "total_token_count", 0),
             }
+        print(f"[ai-summary] {gemini_model} returned in {elapsed:.1f}s, {tokens}")
     except Exception as exc:
-        print(f"[ai-summary] Gemini call failed: {exc}")
+        print(f"[ai-summary] Gemini call failed: {type(exc).__name__}: {exc}")
         summary = (
             f"Er zijn {len(alerts)} actieve meldingen in je netwerk. "
             f"Controleer het Actie Inbox-overzicht voor details."
@@ -2086,7 +2089,7 @@ async def alerts_ai_summary(
     return {
         "summary": summary,
         "alert_count": len(alerts),
-        "model": "gemini-2.5-flash",
+        "model": gemini_model,
         "tokens": tokens,
     }
 
