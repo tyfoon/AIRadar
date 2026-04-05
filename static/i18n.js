@@ -106,6 +106,12 @@ const TRANSLATIONS = {
     'beacon.warning':      'Warning',
     'beacon.warningText':  'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command & control traffic.',
     'beacon.lastSeen':     'Last seen',
+    'beacon.lastScan':     'Last scan',
+    'beacon.firstScanRunning': 'First scan in progress…',
+    'beacon.warmingUp':    'Warming up — first scan starts ~90s after restart.',
+    'beacon.patternsFound':'patterns scanned',
+    'beacon.onePattern':   '1 pattern scanned',
+    'beacon.scanError':    'Scanner error',
 
     // Security stat card + stealth VPN
     'priv.securityEvents': 'Security Events',
@@ -725,6 +731,12 @@ const TRANSLATIONS = {
     'beacon.warning':      'Waarschuwing',
     'beacon.warningText':  'Een of meer apparaten vertonen zeer periodieke uitgaande verbindingspatronen die kenmerkend zijn voor malware command & control verkeer.',
     'beacon.lastSeen':     'Laatst gezien',
+    'beacon.lastScan':     'Laatste scan',
+    'beacon.firstScanRunning': 'Eerste scan loopt…',
+    'beacon.warmingUp':    'Opwarmen — eerste scan start ~90s na herstart.',
+    'beacon.patternsFound':'patronen bekeken',
+    'beacon.onePattern':   '1 patroon bekeken',
+    'beacon.scanError':    'Scannerfout',
 
     // Beveiliging stat card + stealth VPN
     'priv.securityEvents': 'Beveiligingsevents',

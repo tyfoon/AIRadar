@@ -408,68 +408,103 @@ async def _periodic_cleanup():
 
 
 RULE_EXPIRY_INTERVAL = 60  # Check expired rules every 60 seconds
-BEACON_SCAN_INTERVAL = 3600  # Run beaconing detection hourly
-BEACON_DEDUP_HOURS = 24      # Don't re-alert the same src→dst pair within 24h
+BEACON_SCAN_INTERVAL = 3600  # Run beaconing detection hourly after the first pass
+BEACON_WARMUP_SECONDS = 90    # Delay before the first scan so Zeek has data
+BEACON_DEDUP_HOURS = 24       # Don't re-alert the same src→dst pair within 24h
+
+# Live status of the beacon scanner, surfaced by /api/privacy/stats so
+# the frontend can show "Last scanned HH:MM · N threats" instead of a
+# mystery empty panel.
+_beacon_status: dict = {
+    "running": False,
+    "last_scan_at": None,     # ISO timestamp of the last completed scan
+    "last_findings": 0,        # number of beacon patterns found in the last scan
+    "last_new_alerts": 0,      # new rows written to detection_events
+    "scans_completed": 0,
+    "last_error": None,
+}
 
 
 async def _periodic_beacon_scan():
     """Background task: scan Zeek conn.log for malware C2 beacons.
 
-    Runs once an hour. Findings are stored as DetectionEvent rows with
-    detection_type='beaconing_threat' and category='security'. Dedup
-    logic skips any (src, dst) pair that already has a beacon alert in
-    the last 24 hours, so we don't spam the alerts list when a C2 keeps
-    running for days.
+    Runs once ~90s after container startup (giving Zeek time to produce
+    conn.log data), then every hour thereafter. Findings are stored as
+    DetectionEvent rows with detection_type='beaconing_threat' and
+    category='security'. Dedup logic skips any (src, dst) pair that
+    already has a beacon alert in the last 24 hours, so we don't spam
+    the alerts list when a C2 keeps running for days.
+
+    Status is tracked in _beacon_status so the frontend can show the
+    user that the scanner is alive and when it last ran — critical on
+    a clean home network where the correct result is "0 threats" but
+    a blank panel otherwise looks like a broken feature.
     """
+    # Warmup: let Zeek's conn.log accumulate some data before the first
+    # scan. Without this, a rebuild-and-immediately-check workflow sees
+    # an empty conn.log and thinks the feature is broken.
+    await asyncio.sleep(BEACON_WARMUP_SECONDS)
+
     while True:
-        await asyncio.sleep(BEACON_SCAN_INTERVAL)
+        _beacon_status["running"] = True
         try:
             findings = await run_beacon_analysis()
-            if not findings:
-                continue
-
-            db = SessionLocal()
-            try:
-                cutoff = datetime.utcnow() - timedelta(hours=BEACON_DEDUP_HOURS)
-                new_count = 0
-                for f in findings:
-                    already = (
-                        db.query(DetectionEvent.id)
-                        .filter(
-                            DetectionEvent.detection_type == "beaconing_threat",
-                            DetectionEvent.source_ip == f["src"],
-                            DetectionEvent.ai_service == f["dst"],
-                            DetectionEvent.timestamp >= cutoff,
+            new_count = 0
+            if findings:
+                db = SessionLocal()
+                try:
+                    cutoff = datetime.utcnow() - timedelta(hours=BEACON_DEDUP_HOURS)
+                    for f in findings:
+                        already = (
+                            db.query(DetectionEvent.id)
+                            .filter(
+                                DetectionEvent.detection_type == "beaconing_threat",
+                                DetectionEvent.source_ip == f["src"],
+                                DetectionEvent.ai_service == f["dst"],
+                                DetectionEvent.timestamp >= cutoff,
+                            )
+                            .first()
                         )
-                        .first()
-                    )
-                    if already:
-                        continue
+                        if already:
+                            continue
 
-                    event = DetectionEvent(
-                        timestamp=datetime.utcnow(),
-                        detection_type="beaconing_threat",
-                        ai_service=f["dst"],        # destination IP lives here
-                        source_ip=f["src"],
-                        category="security",
-                        bytes_transferred=0,
-                        possible_upload=False,
-                    )
-                    db.add(event)
-                    new_count += 1
-                    print(
-                        f"[beacon] 🚨 THREAT: {f['src']} → {f['dst']}:{f['port']}/{f['proto']} "
-                        f"every {f['mean_interval_s']}s (±{f['stddev_s']}s, n={f['connection_count']})"
-                    )
-                if new_count:
-                    db.commit()
-                    print(f"[beacon] {new_count} new beacon alert(s) recorded")
-                else:
-                    print(f"[beacon] Scan complete — {len(findings)} pattern(s) found, all already alerted")
-            finally:
-                db.close()
+                        event = DetectionEvent(
+                            timestamp=datetime.utcnow(),
+                            detection_type="beaconing_threat",
+                            ai_service=f["dst"],        # destination IP lives here
+                            source_ip=f["src"],
+                            category="security",
+                            bytes_transferred=0,
+                            possible_upload=False,
+                        )
+                        db.add(event)
+                        new_count += 1
+                        print(
+                            f"[beacon] 🚨 THREAT: {f['src']} → {f['dst']}:{f['port']}/{f['proto']} "
+                            f"every {f['mean_interval_s']}s (±{f['stddev_s']}s, n={f['connection_count']})"
+                        )
+                    if new_count:
+                        db.commit()
+                        print(f"[beacon] {new_count} new beacon alert(s) recorded")
+                    else:
+                        print(f"[beacon] Scan complete — {len(findings)} pattern(s) found, all already alerted")
+                finally:
+                    db.close()
+            else:
+                print("[beacon] Scan complete — no beaconing patterns detected")
+
+            _beacon_status["last_scan_at"] = datetime.utcnow().isoformat()
+            _beacon_status["last_findings"] = len(findings)
+            _beacon_status["last_new_alerts"] = new_count
+            _beacon_status["scans_completed"] += 1
+            _beacon_status["last_error"] = None
         except Exception as exc:
+            _beacon_status["last_error"] = f"{type(exc).__name__}: {exc}"
             print(f"[beacon] Scan error: {exc}")
+        finally:
+            _beacon_status["running"] = False
+
+        await asyncio.sleep(BEACON_SCAN_INTERVAL)
 
 
 async def _expire_block_rules():
@@ -3131,6 +3166,9 @@ async def privacy_stats(
         "vpn_alerts": vpn_alerts,
         # Malware C2 beaconing alerts
         "beaconing_alerts": beacon_alerts,
+        # Live scanner status — lets the UI show "last scanned HH:MM"
+        # instead of a blank panel on networks with zero beacons.
+        "beaconing_status": dict(_beacon_status),
         # Security stats (beaconing + future security categories)
         "security": security_stats,
     }
@@ -3320,14 +3358,32 @@ async def get_ips_status():
     alerts_raw = await crowdsec.get_alerts(limit=50)
     decisions_raw = await crowdsec.get_decisions()
 
-    # Normalize alerts for the UI
+    # Normalize alerts and filter out CAPI community-blocklist entries.
+    # CrowdSec's /v1/alerts returns BOTH locally-triggered scenarios
+    # AND the periodic import from the community threat-intel feed. The
+    # latter are not attacks on this network — they're preventive bans
+    # pushed by CAPI every 2 hours. They belong in the Blocklist tab
+    # (via get_decisions with origin=CAPI), not in the Attacks tab.
     alerts = []
     for a in alerts_raw:
         source = a.get("source", {})
+        scenario = a.get("scenario", "unknown") or ""
+        # Skip anything sourced from CAPI or matching the community
+        # blocklist scenario name used by CrowdSec hub collections.
+        origin_fields = (
+            (a.get("decisions") or [{}])[0].get("origin", "")
+            if a.get("decisions") else ""
+        )
+        if (
+            origin_fields == "CAPI"
+            or "community_blocklist" in scenario
+            or "lists:" in scenario  # CAPI list imports carry a `lists:<name>` scenario
+        ):
+            continue
         alerts.append({
             "id": a.get("id"),
             "created_at": a.get("created_at", ""),
-            "scenario": a.get("scenario", "unknown"),
+            "scenario": scenario,
             "message": a.get("message", ""),
             "ip": source.get("ip", source.get("value", "?")),
             "country": source.get("cn", ""),

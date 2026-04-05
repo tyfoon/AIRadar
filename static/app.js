@@ -2566,7 +2566,7 @@ async function refreshPrivacy() {
   renderSecurityStats(privRes.security || {}, 'security-stat-count', 'security-stat-7d', 'security-spark');
 
   // Beaconing / C2 threat intelligence card
-  renderBeaconAlerts(privRes.beaconing_alerts || []);
+  renderBeaconAlerts(privRes.beaconing_alerts || [], privRes.beaconing_status || null);
 }
 
 // ---------------------------------------------------------------------------
@@ -2605,7 +2605,41 @@ function renderSecurityStats(stats, countId, weekId, sparkId) {
 // ---------------------------------------------------------------------------
 // Beaconing (malware C2) alert rendering
 // ---------------------------------------------------------------------------
-function renderBeaconAlerts(alerts) {
+// Build the small scanner-status footer shown under the beacon panel.
+// Makes "zero threats found" distinguishable from "scan hasn't run yet"
+// or "scan is in progress". Without this, a clean home network looks
+// identical to a broken feature.
+function _beaconStatusFooter(status) {
+  if (!status) return '';
+  const running = !!status.running;
+  const scansDone = status.scans_completed || 0;
+  const lastAt = status.last_scan_at;
+  const findings = status.last_findings || 0;
+  const lastErr = status.last_error;
+
+  let line;
+  let cls = 'text-slate-400 dark:text-slate-500';
+  if (lastErr) {
+    line = `${t('beacon.scanError') || 'Scanner error'}: ${lastErr}`;
+    cls = 'text-red-500 dark:text-red-400';
+  } else if (running && scansDone === 0) {
+    line = t('beacon.firstScanRunning') || 'First scan in progress…';
+  } else if (scansDone === 0) {
+    line = t('beacon.warmingUp') || 'Warming up — first scan starts ~90s after restart.';
+  } else {
+    const when = lastAt ? fmtTime(lastAt) : '—';
+    const patternsLabel = findings === 1
+      ? (t('beacon.onePattern') || '1 pattern found')
+      : `${findings} ${t('beacon.patternsFound') || 'patterns found'}`;
+    line = `${t('beacon.lastScan') || 'Last scan'}: ${when} · ${patternsLabel}`;
+  }
+  return `<div class="mt-3 pt-2 border-t border-slate-100 dark:border-white/[0.04] text-[11px] ${cls} flex items-center gap-1.5">
+    <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <span>${line}</span>
+  </div>`;
+}
+
+function renderBeaconAlerts(alerts, status) {
   const body = document.getElementById('beacon-body');
   const badge = document.getElementById('beacon-badge');
   if (!body || !badge) return;
@@ -2619,7 +2653,8 @@ function renderBeaconAlerts(alerts) {
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <span class="text-sm font-medium">${t('beacon.noThreats') || 'Geen verdachte malware-beacons gedetecteerd.'}</span>
-      </div>`;
+      </div>
+      ${_beaconStatusFooter(status)}`;
     return;
   }
 
@@ -2668,7 +2703,8 @@ function renderBeaconAlerts(alerts) {
           </div>
         </div>`;
       }).join('')}
-    </div>`;
+    </div>
+    ${_beaconStatusFooter(status)}`;
 }
 
 // VPN toggle + rendering
