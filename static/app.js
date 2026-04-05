@@ -508,41 +508,69 @@ function _ipSummary(device) {
 }
 
 // Device type detection from hostname + vendor
+// -----------------------------------------------------------------------
+// Device type icons — Phosphor Icons (duotone weight).
+// Each icon is an HTML string that must be injected via innerHTML
+// (NOT textContent) because <i class="ph-duotone ph-..."> is an HTML tag.
+// The `type` field remains a plain string (used in titles / tooltips).
+// -----------------------------------------------------------------------
+const PH_ICON = {
+  phone:    '<i class="ph-duotone ph-device-mobile text-xl"></i>',
+  tablet:   '<i class="ph-duotone ph-device-tablet text-xl"></i>',
+  laptop:   '<i class="ph-duotone ph-laptop text-xl"></i>',
+  desktop:  '<i class="ph-duotone ph-desktop text-xl"></i>',
+  tv:       '<i class="ph-duotone ph-television text-xl"></i>',
+  speaker:  '<i class="ph-duotone ph-speaker-hifi text-xl"></i>',
+  printer:  '<i class="ph-duotone ph-printer text-xl"></i>',
+  router:   '<i class="ph-duotone ph-router text-xl"></i>',
+  console:  '<i class="ph-duotone ph-game-controller text-xl"></i>',
+  camera:   '<i class="ph-duotone ph-video-camera text-xl"></i>',
+  watch:    '<i class="ph-duotone ph-watch text-xl"></i>',
+  nas:      '<i class="ph-duotone ph-hard-drives text-xl"></i>',
+  server:   '<i class="ph-duotone ph-hard-drives text-xl"></i>',
+  home:     '<i class="ph-duotone ph-house-line text-xl"></i>',
+  doorbell: '<i class="ph-duotone ph-bell-ringing text-xl"></i>',
+  wifi:     '<i class="ph-duotone ph-wifi-high text-xl"></i>',
+  iot:      '<i class="ph-duotone ph-robot text-xl"></i>',
+  unknown:  '<i class="ph-duotone ph-question text-xl"></i>',
+  device:   '<i class="ph-duotone ph-circuitry text-xl"></i>',
+};
+
 const DEVICE_TYPES = [
-  { match: /macbook/i,            icon: '💻', type: 'MacBook' },
-  { match: /imac/i,               icon: '🖥️', type: 'iMac' },
-  { match: /mac[\s-]?pro/i,       icon: '🖥️', type: 'Mac Pro' },
-  { match: /mac[\s-]?mini/i,      icon: '🖥️', type: 'Mac mini' },
-  { match: /mac[\s-]?studio/i,    icon: '🖥️', type: 'Mac Studio' },
-  { match: /iphone/i,             icon: '📱', type: 'iPhone' },
-  { match: /ipad/i,               icon: '📱', type: 'iPad' },
-  { match: /apple[\s-]?tv/i,      icon: '📺', type: 'Apple TV' },
-  { match: /homepod/i,            icon: '🔊', type: 'HomePod' },
-  { match: /apple[\s-]?watch/i,   icon: '⌚', type: 'Apple Watch' },
-  { match: /galaxy|samsung/i,     icon: '📱', type: 'Samsung' },
-  { match: /pixel/i,              icon: '📱', type: 'Pixel' },
-  { match: /android/i,            icon: '📱', type: 'Android' },
-  { match: /surface/i,            icon: '💻', type: 'Surface' },
-  { match: /windows|desktop|pc/i, icon: '🖥️', type: 'PC' },
-  { match: /laptop|notebook/i,    icon: '💻', type: 'Laptop' },
-  { match: /ubiquiti|unifi|router|gateway/i, icon: '📡', type: 'Router' },
-  { match: /switch/i,             icon: '🔌', type: 'Switch' },
-  { match: /access[\s-]?point|ap\b/i, icon: '📶', type: 'Access Point' },
-  { match: /printer|epson|hp[\s-]?print|canon/i, icon: '🖨️', type: 'Printer' },
-  { match: /nest|thermostat|hue|smart[\s-]?home|iot/i, icon: '🏠', type: 'Smart Home' },
-  { match: /sonos|speaker/i,      icon: '🔊', type: 'Speaker' },
-  { match: /tv|television|chromecast|roku|fire[\s-]?stick/i, icon: '📺', type: 'TV/Media' },
-  { match: /playstation|ps[45]/i, icon: '🎮', type: 'PlayStation' },
-  { match: /xbox/i,               icon: '🎮', type: 'Xbox' },
-  { match: /nintendo|switch/i,    icon: '🎮', type: 'Nintendo' },
-  { match: /nas|synology|qnap/i,  icon: '💾', type: 'NAS' },
-  { match: /server/i,             icon: '🖥️', type: 'Server' },
-  { match: /camera|cam\b|hikvision|ds-2cd/i, icon: '📹', type: 'IP Camera' },
-  { match: /espressif/i,          icon: '🔌', type: 'IoT Device' },
+  { match: /macbook/i,                         icon: PH_ICON.laptop,  type: 'MacBook' },
+  { match: /imac/i,                            icon: PH_ICON.desktop, type: 'iMac' },
+  { match: /mac[\s-]?pro/i,                    icon: PH_ICON.desktop, type: 'Mac Pro' },
+  { match: /mac[\s-]?mini/i,                   icon: PH_ICON.desktop, type: 'Mac mini' },
+  { match: /mac[\s-]?studio/i,                 icon: PH_ICON.desktop, type: 'Mac Studio' },
+  { match: /iphone/i,                          icon: PH_ICON.phone,   type: 'iPhone' },
+  { match: /ipad/i,                            icon: PH_ICON.tablet,  type: 'iPad' },
+  { match: /apple[\s-]?tv/i,                   icon: PH_ICON.tv,      type: 'Apple TV' },
+  { match: /homepod/i,                         icon: PH_ICON.speaker, type: 'HomePod' },
+  { match: /apple[\s-]?watch/i,                icon: PH_ICON.watch,   type: 'Apple Watch' },
+  { match: /galaxy|samsung/i,                  icon: PH_ICON.phone,   type: 'Samsung' },
+  { match: /pixel/i,                           icon: PH_ICON.phone,   type: 'Pixel' },
+  { match: /android/i,                         icon: PH_ICON.phone,   type: 'Android' },
+  { match: /surface/i,                         icon: PH_ICON.laptop,  type: 'Surface' },
+  { match: /windows|desktop|pc/i,              icon: PH_ICON.desktop, type: 'PC' },
+  { match: /laptop|notebook/i,                 icon: PH_ICON.laptop,  type: 'Laptop' },
+  { match: /ubiquiti|unifi|router|gateway/i,   icon: PH_ICON.router,  type: 'Router' },
+  { match: /switch/i,                          icon: PH_ICON.router,  type: 'Switch' },
+  { match: /access[\s-]?point|ap\b/i,          icon: PH_ICON.wifi,    type: 'Access Point' },
+  { match: /printer|epson|hp[\s-]?print|canon/i, icon: PH_ICON.printer, type: 'Printer' },
+  { match: /nest|thermostat|hue|smart[\s-]?home|iot/i, icon: PH_ICON.home, type: 'Smart Home' },
+  { match: /sonos|speaker/i,                   icon: PH_ICON.speaker, type: 'Speaker' },
+  { match: /tv|television|chromecast|roku|fire[\s-]?stick/i, icon: PH_ICON.tv, type: 'TV/Media' },
+  { match: /playstation|ps[45]/i,              icon: PH_ICON.console, type: 'PlayStation' },
+  { match: /xbox/i,                            icon: PH_ICON.console, type: 'Xbox' },
+  { match: /nintendo|switch/i,                 icon: PH_ICON.console, type: 'Nintendo' },
+  { match: /nas|synology|qnap/i,               icon: PH_ICON.nas,     type: 'NAS' },
+  { match: /server/i,                          icon: PH_ICON.server,  type: 'Server' },
+  { match: /camera|cam\b|hikvision|ds-2cd/i,   icon: PH_ICON.camera,  type: 'IP Camera' },
+  { match: /espressif/i,                       icon: PH_ICON.iot,     type: 'IoT Device' },
 ];
 
 function _detectDeviceType(device) {
-  if (!device) return { icon: '❓', type: 'Unknown' };
+  if (!device) return { icon: PH_ICON.unknown, type: 'Unknown' };
   const haystack = [device.hostname, device.vendor, device.display_name].filter(Boolean).join(' ');
   for (const dt of DEVICE_TYPES) {
     if (dt.match.test(haystack)) return dt;
@@ -550,29 +578,29 @@ function _detectDeviceType(device) {
   // p0f device_class fallback
   if (device.device_class) {
     const dc = device.device_class.toLowerCase();
-    if (dc === 'phone')    return { icon: '📱', type: 'Phone' };
-    if (dc === 'tablet')   return { icon: '📱', type: 'Tablet' };
-    if (dc === 'laptop')   return { icon: '💻', type: 'Laptop' };
-    if (dc === 'computer') return { icon: '💻', type: 'Computer' };
-    if (dc === 'server')   return { icon: '🖥️', type: 'Server' };
-    if (dc === 'iot')      return { icon: '🔌', type: 'IoT Device' };
+    if (dc === 'phone')    return { icon: PH_ICON.phone,   type: 'Phone' };
+    if (dc === 'tablet')   return { icon: PH_ICON.tablet,  type: 'Tablet' };
+    if (dc === 'laptop')   return { icon: PH_ICON.laptop,  type: 'Laptop' };
+    if (dc === 'computer') return { icon: PH_ICON.desktop, type: 'Computer' };
+    if (dc === 'server')   return { icon: PH_ICON.server,  type: 'Server' };
+    if (dc === 'iot')      return { icon: PH_ICON.iot,     type: 'IoT Device' };
   }
   // Vendor-based fallback
   if (device.vendor) {
     const v = device.vendor.toLowerCase();
-    if (v.includes('espressif'))  return { icon: '🔌', type: 'IoT Device' };
-    if (v.includes('hikvision'))  return { icon: '📹', type: 'IP Camera' };
-    if (v.includes('apple'))      return { icon: '🍎', type: 'Apple Device' };
-    if (v.includes('samsung'))    return { icon: '📱', type: 'Samsung' };
-    if (v.includes('google'))     return { icon: '📱', type: 'Google Device' };
-    if (v.includes('microsoft'))  return { icon: '💻', type: 'Microsoft' };
-    if (v.includes('sonos'))      return { icon: '🔊', type: 'Speaker' };
-    if (v.includes('ring'))       return { icon: '🔔', type: 'Doorbell' };
-    if (v.includes('tp-link') || v.includes('tplink'))  return { icon: '📡', type: 'Network' };
+    if (v.includes('espressif'))  return { icon: PH_ICON.iot,     type: 'IoT Device' };
+    if (v.includes('hikvision'))  return { icon: PH_ICON.camera,  type: 'IP Camera' };
+    if (v.includes('apple'))      return { icon: PH_ICON.laptop,  type: 'Apple Device' };
+    if (v.includes('samsung'))    return { icon: PH_ICON.phone,   type: 'Samsung' };
+    if (v.includes('google'))     return { icon: PH_ICON.phone,   type: 'Google Device' };
+    if (v.includes('microsoft'))  return { icon: PH_ICON.laptop,  type: 'Microsoft' };
+    if (v.includes('sonos'))      return { icon: PH_ICON.speaker, type: 'Speaker' };
+    if (v.includes('ring'))       return { icon: PH_ICON.doorbell, type: 'Doorbell' };
+    if (v.includes('tp-link') || v.includes('tplink'))  return { icon: PH_ICON.router, type: 'Network' };
     if (v.includes('intel') || v.includes('dell') || v.includes('lenovo') || v.includes('hp '))
-      return { icon: '💻', type: 'Computer' };
+      return { icon: PH_ICON.desktop, type: 'Computer' };
   }
-  return { icon: '📟', type: 'Device' };
+  return { icon: PH_ICON.device, type: 'Device' };
 }
 
 // Large device type icon (20x20) for device matrix
@@ -1369,14 +1397,16 @@ let _summaryAlerts = [];
 const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel']);
 
 function _alertTypeLabel(type) {
+  // Icons are HTML strings (Phosphor duotone). Callers must inject
+  // them via innerHTML, never textContent.
   const map = {
-    'beaconing_threat': { icon: '🚨', label: 'Malware beacon', color: 'red' },
-    'vpn_tunnel':       { icon: '🔒', label: 'VPN tunnel',     color: 'orange' },
-    'stealth_vpn_tunnel':{ icon: '🥷', label: 'Stealth tunnel', color: 'red' },
-    'upload':           { icon: '📤', label: 'Data upload',    color: 'amber' },
-    'service_access':   { icon: '🌐', label: 'Service access', color: 'indigo' },
+    'beaconing_threat':  { icon: '<i class="ph-duotone ph-siren text-xl"></i>',           label: 'Malware beacon', color: 'red' },
+    'vpn_tunnel':        { icon: '<i class="ph-duotone ph-lock-key text-xl"></i>',         label: 'VPN tunnel',     color: 'orange' },
+    'stealth_vpn_tunnel':{ icon: '<i class="ph-duotone ph-mask-sad text-xl"></i>',         label: 'Stealth tunnel', color: 'red' },
+    'upload':            { icon: '<i class="ph-duotone ph-upload-simple text-xl"></i>',    label: 'Data upload',    color: 'amber' },
+    'service_access':    { icon: '<i class="ph-duotone ph-globe text-xl"></i>',            label: 'Service access', color: 'indigo' },
   };
-  return map[type] || { icon: '❓', label: type, color: 'slate' };
+  return map[type] || { icon: '<i class="ph-duotone ph-question text-xl"></i>', label: type, color: 'slate' };
 }
 
 function _updateNavBadge(count) {
@@ -1411,9 +1441,7 @@ async function loadSummaryDashboard() {
       container.innerHTML = `
         <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-xl p-8 text-center">
           <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 mb-3">
-            <svg class="w-7 h-7 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-            </svg>
+            <i class="ph-duotone ph-shield-check text-3xl text-emerald-600 dark:text-emerald-400"></i>
           </div>
           <h3 class="text-lg font-semibold text-emerald-700 dark:text-emerald-300">${t('summary.allClear') || 'Alles is veilig'}</h3>
           <p class="text-sm text-emerald-600/80 dark:text-emerald-400/70 mt-1">${t('summary.allClearSub') || 'Geen actie vereist.'}</p>
@@ -1517,7 +1545,8 @@ function openAlertActionModal(idx) {
 
   if (title) title.textContent = `${devName} → ${svcName}`;
   const meta = _alertTypeLabel(alert.alert_type);
-  if (subtitle) subtitle.textContent = `${meta.icon} ${meta.label} · ${alert.hits} hits`;
+  // meta.icon is now an HTML string (Phosphor), so use innerHTML.
+  if (subtitle) subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${alert.hits} hits</span>`;
   if (status) status.textContent = '';
   if (globalScope) globalScope.checked = false;
 
@@ -1616,7 +1645,7 @@ async function generateSummaryAI() {
 
   const origHTML = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="inline-flex items-center gap-1.5"><svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg><span>${t('summary.aiGenerating') || 'Bezig met analyseren...'}</span></span>`;
+  btn.innerHTML = `<span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-circle-notch animate-spin text-sm"></i><span>${t('summary.aiGenerating') || 'Bezig met analyseren...'}</span></span>`;
 
   responseBox.classList.remove('hidden');
   responseBox.innerHTML = `
@@ -1892,7 +1921,7 @@ function renderDashAlarms() {
   if (_dashAlarms.length === 0) {
     body.innerHTML = `<tr><td colspan="${colSpan}" class="py-12 text-center">
       <div class="flex flex-col items-center gap-2">
-        <svg class="w-10 h-10 text-emerald-400 dark:text-emerald-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        <i class="ph-duotone ph-shield-check text-4xl text-emerald-400 dark:text-emerald-500"></i>
         <span class="text-sm text-slate-400 dark:text-slate-500">${t('dash.noAlarms')}</span>
       </div>
     </td></tr>`;
@@ -1988,7 +2017,7 @@ function renderDashAlarms() {
       html += `<tr class="border-b border-slate-100 dark:border-white/[0.04] border-l-2 border-l-orange-400 bg-orange-50/40 dark:bg-orange-950/10 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors cursor-pointer" onclick="toggleAlarmGroup(${gi})">
         <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">
           <span class="inline-flex items-center gap-1.5">
-            <svg id="alarm-chevron-${gi}" class="w-3 h-3 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+            <i id="alarm-chevron-${gi}" class="ph-duotone ph-caret-right text-xs text-slate-400 transition-transform duration-200 inline-block"></i>
             ${timeRange}
           </span>
         </td>
@@ -2655,7 +2684,7 @@ function _beaconStatusFooter(status) {
     line = `${t('beacon.lastScan') || 'Last scan'}: ${when} · ${patternsLabel}`;
   }
   return `<div class="mt-3 pt-2 border-t border-slate-100 dark:border-white/[0.04] text-[11px] ${cls} flex items-center gap-1.5">
-    <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <i class="ph-duotone ph-clock text-xs flex-shrink-0"></i>
     <span>${line}</span>
   </div>`;
 }
@@ -2670,9 +2699,7 @@ function renderBeaconAlerts(alerts, status) {
     badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium';
     body.innerHTML = `
       <div class="flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400">
-        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
+        <i class="ph-duotone ph-shield-check text-xl flex-shrink-0"></i>
         <span class="text-sm font-medium">${t('beacon.noThreats') || 'Geen verdachte malware-beacons gedetecteerd.'}</span>
       </div>
       ${_beaconStatusFooter(status)}`;
@@ -2685,9 +2712,7 @@ function renderBeaconAlerts(alerts, status) {
 
   body.innerHTML = `
     <div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
-      <svg class="w-4 h-4 mt-0.5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-      </svg>
+      <i class="ph-duotone ph-warning text-base mt-0.5 text-red-500 flex-shrink-0"></i>
       <p class="text-xs text-red-700 dark:text-red-300">
         <span class="font-semibold">${t('beacon.warning') || 'Warning'}:</span>
         ${t('beacon.warningText') || 'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command &amp; control traffic.'}
@@ -2755,7 +2780,7 @@ function renderVpnAlerts(alerts) {
     if (body) body.innerHTML = `
       <div class="flex flex-col items-center justify-center py-6 text-center">
         <div class="w-10 h-10 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 flex items-center justify-center mb-2">
-          <svg class="w-5 h-5 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <i class="ph-duotone ph-shield-check text-xl text-emerald-500 dark:text-emerald-400"></i>
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400">${t('priv.noVpnTunnels')}</p>
         <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${t('priv.vpnMonitoring')}</p>
@@ -2901,9 +2926,11 @@ function renderTrackerDetailsList() {
 // ================================================================
 
 const CATEGORY_META = {
-  gaming:    { icon: '🎮', color: 'indigo' },
-  social:    { icon: '💬', color: 'pink' },
-  streaming: { icon: '📺', color: 'purple' },
+  gaming:    { icon: '<i class="ph-duotone ph-game-controller text-xl"></i>', color: 'indigo' },
+  social:    { icon: '<i class="ph-duotone ph-chat-circle-text text-xl"></i>', color: 'pink' },
+  streaming: { icon: '<i class="ph-duotone ph-play-circle text-xl"></i>', color: 'purple' },
+  shopping:  { icon: '<i class="ph-duotone ph-shopping-bag text-xl"></i>', color: 'amber' },
+  gambling:  { icon: '<i class="ph-duotone ph-dice-five text-xl"></i>', color: 'rose' },
 };
 
 function _fmtBytes(b) {
@@ -2931,7 +2958,7 @@ async function refreshOther() {
   const statsEl = document.getElementById('other-stats');
   if (statsEl) {
     statsEl.innerHTML = (tree || []).map(cat => {
-      const m = CATEGORY_META[cat.category] || { icon: '📊', color: 'slate' };
+      const m = CATEGORY_META[cat.category] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
       const totalHits = cat.services.reduce((s, svc) => s + svc.devices.reduce((a, d) => a + d.hits, 0), 0);
       const uniqueDevices = new Set(cat.services.flatMap(svc => svc.devices.map(d => d.ip))).size;
       return `<div class="bg-white dark:bg-${m.color}-900/10 border border-slate-200 dark:border-${m.color}-700/30 rounded-xl p-5 card-hover">
@@ -2954,7 +2981,7 @@ async function refreshOther() {
   }
 
   container.innerHTML = tree.map((cat, ci) => {
-    const m = CATEGORY_META[cat.category] || { icon: '📊', color: 'slate' };
+    const m = CATEGORY_META[cat.category] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
     const catLabel = t('other.cat.' + cat.category) || cat.category;
     const totalHits = cat.services.reduce((s, svc) => s + svc.devices.reduce((a, d) => a + d.hits, 0), 0);
 
@@ -2988,7 +3015,7 @@ async function refreshOther() {
           <span class="flex items-center gap-3">
             <span class="text-xs tabular-nums font-medium text-slate-600 dark:text-slate-300">${_fmtBytes(svc.total_bytes)}</span>
             <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${svcHits} ${t('other.hits')}</span>
-            <svg class="other-chevron w-4 h-4 text-slate-400 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            <i class="other-chevron ph-duotone ph-caret-right text-base text-slate-400 transition-transform duration-200 inline-block"></i>
           </span>
         </button>
         <div class="hidden bg-slate-50/50 dark:bg-white/[0.01]">
@@ -3008,7 +3035,7 @@ async function refreshOther() {
         <span class="flex items-center gap-3">
           <span class="text-sm tabular-nums font-semibold text-slate-700 dark:text-slate-200">${_fmtBytes(cat.total_bytes)}</span>
           <span class="text-xs tabular-nums text-slate-400 dark:text-slate-500">${totalHits} ${t('other.hits')}</span>
-          <svg class="other-chevron w-5 h-5 text-slate-400 transition-transform duration-200 rotate-90" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          <i class="other-chevron ph-duotone ph-caret-right text-lg text-slate-400 transition-transform duration-200 rotate-90 inline-block"></i>
         </span>
       </button>
       <div class="border-t border-slate-200 dark:border-white/[0.05]">
@@ -3550,10 +3577,10 @@ function onDevFilterChange() {
 
 function getCategoryGroups() {
   return [
-    { key: 'ai',       label: t('cat.aiServices'),     icon: '🤖', color: 'indigo' },
-    { key: 'cloud',    label: t('cat.cloudStorage'),   icon: '☁️',  color: 'sky' },
-    { key: 'tracking', label: t('cat.privacyTrackers'),icon: '🛡️', color: 'amber' },
-    { key: 'other',    label: t('cat.other'),          icon: '📊', color: 'slate' },
+    { key: 'ai',       label: t('cat.aiServices'),     icon: '<i class="ph-duotone ph-sparkle text-base"></i>', color: 'indigo' },
+    { key: 'cloud',    label: t('cat.cloudStorage'),   icon: '<i class="ph-duotone ph-cloud text-base"></i>',   color: 'sky' },
+    { key: 'tracking', label: t('cat.privacyTrackers'),icon: '<i class="ph-duotone ph-shield-check text-base"></i>', color: 'amber' },
+    { key: 'other',    label: t('cat.other'),          icon: '<i class="ph-duotone ph-chart-bar text-base"></i>', color: 'slate' },
   ];
 }
 
@@ -3610,7 +3637,8 @@ function openDeviceDrawer(mac, service, category) {
   // --- Populate header ---
   const dt = _detectDeviceType(dev);
   const dn = _bestDeviceName(mac, dev);
-  document.getElementById('drawer-dev-icon').textContent = dt.icon;
+  // dt.icon is a Phosphor HTML string — innerHTML, not textContent.
+  document.getElementById('drawer-dev-icon').innerHTML = dt.icon;
   document.getElementById('drawer-dev-name').textContent = dn;
 
   // Meta line: type · IP · vendor
@@ -3985,7 +4013,7 @@ async function generateDeviceReport(macParam) {
   if (regenBtn) regenBtn.classList.add('hidden');
   reportContent.innerHTML = `
     <div class="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 py-6">
-      <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+      <i class="ph-duotone ph-circle-notch animate-spin text-lg"></i>
       <span class="text-sm">${t('dev.geminiAnalyzing')}</span>
     </div>`;
 
@@ -4279,7 +4307,7 @@ function _renderDeviceMatrix() {
     const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
 
     // Edit (pencil) button — appears on row hover via CSS .dev-edit-btn
-    const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="dev-edit-btn ml-1 text-slate-400 hover:text-indigo-500 transition-colors" title="${t('dev.editName')}"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg></button>`;
+    const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="dev-edit-btn ml-1 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.editName')}"><i class="ph-duotone ph-pencil-simple text-sm"></i></button>`;
 
     // Name display: friendly name as primary, original name as secondary
     const nameEscaped = bestName.replace(/"/g, '&quot;');
@@ -5066,9 +5094,9 @@ function renderPolicySegment(serviceName, currentAction) {
   const blockActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-red-500 text-white shadow-sm';
   const blockInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20';
 
-  const checkIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
-  const alertIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M4.062 19h15.876c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L2.33 16c-.77 1.333.192 3 1.732 3z"/></svg>';
-  const blockIcon = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+  const checkIcon = '<i class="ph-duotone ph-check text-xs"></i>';
+  const alertIcon = '<i class="ph-duotone ph-warning text-xs"></i>';
+  const blockIcon = '<i class="ph-duotone ph-x text-xs"></i>';
 
   const allowLabel = t('rules.allow') || 'Toestaan';
   const alertLabel = t('rules.alert') || 'Waarschuw';
@@ -5140,7 +5168,7 @@ const LEGAL_COMPONENTS = [
     license: 'MIT License',
     description: 'Modern, high-performance Python web framework for building APIs.',
     url: 'https://fastapi.tiangolo.com',
-    icon: '⚡',
+    icon: '<i class="ph-duotone ph-lightning"></i>',
     iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
     iconColor: '',
   },
@@ -5150,7 +5178,7 @@ const LEGAL_COMPONENTS = [
     license: 'BSD License',
     description: 'Passive network traffic analysis framework for security monitoring.',
     url: 'https://zeek.org',
-    icon: '🔍',
+    icon: '<i class="ph-duotone ph-magnifying-glass"></i>',
     iconBg: 'bg-sky-100 dark:bg-sky-900/30',
     iconColor: '',
   },
@@ -5160,7 +5188,7 @@ const LEGAL_COMPONENTS = [
     license: 'MIT License',
     description: 'Collaborative intrusion prevention system using crowd-sourced threat intelligence.',
     url: 'https://crowdsec.net',
-    icon: '🛡️',
+    icon: '<i class="ph-duotone ph-shield-check"></i>',
     iconBg: 'bg-purple-100 dark:bg-purple-900/30',
     iconColor: '',
   },
@@ -5170,7 +5198,7 @@ const LEGAL_COMPONENTS = [
     license: 'GNU GPLv3',
     description: 'Network-wide DNS-level ad and tracker blocking. AI-Radar communicates with an unmodified, independent instance via its official REST API.',
     url: 'https://adguard.com/adguard-home.html',
-    icon: '🟢',
+    icon: '<i class="ph-duotone ph-broadcast"></i>',
     iconBg: 'bg-green-100 dark:bg-green-900/30',
     iconColor: '',
   },
@@ -5180,7 +5208,7 @@ const LEGAL_COMPONENTS = [
     license: 'MIT License',
     description: 'Simple yet flexible JavaScript charting library for data visualization.',
     url: 'https://www.chartjs.org',
-    icon: '📊',
+    icon: '<i class="ph-duotone ph-chart-bar"></i>',
     iconBg: 'bg-amber-100 dark:bg-amber-900/30',
     iconColor: '',
   },
@@ -5190,7 +5218,7 @@ const LEGAL_COMPONENTS = [
     license: 'Apache License 2.0',
     description: 'Powerful interactive charting and data visualization library.',
     url: 'https://echarts.apache.org',
-    icon: '📈',
+    icon: '<i class="ph-duotone ph-chart-line"></i>',
     iconBg: 'bg-red-100 dark:bg-red-900/30',
     iconColor: '',
   },
@@ -5204,7 +5232,13 @@ function renderLegalComponents() {
     const versionBadge = c.version ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-mono">v${c.version}</span>` : '';
     const licenseBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${c.license}</span>`;
     const link = c.url ? `<a href="${c.url}" target="_blank" rel="noopener" class="text-[10px] text-indigo-500 hover:underline ml-auto flex-shrink-0">${c.url.replace('https://', '')}</a>` : '';
-    const iconContent = c.icon.length <= 3 ? `<span class="font-bold text-xs ${c.iconColor}">${c.icon}</span>` : `<span class="text-sm">${c.icon}</span>`;
+    // Two icon variants: a short text badge ("AR" for AI-Radar) or
+    // a Phosphor icon HTML string. Length heuristic is no longer
+    // reliable now that Phosphor icons are full HTML tags — detect
+    // by checking for a leading < instead.
+    const iconContent = c.icon.startsWith('<')
+      ? `<span class="text-base ${c.iconColor}">${c.icon}</span>`
+      : `<span class="font-bold text-xs ${c.iconColor}">${c.icon}</span>`;
 
     return `<div class="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-white/[0.03]">
       <div class="w-8 h-8 rounded-lg ${c.iconBg} flex items-center justify-center flex-shrink-0">${iconContent}</div>
