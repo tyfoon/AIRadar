@@ -44,6 +44,7 @@ from sqlalchemy import Integer, func
 from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
+from beacon_analyzer import run_beacon_analysis
 from database import BlockRule, DetectionEvent, Device, DeviceIP, SessionLocal, init_db
 
 # MAC Vendor lookup — sync dict-based OUI lookup (avoids async issues with MacLookup)
@@ -356,6 +357,68 @@ async def _periodic_cleanup():
 
 
 RULE_EXPIRY_INTERVAL = 60  # Check expired rules every 60 seconds
+BEACON_SCAN_INTERVAL = 3600  # Run beaconing detection hourly
+BEACON_DEDUP_HOURS = 24      # Don't re-alert the same src→dst pair within 24h
+
+
+async def _periodic_beacon_scan():
+    """Background task: scan Zeek conn.log for malware C2 beacons.
+
+    Runs once an hour. Findings are stored as DetectionEvent rows with
+    detection_type='beaconing_threat' and category='security'. Dedup
+    logic skips any (src, dst) pair that already has a beacon alert in
+    the last 24 hours, so we don't spam the alerts list when a C2 keeps
+    running for days.
+    """
+    while True:
+        await asyncio.sleep(BEACON_SCAN_INTERVAL)
+        try:
+            findings = await run_beacon_analysis()
+            if not findings:
+                continue
+
+            db = SessionLocal()
+            try:
+                cutoff = datetime.utcnow() - timedelta(hours=BEACON_DEDUP_HOURS)
+                new_count = 0
+                for f in findings:
+                    already = (
+                        db.query(DetectionEvent.id)
+                        .filter(
+                            DetectionEvent.detection_type == "beaconing_threat",
+                            DetectionEvent.source_ip == f["src"],
+                            DetectionEvent.ai_service == f["dst"],
+                            DetectionEvent.timestamp >= cutoff,
+                        )
+                        .first()
+                    )
+                    if already:
+                        continue
+
+                    event = DetectionEvent(
+                        timestamp=datetime.utcnow(),
+                        detection_type="beaconing_threat",
+                        ai_service=f["dst"],        # destination IP lives here
+                        source_ip=f["src"],
+                        category="security",
+                        bytes_transferred=0,
+                        possible_upload=False,
+                    )
+                    db.add(event)
+                    new_count += 1
+                    print(
+                        f"[beacon] 🚨 THREAT: {f['src']} → {f['dst']}:{f['port']}/{f['proto']} "
+                        f"every {f['mean_interval_s']}s (±{f['stddev_s']}s, n={f['connection_count']})"
+                    )
+                if new_count:
+                    db.commit()
+                    print(f"[beacon] {new_count} new beacon alert(s) recorded")
+                else:
+                    print(f"[beacon] Scan complete — {len(findings)} pattern(s) found, all already alerted")
+            finally:
+                db.close()
+        except Exception as exc:
+            print(f"[beacon] Scan error: {exc}")
 
 
 async def _expire_block_rules():
@@ -492,12 +555,14 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
+    beacon_task = asyncio.create_task(_periodic_beacon_scan())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
     )
     print(f"[rules] Block rule expiry checker running every {RULE_EXPIRY_INTERVAL}s")
     print(f"[watchdog] AdGuard auto-failsafe active (check every 30s, trigger after 3 failures)")
+    print(f"[beacon] Malware C2 beacon detector running every {BEACON_SCAN_INTERVAL}s")
     # Restore killswitch state from last run
     ks = _read_killswitch_state()
     if ks.get("active"):
@@ -520,6 +585,7 @@ async def lifespan(app: FastAPI):
     cleanup_task.cancel()
     expiry_task.cancel()
     watchdog_task.cancel()
+    beacon_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
@@ -1218,6 +1284,44 @@ async def privacy_stats(
             **device_info,
         })
 
+    # 4) Beaconing / C2 threat alerts (last 24h, one row per src→dst pair)
+    beacon_cutoff = datetime.utcnow() - timedelta(hours=24)
+    beacon_rows = (
+        db.query(
+            DetectionEvent.source_ip,
+            DetectionEvent.ai_service,        # destination IP
+            func.max(DetectionEvent.timestamp).label("last_seen"),
+            func.count(DetectionEvent.id).label("hits"),
+        )
+        .filter(
+            DetectionEvent.detection_type == "beaconing_threat",
+            DetectionEvent.timestamp >= beacon_cutoff,
+        )
+        .group_by(DetectionEvent.source_ip, DetectionEvent.ai_service)
+        .order_by(func.max(DetectionEvent.timestamp).desc())
+        .limit(20)
+        .all()
+    )
+    beacon_alerts = []
+    for row in beacon_rows:
+        device_ip = db.query(DeviceIP).filter(DeviceIP.ip == row.source_ip).first()
+        device_info = {}
+        if device_ip and device_ip.device:
+            dev = device_ip.device
+            device_info = {
+                "hostname": dev.hostname,
+                "mac_address": dev.mac_address,
+                "display_name": dev.display_name,
+                "vendor": dev.vendor,
+            }
+        beacon_alerts.append({
+            "source_ip": row.source_ip,
+            "dest_ip": row.ai_service,
+            "last_seen": str(row.last_seen),
+            "hits": row.hits,
+            **device_info,
+        })
+
     return {
         # AdGuard section
         "adguard": adguard_stats,
@@ -1229,6 +1333,8 @@ async def privacy_stats(
         },
         # VPN / evasion alerts
         "vpn_alerts": vpn_alerts,
+        # Malware C2 beaconing alerts
+        "beaconing_alerts": beacon_alerts,
     }
 
 

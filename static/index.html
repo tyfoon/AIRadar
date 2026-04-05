@@ -602,6 +602,27 @@
         <button onclick="exportCSV('tracking')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors" data-i18n="priv.exportCsv">Export CSV</button>
       </div>
 
+      <!-- Threat Intelligence: Beaconing / C2 Detection -->
+      <div id="beacon-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+              <svg class="w-5 h-5 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 9h.01M9 15l6-6m6 3a9 9 0 11-18 0 9 9 0 0118 0zM9 9h.01"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="beacon.title">Threat Intelligence: Beaconing</h3>
+              <p class="text-[11px] text-slate-400 dark:text-slate-500" data-i18n="beacon.subtitle">Detecting malware C2 command &amp; control traffic</p>
+            </div>
+          </div>
+          <span id="beacon-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium" data-i18n="beacon.scanning">Scanning</span>
+        </div>
+        <div id="beacon-body">
+          <p class="text-sm text-slate-400 dark:text-slate-500 italic" data-i18n="priv.waitingData">Waiting for data...</p>
+        </div>
+      </div>
+
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">

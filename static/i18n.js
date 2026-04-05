@@ -88,6 +88,17 @@ const TRANSLATIONS = {
     'rules.adguardFilteringNote': 'Default: off. Individual block rules and global filters below still work independently.',
     'rules.adguardToggleFailed':  'Failed to toggle AdGuard filtering: {msg}',
 
+    // Privacy — Beaconing (malware C2) threat intelligence
+    'beacon.title':        'Threat Intelligence: Beaconing',
+    'beacon.subtitle':     'Detecting malware C2 command & control traffic',
+    'beacon.scanning':     'Scanning',
+    'beacon.clear':        'All clear',
+    'beacon.detected':     'threats',
+    'beacon.noThreats':    'No suspicious malware beacons detected.',
+    'beacon.warning':      'Warning',
+    'beacon.warningText':  'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command & control traffic.',
+    'beacon.lastSeen':     'Last seen',
+
     // Top bar
     'topbar.checking':     'Checking...',
     'topbar.refresh':      'Refresh',
@@ -594,6 +605,17 @@ const TRANSLATIONS = {
     'rules.adguardFilteringDesc': 'Hoofdschakelaar voor de standaard AdGuard Home blokkeerlijsten. Als deze uit staat werkt DNS-doorsturen nog wel, maar blokkeren de ingebouwde filters niets.',
     'rules.adguardFilteringNote': 'Standaard: uit. Individuele blokkeerregels en onderstaande filters werken nog gewoon.',
     'rules.adguardToggleFailed':  'Kon AdGuard-filtering niet omschakelen: {msg}',
+
+    // Privacy — Beaconing (malware C2) dreigingsdetectie
+    'beacon.title':        'Dreigingsanalyse: Beaconing',
+    'beacon.subtitle':     'Detecteert malware C2 command & control verkeer',
+    'beacon.scanning':     'Scannen',
+    'beacon.clear':        'Alles veilig',
+    'beacon.detected':     'dreigingen',
+    'beacon.noThreats':    'Geen verdachte malware-beacons gedetecteerd.',
+    'beacon.warning':      'Waarschuwing',
+    'beacon.warningText':  'Een of meer apparaten vertonen zeer periodieke uitgaande verbindingspatronen die kenmerkend zijn voor malware command & control verkeer.',
+    'beacon.lastSeen':     'Laatst gezien',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',

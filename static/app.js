@@ -2079,6 +2079,78 @@ async function refreshPrivacy() {
 
   // VPN stat card + expandable panel
   renderVpnAlerts(privRes.vpn_alerts || []);
+
+  // Beaconing / C2 threat intelligence card
+  renderBeaconAlerts(privRes.beaconing_alerts || []);
+}
+
+// ---------------------------------------------------------------------------
+// Beaconing (malware C2) alert rendering
+// ---------------------------------------------------------------------------
+function renderBeaconAlerts(alerts) {
+  const body = document.getElementById('beacon-body');
+  const badge = document.getElementById('beacon-badge');
+  if (!body || !badge) return;
+
+  if (!alerts || alerts.length === 0) {
+    badge.textContent = t('beacon.clear') || 'All clear';
+    badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium';
+    body.innerHTML = `
+      <div class="flex items-center gap-2.5 text-emerald-600 dark:text-emerald-400">
+        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span class="text-sm font-medium">${t('beacon.noThreats') || 'Geen verdachte malware-beacons gedetecteerd.'}</span>
+      </div>`;
+    return;
+  }
+
+  // Threats found — show a prominent red alert list
+  badge.textContent = `${alerts.length} ${t('beacon.detected') || 'threats'}`;
+  badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse';
+
+  body.innerHTML = `
+    <div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
+      <svg class="w-4 h-4 mt-0.5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <p class="text-xs text-red-700 dark:text-red-300">
+        <span class="font-semibold">${t('beacon.warning') || 'Warning'}:</span>
+        ${t('beacon.warningText') || 'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command &amp; control traffic.'}
+      </p>
+    </div>
+    <div class="space-y-2">
+      ${alerts.map(a => {
+        const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
+                      || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
+                      || a.mac_address
+                      || a.source_ip;
+        const macTag = a.mac_address
+          ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.mac_address}</span>`
+          : '';
+        const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
+        return `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 hover:bg-red-100/60 dark:hover:bg-red-900/20 transition-colors">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <span class="text-lg flex-shrink-0">🚨</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${devName}</span>
+                ${macTag}
+              </div>
+              <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <span class="font-mono text-red-600 dark:text-red-400">${a.source_ip}</span>
+                <span class="mx-1">→</span>
+                <span class="font-mono text-red-600 dark:text-red-400">${a.dest_ip}</span>
+              </div>
+            </div>
+          </div>
+          <div class="text-right flex-shrink-0 ml-3">
+            <div class="text-[10px] text-slate-400 dark:text-slate-500">${t('beacon.lastSeen') || 'Last seen'}</div>
+            <div class="text-[11px] tabular-nums text-slate-600 dark:text-slate-300">${lastSeen}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 // VPN toggle + rendering
