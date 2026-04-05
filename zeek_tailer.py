@@ -293,18 +293,46 @@ _GOOGLE_AMBIGUOUS = {
 }
 
 
+# Merged lookup table: curated DOMAIN_MAP + third-party data (AdGuard
+# HostlistsRegistry + DuckDuckGo Tracker Radar). Built once at startup
+# by _rebuild_lookup() and refreshed periodically by the background
+# task _refresh_third_party_sources(). Curated entries always win.
+_effective_domain_map: dict[str, tuple[str, str]] = dict(DOMAIN_MAP)
+
+
+def _rebuild_lookup(third_party: dict[str, tuple[str, str]] | None = None) -> None:
+    """Merge the curated DOMAIN_MAP with optional third-party data.
+
+    Called once at startup and again whenever the third-party cache
+    refreshes. Keeps the hot path's lookup dict immutable during scans.
+    """
+    global _effective_domain_map
+    if third_party:
+        merged = dict(third_party)
+        merged.update(DOMAIN_MAP)  # curated wins
+        _effective_domain_map = merged
+    else:
+        _effective_domain_map = dict(DOMAIN_MAP)
+
+
 def match_domain(
     hostname: str, source_ip: str | None = None
 ) -> tuple[str, str, str] | None:
-    """Match a hostname against the domain map.
+    """Match a hostname against the effective domain map.
+
+    Lookup strategy:
+      1. Apply Google ambiguous-domain resolver (context-aware).
+      2. Exact match on the full hostname — O(1) dict lookup.
+      3. Walk the parent domains (foo.bar.example.com → bar.example.com
+         → example.com → com) checking each in the dict. This turns
+         a previously O(n) scan over ~5000 entries into O(log n) on
+         the hostname length (typically 2-4 checks).
 
     Returns (service_name, category, matched_domain) or None.
-    Supports exact match and subdomain matching (e.g. foo.dropbox.com).
-
-    For ambiguous Google domains (www.googleapis.com), uses source_ip context
-    to determine whether traffic is Gemini (ai) or Drive (cloud).
     """
     hostname = hostname.rstrip(".").lower()
+    if not hostname:
+        return None
 
     # 1) Update Google context if this is a context-setting domain
     if source_ip:
@@ -323,11 +351,43 @@ def match_domain(
             # No context → default to google_drive / cloud
             return "google_drive", "cloud", hostname
 
-    # 3) Normal domain map lookup
-    for domain, (service, category) in DOMAIN_MAP.items():
-        if hostname == domain or hostname.endswith("." + domain):
-            return service, category, domain
+    # 3) Fast lookup via the merged map. Exact match first, then walk
+    #    parent domains by chopping off the leftmost label each time.
+    lookup = _effective_domain_map
+    hit = lookup.get(hostname)
+    if hit:
+        return hit[0], hit[1], hostname
+    parts = hostname.split(".")
+    for i in range(1, len(parts)):
+        candidate = ".".join(parts[i:])
+        hit = lookup.get(candidate)
+        if hit:
+            return hit[0], hit[1], candidate
     return None
+
+
+async def _refresh_third_party_sources() -> None:
+    """Background task: refresh the third-party lookup table.
+
+    Runs once at startup (using the disk cache if fresh, otherwise
+    fetching live) and then every 12 hours. The load_third_party_map
+    function handles its own caching and fallback logic.
+    """
+    from third_party_sources import load_third_party_map
+    while True:
+        try:
+            tp = await load_third_party_map()
+            if tp:
+                _rebuild_lookup(tp)
+                print(
+                    f"[third-party] Effective domain map rebuilt: "
+                    f"{len(_effective_domain_map)} entries "
+                    f"({len(DOMAIN_MAP)} curated + {len(tp)} third-party)"
+                )
+        except Exception as exc:
+            print(f"[third-party] Refresh failed: {exc}")
+        # Wait 12 hours before the next refresh (cache itself has 7-day TTL)
+        await asyncio.sleep(12 * 3600)
 
 
 # ---------------------------------------------------------------------------
@@ -2007,6 +2067,7 @@ async def main(zeek_log_dir: str) -> None:
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         _refresh_device_meta(client),  # pull device metadata for Phase 2
+        _refresh_third_party_sources(),# AdGuard + DDG lookup refresh
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)
