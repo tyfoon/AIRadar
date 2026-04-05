@@ -1186,6 +1186,7 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
         "mac": mac_address,
         "report": report_md,
         "tokens": token_info,
+        "model": gemini_model,
     }
 
 

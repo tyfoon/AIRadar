@@ -3481,17 +3481,38 @@ async function generateDeviceReport(macParam) {
     // Render markdown (simple parser for bold, italic, headers, lists, code)
     let html = renderSimpleMarkdown(data.report);
 
-    // Token usage footer
+    // Token usage footer — pricing table per model. Keys match the
+    // values returned by the backend in data.model. Fallback is the
+    // 2.5-flash-lite default.
+    // Source: https://ai.google.dev/gemini-api/docs/pricing
+    // All prices in USD per 1M tokens.
     if (data.tokens) {
       const tok = data.tokens;
-      const costIn = (tok.prompt_tokens || 0) * 0.15 / 1e6;
-      const costOut = (tok.response_tokens || 0) * 0.60 / 1e6;
-      const costThink = (tok.thinking_tokens || 0) * 3.50 / 1e6;
+      const pricing = {
+        'gemini-2.5-flash-lite':   { input: 0.10, output: 0.40, thinking: 0 },
+        'gemini-2.5-flash':        { input: 0.30, output: 2.50, thinking: 3.50 },
+        'gemini-2.0-flash':        { input: 0.10, output: 0.40, thinking: 0 },
+        'gemini-2.0-flash-lite':   { input: 0.075, output: 0.30, thinking: 0 },
+        'gemini-3-flash-preview':  { input: 0.30, output: 2.50, thinking: 0 },
+      };
+      const modelName = data.model || 'gemini-2.5-flash-lite';
+      const p = pricing[modelName] || pricing['gemini-2.5-flash-lite'];
+      const costIn = (tok.prompt_tokens || 0) * p.input / 1e6;
+      const costOut = (tok.response_tokens || 0) * p.output / 1e6;
+      const costThink = (tok.thinking_tokens || 0) * p.thinking / 1e6;
       const totalCost = costIn + costOut + costThink;
-      const cents = (totalCost * 100).toFixed(2);
+      // Show sub-cent precision when cost is very small
+      const costLabel = totalCost >= 0.01
+        ? `${(totalCost * 100).toFixed(2)}\u00A2`
+        : `${(totalCost * 1000).toFixed(3)}m\u00A2`;
+      // Friendly model label
+      const modelLabel = modelName
+        .replace('gemini-', 'Gemini ')
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
       html += `<div class="mt-4 pt-3 border-t border-indigo-200/30 dark:border-indigo-700/20 flex items-center justify-between text-[10px] text-indigo-400/70 dark:text-indigo-500/50">
-        <span>Gemini 2.5 Flash &middot; ${formatNumber(tok.total_tokens || 0)} tokens</span>
-        <span>${cents}&cent; per report</span>
+        <span>${modelLabel} &middot; ${formatNumber(tok.total_tokens || 0)} tokens</span>
+        <span>${costLabel} per report</span>
       </div>`;
     }
 
