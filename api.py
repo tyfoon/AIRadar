@@ -617,9 +617,16 @@ Upload tijdlijn:
         from google import genai
 
         client = genai.Client(api_key=gemini_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{system_prompt}\n\n{data_block}",
+        # Run the blocking Gemini SDK call in a thread pool so it doesn't
+        # freeze the asyncio event loop (which would block all other
+        # requests including healthchecks and crash the container).
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-flash",
+                contents=f"{system_prompt}\n\n{data_block}",
+            ),
+            timeout=60,
         )
         report_md = response.text
 
