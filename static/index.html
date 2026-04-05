@@ -1578,23 +1578,28 @@
     <div id="drawer-tabs" class="flex items-center gap-1.5"></div>
     <div class="ml-auto flex-shrink-0 text-[11px] text-slate-400 dark:text-slate-500" id="drawer-event-count"></div>
   </div>
-  <!-- Event table (scrollable body) -->
+  <!-- Scrollable body: holds either the Summary view or the Event table -->
   <div class="flex-1 overflow-y-auto overflow-x-auto" id="drawer-scroll">
-    <table class="w-full text-sm text-left">
-      <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10] sticky top-0">
-        <tr>
-          <th class="py-3 px-4 font-medium" data-i18n="dev.thTime">Time</th>
-          <th class="py-3 px-4 font-medium" data-i18n="dev.thService">Service</th>
-          <th class="py-3 px-4 font-medium" data-i18n="dev.thType">Type</th>
-          <th class="py-3 px-4 font-medium hidden sm:table-cell" data-i18n="dev.thSourceIp">Source IP</th>
-          <th class="py-2 px-4 font-medium text-right hidden sm:table-cell" data-i18n="dev.thBytes">Bytes</th>
-        </tr>
-      </thead>
-      <tbody id="drawer-event-body" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
-    </table>
-    <!-- Load more button -->
-    <div id="drawer-load-more" class="hidden py-3 text-center border-t border-slate-100 dark:border-white/[0.04]">
-      <button onclick="drawerLoadMore()" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dev.loadMore">Load more</button>
+    <!-- Summary view (top services by bytes) -->
+    <div id="drawer-summary-view" class="hidden p-5"></div>
+    <!-- Event table -->
+    <div id="drawer-events-view">
+      <table class="w-full text-sm text-left">
+        <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10] sticky top-0">
+          <tr>
+            <th class="py-3 px-4 font-medium" data-i18n="dev.thTime">Time</th>
+            <th class="py-3 px-4 font-medium" data-i18n="dev.thService">Service</th>
+            <th class="py-3 px-4 font-medium" data-i18n="dev.thType">Type</th>
+            <th class="py-3 px-4 font-medium hidden sm:table-cell" data-i18n="dev.thSourceIp">Source IP</th>
+            <th class="py-2 px-4 font-medium text-right hidden sm:table-cell" data-i18n="dev.thBytes">Bytes</th>
+          </tr>
+        </thead>
+        <tbody id="drawer-event-body" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
+      </table>
+      <!-- Load more button -->
+      <div id="drawer-load-more" class="hidden py-3 text-center border-t border-slate-100 dark:border-white/[0.04]">
+        <button onclick="drawerLoadMore()" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dev.loadMore">Load more</button>
+      </div>
     </div>
   </div>
   <!-- AI Recap report (hidden by default) -->

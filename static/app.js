@@ -3184,14 +3184,18 @@ function onDevFilterChange() {
 
 function getCategoryGroups() {
   return [
-    { key: 'ai',       label: t('cat.aiServices'),   icon: '🤖', color: 'indigo' },
-    { key: 'cloud',    label: t('cat.cloudStorage'),  icon: '☁️',  color: 'sky' },
-    { key: 'tracking', label: t('cat.privacyTrackers'), icon: '🛡️', color: 'amber' },
+    { key: 'ai',       label: t('cat.aiServices'),     icon: '🤖', color: 'indigo' },
+    { key: 'cloud',    label: t('cat.cloudStorage'),   icon: '☁️',  color: 'sky' },
+    { key: 'tracking', label: t('cat.privacyTrackers'),icon: '🛡️', color: 'amber' },
+    { key: 'other',    label: t('cat.other'),          icon: '📊', color: 'slate' },
   ];
 }
 
 function _categorizeService(svc, svcCategoryMap) {
-  return svcCategoryMap[svc] || 'tracking';
+  // Unknown services fall into "other" so they still surface somewhere
+  // on the devices page instead of being silently dropped or mis-filed
+  // under trackers.
+  return svcCategoryMap[svc] || 'other';
 }
 
 function _heatCell(count, uploads, globalMax) {
@@ -3272,6 +3276,9 @@ function openDeviceDrawer(mac, service, category) {
   });
 
   // Determine initial active tab
+  // Default landing tab is "summary" — gives an immediate overview
+  // of what this device has been doing. Explicit service or category
+  // click still jumps straight to the event list filtered that way.
   if (service) {
     // Find which category this service belongs to
     const matchCat = cats.find(c => _drawerEvents.some(e => e.ai_service === service && e._cat === c.key));
@@ -3279,10 +3286,11 @@ function openDeviceDrawer(mac, service, category) {
   } else if (category) {
     _drawerActiveTab = category;
   } else {
-    _drawerActiveTab = 'all';
+    _drawerActiveTab = 'summary';
   }
 
   const tabsHtml = [
+    `<button class="drawer-tab ${_drawerActiveTab === 'summary' ? 'active' : ''}" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
     `<button class="drawer-tab ${_drawerActiveTab === 'all' ? 'active' : ''}" onclick="setDrawerTab('all')">${t('dev.drawerAllTab')} <span class="ml-1 text-[10px] opacity-60">${tabCounts.all}</span></button>`
   ];
   cats.forEach(c => {
@@ -3313,6 +3321,23 @@ function openDeviceDrawer(mac, service, category) {
 }
 
 function _applyDrawerFilter(serviceFilter) {
+  const summaryView = document.getElementById('drawer-summary-view');
+  const eventsView = document.getElementById('drawer-events-view');
+  const countEl = document.getElementById('drawer-event-count');
+
+  if (_drawerActiveTab === 'summary') {
+    // Summary tab: render top services by bytes, hide event table.
+    if (eventsView) eventsView.classList.add('hidden');
+    if (summaryView) summaryView.classList.remove('hidden');
+    _renderDrawerSummary();
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  // Any other tab: hide summary, show event table.
+  if (summaryView) summaryView.classList.add('hidden');
+  if (eventsView) eventsView.classList.remove('hidden');
+
   if (_drawerActiveTab === 'all') {
     _drawerFiltered = serviceFilter
       ? _drawerEvents.filter(e => e.ai_service === serviceFilter)
@@ -3325,6 +3350,87 @@ function _applyDrawerFilter(serviceFilter) {
   }
   _drawerVisible = 0;
   _renderDrawerEvents(true);
+}
+
+// ---------------------------------------------------------------------------
+// Drawer Summary view — top services by bytes for the current device
+// across the time window already applied to _drawerEvents (so it follows
+// the period selector on the devices page).
+// ---------------------------------------------------------------------------
+const DRAWER_SUMMARY_TOP_N = 15;
+
+function _renderDrawerSummary() {
+  const el = document.getElementById('drawer-summary-view');
+  if (!el) return;
+
+  if (!_drawerEvents || _drawerEvents.length === 0) {
+    el.innerHTML = `<div class="py-12 text-center text-sm text-slate-400 dark:text-slate-500">${t('dev.noActivity')}</div>`;
+    return;
+  }
+
+  // Aggregate bytes + hits per service across the whole window.
+  const svcAgg = {};
+  _drawerEvents.forEach(e => {
+    const svc = e.ai_service;
+    if (!svcAgg[svc]) svcAgg[svc] = { bytes: 0, hits: 0, cat: e._cat };
+    svcAgg[svc].bytes += e.bytes_transferred || 0;
+    svcAgg[svc].hits += 1;
+  });
+
+  const total = Object.values(svcAgg).reduce((s, v) => s + v.bytes, 0);
+
+  // Sort by bytes desc, break ties by hit count.
+  const rows = Object.entries(svcAgg)
+    .sort((a, b) => (b[1].bytes - a[1].bytes) || (b[1].hits - a[1].hits))
+    .slice(0, DRAWER_SUMMARY_TOP_N);
+
+  const maxBytes = rows.length ? rows[0][1].bytes : 0;
+
+  // Header: small title + window hint read from the devices filter
+  const per = document.getElementById('dev-filter-period')?.value;
+  const windowLabel = per ? (document.querySelector(`#dev-filter-period option[value="${per}"]`)?.textContent || '') : '';
+
+  let html = `<div class="mb-4 flex items-baseline justify-between gap-3">
+    <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">${t('dev.summaryTitle')}</h3>
+    <span class="text-[11px] text-slate-400 dark:text-slate-500">${windowLabel}</span>
+  </div>`;
+
+  if (rows.length === 0 || total === 0) {
+    html += `<div class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('dev.summaryNoBytes')}</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="space-y-1.5">';
+  rows.forEach(([svc, info]) => {
+    const pct = total > 0 ? (info.bytes / total * 100) : 0;
+    const barPct = maxBytes > 0 ? (info.bytes / maxBytes * 100) : 0;
+    const name = svcDisplayName(svc);
+    const logo = svcLogo(svc);
+    html += `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
+      <div class="flex-shrink-0">${logo}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+          <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">
+            ${_fmtBytes(info.bytes)} <span class="text-slate-400 dark:text-slate-500">(${pct.toFixed(1)}%)</span>
+          </span>
+        </div>
+        <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+          <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500" style="width: ${barPct}%"></div>
+        </div>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+
+  // Footer: totals line
+  html += `<div class="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.05] flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
+    <span>${t('dev.summaryServicesCount', { n: Object.keys(svcAgg).length })}</span>
+    <span class="tabular-nums">${_fmtBytes(total)} ${t('dev.summaryTotal')}</span>
+  </div>`;
+
+  el.innerHTML = html;
 }
 
 function _renderDrawerEvents(reset) {
@@ -3796,19 +3902,24 @@ async function refreshDevices() {
   params.set('limit', '1000');
   if (per) params.set('start', new Date(Date.now() - parseInt(per) * 60000).toISOString());
 
-  // Fetch all categories in parallel
-  const [aiEvt, cloudEvt, trackEvt] = await Promise.all([
+  // Fetch all categories in parallel. 'other' is a synthetic bucket
+  // on the backend (category NOT IN ai/cloud/tracking) that catches
+  // gaming, social, streaming, shopping, gambling, and anything else
+  // the classifier assigned a non-primary category to.
+  const [aiEvt, cloudEvt, trackEvt, otherEvt] = await Promise.all([
     fetch('/api/events?category=ai&' + params).then(r => r.json()),
     fetch('/api/events?category=cloud&' + params).then(r => r.json()),
     fetch('/api/events?category=tracking&' + params).then(r => r.json()),
+    fetch('/api/events?category=other&' + params).then(r => r.json()),
   ]);
 
   // Tag events with their category
   aiEvt.forEach(e => e._cat = 'ai');
   cloudEvt.forEach(e => e._cat = 'cloud');
   trackEvt.forEach(e => e._cat = 'tracking');
+  otherEvt.forEach(e => e._cat = 'other');
 
-  const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt];
+  const allEvents = [...aiEvt, ...cloudEvt, ...trackEvt, ...otherEvt];
   _devAllEvents = allEvents;
 
   // Build service → category map from event data

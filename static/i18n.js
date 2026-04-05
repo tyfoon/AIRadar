@@ -387,6 +387,11 @@ const TRANSLATIONS = {
     'dev.loadMore':        'Load more',
     'dev.showingOfEvents': 'Showing {visible} of {total}',
     'dev.drawerAllTab':    'All',
+    'dev.drawerSummaryTab':'Summary',
+    'dev.summaryTitle':    'Top services by data',
+    'dev.summaryNoBytes':  'No byte-transfer data in this window.',
+    'dev.summaryServicesCount': '{n} services total',
+    'dev.summaryTotal':    'total',
     'dev.renameDevice':    'Rename device:',
     'dev.hop':             'hop',
     'dev.hops':            'hops',
@@ -600,6 +605,7 @@ const TRANSLATIONS = {
     'cat.aiServices':      'AI Services',
     'cat.cloudStorage':    'Cloud Storage',
     'cat.privacyTrackers': 'Privacy / Trackers',
+    'cat.other':           'Other',
 
     // Device types (from p0f / detection)
     'dtype.unknown':       'Unknown',
@@ -994,6 +1000,11 @@ const TRANSLATIONS = {
     'dev.loadMore':        'Meer laden',
     'dev.showingOfEvents': '{visible} van {total} weergegeven',
     'dev.drawerAllTab':    'Alles',
+    'dev.drawerSummaryTab':'Samenvatting',
+    'dev.summaryTitle':    'Top services op dataverbruik',
+    'dev.summaryNoBytes':  'Geen byte-overdracht in dit venster.',
+    'dev.summaryServicesCount': '{n} services totaal',
+    'dev.summaryTotal':    'totaal',
 
     // Aanvallen (IPS) pagina
     'ips.attackPrevention':'Aanvalspreventie',
@@ -1197,6 +1208,7 @@ const TRANSLATIONS = {
     'cat.aiServices':      'AI-services',
     'cat.cloudStorage':    'Cloudopslag',
     'cat.privacyTrackers': 'Privacy / Trackers',
+    'cat.other':           'Overig',
 
     // Apparaattypen
     'dtype.unknown':       'Onbekend',

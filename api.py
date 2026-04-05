@@ -766,11 +766,22 @@ def _apply_heartbeat_filter(q, include_heartbeats: bool):
     )
 
 
+# Categories explicitly surfaced as their own columns/sections in the UI.
+# Anything else (gaming, social, streaming, shopping, gambling, tracking-
+# subcategories, "other") is bucketed into the "Other" column via the
+# special category=other query value.
+_PRIMARY_CATEGORIES = ("ai", "cloud", "tracking")
+
+
 @app.get("/api/events", response_model=list[EventRead])
 def list_events(
     service: Optional[str] = Query(None),
     source_ip: Optional[str] = Query(None),
-    category: Optional[str] = Query(None, description="Filter by category: ai or cloud"),
+    category: Optional[str] = Query(
+        None,
+        description="Filter by category: ai, cloud, tracking, or 'other' "
+                    "(= everything except ai/cloud/tracking)",
+    ),
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
@@ -788,7 +799,10 @@ def list_events(
         ips = [s.strip() for s in source_ip.split(',') if s.strip()]
         q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
-        q = q.filter(DetectionEvent.category == category)
+        if category == "other":
+            q = q.filter(~DetectionEvent.category.in_(_PRIMARY_CATEGORIES))
+        else:
+            q = q.filter(DetectionEvent.category == category)
     if start:
         q = q.filter(DetectionEvent.timestamp >= start)
     if end:
@@ -816,7 +830,10 @@ def export_events(
         ips = [s.strip() for s in source_ip.split(',') if s.strip()]
         q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
-        q = q.filter(DetectionEvent.category == category)
+        if category == "other":
+            q = q.filter(~DetectionEvent.category.in_(_PRIMARY_CATEGORIES))
+        else:
+            q = q.filter(DetectionEvent.category == category)
     if start:
         q = q.filter(DetectionEvent.timestamp >= start)
     if end:
@@ -875,7 +892,10 @@ def timeline(
         ips = [s.strip() for s in source_ip.split(',') if s.strip()]
         q = q.filter(DetectionEvent.source_ip.in_(ips)) if len(ips) > 1 else q.filter(DetectionEvent.source_ip == ips[0])
     if category:
-        q = q.filter(DetectionEvent.category == category)
+        if category == "other":
+            q = q.filter(~DetectionEvent.category.in_(_PRIMARY_CATEGORIES))
+        else:
+            q = q.filter(DetectionEvent.category == category)
     if start:
         q = q.filter(DetectionEvent.timestamp >= start)
     if end:
