@@ -3347,28 +3347,29 @@ function openDeviceDrawer(mac, service, category) {
 
   // --- Build tab bar ---
   const cats = getCategoryGroups();
-  const tabCounts = { all: _drawerEvents.length };
+  const tabCounts = {};
   cats.forEach(c => {
     tabCounts[c.key] = _drawerEvents.filter(e => e._cat === c.key).length;
   });
 
-  // Determine initial active tab
-  // Default landing tab is "summary" — gives an immediate overview
-  // of what this device has been doing. Explicit service or category
-  // click still jumps straight to the event list filtered that way.
+  // Determine initial active tab. Clicking a specific service or
+  // category cell still jumps straight to that filtered view;
+  // opening the drawer from the device name lands on Summary.
   if (service) {
-    // Find which category this service belongs to
     const matchCat = cats.find(c => _drawerEvents.some(e => e.ai_service === service && e._cat === c.key));
-    _drawerActiveTab = matchCat ? matchCat.key : 'all';
+    _drawerActiveTab = matchCat ? matchCat.key : 'summary';
   } else if (category) {
     _drawerActiveTab = category;
   } else {
     _drawerActiveTab = 'summary';
   }
 
+  // Tabs: Summary · AI Recap · (ai|cloud|tracking|other that have events).
+  // The old "All" tab was removed — Summary covers the same need with
+  // a more useful rollup, and each category tab is still reachable.
   const tabsHtml = [
     `<button class="drawer-tab ${_drawerActiveTab === 'summary' ? 'active' : ''}" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
-    `<button class="drawer-tab ${_drawerActiveTab === 'all' ? 'active' : ''}" onclick="setDrawerTab('all')">${t('dev.drawerAllTab')} <span class="ml-1 text-[10px] opacity-60">${tabCounts.all}</span></button>`
+    `<button class="drawer-tab ${_drawerActiveTab === 'report' ? 'active' : ''}" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
@@ -3377,12 +3378,16 @@ function openDeviceDrawer(mac, service, category) {
   });
   document.getElementById('drawer-tabs').innerHTML = tabsHtml.join('');
 
+  // --- Reset report tab state for this device ---
+  // Wipe any previously-rendered report so the empty-state CTA shows
+  // again until we either load a cache for this MAC or the user hits
+  // Generate. Hide the regenerate button until a report is present.
+  _resetReportView();
+  // Fire-and-forget the cache fetch so the tab is instant when clicked.
+  _loadCachedDeviceReport(mac);
+
   // --- Filter events for active tab and optional service ---
   _applyDrawerFilter(service);
-
-  // --- Hide previous AI report, then silently load cached one if it exists ---
-  document.getElementById('drawer-ai-report').classList.add('hidden');
-  _loadCachedDeviceReport(mac);
 
   // --- Open drawer ---
   document.getElementById('drawer-backdrop').classList.add('open');
@@ -3399,32 +3404,38 @@ function openDeviceDrawer(mac, service, category) {
 
 function _applyDrawerFilter(serviceFilter) {
   const summaryView = document.getElementById('drawer-summary-view');
-  const eventsView = document.getElementById('drawer-events-view');
+  const reportView  = document.getElementById('drawer-report-view');
+  const eventsView  = document.getElementById('drawer-events-view');
   const countEl = document.getElementById('drawer-event-count');
 
+  const hideAll = () => {
+    if (summaryView) summaryView.classList.add('hidden');
+    if (reportView)  reportView.classList.add('hidden');
+    if (eventsView)  eventsView.classList.add('hidden');
+  };
+
   if (_drawerActiveTab === 'summary') {
-    // Summary tab: render top services by bytes, hide event table.
-    if (eventsView) eventsView.classList.add('hidden');
+    hideAll();
     if (summaryView) summaryView.classList.remove('hidden');
     _renderDrawerSummary();
     if (countEl) countEl.textContent = '';
     return;
   }
 
-  // Any other tab: hide summary, show event table.
-  if (summaryView) summaryView.classList.add('hidden');
+  if (_drawerActiveTab === 'report') {
+    hideAll();
+    if (reportView) reportView.classList.remove('hidden');
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  // Category tab: show event table filtered to that category.
+  hideAll();
   if (eventsView) eventsView.classList.remove('hidden');
 
-  let filtered;
-  if (_drawerActiveTab === 'all') {
-    filtered = serviceFilter
-      ? _drawerEvents.filter(e => e.ai_service === serviceFilter)
-      : [..._drawerEvents];
-  } else {
-    filtered = _drawerEvents.filter(e => e._cat === _drawerActiveTab);
-    if (serviceFilter) {
-      filtered = filtered.filter(e => e.ai_service === serviceFilter);
-    }
+  let filtered = _drawerEvents.filter(e => e._cat === _drawerActiveTab);
+  if (serviceFilter) {
+    filtered = filtered.filter(e => e.ai_service === serviceFilter);
   }
   // Drawer is already scoped to one device, so collapsing by
   // (service, detection_type) folds both IPv4/IPv6 duplicates and
@@ -3632,42 +3643,55 @@ window.addEventListener('keydown', function(e) {
 // ---------------------------------------------------------------------------
 // AI Recap — generate device report via Gemini
 // ---------------------------------------------------------------------------
-let _reportAbort = null;
+// The recap lives in its own drawer tab. Empty state = a centered
+// CTA button. After a report is rendered the regenerate button at
+// the top of the tab becomes visible so refreshing is one click away.
+
+function _renderReportEmpty() {
+  return `<div id="drawer-report-empty" class="py-10 text-center">
+    <p class="text-xs text-slate-400 dark:text-slate-500 mb-4">${t('dev.reportEmptyHint')}</p>
+    <button onclick="generateDeviceReport()" class="px-4 py-2 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md">
+      <span>&#10024;</span> ${t('dev.generateReport')}
+    </button>
+  </div>`;
+}
+
+function _resetReportView() {
+  const content = document.getElementById('drawer-ai-report-content');
+  const regen = document.getElementById('drawer-btn-regenerate-report');
+  if (content) content.innerHTML = _renderReportEmpty();
+  if (regen) regen.classList.add('hidden');
+}
 
 async function generateDeviceReport(macParam) {
   // MAC can come from parameter or from the drawer
   const mac = macParam || _drawerMac;
   if (!mac) return;
 
-  // If drawer isn't open, open it first so the report has a place to render
+  // If drawer isn't open, open it first so the tab has a place to render
   if (!document.getElementById('drawer-panel').classList.contains('open')) {
     openDeviceDrawer(mac, null, null);
   }
   _drawerMac = mac;
 
-  const btn = document.getElementById('drawer-btn-ai-report');
-  const reportBox = document.getElementById('drawer-ai-report');
+  // Switch to the AI Recap tab so the loading state is visible
+  setDrawerTab('report');
+
   const reportContent = document.getElementById('drawer-ai-report-content');
+  const regenBtn = document.getElementById('drawer-btn-regenerate-report');
+  if (!reportContent) return;
 
   // Loading state
-  btn.disabled = true;
-  btn.innerHTML = `<span class="inline-block animate-pulse">&#10024;</span> ${t('dev.generatingReport')}`;
-  btn.classList.add('opacity-70', 'cursor-wait');
-  reportBox.classList.remove('hidden');
+  if (regenBtn) regenBtn.classList.add('hidden');
   reportContent.innerHTML = `
-    <div class="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 py-4">
+    <div class="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 py-6">
       <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-      <span>${t('dev.geminiAnalyzing')}</span>
+      <span class="text-sm">${t('dev.geminiAnalyzing')}</span>
     </div>`;
 
-  // Scroll the report into view
-  reportBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
   try {
-    // When the user explicitly clicks the button, always regenerate.
-    // The cached copy is shown automatically on drawer open via
-    // _loadCachedDeviceReport() — the button is specifically for
-    // refreshing it.
+    // Explicit click = force regenerate. The cached copy is loaded
+    // silently on drawer open by _loadCachedDeviceReport().
     const lang = (typeof getLocale === 'function' ? getLocale() : 'en');
     const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?force=true&lang=${encodeURIComponent(lang)}`);
     const data = await resp.json();
@@ -3678,35 +3702,33 @@ async function generateDeviceReport(macParam) {
     }
 
     reportContent.innerHTML = _renderReportHTML(data);
+    if (regenBtn) regenBtn.classList.remove('hidden');
 
   } catch (err) {
     reportContent.innerHTML = `<div class="text-red-500 dark:text-red-400 text-sm">${t('dev.networkError', { msg: err.message })}</div>`;
-  } finally {
-    btn.disabled = false;
-    // After a generation the cached copy exists → label becomes "Regenerate"
-    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.regenerateReport') || 'Regenereer AI recap'}`;
-    btn.classList.remove('opacity-70', 'cursor-wait');
   }
 }
 
-// Silently load the cached AI report (if any) on drawer open.
-// No loading spinner, no error toast — if there's no cache we leave
-// the report box hidden and wait for the user to click Generate.
+// Silently load the cached AI report (if any) on drawer open so the
+// tab is instant when the user clicks it. No spinner, no error toast;
+// if there's no cache we leave the empty-state CTA visible.
 async function _loadCachedDeviceReport(mac) {
   try {
     const lang = (typeof getLocale === 'function' ? getLocale() : 'en');
     const resp = await fetch(`/api/devices/${encodeURIComponent(mac)}/report?lang=${encodeURIComponent(lang)}`);
-    if (!resp.ok) return;  // 400/404 → no cache, let user click Generate
+    if (!resp.ok) return;  // 400/404 → no cache, leave empty state
     const data = await resp.json();
     if (!data.cached || !data.report) return;
 
-    const reportBox = document.getElementById('drawer-ai-report');
+    // Only render if the drawer is still on the same device (user may
+    // have navigated away while the request was in flight).
+    if (_drawerMac !== mac) return;
+
     const reportContent = document.getElementById('drawer-ai-report-content');
-    const btn = document.getElementById('drawer-btn-ai-report');
-    if (!reportBox || !reportContent || !btn) return;
-    reportBox.classList.remove('hidden');
+    const regenBtn = document.getElementById('drawer-btn-regenerate-report');
+    if (!reportContent) return;
     reportContent.innerHTML = _renderReportHTML(data);
-    btn.innerHTML = `<span class="text-sm">&#10024;</span> ${t('dev.regenerateReport') || 'Regenereer AI recap'}`;
+    if (regenBtn) regenBtn.classList.remove('hidden');
   } catch (err) {
     console.warn('_loadCachedDeviceReport:', err);
   }

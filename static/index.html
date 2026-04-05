@@ -1564,9 +1564,6 @@
         </div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
-        <button id="drawer-btn-ai-report" onclick="generateDeviceReport()" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 whitespace-nowrap">
-          <span class="text-sm">&#10024;</span> <span data-i18n="dev.generateReport" class="hidden sm:inline">Generate AI Report (24h)</span><span class="sm:hidden">AI Report</span>
-        </button>
         <button onclick="closeDeviceDrawer()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg">&times;</button>
       </div>
     </div>
@@ -1578,10 +1575,30 @@
     <div id="drawer-tabs" class="flex items-center gap-1.5"></div>
     <div class="ml-auto flex-shrink-0 text-[11px] text-slate-400 dark:text-slate-500" id="drawer-event-count"></div>
   </div>
-  <!-- Scrollable body: holds either the Summary view or the Event table -->
+  <!-- Scrollable body: holds the Summary, Report, or Event table view -->
   <div class="flex-1 overflow-y-auto overflow-x-auto" id="drawer-scroll">
     <!-- Summary view (top services by bytes) -->
     <div id="drawer-summary-view" class="hidden p-5"></div>
+    <!-- AI Recap view -->
+    <div id="drawer-report-view" class="hidden p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+          <span class="text-indigo-500">&#10024;</span>
+          <span data-i18n="dev.aiRecap">AI Network Recap</span>
+        </h3>
+        <button id="drawer-btn-regenerate-report" onclick="generateDeviceReport()" class="hidden px-2.5 py-1 text-[11px] font-medium rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors">
+          <span>&#8635;</span> <span data-i18n="dev.regenerateReport">Regenereer AI recap</span>
+        </button>
+      </div>
+      <div id="drawer-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300">
+        <div id="drawer-report-empty" class="py-10 text-center">
+          <p class="text-xs text-slate-400 dark:text-slate-500 mb-4" data-i18n="dev.reportEmptyHint">No AI recap generated yet for this device.</p>
+          <button onclick="generateDeviceReport()" class="px-4 py-2 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md">
+            <span>&#10024;</span> <span data-i18n="dev.generateReport">Generate AI Report (24h)</span>
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- Event table -->
     <div id="drawer-events-view">
       <table class="w-full text-sm text-left">
@@ -1600,16 +1617,6 @@
         <button onclick="drawerLoadMore()" class="px-4 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-600 dark:text-slate-300 transition-colors" data-i18n="dev.loadMore">Load more</button>
       </div>
     </div>
-  </div>
-  <!-- AI Recap report (hidden by default) -->
-  <div id="drawer-ai-report" class="hidden flex-shrink-0 mx-4 my-4 p-5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-500/20">
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-        <span>&#10024;</span> <span data-i18n="dev.aiRecap">AI Network Recap</span>
-      </h4>
-      <button onclick="document.getElementById('drawer-ai-report').classList.add('hidden')" class="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 text-sm">&times;</button>
-    </div>
-    <div id="drawer-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"></div>
   </div>
 </div>
 
