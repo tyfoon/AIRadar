@@ -269,29 +269,32 @@ tr:hover .dev-edit-btn { opacity: 1; }
   .drawer-panel { width: 100vw; min-width: 0; max-width: none; }
 }
 
-/* Drawer tab bar — matches the shared pill pattern used on Rules,
-   AI, Settings, Geo, etc.: flat inactive text + solid blue active. */
+/* Drawer tab bar — pixel-identical to the shared Tailwind pill
+   pattern used on Rules / AI / Settings / Geo / IPS.
+   Equivalent utilities:
+     base:     px-4 py-1.5 rounded-md text-xs font-medium transition-colors
+     inactive: text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300
+     active:   bg-blue-700 text-white shadow-sm
+*/
 .drawer-tab {
-  padding: 0.375rem 1rem; border-radius: 0.375rem;
-  font-size: 0.75rem; font-weight: 500;
+  padding: 0.375rem 1rem;             /* py-1.5 px-4 */
+  border-radius: 0.375rem;            /* rounded-md */
+  font-size: 0.75rem;                 /* text-xs */
+  font-weight: 500;                   /* font-medium */
   cursor: pointer; white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-  color: var(--text-secondary);
+  transition: background-color 0.15s, color 0.15s;
+  color: #64748b;                     /* text-slate-500 */
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
 }
-.drawer-tab:hover { color: #334155; }
-.dark .drawer-tab:hover { color: #cbd5e1; }
-.drawer-tab.active {
-  background: #1d4ed8;       /* blue-700 */
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-}
+.dark .drawer-tab { color: #94a3b8; } /* dark:text-slate-400 */
+.drawer-tab:hover { color: #334155; } /* hover:text-slate-700 */
+.dark .drawer-tab:hover { color: #cbd5e1; } /* dark:hover:text-slate-300 */
+.drawer-tab.active,
 .dark .drawer-tab.active {
-  background: #1d4ed8;
+  background: #1d4ed8;                /* bg-blue-700 */
   color: #ffffff;
-  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* shadow-sm */
 }
 
 /* --- Sankey chart responsive height --- */
