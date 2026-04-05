@@ -1236,8 +1236,18 @@ async def privacy_stats(
     ]
 
     # 3) VPN / tunnel alerts (vpn_tunnel events + vpn_* service SNI events)
-    #    Only show alerts where the most recent event is within 15 minutes
+    #    Only show alerts where the most recent event is within 15 minutes.
+    #    Stealth tunnels (IPv6-over-IPv4 like AYIYA/Teredo, DPD-detected)
+    #    are counted separately so the UI can distinguish them from
+    #    commercial VPN clients.
+    from sqlalchemy import case, Integer
     vpn_active_cutoff = datetime.utcnow() - timedelta(minutes=15)
+    stealth_flag = func.sum(
+        case((DetectionEvent.detection_type == "stealth_vpn_tunnel", 1), else_=0)
+    ).label("stealth_hits")
+    regular_flag = func.sum(
+        case((DetectionEvent.detection_type != "stealth_vpn_tunnel", 1), else_=0)
+    ).label("regular_hits")
     vpn_rows = (
         db.query(
             DetectionEvent.source_ip,
@@ -1245,6 +1255,8 @@ async def privacy_stats(
             func.sum(DetectionEvent.bytes_transferred).label("total_bytes"),
             func.count(DetectionEvent.id).label("hits"),
             func.max(DetectionEvent.ai_service).label("vpn_service"),
+            stealth_flag,
+            regular_flag,
         )
         .filter(
             (DetectionEvent.detection_type == "vpn_tunnel")
@@ -1281,10 +1293,52 @@ async def privacy_stats(
             "total_bytes": int(row.total_bytes or 0),
             "hits": row.hits,
             "vpn_service": row.vpn_service,
+            "stealth_hits": int(row.stealth_hits or 0),
+            "regular_hits": int(row.regular_hits or 0),
+            "is_stealth": int(row.stealth_hits or 0) > 0,
             **device_info,
         })
 
-    # 4) Beaconing / C2 threat alerts (last 24h, one row per src→dst pair)
+    # 4) Security stats: beaconing_threat + any future security-category events
+    sec_cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+    sec_cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    sec_filter = (
+        (DetectionEvent.detection_type == "beaconing_threat")
+        | (DetectionEvent.category == "security")
+    )
+    total_24h = (
+        db.query(func.count(DetectionEvent.id))
+        .filter(sec_filter, DetectionEvent.timestamp >= sec_cutoff_24h)
+        .scalar() or 0
+    )
+    total_7d = (
+        db.query(func.count(DetectionEvent.id))
+        .filter(sec_filter, DetectionEvent.timestamp >= sec_cutoff_7d)
+        .scalar() or 0
+    )
+    # Daily buckets for a 7-day sparkline (oldest → newest)
+    sparkline = [0] * 7
+    start_of_today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_rows = (
+        db.query(
+            func.strftime("%Y-%m-%d", DetectionEvent.timestamp).label("day"),
+            func.count(DetectionEvent.id).label("cnt"),
+        )
+        .filter(sec_filter, DetectionEvent.timestamp >= sec_cutoff_7d)
+        .group_by("day")
+        .all()
+    )
+    day_counts = {r.day: r.cnt for r in daily_rows}
+    for i in range(7):
+        day = (start_of_today - timedelta(days=6 - i)).strftime("%Y-%m-%d")
+        sparkline[i] = day_counts.get(day, 0)
+    security_stats = {
+        "total_24h": total_24h,
+        "total_7d": total_7d,
+        "sparkline_7d": sparkline,
+    }
+
+    # 5) Beaconing / C2 threat alerts (last 24h, one row per src→dst pair)
     beacon_cutoff = datetime.utcnow() - timedelta(hours=24)
     beacon_rows = (
         db.query(
@@ -1335,6 +1389,8 @@ async def privacy_stats(
         "vpn_alerts": vpn_alerts,
         # Malware C2 beaconing alerts
         "beaconing_alerts": beacon_alerts,
+        # Security stats (beaconing + future security categories)
+        "security": security_stats,
     }
 
 

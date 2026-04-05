@@ -99,6 +99,19 @@ const TRANSLATIONS = {
     'beacon.warningText':  'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command & control traffic.',
     'beacon.lastSeen':     'Last seen',
 
+    // Security stat card + stealth VPN
+    'priv.securityEvents': 'Security Events',
+    'priv.last7d':         'Last 7 days',
+    'priv.stealthVpn':     'Stealth tunnel',
+    'priv.stealthVpnHint': 'Tunneling protocol that evades normal VPN detection (AYIYA, Teredo, GRE, DPD heuristic)',
+    'dash.securityEvents': 'Security Events',
+
+    // Cloud — Top Data Exporters
+    'cloud.topUploaders':      'Top Data Exporters',
+    'cloud.topUploadersHint':  'Devices with the largest outbound data volume',
+    'cloud.totalUploaded':     'Total',
+    'cloud.noUploaders':       'No uploads detected in this time window.',
+
     // Top bar
     'topbar.checking':     'Checking...',
     'topbar.refresh':      'Refresh',
@@ -616,6 +629,19 @@ const TRANSLATIONS = {
     'beacon.warning':      'Waarschuwing',
     'beacon.warningText':  'Een of meer apparaten vertonen zeer periodieke uitgaande verbindingspatronen die kenmerkend zijn voor malware command & control verkeer.',
     'beacon.lastSeen':     'Laatst gezien',
+
+    // Beveiliging stat card + stealth VPN
+    'priv.securityEvents': 'Beveiligingsevents',
+    'priv.last7d':         'Laatste 7 dagen',
+    'priv.stealthVpn':     'Stealth tunnel',
+    'priv.stealthVpnHint': 'Tunnelprotocol dat normale VPN-detectie omzeilt (AYIYA, Teredo, GRE, DPD-heuristiek)',
+    'dash.securityEvents': 'Beveiligingsevents',
+
+    // Cloud — Top data-exporteurs
+    'cloud.topUploaders':      'Top data-exporteurs',
+    'cloud.topUploadersHint':  'Apparaten met de grootste uitgaande datavolumes',
+    'cloud.totalUploaded':     'Totaal',
+    'cloud.noUploaders':       'Geen uploads in dit tijdvenster.',
 
     // Bovenbalk
     'topbar.checking':     'Controleren...',

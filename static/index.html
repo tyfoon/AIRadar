@@ -202,7 +202,7 @@
     <section id="page-dashboard" class="page active space-y-6">
 
       <!-- Metric cards -->
-      <div class="stat-grid grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="stat-grid grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('settings')">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.system">System</p>
           <div class="flex items-center gap-2 mt-2">
@@ -231,6 +231,14 @@
           <p id="dash-blocked-rate" class="text-[11px] text-slate-400 dark:text-slate-500"></p>
           <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
           <div id="dash-blocked-trend" class="hidden mt-1"></div>
+        </div>
+        <div class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-red-400 dark:hover:border-red-500" onclick="navigate('privacy')">
+          <p class="text-xs text-red-500 dark:text-red-400 font-medium" data-i18n="dash.securityEvents">Security Events</p>
+          <p id="dash-security" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
+          <div class="flex items-end justify-between mt-1 gap-2">
+            <p class="text-[11px] text-slate-400 dark:text-slate-500"><span data-i18n="priv.last7d">Last 7 days</span>: <span id="dash-security-7d" class="tabular-nums font-medium">0</span></p>
+            <svg id="dash-security-spark" class="h-5 w-16" viewBox="0 0 64 20" preserveAspectRatio="none"></svg>
+          </div>
         </div>
       </div>
 
@@ -499,6 +507,20 @@
         <div id="cloud-timeline-chart-legend" class="flex flex-wrap mt-2"></div>
       </div>
 
+      <!-- Top Data Exporters (devices uploading the most bytes) -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="cloud.topUploaders">Top Data Exporters</h3>
+            <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="cloud.topUploadersHint">Devices with the largest outbound data volume</p>
+          </div>
+          <span id="cloud-uploaders-total" class="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums"></span>
+        </div>
+        <div id="cloud-top-uploaders" class="space-y-2">
+          <p class="text-sm text-slate-400 dark:text-slate-500 italic text-center py-4" data-i18n="cloud.noUploaders">No uploads detected in this time window.</p>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="cloud.byService">By Service</h3>
@@ -532,7 +554,7 @@
     <section id="page-privacy" class="page space-y-6">
 
       <!-- Stats row -->
-      <div class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="priv.dnsQueries">DNS Lookups</p>
           <p id="priv-total" class="text-2xl font-bold mt-2 tabular-nums">0</p>
@@ -554,6 +576,14 @@
           <p class="text-xs text-orange-500 dark:text-orange-400 font-medium"><span data-i18n="priv.vpnTunnels">VPN Connections</span> <span class="text-slate-400 dark:text-slate-500">▾</span></p>
           <p id="vpn-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
           <p class="text-[10px] mt-1"><span id="vpn-stat-label" class="text-emerald-500 dark:text-emerald-400" data-i18n="priv.noTunnels">No tunnels detected</span></p>
+        </div>
+        <div id="security-stat-card" class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover">
+          <p class="text-xs text-red-500 dark:text-red-400 font-medium" data-i18n="priv.securityEvents">Security Events</p>
+          <p id="security-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
+          <div class="flex items-end justify-between mt-1 gap-2">
+            <p class="text-[10px] text-slate-400 dark:text-slate-500"><span data-i18n="priv.last7d">Last 7 days</span>: <span id="security-stat-7d" class="tabular-nums font-medium">0</span></p>
+            <svg id="security-spark" class="h-5 w-16" viewBox="0 0 64 20" preserveAspectRatio="none"></svg>
+          </div>
         </div>
       </div>
 

@@ -1302,6 +1302,9 @@ async function refreshDashboard() {
     rateEl.textContent = t('dash.blockRate', { pct });
   }
 
+  // Security stat card (beaconing threats + any security-category events)
+  renderSecurityStats(privRes?.security || {}, 'dash-security', 'dash-security-7d', 'dash-security-spark');
+
   // TODO: Trend indicators — render when API provides yesterday's comparison data.
   // The API would need to return e.g. { devices_yesterday, events_yesterday, blocked_yesterday }
   // in the /api/privacy/stats or a new /api/stats/comparison endpoint.
@@ -1940,6 +1943,83 @@ async function refreshCloud() {
 
   renderEventsTable(events, 'cloud-tbody', 'cloud-empty', 'cloud-low-activity');
   updateCategoryCharts(events, timeline, 'cloud-service-chart', 'cloud-timeline-chart');
+  renderTopUploaders(events);
+}
+
+// ---------------------------------------------------------------------------
+// Top Data Exporters — rank devices by total upload bytes in the current view
+// ---------------------------------------------------------------------------
+function _fmtBytesShort(b) {
+  if (!b || b <= 0) return '0 B';
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+function renderTopUploaders(events) {
+  const container = document.getElementById('cloud-top-uploaders');
+  const totalEl = document.getElementById('cloud-uploaders-total');
+  if (!container) return;
+
+  // Aggregate only events flagged as possible upload
+  const byIp = {};
+  let grandTotal = 0;
+  events.forEach(e => {
+    if (!e.possible_upload || !e.bytes_transferred) return;
+    const ip = e.source_ip;
+    if (!byIp[ip]) byIp[ip] = { bytes: 0, events: 0, services: new Set() };
+    byIp[ip].bytes += e.bytes_transferred;
+    byIp[ip].events += 1;
+    byIp[ip].services.add(e.ai_service);
+    grandTotal += e.bytes_transferred;
+  });
+
+  const ranked = Object.entries(byIp)
+    .map(([ip, agg]) => ({ ip, ...agg, services: [...agg.services] }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 10);
+
+  if (ranked.length === 0) {
+    container.innerHTML = `<p class="text-sm text-slate-400 dark:text-slate-500 italic text-center py-4">${t('cloud.noUploaders') || 'No uploads detected in this time window.'}</p>`;
+    if (totalEl) totalEl.textContent = '';
+    return;
+  }
+
+  if (totalEl) {
+    totalEl.textContent = `${t('cloud.totalUploaded') || 'Total'}: ${_fmtBytesShort(grandTotal)}`;
+  }
+
+  const max = ranked[0].bytes;
+  container.innerHTML = ranked.map((r, i) => {
+    const pct = Math.max(3, (r.bytes / max) * 100);
+    const dev = _deviceByIp(r.ip);
+    const name = dev ? _bestDeviceName(dev.mac_address, dev) : r.ip;
+    const macTag = dev && dev.mac_address
+      ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1.5">${dev.mac_address}</span>`
+      : '';
+    const svcList = r.services.slice(0, 3).map(s => svcDisplayName(s)).join(', ')
+                   + (r.services.length > 3 ? ` +${r.services.length - 3}` : '');
+    const barColor = i === 0 ? 'from-red-500 to-orange-500'
+                  : i < 3 ? 'from-orange-500 to-amber-500'
+                  : 'from-indigo-500 to-purple-500';
+    return `<div class="group">
+      <div class="flex items-center justify-between gap-3 mb-1">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+          <span class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500 w-5 text-right flex-shrink-0">#${i + 1}</span>
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+          ${macTag}
+        </div>
+        <span class="text-xs tabular-nums font-semibold text-slate-800 dark:text-slate-100 flex-shrink-0">${_fmtBytesShort(r.bytes)}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.04] overflow-hidden">
+          <div class="h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500" style="width:${pct}%"></div>
+        </div>
+        <span class="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums w-16 text-right flex-shrink-0">${r.events} ev &middot; ${svcList}</span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // --- PRIVACY ---
@@ -2080,8 +2160,44 @@ async function refreshPrivacy() {
   // VPN stat card + expandable panel
   renderVpnAlerts(privRes.vpn_alerts || []);
 
+  // Security stat card (beaconing + future security category events)
+  renderSecurityStats(privRes.security || {}, 'security-stat-count', 'security-stat-7d', 'security-spark');
+
   // Beaconing / C2 threat intelligence card
   renderBeaconAlerts(privRes.beaconing_alerts || []);
+}
+
+// ---------------------------------------------------------------------------
+// Security stats — stat card with 24h count + 7-day sparkline
+// ---------------------------------------------------------------------------
+function renderSecurityStats(stats, countId, weekId, sparkId) {
+  const countEl = document.getElementById(countId);
+  const weekEl = document.getElementById(weekId);
+  const sparkEl = document.getElementById(sparkId);
+  if (!countEl) return;
+
+  const total24h = stats.total_24h || 0;
+  const total7d = stats.total_7d || 0;
+  const spark = Array.isArray(stats.sparkline_7d) ? stats.sparkline_7d : [0,0,0,0,0,0,0];
+
+  countEl.textContent = total24h;
+  if (weekEl) weekEl.textContent = total7d;
+
+  // Sparkline: 7 bars, width 64px (viewBox 0..64), height 20
+  if (sparkEl) {
+    const max = Math.max(1, ...spark);
+    const barW = 64 / spark.length;
+    const gap = 1.5;
+    const barInner = barW - gap;
+    // Choose colour based on whether there are any hits at all
+    const color = total7d > 0 ? '#ef4444' : '#94a3b8';
+    sparkEl.innerHTML = spark.map((v, i) => {
+      const h = Math.max(2, (v / max) * 18);
+      const x = i * barW + gap / 2;
+      const y = 20 - h;
+      return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barInner.toFixed(2)}" height="${h.toFixed(2)}" rx="0.5" fill="${color}" opacity="${v > 0 ? 0.9 : 0.35}"/>`;
+    }).join('');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2217,18 +2333,29 @@ function renderVpnAlerts(alerts) {
             const bytes = a.total_bytes >= 1048576
               ? (a.total_bytes / 1048576).toFixed(1) + ' MB'
               : (a.total_bytes / 1024).toFixed(0) + ' KB';
-            return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-orange-50/50 dark:hover:bg-orange-900/10">
+            // Stealth detection: if the aggregator saw stealth_vpn_tunnel events,
+            // show a distinct red badge. Mixed traffic shows both badges.
+            let serviceBadges = '';
+            if (a.is_stealth) {
+              serviceBadges = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 text-red-600 dark:bg-red-500/25 dark:text-red-300 border border-red-500/30" title="${t('priv.stealthVpnHint') || 'Tunneling protocol that evades normal VPN detection (AYIYA, Teredo, GRE, DPD heuristic)'}">🥷 ${t('priv.stealthVpn') || 'Stealth tunnel'}</span>`;
+              if (a.regular_hits > 0) {
+                serviceBadges += ` <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`;
+              }
+            } else if (a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active') {
+              serviceBadges = badge(a.vpn_service);
+            } else {
+              serviceBadges = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`;
+            }
+            const rowClass = a.is_stealth
+              ? 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-red-50/50 dark:hover:bg-red-900/10 bg-red-50/30 dark:bg-red-900/5'
+              : 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-orange-50/50 dark:hover:bg-orange-900/10';
+            return `<tr class="${rowClass}">
               <td class="py-3 px-4">
                 <div class="font-medium text-xs">${name}</div>
                 ${dtTag}
                 <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.source_ip}</span>
               </td>
-              <td class="py-3 px-4">
-                ${a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active'
-                  ? badge(a.vpn_service)
-                  : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`
-                }
-              </td>
+              <td class="py-3 px-4">${serviceBadges}</td>
               <td class="py-3 px-4 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
               <td class="py-3 px-4 text-xs tabular-nums">${a.hits}</td>
               <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(a.last_seen)}</td>
