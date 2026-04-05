@@ -3386,23 +3386,38 @@ function _renderCountryDrawer(data) {
   }
 
   // --- Top IPs with ASN / PTR ---
+  // Label priority per row, from most to least informative:
+  //   1. ASN + org available → "AS15169 · Google LLC"
+  //   2. Only PTR available   → "server-...cloudfront.net"
+  //   3. Enrichment completed but empty → "(no reverse DNS / ASN)"
+  //   4. Enrichment not yet run         → "enriching…"
   const ipEl = document.getElementById('country-top-ips');
   const ips = data.top_ips || [];
   if (ips.length === 0) {
     ipEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noIps') || 'No remote IPs recorded.'}</div>`;
   } else {
     ipEl.innerHTML = ips.map(ip => {
-      const asnLine = ip.asn_org
-        ? `<span class="text-[10px] text-slate-500 dark:text-slate-400">AS${ip.asn || '?'} · ${ip.asn_org}</span>`
-        : `<span class="text-[10px] text-slate-400 dark:text-slate-600 italic">${t('country.ipEnriching') || 'enriching…'}</span>`;
-      const ptrLine = ip.ptr
-        ? `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${ip.ptr}</div>`
-        : '';
+      let primary = '';   // big label line
+      let secondary = ''; // small detail line
+
+      if (ip.asn_org) {
+        primary = `<div class="text-xs text-slate-700 dark:text-slate-200 truncate">AS${ip.asn || '?'} · ${ip.asn_org}</div>`;
+        if (ip.ptr) {
+          secondary = `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${ip.ptr}</div>`;
+        }
+      } else if (ip.ptr) {
+        primary = `<div class="text-xs text-slate-700 dark:text-slate-200 font-mono truncate">${ip.ptr}</div>`;
+      } else if (ip.enriched) {
+        primary = `<div class="text-xs text-slate-400 dark:text-slate-600 italic">${t('country.ipNoRdns') || '(no reverse DNS / ASN)'}</div>`;
+      } else {
+        primary = `<div class="text-xs text-slate-400 dark:text-slate-600 italic">${t('country.ipEnriching') || 'enriching…'}</div>`;
+      }
+
       return `<div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.04] last:border-0">
         <div class="min-w-0 flex-1">
-          <div class="font-mono text-xs text-slate-700 dark:text-slate-200">${ip.ip}</div>
-          ${ptrLine}
-          <div class="mt-0.5">${asnLine}</div>
+          <div class="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">${ip.ip}</div>
+          ${primary}
+          ${secondary}
         </div>
         <div class="flex-shrink-0 text-right ml-3">
           <div class="text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(ip.bytes)}</div>

@@ -1359,21 +1359,67 @@ ASN_DB_CANDIDATES = [
     str(Path(__file__).parent / "data" / "GeoLite2-ASN.mmdb"),
     str(Path(__file__).parent / "data" / "dbip-asn.mmdb"),
 ]
+ASN_DB_DOWNLOAD_URL = os.environ.get(
+    "ASN_DB_DOWNLOAD_URL",
+    "https://raw.githubusercontent.com/sapics/ip-location-db/main/dbip-asn-mmdb/dbip-asn.mmdb",
+)
+# Where to write the DB if we auto-download — prefer the shared data
+# volume so the file persists across container restarts.
+ASN_DB_DOWNLOAD_DEST = Path(
+    os.environ.get("ASN_DB_DOWNLOAD_DEST", "/app/data/dbip-asn.mmdb")
+)
 _asn_reader = None
-try:
-    import maxminddb  # type: ignore  # already imported above, harmless
+
+
+def _open_asn_reader() -> None:
+    """Look for an ASN MMDB in the candidate paths and open the first
+    one we find. Kept as a function so it can be called again after a
+    runtime download."""
+    global _asn_reader
+    try:
+        import maxminddb  # type: ignore  # harmless reimport
+    except ImportError:
+        return
     for _p in ASN_DB_CANDIDATES:
         if _p and os.path.exists(_p):
             try:
                 _asn_reader = maxminddb.open_database(_p)
                 print(f"[asn] ASN DB loaded from {_p} (type: {_asn_reader.metadata().database_type})")
-                break
+                return
             except Exception as _exc:
                 print(f"[asn] Failed to open {_p}: {_exc}")
-    if not _asn_reader:
-        print("[asn] No ASN database found — IP enrichment will use PTR only")
-except ImportError:
-    pass
+
+
+async def ensure_asn_db(client) -> None:
+    """Download the ASN MMDB at startup if none is present.
+
+    Lets the feature work without requiring the user to re-run setup.sh
+    — the tailer pulls the file into the shared data volume on first
+    boot, then uses it for all subsequent enrichment. Safe to call
+    repeatedly; noop if a reader is already loaded.
+    """
+    global _asn_reader
+    if _asn_reader:
+        return
+    try:
+        ASN_DB_DOWNLOAD_DEST.parent.mkdir(parents=True, exist_ok=True)
+        print(f"[asn] Downloading ASN MMDB → {ASN_DB_DOWNLOAD_DEST}")
+        async with client.stream("GET", ASN_DB_DOWNLOAD_URL, timeout=120) as resp:
+            resp.raise_for_status()
+            with open(ASN_DB_DOWNLOAD_DEST, "wb") as f:
+                async for chunk in resp.aiter_bytes():
+                    f.write(chunk)
+        print(f"[asn] Downloaded ASN MMDB ({ASN_DB_DOWNLOAD_DEST.stat().st_size / 1024 / 1024:.1f} MB)")
+        _open_asn_reader()
+    except Exception as exc:
+        print(f"[asn] Download failed: {exc} — enrichment will use PTR only")
+
+
+# Initial attempt at startup (covers the case where setup.sh already
+# placed the file). The runtime download below handles fresh installs.
+_open_asn_reader()
+if not _asn_reader:
+    print("[asn] No ASN database found yet — will auto-download on tailer startup")
 
 
 def _resolve_asn(ip: str) -> tuple[int | None, str | None]:
@@ -1565,6 +1611,72 @@ def _reverse_dns_blocking(ip: str) -> str | None:
         return None
     finally:
         _socket.setdefaulttimeout(None)
+
+
+GEO_MISSING_ASN_URL = os.environ.get(
+    "AIRADAR_GEO_MISSING_ASN_URL",
+    "http://localhost:8000/api/geo/metadata/missing_asn",
+)
+
+
+async def backfill_missing_asn(client: httpx.AsyncClient) -> None:
+    """Run-once startup task: re-enrich existing ip_metadata rows that
+    have a NULL asn. These are rows created before the ASN MMDB was
+    downloaded — PTR lookups succeeded but ASN resolution returned
+    None because the reader didn't exist yet. Now that we have the
+    MMDB, sweep through and fill in the gaps.
+
+    Flow:
+      1. Give the tailer a moment to finish its own startup
+      2. Fetch list of IPs missing ASN from the API
+      3. Resolve each locally with _asn_reader
+      4. POST the results in chunks back to the existing metadata ingest
+    """
+    await asyncio.sleep(30)  # let the API warm up
+    if not _asn_reader:
+        return
+
+    try:
+        r = await client.get(GEO_MISSING_ASN_URL, params={"limit": 5000}, timeout=30)
+        if r.status_code != 200:
+            print(f"[asn-backfill] Skip (HTTP {r.status_code})")
+            return
+        ips = r.json().get("ips", [])
+    except Exception as exc:
+        print(f"[asn-backfill] Fetch failed: {exc}")
+        return
+
+    if not ips:
+        return
+
+    print(f"[asn-backfill] {len(ips)} IP(s) with missing ASN — resolving locally")
+    CHUNK = 200
+    updated = 0
+    for i in range(0, len(ips), CHUNK):
+        chunk = ips[i:i + CHUNK]
+        entries = []
+        for ip in chunk:
+            asn_num, asn_org = _resolve_asn(ip)
+            if asn_num is None and not asn_org:
+                continue
+            entries.append({
+                "ip": ip,
+                "asn": asn_num,
+                "asn_org": asn_org,
+            })
+        if not entries:
+            continue
+        try:
+            await client.post(
+                GEO_META_API_URL,
+                json={"entries": entries},
+                timeout=15,
+            )
+            updated += len(entries)
+        except Exception as exc:
+            print(f"[asn-backfill] POST chunk failed: {exc}")
+
+    print(f"[asn-backfill] Completed: {updated} rows updated")
 
 
 async def enrich_ip_metadata_loop(client: httpx.AsyncClient) -> None:
@@ -2337,8 +2449,16 @@ async def main(zeek_log_dir: str) -> None:
     except Exception as exc:
         print(f"[*] Network scanner: disabled ({exc})")
 
+    client = httpx.AsyncClient()
+
+    # Auto-download the ASN MMDB if it's missing. This is the only
+    # reliable way to ensure enrichment works on a fresh install where
+    # setup.sh was skipped — without it every Top-remote-IP entry
+    # shows "enriching…" forever.
+    await ensure_asn_db(client)
+
     tasks = [
-        tail_ssl_log(ssl_log, client := httpx.AsyncClient()),
+        tail_ssl_log(ssl_log, client),
         tail_conn_log(conn_log, client),
         tail_dhcp_log(dhcp_log, client),
         tail_ja4d_log(ja4d_log, client),
@@ -2346,6 +2466,7 @@ async def main(zeek_log_dir: str) -> None:
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs
+        backfill_missing_asn(client),  # one-shot retry for pre-MMDB rows
         _refresh_device_meta(client),  # pull device metadata for Phase 2
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh
     ]

@@ -2078,6 +2078,25 @@ def ingest_geo_conversations(
     return {"status": "ok", "accepted": accepted, "enrich": to_enrich}
 
 
+@app.get("/api/geo/metadata/missing_asn")
+def list_missing_asn(
+    limit: int = Query(5000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+):
+    """Return IPs in ip_metadata that don't have an ASN resolved yet.
+
+    Used by the tailer's backfill_missing_asn startup task to catch up
+    after a first-boot where the ASN MMDB was downloaded mid-run.
+    """
+    rows = (
+        db.query(IpMetadata.ip)
+        .filter(IpMetadata.asn.is_(None))
+        .limit(limit)
+        .all()
+    )
+    return {"ips": [r[0] for r in rows]}
+
+
 @app.post("/api/geo/metadata/ingest")
 def ingest_ip_metadata(
     payload: dict = Body(...),
@@ -2305,6 +2324,11 @@ def get_country_detail(
             "bytes": int(byts or 0),
             "hits": int(hits or 0),
             "last_seen": str(lseen) if lseen else None,
+            # 'enriched' tells the UI whether the metadata lookup has
+            # already completed (possibly with NULL results) vs still
+            # pending. Without this, the frontend can't distinguish
+            # 'enriching…' from 'resolved but no rDNS/ASN available'.
+            "enriched": m is not None,
             "ptr": m.ptr if m else None,
             "asn": m.asn if m else None,
             "asn_org": m.asn_org if m else None,
