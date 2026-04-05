@@ -1078,12 +1078,12 @@ Upload tijdlijn (recentste {MAX_UPLOAD_EVENTS}):
     print(f"[gemini] Device report prompt for {mac_address}: {prompt_chars} chars, "
           f"{len(events)} events, {total_uploads} uploads")
 
-    # Use gemini-flash-latest because gemini-2.5-flash has "thinking mode"
+    # Use gemini-flash-lite-latest because gemini-2.5-flash has "thinking mode"
     # enabled by default which adds 30-60+ seconds of chain-of-thought
     # before responding. For pure summarisation we don't need reasoning
     # and 2.0-flash is always fast (5-10s) and same quality for this
     # use case. Override with env var if you want to experiment.
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
     gemini_timeout = int(os.environ.get("GEMINI_TIMEOUT_S", "90"))
 
     try:
@@ -2050,9 +2050,9 @@ async def alerts_ai_summary(
         "belangrijkste."
     )
 
-    # gemini-flash-latest: non-thinking, always fast. See device report
+    # gemini-flash-lite-latest: non-thinking, always fast. See device report
     # endpoint for the rationale. Override via GEMINI_MODEL env var.
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 
     try:
         from google import genai

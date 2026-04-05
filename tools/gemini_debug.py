@@ -25,7 +25,7 @@ def main():
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-flash-latest:generateContent?key=" + key
+        "gemini-flash-lite-latest:generateContent?key=" + key
     )
     payload = {"contents": [{"parts": [{"text": "Say hello"}]}]}
 
@@ -78,7 +78,7 @@ def main():
         from google import genai
         client = genai.Client(api_key=key)
         r = client.models.generate_content(
-            model="gemini-flash-latest",
+            model="gemini-flash-lite-latest",
             contents="Say hello",
         )
         print(f"  OK in {time.time() - t0:.1f}s")
