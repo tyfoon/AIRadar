@@ -1739,7 +1739,11 @@ async def system_performance():
     def _collect_host():
         cpu_percent = psutil.cpu_percent(interval=0.5)
         vm = psutil.virtual_memory()
-        disk = psutil.disk_usage("/")
+        # Use /app/data (bind-mounted from the host) so we see the real host
+        # disk, not the container's overlay filesystem. Fall back to "/" when
+        # running outside a container.
+        disk_path = "/app/data" if os.path.exists("/app/data") else "/"
+        disk = psutil.disk_usage(disk_path)
         try:
             load1, load5, load15 = psutil.getloadavg()
         except (AttributeError, OSError):
