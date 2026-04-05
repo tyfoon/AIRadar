@@ -592,6 +592,15 @@ const TRANSLATIONS = {
 
     // Settings — Data
     'settings.dataRetention':'Data Retention',
+    'settings.manualCleanup':    'Clean up stale data',
+    'settings.manualCleanupHint':'Wipes all VPN events (old and new), dead-protocol stealth tunnels, and orphaned TLS fingerprints. Then VACUUMs the database. Device names, services, and policies are untouched.',
+    'settings.runCleanup':       'Run cleanup',
+    'settings.cleanupConfirm':   'This will permanently remove all VPN tunnel events and stealth-tunnel events from the database. Continue?',
+    'settings.cleanupRunning':   'Running cleanup…',
+    'settings.cleanupDone':      'rows removed',
+    'settings.cleanupError':     'Cleanup failed',
+    'settings.cleanupVacuumOk':  'DB compacted',
+    'settings.cleanupVacuumFail':'VACUUM failed',
     'settings.retentionPeriod':'Retention Period',
     'settings.maxEvents':  'Max Events',
     'settings.cleanup':    'Cleanup Interval',
@@ -1217,6 +1226,15 @@ const TRANSLATIONS = {
 
     // Instellingen — Data
     'settings.dataRetention':'Gegevensbewaring',
+    'settings.manualCleanup':    'Oude data opschonen',
+    'settings.manualCleanupHint':'Verwijdert alle VPN-events (oud en nieuw), dode protocol-stealth tunnels en verweesde TLS fingerprints. Daarna VACUUM. Apparaatnamen, services en policies blijven behouden.',
+    'settings.runCleanup':       'Opschonen',
+    'settings.cleanupConfirm':   'Dit verwijdert definitief alle VPN tunnel-events en stealth tunnel-events uit de database. Doorgaan?',
+    'settings.cleanupRunning':   'Bezig met opschonen…',
+    'settings.cleanupDone':      'rijen verwijderd',
+    'settings.cleanupError':     'Opschonen mislukt',
+    'settings.cleanupVacuumOk':  'DB gecomprimeerd',
+    'settings.cleanupVacuumFail':'VACUUM mislukt',
     'settings.retentionPeriod':'Bewaarperiode',
     'settings.maxEvents':  'Max gebeurtenissen',
     'settings.cleanup':    'Opruiminterval',

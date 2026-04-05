@@ -3431,6 +3431,83 @@ async def toggle_ips(payload: GlobalFilterToggle):
 
 
 # ---------------------------------------------------------------------------
+# Admin: one-click stale-data cleanup
+# ---------------------------------------------------------------------------
+# The periodic cleanup handles age-based retention (7 days / 50k events),
+# but doesn't purge specific stale categories that need a clean-slate
+# reset. Triggered manually from Settings. Removes:
+#   - ALL vpn_tunnel events (both old heuristic rows and any old
+#     ASN/port-match rows — gives the new detection pipeline a fresh
+#     start without stale noise in the Privacy / IPS views)
+#   - ALL stealth_vpn_tunnel events (AYIYA/Teredo/other DPD rows)
+#   - All sni_hello events whose ai_service starts with 'vpn_'
+#     (NordVPN/ExpressVPN domain touches from the old alert query)
+#   - Orphaned tls_fingerprints pointing to non-existent devices
+# Then runs VACUUM to reclaim disk space. Service policies, block
+# rules, and device metadata are untouched — only noisy event rows.
+@app.post("/api/admin/cleanup")
+def admin_cleanup(db: Session = Depends(get_db)):
+    from database import engine as _db_engine  # local to avoid circular-ish feel
+
+    counts: dict[str, int] = {}
+
+    # 1) All VPN tunnel events — wipe the Privacy → VPN section clean.
+    #    New detections will repopulate via the ASN-match pipeline.
+    counts["vpn_tunnel_events"] = db.query(DetectionEvent).filter(
+        DetectionEvent.detection_type == "vpn_tunnel"
+    ).delete(synchronize_session=False)
+
+    # 2) All stealth VPN tunnels (AYIYA/Teredo/etc. — dead DPD paths).
+    counts["stealth_vpn_events"] = db.query(DetectionEvent).filter(
+        DetectionEvent.detection_type == "stealth_vpn_tunnel"
+    ).delete(synchronize_session=False)
+
+    # 3) SNI heartbeats where the service was tagged as vpn_* — leftover
+    #    NordVPN/ExpressVPN domain touches from the old alert path.
+    counts["vpn_sni_events"] = db.query(DetectionEvent).filter(
+        DetectionEvent.detection_type == "sni_hello",
+        DetectionEvent.ai_service.like("vpn_%"),
+    ).delete(synchronize_session=False)
+
+    # 4) Orphaned tls_fingerprints pointing to devices that no longer exist.
+    counts["orphaned_tls_fingerprints"] = db.execute(
+        text(
+            "DELETE FROM tls_fingerprints WHERE mac_address NOT IN "
+            "(SELECT mac_address FROM devices)"
+        )
+    ).rowcount or 0
+
+    db.commit()
+
+    # 4) VACUUM via a fresh connection (SQLite rejects VACUUM inside a tx).
+    #    Use the shared engine so we hit the exact same DB file SQLAlchemy
+    #    reads/writes — the old api.DB_PATH constant is out of date.
+    try:
+        with _db_engine.connect() as conn:
+            conn.execute(text("VACUUM"))
+        vacuum_ok = True
+    except Exception as exc:
+        print(f"[admin-cleanup] VACUUM failed: {exc}")
+        vacuum_ok = False
+
+    total = sum(counts.values())
+    print(
+        f"[admin-cleanup] Purged {total} rows "
+        f"({counts['vpn_tunnel_events']} vpn_tunnel, "
+        f"{counts['stealth_vpn_events']} stealth_vpn_tunnel, "
+        f"{counts['vpn_sni_events']} vpn SNI, "
+        f"{counts['orphaned_tls_fingerprints']} orphan TLS fingerprints)"
+    )
+
+    return {
+        "status": "ok",
+        "total_removed": total,
+        "removed": counts,
+        "vacuum": vacuum_ok,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Block Rule Engine
 # ---------------------------------------------------------------------------
 

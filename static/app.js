@@ -4617,6 +4617,69 @@ window.setThemeFromSelect = setThemeFromSelect;
 window.toggleMobOverflow = toggleMobOverflow;
 window.closeMobOverflow = closeMobOverflow;
 
+// ---------------------------------------------------------------------------
+// Settings → "Clean up stale data" button
+// ---------------------------------------------------------------------------
+// Calls POST /api/admin/cleanup which wipes stale VPN event categories,
+// orphan TLS fingerprints, and VACUUMs the database. Confirms first
+// so a misclick doesn't nuke the Privacy tab.
+async function adminCleanupRun() {
+  const confirmMsg = t('settings.cleanupConfirm')
+    || 'This will permanently remove all VPN tunnel events and stealth-tunnel events from the database. Continue?';
+  if (!window.confirm(confirmMsg)) return;
+
+  const btn = document.getElementById('btn-admin-cleanup');
+  const out = document.getElementById('admin-cleanup-result');
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('opacity-60', 'cursor-wait');
+  }
+  if (out) {
+    out.classList.remove('hidden', 'text-red-500', 'text-emerald-600');
+    out.classList.add('text-slate-400', 'dark:text-slate-500');
+    out.textContent = t('settings.cleanupRunning') || 'Running cleanup…';
+  }
+
+  try {
+    const res = await fetch('/api/admin/cleanup', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+
+    const r = data.removed || {};
+    const parts = [
+      `${r.vpn_tunnel_events || 0} VPN tunnel`,
+      `${r.stealth_vpn_events || 0} stealth tunnel`,
+      `${r.vpn_sni_events || 0} VPN SNI`,
+      `${r.orphaned_tls_fingerprints || 0} orphan TLS`,
+    ];
+    const vacuumLabel = data.vacuum
+      ? (t('settings.cleanupVacuumOk') || 'DB compacted')
+      : (t('settings.cleanupVacuumFail') || 'VACUUM failed');
+    if (out) {
+      out.classList.remove('text-slate-400', 'dark:text-slate-500', 'text-red-500');
+      out.classList.add('text-emerald-600', 'dark:text-emerald-400');
+      out.textContent = `✓ ${data.total_removed} ${t('settings.cleanupDone') || 'rows removed'} — ${parts.join(' · ')} · ${vacuumLabel}`;
+    }
+
+    // Refresh any currently-visible data views so the user sees the
+    // effect immediately instead of having to navigate away and back.
+    if (typeof refreshPrivacy === 'function') refreshPrivacy();
+    if (typeof refreshIps === 'function') refreshIps();
+  } catch (err) {
+    if (out) {
+      out.classList.remove('text-emerald-600', 'dark:text-emerald-400', 'text-slate-400', 'dark:text-slate-500');
+      out.classList.add('text-red-500', 'dark:text-red-400');
+      out.textContent = `${t('settings.cleanupError') || 'Cleanup failed'}: ${err.message}`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-60', 'cursor-wait');
+    }
+  }
+}
+window.adminCleanupRun = adminCleanupRun;
+
 // --- Active Protect (IPS) ---
 async function refreshIps() {
   await loadIpsStatus();
