@@ -115,7 +115,12 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     "drive.google.com":                  ("google_drive", "cloud"),
     "docs.google.com":                   ("google_drive", "cloud"),
     "drive.usercontent.google.com":      ("google_drive", "cloud"),
-    "storage.googleapis.com":            ("google_drive", "cloud"),
+    # NOTE: storage.googleapis.com is intentionally NOT in the static map.
+    # It's the generic Google Cloud Storage backend used by Drive AND
+    # Google Home / Nest device sync AND thousands of 3rd-party apps on
+    # GCP. It's resolved context-aware via _AMBIGUOUS_SNI_RESOLVERS below,
+    # based on the source device kind (browser_host → google_drive,
+    # iot_google → google_device_sync, else → google_generic_cdn).
     "onedrive.live.com":                 ("onedrive", "cloud"),
     "storage.live.com":                  ("onedrive", "cloud"),
     "1drv.ms":                           ("onedrive", "cloud"),
@@ -323,6 +328,176 @@ def match_domain(
         if hostname == domain or hostname.endswith("." + domain):
             return service, category, domain
     return None
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Context-aware service classification
+# ---------------------------------------------------------------------------
+# Some SNIs are shared across wildly different services. storage.googleapis.com
+# is the canonical example — used by Google Drive, Google Home/Nest device
+# sync, Google Photos, Spotify metadata (runs on GCP), and countless 3rd-party
+# apps that host assets on GCS. Classifying it uniformly as "google_drive"
+# produced misleading alerts like "Google Nest uploading to Drive" when the
+# device was actually just syncing its state.
+#
+# The approach:
+#   1. Periodically mirror device metadata (vendor, device_class,
+#      dhcp_vendor_class, os_name) from the API into a local cache.
+#   2. For each SNI match, derive a coarse "device_kind" from the metadata.
+#   3. If the SNI is in _AMBIGUOUS_SNI_RESOLVERS, let the resolver function
+#      pick a refined (service_name, category) based on the device_kind.
+#
+# This keeps the resolver fast (no DB I/O in the hot path), extensible
+# (just add new entries to the dict), and graceful (devices without
+# metadata fall back to the generic label).
+
+# mac_address → {vendor, device_class, dhcp_vendor_class, os_name}
+_device_meta: dict[str, dict] = {}
+_device_meta_refreshed_at: float = 0.0
+DEVICE_META_TTL = 60  # refresh from API every 60 seconds
+API_DEVICES_URL = os.environ.get(
+    "AIRADAR_DEVICES_LIST_URL",
+    "http://localhost:8000/api/devices",
+)
+
+
+async def _refresh_device_meta(client: "httpx.AsyncClient") -> None:
+    """Background task: pull device metadata from the API every minute.
+
+    Stored in a local dict so the hot ssl.log path can classify each
+    connection without an HTTP round-trip.
+    """
+    global _device_meta, _device_meta_refreshed_at
+    while True:
+        try:
+            resp = await client.get(API_DEVICES_URL, timeout=5)
+            if resp.status_code == 200:
+                new: dict[str, dict] = {}
+                for d in resp.json():
+                    mac = d.get("mac_address")
+                    if not mac:
+                        continue
+                    new[mac] = {
+                        "vendor": d.get("vendor"),
+                        "device_class": d.get("device_class"),
+                        "dhcp_vendor_class": d.get("dhcp_vendor_class"),
+                        "os_name": d.get("os_name"),
+                        "hostname": d.get("hostname"),
+                    }
+                _device_meta = new
+                _device_meta_refreshed_at = time.time()
+        except Exception as exc:
+            # Silent retry — API may be briefly unavailable during restart
+            pass
+        await asyncio.sleep(DEVICE_META_TTL)
+
+
+def _classify_device_kind(meta: dict | None) -> str:
+    """Infer a coarse device kind from stored metadata.
+
+    Returns one of: browser_host, mobile_ios, mobile_android, iot_google,
+    iot_amazon, iot_generic, network_gear, embedded, unknown.
+    Priority order: DHCP vendor_class_id (strongest) > p0f OS > MAC vendor.
+    """
+    if not meta:
+        return "unknown"
+
+    vci = (meta.get("dhcp_vendor_class") or "").lower()
+    vendor = (meta.get("vendor") or "").lower()
+    dc = (meta.get("device_class") or "").lower()
+    os_name = (meta.get("os_name") or "").lower()
+
+    # 1. DHCP vendor_class_id — strongest signal
+    if vci.startswith("android-dhcp"):
+        return "mobile_android"
+    if vci.startswith("msft") or "microsoft" in vci:
+        return "browser_host"    # Windows desktop/laptop
+    if vci.startswith("dhcpcd"):
+        return "browser_host"    # Linux
+    if vci == "ubnt":
+        return "network_gear"
+    if "udhcp" in vci:
+        return "embedded"        # BusyBox DHCP client = embedded Linux
+
+    # 2. p0f OS fingerprint
+    if "macos" in os_name or "mac os" in os_name:
+        return "browser_host"
+    if "windows" in os_name:
+        return "browser_host"
+    if os_name == "ios":
+        return "mobile_ios"
+    if "linux" in os_name and dc not in ("iot",):
+        return "browser_host"
+
+    # 3. Vendor + device_class heuristics
+    if dc == "phone":
+        if "apple" in vendor:
+            return "mobile_ios"
+        return "mobile_android"
+    if dc in ("laptop", "computer"):
+        if "apple" in vendor:
+            return "browser_host"
+        return "browser_host"
+    if dc == "iot":
+        if "google" in vendor or "nest" in vendor:
+            return "iot_google"
+        if "amazon" in vendor:
+            return "iot_amazon"
+        return "iot_generic"
+
+    # 4. Fallback: use vendor alone
+    if "google" in vendor and "nest" in vendor:
+        return "iot_google"
+    if "amazon" in vendor:
+        return "iot_amazon"
+
+    return "unknown"
+
+
+# Ambiguous-SNI resolvers. Each takes a device_kind and returns a
+# (service_name, category) tuple. The dict key is matched both as an
+# exact hostname and as a parent domain (endswith "." + key).
+def _resolve_storage_googleapis(kind: str) -> tuple[str, str]:
+    """storage.googleapis.com is shared across many GCP-hosted services.
+
+    - browser_host → likely Drive or a webapp using GCS as a CDN
+    - iot_google   → Nest/Chromecast device sync (NOT a file upload)
+    - mobile_*     → ambiguous (could be any Google app), use generic label
+    - else         → generic GCS backend
+    """
+    if kind == "browser_host":
+        return ("google_drive", "cloud")
+    if kind == "iot_google":
+        return ("google_device_sync", "cloud")
+    if kind in ("mobile_android", "mobile_ios"):
+        # Android/iOS apps use GCS for all sorts of things — don't claim Drive
+        return ("google_generic_cdn", "cloud")
+    return ("google_generic_cdn", "cloud")
+
+
+_AMBIGUOUS_SNI_RESOLVERS: dict[str, callable] = {
+    "storage.googleapis.com": _resolve_storage_googleapis,
+}
+
+
+def _refine_classification(
+    sni: str,
+    base_service: str,
+    base_category: str,
+    device_kind: str,
+) -> tuple[str, str]:
+    """If sni is in the ambiguous list, re-resolve based on device_kind.
+
+    Falls back to the base classification for unknown SNIs, so this can
+    be called unconditionally without changing existing behaviour.
+    """
+    if not sni:
+        return base_service, base_category
+    host = sni.lower().rstrip(".")
+    for amb_sni, resolver in _AMBIGUOUS_SNI_RESOLVERS.items():
+        if host == amb_sni or host.endswith("." + amb_sni):
+            return resolver(device_kind)
+    return base_service, base_category
 
 
 # ---------------------------------------------------------------------------
@@ -955,6 +1130,21 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     continue
 
                 service, category, _domain = match
+
+                # --- Phase 2: context-aware refinement ---
+                # For ambiguous SNIs (storage.googleapis.com, etc) we pick
+                # a more specific service label based on the source device
+                # kind. Lookup uses cached metadata — no DB/API call here.
+                cached_mac_for_kind = _ip_to_mac.get(src_ip)
+                device_kind = "unknown"
+                if cached_mac_for_kind:
+                    device_kind = _classify_device_kind(
+                        _device_meta.get(cached_mac_for_kind)
+                    )
+                service, category = _refine_classification(
+                    sni, service, category, device_kind
+                )
+
                 resp_ip = record.get("id.resp_h", "")
 
                 # Learn this destination IP for conn.log correlation (with TTL)
@@ -1816,6 +2006,7 @@ async def main(zeek_log_dir: str) -> None:
         tail_mdns_log(mdns_log, client),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
+        _refresh_device_meta(client),  # pull device metadata for Phase 2
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)

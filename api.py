@@ -2448,6 +2448,13 @@ SERVICE_DOMAINS: dict[str, dict] = {
     "dropbox":          {"domains": ["dropbox.com"], "category": "cloud"},
     "wetransfer":       {"domains": ["wetransfer.com"], "category": "cloud"},
     "google_drive":     {"domains": ["drive.google.com", "docs.google.com"], "category": "cloud"},
+    # Phase 2 context-aware labels — same domain, different meaning per
+    # device kind. We don't expose them as blockable in the Rules page
+    # (can't block storage.googleapis.com without breaking Drive), so
+    # they're informational/alert-only. Empty domain list keeps the
+    # Rules UI from trying to call AdGuard.
+    "google_device_sync":  {"domains": [], "category": "cloud"},
+    "google_generic_cdn":  {"domains": [], "category": "cloud"},
     "onedrive":         {"domains": ["onedrive.live.com", "storage.live.com"], "category": "cloud"},
     "icloud":           {"domains": ["icloud.com"], "category": "cloud"},
     "box":              {"domains": ["box.com"], "category": "cloud"},

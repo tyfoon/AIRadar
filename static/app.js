@@ -269,7 +269,8 @@ const SERVICE_COLORS = {
   google_gemini:'#f59e0b', openai:'#10b981', anthropic_claude:'#6366f1',
   microsoft_copilot:'#3b82f6', perplexity:'#22d3ee', huggingface:'#f97316',
   mistral:'#8b5cf6', dropbox:'#3b82f6', wetransfer:'#14b8a6',
-  google_drive:'#22c55e', onedrive:'#0ea5e9', icloud:'#6b7280',
+  google_drive:'#22c55e', google_device_sync:'#14b8a6', google_generic_cdn:'#94a3b8',
+  onedrive:'#0ea5e9', icloud:'#6b7280',
   box:'#60a5fa', mega:'#ef4444',
   // VPN
   vpn_active:'#f97316', vpn_nordvpn:'#4687ff', vpn_expressvpn:'#da3940',
@@ -296,6 +297,7 @@ const SERVICE_NAMES = {
   mistral:'Mistral',
   // Cloud
   dropbox:'Dropbox', wetransfer:'WeTransfer', google_drive:'Google Drive',
+  google_device_sync:'Google Device Sync', google_generic_cdn:'Google Cloud (CDN)',
   onedrive:'OneDrive', icloud:'iCloud', box:'Box', mega:'MEGA',
   // Trackers
   google_ads:'Google Ads', google_analytics:'Google Analytics',
@@ -329,6 +331,7 @@ const SERVICE_LOGO_DOMAIN = {
   mistral:'mistral.ai',
   // Cloud services
   dropbox:'dropbox.com', wetransfer:'wetransfer.com', google_drive:'google.com',
+  google_device_sync:'google.com', google_generic_cdn:'google.com',
   onedrive:'microsoft.com', icloud:'apple.com', box:'box.com', mega:'mega.nz',
   // Trackers
   google_ads:'google.com', google_analytics:'google.com', google_telemetry:'google.com',
