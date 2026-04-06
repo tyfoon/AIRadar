@@ -4050,6 +4050,45 @@ function _applyDrawerFilter(serviceFilter) {
 // ---------------------------------------------------------------------------
 const DRAWER_SUMMARY_TOP_N = 15;
 
+// ---------------------------------------------------------------------------
+// Session time estimator
+// ---------------------------------------------------------------------------
+// Given a sorted array of timestamps (ISO strings or Date objects),
+// group them into sessions where consecutive events are within
+// SESSION_GAP_MS of each other. Return total estimated active time
+// in milliseconds.
+const SESSION_GAP_MS = 5 * 60 * 1000; // 5 minutes
+const MIN_SESSION_MS = 60 * 1000;      // 1 minute minimum per session
+
+function _estimateActiveTime(timestamps) {
+  if (!timestamps || timestamps.length === 0) return 0;
+  const sorted = timestamps.map(t => new Date(t).getTime()).sort((a, b) => a - b);
+  let total = 0;
+  let sessionStart = sorted[0];
+  let sessionEnd = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - sessionEnd <= SESSION_GAP_MS) {
+      sessionEnd = sorted[i];
+    } else {
+      total += Math.max(sessionEnd - sessionStart, MIN_SESSION_MS);
+      sessionStart = sorted[i];
+      sessionEnd = sorted[i];
+    }
+  }
+  total += Math.max(sessionEnd - sessionStart, MIN_SESSION_MS);
+  return total;
+}
+
+function _fmtDuration(ms) {
+  if (ms <= 0) return '0m';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+
 function _renderDrawerSummary() {
   const el = document.getElementById('drawer-summary-view');
   if (!el) return;
@@ -4059,23 +4098,30 @@ function _renderDrawerSummary() {
     return;
   }
 
-  // Aggregate bytes + hits per service across the whole window.
+  // Aggregate bytes + hits + timestamps per service across the whole window.
   const svcAgg = {};
   _drawerEvents.forEach(e => {
     const svc = e.ai_service;
-    if (!svcAgg[svc]) svcAgg[svc] = { bytes: 0, hits: 0, cat: e._cat };
+    if (!svcAgg[svc]) svcAgg[svc] = { bytes: 0, hits: 0, cat: e._cat, timestamps: [] };
     svcAgg[svc].bytes += e.bytes_transferred || 0;
     svcAgg[svc].hits += 1;
+    svcAgg[svc].timestamps.push(e.timestamp);
   });
 
-  const total = Object.values(svcAgg).reduce((s, v) => s + v.bytes, 0);
+  // Compute estimated active time per service.
+  for (const info of Object.values(svcAgg)) {
+    info.activeMs = _estimateActiveTime(info.timestamps);
+  }
 
-  // Sort by bytes desc, break ties by hit count.
+  const total = Object.values(svcAgg).reduce((s, v) => s + v.bytes, 0);
+  const totalTime = Object.values(svcAgg).reduce((s, v) => s + v.activeMs, 0);
+
+  // Sort by active time desc, then bytes, then hits.
   const rows = Object.entries(svcAgg)
-    .sort((a, b) => (b[1].bytes - a[1].bytes) || (b[1].hits - a[1].hits))
+    .sort((a, b) => (b[1].activeMs - a[1].activeMs) || (b[1].bytes - a[1].bytes) || (b[1].hits - a[1].hits))
     .slice(0, DRAWER_SUMMARY_TOP_N);
 
-  const maxBytes = rows.length ? rows[0][1].bytes : 0;
+  const maxTime = rows.length ? rows[0][1].activeMs : 0;
 
   // Header: small title + window hint read from the devices filter
   const per = document.getElementById('dev-filter-period')?.value;
@@ -4086,7 +4132,7 @@ function _renderDrawerSummary() {
     <span class="text-[11px] text-slate-400 dark:text-slate-500">${windowLabel}</span>
   </div>`;
 
-  if (rows.length === 0 || total === 0) {
+  if (rows.length === 0) {
     html += `<div class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('dev.summaryNoBytes')}</div>`;
     el.innerHTML = html;
     return;
@@ -4094,17 +4140,19 @@ function _renderDrawerSummary() {
 
   html += '<div class="space-y-1.5">';
   rows.forEach(([svc, info]) => {
-    const pct = total > 0 ? (info.bytes / total * 100) : 0;
-    const barPct = maxBytes > 0 ? (info.bytes / maxBytes * 100) : 0;
+    const barPct = maxTime > 0 ? (info.activeMs / maxTime * 100) : 0;
     const name = svcDisplayName(svc);
     const logo = svcLogo(svc);
+    const timeLabel = _fmtDuration(info.activeMs);
+    const bytesLabel = info.bytes > 0 ? _fmtBytes(info.bytes) : '';
     html += `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
       <div class="flex-shrink-0">${logo}</div>
       <div class="flex-1 min-w-0">
         <div class="flex items-baseline justify-between gap-2">
           <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
-          <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">
-            ${_fmtBytes(info.bytes)} <span class="text-slate-400 dark:text-slate-500">(${pct.toFixed(1)}%)</span>
+          <span class="text-xs tabular-nums flex-shrink-0 flex items-center gap-2">
+            <span class="text-blue-600 dark:text-blue-400 font-semibold"><i class="ph-duotone ph-clock text-[10px]"></i> ${timeLabel}</span>
+            ${bytesLabel ? `<span class="text-slate-400 dark:text-slate-500">${bytesLabel}</span>` : ''}
           </span>
         </div>
         <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
@@ -4118,7 +4166,10 @@ function _renderDrawerSummary() {
   // Footer: totals line
   html += `<div class="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.05] flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
     <span>${t('dev.summaryServicesCount', { n: Object.keys(svcAgg).length })}</span>
-    <span class="tabular-nums">${_fmtBytes(total)} ${t('dev.summaryTotal')}</span>
+    <span class="tabular-nums flex items-center gap-2">
+      <span><i class="ph-duotone ph-clock text-[10px]"></i> ${_fmtDuration(totalTime)}</span>
+      ${total > 0 ? `<span>${_fmtBytes(total)}</span>` : ''}
+    </span>
   </div>`;
 
   el.innerHTML = html;
