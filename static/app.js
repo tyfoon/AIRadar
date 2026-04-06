@@ -5307,10 +5307,22 @@ async function refreshDevices() {
 
   const activeMacs = Object.keys(matrix).length;
 
+  // Count devices that actually have events on alert/block policies
+  // (not just any device with traffic — that inflates the "violations"
+  // count with perfectly normal allowed services).
+  let violationMacs = 0;
+  Object.entries(matrix).forEach(([mac, svcs]) => {
+    const hasViolation = Object.keys(svcs).some(svc => {
+      const policy = _policyByService[svc];
+      return policy === 'alert' || policy === 'block';
+    });
+    if (hasViolation) violationMacs++;
+  });
+
   // Stats
   const totalUploads = allEvents.filter(e => e.possible_upload).length;
   document.getElementById('dev-stat-total').textContent = deviceMacs.length;
-  document.getElementById('dev-stat-violators').textContent = activeMacs;
+  document.getElementById('dev-stat-violators').textContent = violationMacs;
   document.getElementById('dev-stat-events').textContent = formatNumber(allEvents.length);
   document.getElementById('dev-stat-uploads').textContent = totalUploads;
 
