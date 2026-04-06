@@ -1093,18 +1093,14 @@
 
             <div id="adguard-protection-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
               <div class="flex items-center justify-between mb-1">
-                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.adguardFiltering">AdGuard DNS Filtering</p>
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="rules.adguardFiltering">DNS Blocking Engine</p>
                 <div class="flex items-center gap-2">
                   <span id="adguard-protection-state" class="text-xs font-medium text-slate-400" data-i18n="svc.off">Off</span>
                   <label class="toggle"><input type="checkbox" id="toggle-adguard-protection" onchange="toggleAdguardProtection(this)"><span class="slider"></span></label>
                 </div>
               </div>
-              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.adguardFilteringDesc">Master switch for AdGuard Home's default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.</p>
-              <div class="flex flex-wrap items-center gap-1">
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">Ads</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400">Malware</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">Trackers</span>
-              </div>
+              <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" data-i18n="rules.adguardFilteringDesc">Enables DNS-level blocking for services you set to "Block" below. Only your explicit block rules apply — no ads, trackers or other content is affected. Turns on automatically when you block a service.</p>
+              <div id="adguard-active-blocks" class="text-[10px] text-slate-400 dark:text-slate-500"></div>
             </div>
 
 

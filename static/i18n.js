@@ -89,6 +89,10 @@ const TRANSLATIONS = {
     // Rules — AdGuard filtering toggle
     'rules.adguardFiltering':     'AdGuard DNS Filtering',
     'rules.adguardFilteringDesc': 'Master switch for AdGuard Home\u2019s default DNS blocklists. When off, DNS still forwards normally but the built-in filters do not block anything.',
+    'rules.adguardFiltering':     'DNS Blocking Engine',
+    'rules.adguardFilteringDesc': 'Enables DNS-level blocking for services you set to "Block" below. Only your explicit block rules apply — no ads, trackers or other content is affected. Turns on automatically when you block a service.',
+    'rules.servicesBlocked':      'service(s) blocked',
+    'rules.noActiveBlocks':       'No services currently blocked.',
     'rules.adguardFilteringNote': 'Default: off. Individual block rules and global filters below still work independently.',
     'rules.adguardToggleFailed':  'Failed to toggle AdGuard filtering: {msg}',
     'rules.allow':         'Allow',
@@ -748,6 +752,10 @@ const TRANSLATIONS = {
     // Regels — AdGuard filter toggle
     'rules.adguardFiltering':     'AdGuard DNS-filtering',
     'rules.adguardFilteringDesc': 'Hoofdschakelaar voor de standaard AdGuard Home blokkeerlijsten. Als deze uit staat werkt DNS-doorsturen nog wel, maar blokkeren de ingebouwde filters niets.',
+    'rules.adguardFiltering':     'DNS-blokkeerengine',
+    'rules.adguardFilteringDesc': 'Activeert DNS-blokkering voor services die je hieronder op "Blokkeer" zet. Alleen jouw expliciete blokregels worden toegepast — geen ads, trackers of andere content wordt geraakt. Gaat automatisch aan als je een service blokkeert.',
+    'rules.servicesBlocked':      'service(s) geblokkeerd',
+    'rules.noActiveBlocks':       'Geen services momenteel geblokkeerd.',
     'rules.adguardFilteringNote': 'Standaard: uit. Individuele blokkeerregels en onderstaande filters werken nog gewoon.',
     'rules.adguardToggleFailed':  'Kon AdGuard-filtering niet omschakelen: {msg}',
     'rules.allow':         'Toestaan',

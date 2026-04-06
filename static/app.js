@@ -4756,6 +4756,20 @@ async function loadAdguardProtectionState() {
         ? 'text-xs font-medium text-emerald-500'
         : 'text-xs font-medium text-slate-400';
     }
+    // Show which services are actually blocked right now
+    const blocksEl = document.getElementById('adguard-active-blocks');
+    if (blocksEl) {
+      const blocked = Object.entries(_policyByService || {})
+        .filter(([, action]) => action === 'block')
+        .map(([svc]) => svcDisplayName(svc));
+      if (blocked.length > 0) {
+        blocksEl.innerHTML = `<span class="text-red-500 font-medium">${blocked.length} ${t('rules.servicesBlocked') || 'service(s) blocked'}:</span> ${blocked.join(', ')}`;
+      } else {
+        blocksEl.textContent = data.enabled
+          ? (t('rules.noActiveBlocks') || 'No services currently blocked.')
+          : '';
+      }
+    }
   } catch (err) {
     console.error('loadAdguardProtectionState:', err);
   }
@@ -5443,7 +5457,9 @@ async function setServicePolicy(serviceName, action, buttonEl) {
                            (t('rules.block') || 'Blokkeer');
     const svcLabel = SERVICE_NAMES[serviceName] || serviceName;
     showToast(`${svcLabel}: ${actionLabel}`, 'success');
-    await loadAccessControl();
+    // Refresh both the service cards AND the protection toggle —
+    // a block action may have auto-enabled AdGuard protection.
+    await Promise.all([loadAccessControl(), loadAdguardProtectionState()]);
   } catch (err) {
     console.error('setServicePolicy:', err);
     showToast(`${t('rules.updateFailed') || 'Update mislukt'}: ${err.message}`, 'error');
