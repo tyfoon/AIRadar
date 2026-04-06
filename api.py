@@ -789,7 +789,9 @@ async def lifespan(app: FastAPI):
         print(f"[killswitch] ⚠️  Killswitch was active before restart — still active")
         crowdsec.enabled = False
 
-    # Restore AdGuard DNS filtering preference (defaults to OFF on first run)
+    # Restore AdGuard DNS filtering preference (defaults to OFF on first run).
+    # When ON, set_protection() automatically disables all subscription
+    # filter lists so only our explicit custom rules take effect.
     async def _restore_adguard_pref():
         try:
             pref = _read_adguard_protection_pref()
@@ -2544,10 +2546,15 @@ async def _sync_policy_to_adguard(policy: ServicePolicy) -> None:
     Only GLOBAL policies that target a specific service_name can translate
     to DNS-level blocking (AdGuard has no per-device DNS rules and no
     concept of "a whole category"). For those:
-      - action=="block"            → block all domains in SERVICE_DOMAINS[svc]
+      - action=="block"            → ensure protection is ON + block all domains
       - action in ("allow","alert") → unblock all domains
     For device-scoped or category-only policies, AdGuard is not touched —
     those are handled at the alert/visibility layer only.
+
+    When the first block action is applied, we automatically enable
+    AdGuard protection (with all subscription lists disabled — so only
+    our explicit custom rules take effect). This way the user never
+    has to manually toggle DNS filtering ON.
     """
     if policy.scope != "global":
         return
@@ -2562,6 +2569,13 @@ async def _sync_policy_to_adguard(policy: ServicePolicy) -> None:
         return
 
     if policy.action == "block":
+        # Ensure protection is ON (with subscription lists disabled)
+        # so our custom block rules actually take effect. This is a
+        # no-op if protection is already enabled.
+        if not await adguard.is_protection_enabled():
+            await adguard.set_protection(True)
+            _write_adguard_protection_pref(True)
+            print("[policy] AdGuard protection auto-enabled for block rule")
         for domain in domains:
             try:
                 await adguard.block_domain(domain)

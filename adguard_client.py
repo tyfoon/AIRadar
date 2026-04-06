@@ -312,6 +312,11 @@ class AdGuardClient:
     async def set_protection(self, enabled: bool) -> bool:
         """Enable or disable AdGuard DNS protection globally.
 
+        When enabled, we also disable all subscription filter lists so
+        only AI-Radar's explicit custom rules (||domain^) take effect.
+        This prevents AdGuard's built-in ad/tracker lists from blocking
+        things the user didn't ask to block.
+
         When disabled, AdGuard still runs as a DNS forwarder but stops
         filtering/blocking — all DNS queries pass through untouched.
         This is the key mechanism behind the killswitch: internet keeps
@@ -326,10 +331,66 @@ class AdGuardClient:
                     timeout=5,
                 )
                 resp.raise_for_status()
+                # When turning ON protection, disable all subscription
+                # filter lists so only our custom user rules are active.
+                if enabled:
+                    await self._disable_all_filter_lists()
                 return True
         except (httpx.HTTPError, Exception) as exc:
             print(f"[adguard] Failed to {'enable' if enabled else 'disable'} protection: {exc}")
             return False
+
+    async def _disable_all_filter_lists(self) -> None:
+        """Disable every subscription-based filter list in AdGuard.
+
+        AdGuard ships with built-in lists (AdGuard Base, AdGuard Mobile
+        Ads, etc.) that block thousands of ad/tracker domains. When
+        AI-Radar enables protection, we only want OUR explicit custom
+        rules to apply — the user controls blocking per service via the
+        Rules page, not via bulk ad-blocking lists.
+
+        This function fetches the current filter list config and sets
+        every list's `enabled` flag to false. Custom user rules (the
+        ones we add via block_domain/unblock_domain) are unaffected —
+        they live in a separate section that AdGuard always evaluates
+        regardless of filter list state.
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get current filtering status
+                resp = await client.get(
+                    f"{self.base_url}/control/filtering/status",
+                    auth=self.auth,
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                filters = data.get("filters") or []
+                whitelist = data.get("whitelist_filters") or []
+                changed = 0
+
+                for f in filters:
+                    if f.get("enabled"):
+                        await client.post(
+                            f"{self.base_url}/control/filtering/set_url",
+                            json={
+                                "url": f["url"],
+                                "data": {
+                                    "name": f.get("name", ""),
+                                    "url": f["url"],
+                                    "enabled": False,
+                                },
+                            },
+                            auth=self.auth,
+                            timeout=5,
+                        )
+                        changed += 1
+
+                if changed:
+                    print(f"[adguard] Disabled {changed} subscription filter list(s) — only custom rules active")
+        except Exception as exc:
+            print(f"[adguard] Failed to disable filter lists: {exc}")
 
     async def is_protection_enabled(self) -> bool:
         """Return True if DNS protection (filtering) is currently active."""
