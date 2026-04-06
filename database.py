@@ -351,6 +351,7 @@ class NotificationConfig(Base):
     notify_service = Column(String, nullable=True)  # e.g. "mobile_app_iphone_van_goswijn"
     enabled_categories = Column(String, nullable=True)  # comma-separated: "security,ai,gaming"
     is_enabled = Column(Boolean, nullable=False, default=True)
+    last_notified_at = Column(DateTime, nullable=True)   # DB-persisted dedup watermark
 
 
 class DeviceBaseline(Base):

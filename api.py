@@ -4573,11 +4573,12 @@ async def test_notification(db: Session = Depends(get_db)):
 
 
 # Background task: push alerts to Home Assistant
-_last_notified_alert_ids: set = set()
-
-
 async def _push_notifier_task():
-    """Background task: check for new alerts every 60s and push to Home Assistant."""
+    """Background task: check for new alerts every 60s and push to Home Assistant.
+
+    Uses a DB-persisted watermark (last_notified_at) so that container
+    restarts don't re-send notifications for previously seen alerts.
+    """
     await asyncio.sleep(30)  # warm-up
     while True:
         await asyncio.sleep(60)
@@ -4591,43 +4592,40 @@ async def _push_notifier_task():
             enabled_cats = set((config.enabled_categories or "").split(","))
             enabled_cats.discard("")
 
-            # Event cutoff: look back 5 minutes for detection events
-            # (covers the last few cycles with margin for processing delay).
-            # The dedup set prevents re-notification on the same alert.
-            evt_cutoff = datetime.utcnow() - timedelta(minutes=5)
+            # Use the DB watermark — only process events/devices newer
+            # than the last successful notification cycle.  On first
+            # run (watermark is NULL) start from now to avoid flooding.
+            watermark = config.last_notified_at or datetime.utcnow()
+            if config.last_notified_at is None:
+                # First run after migration: set watermark to now so we
+                # don't retroactively notify for old events.
+                config.last_notified_at = datetime.utcnow()
+                db.commit()
+                db.close()
+                continue
+
             events = (
                 db.query(DetectionEvent)
-                .filter(DetectionEvent.timestamp >= evt_cutoff)
+                .filter(DetectionEvent.timestamp > watermark)
                 .all()
             )
 
-            # New devices: use a wider 24h window (same as the summary
-            # inbox) so we don't miss devices that appeared between
-            # cycles. The dedup set ensures each device is only notified
-            # once regardless of how many cycles it appears in.
-            dev_cutoff = datetime.utcnow() - timedelta(hours=24)
             new_devices = (
                 db.query(Device)
-                .filter(Device.first_seen >= dev_cutoff)
+                .filter(Device.first_seen > watermark)
                 .all()
             )
 
             notifications = []
 
             # Anomaly events
-            anomaly_types = {"vpn_tunnel", "stealth_vpn_tunnel", "beaconing_threat",
-                             "iot_lateral_movement", "iot_suspicious_port"}
+            _notify_anomaly_types = _ANOMALY_DETECTION_TYPES
             for e in events:
-                if e.detection_type not in anomaly_types:
+                if e.detection_type not in _notify_anomaly_types:
                     continue
-                # Map detection type to category for filtering
-                cat = "security" if e.detection_type in anomaly_types else e.category
+                cat = "security" if e.detection_type in _notify_anomaly_types else e.category
                 if cat not in enabled_cats:
                     continue
-                alert_id = f"{e.source_ip}|{e.detection_type}|{e.ai_service}"
-                if alert_id in _last_notified_alert_ids:
-                    continue
-                _last_notified_alert_ids.add(alert_id)
                 notifications.append({
                     "title": f"AI-Radar: {e.detection_type.replace('_', ' ').title()}",
                     "message": f"{e.source_ip} → {e.ai_service} ({e.detection_type})",
@@ -4636,19 +4634,13 @@ async def _push_notifier_task():
             # New device notifications
             if "new_device" in enabled_cats:
                 for d in new_devices:
-                    alert_id = f"new_device|{d.mac_address}"
-                    if alert_id in _last_notified_alert_ids:
-                        continue
-                    _last_notified_alert_ids.add(alert_id)
                     name = d.display_name or d.hostname or d.mac_address
                     notifications.append({
                         "title": "AI-Radar: New Device",
                         "message": f"{name} ({d.vendor or 'unknown vendor'}) joined the network",
                     })
 
-            db.close()
-
-            # Send notifications to the configured service (or generic notify)
+            # Send notifications
             if notifications:
                 svc = config.notify_service or "notify"
                 svc_path = f"notify/{svc}" if svc != "notify" else "notify/notify"
@@ -4668,9 +4660,10 @@ async def _push_notifier_task():
                             break
                 print(f"[notify] Sent {len(notifications)} notification(s) to Home Assistant")
 
-            # Prune old alert IDs to prevent memory leak
-            if len(_last_notified_alert_ids) > 1000:
-                _last_notified_alert_ids.clear()
+            # Advance watermark to now — persisted in DB, survives restarts
+            config.last_notified_at = datetime.utcnow()
+            db.commit()
+            db.close()
 
         except Exception as exc:
             print(f"[notify] Error: {exc}")
