@@ -2871,14 +2871,14 @@ def get_active_alerts(
                 policies, mac, e.ai_service, e.category
             )
             if action is None:
-                # No explicit policy — default rules:
-                #   - possible_upload → alert (exfiltration risk)
-                #   - everything else → allow (no alert)
-                if e.possible_upload:
-                    action = "alert"
-                    reason = "default_upload"
-                else:
-                    continue  # allowed, don't surface
+                # No explicit policy → default allow. The old logic
+                # alerted on every upload from services without a policy,
+                # flooding the inbox with normal Google Drive / Snapchat /
+                # YouTube activity. Now: no policy = allowed, including
+                # uploads. Only services with an explicit "alert" or
+                # "block" policy generate alerts. The user controls what
+                # they want to monitor via the Rules page.
+                continue
             else:
                 if action == "allow":
                     continue
