@@ -523,6 +523,8 @@ const PH_ICON = {
   speaker:  '<i class="ph-duotone ph-speaker-hifi text-xl"></i>',
   printer:  '<i class="ph-duotone ph-printer text-xl"></i>',
   router:   '<i class="ph-duotone ph-router text-xl"></i>',
+  netswitch:'<i class="ph-duotone ph-swap text-xl"></i>',
+  ap:       '<i class="ph-duotone ph-wifi-high text-xl"></i>',
   console:  '<i class="ph-duotone ph-game-controller text-xl"></i>',
   camera:   '<i class="ph-duotone ph-video-camera text-xl"></i>',
   watch:    '<i class="ph-duotone ph-watch text-xl"></i>',
@@ -530,13 +532,33 @@ const PH_ICON = {
   server:   '<i class="ph-duotone ph-hard-drives text-xl"></i>',
   home:     '<i class="ph-duotone ph-house-line text-xl"></i>',
   doorbell: '<i class="ph-duotone ph-bell-ringing text-xl"></i>',
-  wifi:     '<i class="ph-duotone ph-wifi-high text-xl"></i>',
+  smoke:    '<i class="ph-duotone ph-fire text-xl"></i>',
+  vacuum:   '<i class="ph-duotone ph-broom text-xl"></i>',
+  washer:   '<i class="ph-duotone ph-washing-machine text-xl"></i>',
+  dryer:    '<i class="ph-duotone ph-wind text-xl"></i>',
+  airco:    '<i class="ph-duotone ph-thermometer text-xl"></i>',
+  blinds:   '<i class="ph-duotone ph-blinds text-xl"></i>',
+  light:    '<i class="ph-duotone ph-lightbulb text-xl"></i>',
+  energy:   '<i class="ph-duotone ph-lightning text-xl"></i>',
+  water:    '<i class="ph-duotone ph-drop text-xl"></i>',
+  ereader:  '<i class="ph-duotone ph-book-open text-xl"></i>',
+  avr:      '<i class="ph-duotone ph-speaker-simple-high text-xl"></i>',
+  alarm:    '<i class="ph-duotone ph-alarm text-xl"></i>',
+  remote:   '<i class="ph-duotone ph-remote text-xl"></i>',
+  led:      '<i class="ph-duotone ph-palette text-xl"></i>',
+  zigbee:   '<i class="ph-duotone ph-bluetooth text-xl"></i>',
+  sensor:   '<i class="ph-duotone ph-thermometer text-xl"></i>',
+  health:   '<i class="ph-duotone ph-heartbeat text-xl"></i>',
   iot:      '<i class="ph-duotone ph-robot text-xl"></i>',
   unknown:  '<i class="ph-duotone ph-question text-xl"></i>',
   device:   '<i class="ph-duotone ph-circuitry text-xl"></i>',
 };
 
+// Device classification by hostname / vendor / display_name.
+// Rules are evaluated top-to-bottom; first match wins. Put specific
+// patterns (brand+model) above generic ones (category keywords).
 const DEVICE_TYPES = [
+  // ── Apple ──────────────────────────────────────────────
   { match: /macbook/i,                         icon: PH_ICON.laptop,  type: 'MacBook' },
   { match: /imac/i,                            icon: PH_ICON.desktop, type: 'iMac' },
   { match: /mac[\s-]?pro/i,                    icon: PH_ICON.desktop, type: 'Mac Pro' },
@@ -547,26 +569,86 @@ const DEVICE_TYPES = [
   { match: /apple[\s-]?tv/i,                   icon: PH_ICON.tv,      type: 'Apple TV' },
   { match: /homepod/i,                         icon: PH_ICON.speaker, type: 'HomePod' },
   { match: /apple[\s-]?watch/i,                icon: PH_ICON.watch,   type: 'Apple Watch' },
+  // ── Android / Google phones ────────────────────────────
+  { match: /pixel[\s-]?\d/i,                   icon: PH_ICON.phone,   type: 'Pixel' },
   { match: /galaxy|samsung/i,                  icon: PH_ICON.phone,   type: 'Samsung' },
-  { match: /pixel/i,                           icon: PH_ICON.phone,   type: 'Pixel' },
-  { match: /android/i,                         icon: PH_ICON.phone,   type: 'Android' },
+  { match: /honor[\s-]?magic[\s-]?pad/i,       icon: PH_ICON.tablet,  type: 'HONOR Tablet' },
+  { match: /honor/i,                           icon: PH_ICON.phone,   type: 'HONOR' },
+  { match: /huawei|hw\d{2}/i,                  icon: PH_ICON.phone,   type: 'Huawei' },
+  // ── Google Smart Home ──────────────────────────────────
+  { match: /google[\s-]?home[\s-]?mini/i,      icon: PH_ICON.speaker, type: 'Google Home Mini' },
+  { match: /google[\s-]?home/i,                icon: PH_ICON.speaker, type: 'Google Home' },
+  { match: /nest[\s-]?hello/i,                 icon: PH_ICON.doorbell,type: 'Nest Doorbell' },
+  { match: /nest[\s-]?protect/i,               icon: PH_ICON.smoke,   type: 'Nest Protect' },
+  { match: /nest[\s-]?hub/i,                   icon: PH_ICON.tv,      type: 'Nest Hub' },
+  { match: /nest[\s-]?cam/i,                   icon: PH_ICON.camera,  type: 'Nest Cam' },
+  { match: /fuchsia-/i,                        icon: PH_ICON.tv,      type: 'Nest Hub' },
+  { match: /nest/i,                            icon: PH_ICON.home,    type: 'Nest' },
+  { match: /chromecast/i,                      icon: PH_ICON.tv,      type: 'Chromecast' },
+  // ── Smart TVs ──────────────────────────────────────────
+  { match: /lgwebostv/i,                       icon: PH_ICON.tv,      type: 'LG Smart TV' },
+  { match: /bravia|sony[\s-]?tv/i,             icon: PH_ICON.tv,      type: 'Sony TV' },
+  { match: /samsung[\s-]?tv|tizen/i,           icon: PH_ICON.tv,      type: 'Samsung TV' },
+  { match: /roku/i,                            icon: PH_ICON.tv,      type: 'Roku' },
+  { match: /fire[\s-]?stick/i,                 icon: PH_ICON.tv,      type: 'Fire TV Stick' },
+  // ── Audio / AV ─────────────────────────────────────────
+  { match: /sonos|SonosZP/i,                   icon: PH_ICON.speaker, type: 'Sonos Speaker' },
+  { match: /denon[\s-]?avr/i,                  icon: PH_ICON.avr,     type: 'Denon AV Receiver' },
+  { match: /marantz/i,                         icon: PH_ICON.avr,     type: 'Marantz AV Receiver' },
+  { match: /hue[\s-]?sync[\s-]?box/i,          icon: PH_ICON.light,   type: 'Hue Sync Box' },
+  { match: /harmony[\s-]?hub/i,                icon: PH_ICON.remote,  type: 'Harmony Hub' },
+  // ── Smart Home / IoT — specific brands ─────────────────
+  { match: /airthings/i,                       icon: PH_ICON.sensor,  type: 'Air Quality Monitor' },
+  { match: /dreame[\s_]?vacuum|roborock/i,     icon: PH_ICON.vacuum,  type: 'Robot Vacuum' },
+  { match: /roomba|irobot/i,                   icon: PH_ICON.vacuum,  type: 'Robot Vacuum' },
+  { match: /bosch[\s-]?dryer/i,                icon: PH_ICON.dryer,   type: 'Smart Dryer' },
+  { match: /bosch[\s-]?wash/i,                 icon: PH_ICON.washer,  type: 'Smart Washer' },
+  { match: /disp[\s-]?dish/i,                  icon: PH_ICON.washer,  type: 'Smart Dishwasher' },
+  { match: /disp[\s-]?wash/i,                  icon: PH_ICON.washer,  type: 'Smart Washer' },
+  { match: /SC07-WX|XS01-WX|XC0C-iR/i,        icon: PH_ICON.blinds,  type: 'Somfy Blinds' },
+  { match: /slide[\s_]/i,                      icon: PH_ICON.blinds,  type: 'Slide Curtains' },
+  { match: /myenergi/i,                        icon: PH_ICON.energy,  type: 'Energy Monitor' },
+  { match: /P1[\s-]?Eport|p1[\s-]?meter/i,    icon: PH_ICON.energy,  type: 'P1 Energy Meter' },
+  { match: /SmartGateways[\s-]?Watermeter/i,   icon: PH_ICON.water,   type: 'Water Meter' },
+  { match: /home[\s-]?assistant/i,             icon: PH_ICON.home,    type: 'Home Assistant' },
+  { match: /wled[\s-]/i,                       icon: PH_ICON.led,     type: 'WLED LED' },
+  { match: /awtrix/i,                          icon: PH_ICON.led,     type: 'Awtrix Pixel Clock' },
+  { match: /nspanel/i,                         icon: PH_ICON.home,    type: 'Sonoff NSPanel' },
+  { match: /loftie/i,                          icon: PH_ICON.alarm,   type: 'Smart Alarm Clock' },
+  { match: /withings/i,                        icon: PH_ICON.health,  type: 'Health Monitor' },
+  { match: /presence[\s-]?sensor/i,            icon: PH_ICON.sensor,  type: 'Presence Sensor' },
+  { match: /camera[\s-]?hub/i,                 icon: PH_ICON.camera,  type: 'Camera Hub' },
+  { match: /SLZB|zigbee[\s-]?coord/i,          icon: PH_ICON.zigbee,  type: 'Zigbee Coordinator' },
+  { match: /_ac$|[\s-]ac$/i,                   icon: PH_ICON.airco,   type: 'Smart Airco' },
+  // ── Networking ─────────────────────────────────────────
+  { match: /USW[\s-]/i,                        icon: PH_ICON.netswitch, type: 'Ubiquiti Switch' },
+  { match: /U7[\s-]|UAP[\s-]/i,               icon: PH_ICON.ap,      type: 'Ubiquiti AP' },
+  { match: /Switch\d+p|switch.*beneden|switch.*boven/i, icon: PH_ICON.netswitch, type: 'Network Switch' },
+  { match: /ubiquiti|unifi/i,                  icon: PH_ICON.router,  type: 'Ubiquiti' },
+  // ── Generic patterns (AFTER specific brands) ───────────
+  { match: /frigate/i,                         icon: PH_ICON.camera,  type: 'Frigate NVR' },
+  { match: /caddy|pihole|server/i,             icon: PH_ICON.server,  type: 'Home Server' },
+  { match: /raspberry[\s-]?pi/i,               icon: PH_ICON.server,  type: 'Raspberry Pi' },
   { match: /surface/i,                         icon: PH_ICON.laptop,  type: 'Surface' },
-  { match: /windows|desktop|pc/i,              icon: PH_ICON.desktop, type: 'PC' },
-  { match: /laptop|notebook/i,                 icon: PH_ICON.laptop,  type: 'Laptop' },
-  { match: /ubiquiti|unifi|router|gateway/i,   icon: PH_ICON.router,  type: 'Router' },
-  { match: /switch/i,                          icon: PH_ICON.router,  type: 'Switch' },
-  { match: /access[\s-]?point|ap\b/i,          icon: PH_ICON.wifi,    type: 'Access Point' },
+  { match: /kobo/i,                            icon: PH_ICON.ereader, type: 'E-reader' },
+  { match: /BRN[A-F0-9]|brother/i,            icon: PH_ICON.printer, type: 'Printer' },
   { match: /printer|epson|hp[\s-]?print|canon/i, icon: PH_ICON.printer, type: 'Printer' },
-  { match: /nest|thermostat|hue|smart[\s-]?home|iot/i, icon: PH_ICON.home, type: 'Smart Home' },
-  { match: /sonos|speaker/i,                   icon: PH_ICON.speaker, type: 'Speaker' },
-  { match: /tv|television|chromecast|roku|fire[\s-]?stick/i, icon: PH_ICON.tv, type: 'TV/Media' },
+  { match: /ds[\s-]?2cd|hikvision/i,           icon: PH_ICON.camera,  type: 'IP Camera' },
+  { match: /camera|cam\b/i,                    icon: PH_ICON.camera,  type: 'IP Camera' },
+  { match: /tv\b|television/i,                 icon: PH_ICON.tv,      type: 'TV/Media' },
   { match: /playstation|ps[45]/i,              icon: PH_ICON.console, type: 'PlayStation' },
   { match: /xbox/i,                            icon: PH_ICON.console, type: 'Xbox' },
-  { match: /nintendo|switch/i,                 icon: PH_ICON.console, type: 'Nintendo' },
+  { match: /nintendo/i,                        icon: PH_ICON.console, type: 'Nintendo' },
   { match: /nas|synology|qnap/i,               icon: PH_ICON.nas,     type: 'NAS' },
-  { match: /server/i,                          icon: PH_ICON.server,  type: 'Server' },
-  { match: /camera|cam\b|hikvision|ds-2cd/i,   icon: PH_ICON.camera,  type: 'IP Camera' },
-  { match: /espressif/i,                       icon: PH_ICON.iot,     type: 'IoT Device' },
+  { match: /router|gateway/i,                  icon: PH_ICON.router,  type: 'Router' },
+  { match: /access[\s-]?point|ap\b/i,          icon: PH_ICON.ap,      type: 'Access Point' },
+  { match: /hue|signify|philips[\s-]?light/i,  icon: PH_ICON.light,   type: 'Smart Lighting' },
+  { match: /smart[\s-]?home|iot/i,             icon: PH_ICON.home,    type: 'Smart Home' },
+  { match: /thermostat/i,                      icon: PH_ICON.airco,   type: 'Thermostat' },
+  { match: /ESP[\s_][A-F0-9]|espressif/i,      icon: PH_ICON.iot,     type: 'IoT Device' },
+  { match: /android/i,                         icon: PH_ICON.phone,   type: 'Android' },
+  { match: /windows|desktop[\s-]?[a-z]/i,      icon: PH_ICON.desktop, type: 'PC' },
+  { match: /laptop|notebook/i,                 icon: PH_ICON.laptop,  type: 'Laptop' },
 ];
 
 function _detectDeviceType(device) {
@@ -575,6 +657,19 @@ function _detectDeviceType(device) {
   for (const dt of DEVICE_TYPES) {
     if (dt.match.test(haystack)) return dt;
   }
+  // DHCP vendor_class — strongest IoT signal (set by the device's own
+  // DHCP client, can't be faked by hostname spoofing)
+  const dvc = (device.dhcp_vendor_class || '').toLowerCase();
+  if (dvc.startsWith('android-dhcp'))   return { icon: PH_ICON.phone,   type: 'Android' };
+  if (dvc === 'ubnt')                    return { icon: PH_ICON.router,  type: 'Ubiquiti' };
+  if (dvc.startsWith('dhcpcd') && dvc.includes('marvell'))
+                                          return { icon: PH_ICON.speaker, type: 'Google Home' };
+  if (dvc.startsWith('dhcpcd') && dvc.includes('bcm2835'))
+                                          return { icon: PH_ICON.server,  type: 'Raspberry Pi' };
+  if (dvc.startsWith('dhcpcd') && dvc.includes('freescale'))
+                                          return { icon: PH_ICON.ereader, type: 'E-reader' };
+  if (dvc.startsWith('udhcp'))           return { icon: PH_ICON.iot,     type: 'IoT Device' };
+
   // p0f device_class fallback
   if (device.device_class) {
     const dc = device.device_class.toLowerCase();
@@ -585,20 +680,40 @@ function _detectDeviceType(device) {
     if (dc === 'server')   return { icon: PH_ICON.server,  type: 'Server' };
     if (dc === 'iot')      return { icon: PH_ICON.iot,     type: 'IoT Device' };
   }
-  // Vendor-based fallback
+  // Vendor-based fallback — broadest net, least specific
   if (device.vendor) {
     const v = device.vendor.toLowerCase();
-    if (v.includes('espressif'))  return { icon: PH_ICON.iot,     type: 'IoT Device' };
-    if (v.includes('hikvision'))  return { icon: PH_ICON.camera,  type: 'IP Camera' };
-    if (v.includes('apple'))      return { icon: PH_ICON.laptop,  type: 'Apple Device' };
-    if (v.includes('samsung'))    return { icon: PH_ICON.phone,   type: 'Samsung' };
-    if (v.includes('google'))     return { icon: PH_ICON.phone,   type: 'Google Device' };
-    if (v.includes('microsoft'))  return { icon: PH_ICON.laptop,  type: 'Microsoft' };
-    if (v.includes('sonos'))      return { icon: PH_ICON.speaker, type: 'Speaker' };
+    if (v.includes('espressif'))  return { icon: PH_ICON.iot,      type: 'IoT Device' };
+    if (v.includes('hikvision'))  return { icon: PH_ICON.camera,   type: 'IP Camera' };
+    if (v.includes('nest'))       return { icon: PH_ICON.home,     type: 'Nest' };
+    if (v.includes('sonos'))      return { icon: PH_ICON.speaker,  type: 'Sonos Speaker' };
+    if (v.includes('signify') || v.includes('philips lighting'))
+                                   return { icon: PH_ICON.light,   type: 'Smart Lighting' };
+    if (v.includes('lumi'))       return { icon: PH_ICON.home,     type: 'Aqara Smart Home' };
+    if (v.includes('withings'))   return { icon: PH_ICON.health,   type: 'Health Monitor' };
+    if (v.includes('xiaomi'))     return { icon: PH_ICON.home,     type: 'Xiaomi Smart Home' };
+    if (v.includes('myenergi'))   return { icon: PH_ICON.energy,   type: 'Energy Monitor' };
+    if (v.includes('resideo') || v.includes('honeywell'))
+                                   return { icon: PH_ICON.airco,   type: 'Thermostat' };
+    if (v.includes('brother'))    return { icon: PH_ICON.printer,  type: 'Printer' };
+    if (v.includes('d&m') || v.includes('denon') || v.includes('marantz'))
+                                   return { icon: PH_ICON.avr,     type: 'AV Receiver' };
+    if (v.includes('logitech'))   return { icon: PH_ICON.remote,   type: 'Logitech' };
+    if (v.includes('kobo'))       return { icon: PH_ICON.ereader,  type: 'E-reader' };
+    if (v.includes('apple'))      return { icon: PH_ICON.laptop,   type: 'Apple Device' };
+    if (v.includes('samsung'))    return { icon: PH_ICON.phone,    type: 'Samsung' };
+    if (v.includes('google'))     return { icon: PH_ICON.home,     type: 'Google Device' };
+    if (v.includes('microsoft'))  return { icon: PH_ICON.laptop,   type: 'Microsoft' };
     if (v.includes('ring'))       return { icon: PH_ICON.doorbell, type: 'Doorbell' };
-    if (v.includes('tp-link') || v.includes('tplink'))  return { icon: PH_ICON.router, type: 'Network' };
-    if (v.includes('intel') || v.includes('dell') || v.includes('lenovo') || v.includes('hp '))
-      return { icon: PH_ICON.desktop, type: 'Computer' };
+    if (v.includes('ubiquiti'))   return { icon: PH_ICON.router,   type: 'Ubiquiti' };
+    if (v.includes('sercomm'))    return { icon: PH_ICON.router,   type: 'Gateway' };
+    if (v.includes('tp-link') || v.includes('tplink'))
+                                   return { icon: PH_ICON.router,  type: 'Network' };
+    if (v.includes('texas instruments') || v.includes('shanghai high'))
+                                   return { icon: PH_ICON.iot,     type: 'IoT Device' };
+    if (v.includes('raspberry'))  return { icon: PH_ICON.server,   type: 'Raspberry Pi' };
+    if (v.includes('intel') || v.includes('dell') || v.includes('lenovo') || v.includes('hp ') || v.includes('asrock') || v.includes('elitegroup'))
+                                   return { icon: PH_ICON.desktop,  type: 'Computer' };
   }
   return { icon: PH_ICON.device, type: 'Device' };
 }
