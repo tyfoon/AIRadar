@@ -4907,6 +4907,8 @@ let _rulesScopeMode = 'global';  // 'global' or 'device'
 let _rulesScopeMac = null;
 let _devicePolicyByService = {};
 let _deviceOverrideServices = new Set();
+let _policyByCategory = {};
+let _policyCatExpires = {};
 
 function switchRulesTab(tab) {
   _currentRulesTab = tab;
@@ -5742,6 +5744,24 @@ async function loadAccessControl() {
       });
     }
 
+    // Build category-level policy map (policies where service_name is null)
+    _policyByCategory = {};
+    _policyCatExpires = {};
+    (Array.isArray(globalPolicies) ? globalPolicies : []).forEach(p => {
+      if (p.scope === 'global' && !p.service_name && p.category) {
+        _policyByCategory[p.category] = p.action;
+        if (p.expires_at) _policyCatExpires[p.category] = p.expires_at;
+      }
+    });
+    if (isDeviceMode && Array.isArray(devicePolicies)) {
+      devicePolicies.forEach(p => {
+        if (p.scope === 'device' && !p.service_name && p.category) {
+          _policyByCategory[p.category] = p.action;
+          if (p.expires_at) _policyCatExpires[p.category] = p.expires_at;
+        }
+      });
+    }
+
     // Merged effective policy: device wins over global
     _policyByService = { ...globalByService };
     _policyExpiresByService = { ...globalExpByService };
@@ -5752,6 +5772,8 @@ async function loadAccessControl() {
     }
 
     // Render service cards per category into their respective grids.
+    // Each category section gets a header with a category-level 3-way
+    // toggle so you can block/alert/allow an entire category at once.
     const categories = [
       { key: 'ai',        containerId: 'access-control-ai' },
       { key: 'cloud',     containerId: 'access-control-cloud' },
@@ -5763,9 +5785,10 @@ async function loadAccessControl() {
       const el = document.getElementById(cat.containerId);
       if (!el) continue;
       const svcs = servicesRes.filter(s => s.category === cat.key);
-      el.innerHTML = svcs.length
+      const catToggle = _renderCategoryToggle(cat.key);
+      el.innerHTML = catToggle + (svcs.length
         ? svcs.map(renderServiceCard).join('')
-        : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noServices') || 'No services detected.'}</p>`;
+        : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noServices') || 'No services detected.'}</p>`);
     }
   } catch(e) { console.error('loadAccessControl:', e); }
 }
@@ -5893,10 +5916,95 @@ async function setServicePolicy(serviceName, action, buttonEl) {
 window.setServicePolicy = setServicePolicy;
 
 // ---------------------------------------------------------------------------
+// Category-level policy toggle — block/alert/allow an entire category
+// ---------------------------------------------------------------------------
+function _renderCategoryToggle(category) {
+  const currentAction = _policyByCategory[category] || null;
+  const exp = _policyCatExpires[category];
+
+  // Timer indicator
+  let timerHtml = '';
+  if (exp) {
+    const d = new Date(exp);
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    timerHtml = `<span class="text-[9px] text-blue-500 tabular-nums"><i class="ph-duotone ph-clock-countdown text-[8px]"></i> ${timeStr}</span>`;
+  }
+
+  const allowActive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-emerald-500 text-white shadow-sm';
+  const allowInactive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
+  const alertActive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-amber-500 text-white shadow-sm';
+  const alertInactive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+  const blockActive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-red-500 text-white shadow-sm';
+  const blockInactive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20';
+  const clearBtn = currentAction
+    ? `<button onclick="setCategoryPolicy('${category}', null)" class="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">${t('rules.clearCatRule') || 'Clear'}</button>`
+    : '';
+
+  return `<div class="col-span-full mb-2 flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05]">
+    <span class="text-xs font-medium text-slate-600 dark:text-slate-300 flex-shrink-0">${t('rules.entireCategory') || 'Entire category'}:</span>
+    <div class="flex gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-0.5">
+      <button onclick="setCategoryPolicy('${category}','allow')" class="${currentAction === 'allow' ? allowActive : allowInactive}"><i class="ph-duotone ph-check text-xs"></i> ${t('rules.allow') || 'Allow'}</button>
+      <button onclick="setCategoryPolicy('${category}','alert')" class="${currentAction === 'alert' ? alertActive : alertInactive}"><i class="ph-duotone ph-warning text-xs"></i> ${t('rules.alert') || 'Alert'}</button>
+      <button onclick="setCategoryPolicy('${category}','block')" class="${currentAction === 'block' ? blockActive : blockInactive}"><i class="ph-duotone ph-x text-xs"></i> ${t('rules.block') || 'Block'}</button>
+    </div>
+    <button onclick="openCategoryTimerModal('${category}')" class="flex-shrink-0 p-1 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors" title="${t('timer.setTimer') || 'Set timer'}">
+      <i class="ph-duotone ph-clock text-base text-slate-400"></i>
+    </button>
+    ${timerHtml}
+    ${clearBtn}
+    ${!currentAction ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 italic">${t('rules.noCatRule') || 'No category rule — individual service rules apply'}</span>` : ''}
+  </div>`;
+}
+
+async function setCategoryPolicy(category, action) {
+  const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
+  try {
+    if (action === null) {
+      // Remove the category policy — fetch existing and delete
+      const policies = await fetch(`/api/policies?scope=${isDeviceScope ? 'device' : 'global'}${isDeviceScope ? '&mac_address=' + encodeURIComponent(_rulesScopeMac) : ''}`).then(r => r.json());
+      const catPolicy = (policies || []).find(p => p.category === category && !p.service_name);
+      if (catPolicy) {
+        await fetch(`/api/policies/${catPolicy.id}`, { method: 'DELETE' });
+      }
+    } else {
+      await fetch('/api/policies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: isDeviceScope ? 'device' : 'global',
+          mac_address: isDeviceScope ? _rulesScopeMac : null,
+          service_name: null,
+          category: category,
+          action: action,
+        }),
+      });
+    }
+    const label = action ? (action === 'allow' ? t('rules.allow') : action === 'alert' ? t('rules.alert') : t('rules.block')) : (t('rules.cleared') || 'Cleared');
+    showToast(`${category}: ${label}`, 'success');
+    await loadAccessControl();
+  } catch (err) {
+    showToast(`${t('rules.updateFailed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+
+function openCategoryTimerModal(category) {
+  // Reuse the policy timer modal — store category instead of service
+  _timerModalService = null;
+  _timerModalCategory = category;
+  const nameEl = document.getElementById('policy-timer-svc-name');
+  if (nameEl) nameEl.textContent = `${t('rules.entireCategory') || 'Entire category'}: ${category}`;
+  document.getElementById('policy-timer-modal').classList.remove('hidden');
+}
+
+window.setCategoryPolicy = setCategoryPolicy;
+window.openCategoryTimerModal = openCategoryTimerModal;
+
+// ---------------------------------------------------------------------------
 // Policy Timer — time-limited rules
 // ---------------------------------------------------------------------------
 let _policyExpiresByService = {};
 let _timerModalService = null;
+let _timerModalCategory = null;
 
 function renderTimerButton(serviceName) {
   const exp = _policyExpiresByService[serviceName];
@@ -5915,6 +6023,7 @@ function renderTimerButton(serviceName) {
 
 function openPolicyTimerModal(serviceName) {
   _timerModalService = serviceName;
+  _timerModalCategory = null;
   const nameEl = document.getElementById('policy-timer-svc-name');
   if (nameEl) nameEl.textContent = svcDisplayName(serviceName);
   document.getElementById('policy-timer-modal').classList.remove('hidden');
@@ -5926,9 +6035,11 @@ function closePolicyTimerModal() {
 }
 
 async function setPolicyTimer(hours) {
-  if (!_timerModalService) return;
+  // Handle both service-level and category-level timers
   const svc = _timerModalService;
-  const action = _policyByService[svc] || 'alert';
+  const cat = _timerModalCategory;
+  if (!svc && !cat) return;
+  const action = svc ? (_policyByService[svc] || 'alert') : (_policyByCategory[cat] || 'alert');
   const expires = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
   const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
   closePolicyTimerModal();
@@ -5939,14 +6050,16 @@ async function setPolicyTimer(hours) {
       body: JSON.stringify({
         scope: isDeviceScope ? 'device' : 'global',
         mac_address: isDeviceScope ? _rulesScopeMac : null,
-        service_name: svc, category: null,
+        service_name: svc || null,
+        category: cat || null,
         action: action,
         expires_at: expires,
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const label = hours ? `${hours}h` : (t('timer.forever') || 'permanent');
-    showToast(`${svcDisplayName(svc)}: ${label}`, 'success');
+    const targetName = svc ? svcDisplayName(svc) : cat;
+    showToast(`${targetName}: ${label}`, 'success');
     await loadAccessControl();
   } catch (err) {
     showToast(`${t('rules.updateFailed') || 'Update failed'}: ${err.message}`, 'error');
@@ -5954,17 +6067,17 @@ async function setPolicyTimer(hours) {
 }
 
 async function setPolicyTimerAt() {
-  if (!_timerModalService) return;
+  const svc = _timerModalService;
+  const cat = _timerModalCategory;
+  if (!svc && !cat) return;
   const timeInput = document.getElementById('policy-timer-time');
   if (!timeInput || !timeInput.value) return;
   const [hh, mm] = timeInput.value.split(':').map(Number);
   const target = new Date();
   target.setHours(hh, mm, 0, 0);
-  // If the time has already passed today, set for tomorrow
   if (target <= new Date()) target.setDate(target.getDate() + 1);
 
-  const svc = _timerModalService;
-  const action = _policyByService[svc] || 'alert';
+  const action = svc ? (_policyByService[svc] || 'alert') : (_policyByCategory[cat] || 'alert');
   const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
   closePolicyTimerModal();
   try {
@@ -5974,14 +6087,16 @@ async function setPolicyTimerAt() {
       body: JSON.stringify({
         scope: isDeviceScope ? 'device' : 'global',
         mac_address: isDeviceScope ? _rulesScopeMac : null,
-        service_name: svc, category: null,
+        service_name: svc || null,
+        category: cat || null,
         action: action,
         expires_at: target.toISOString(),
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const timeStr = target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    showToast(`${svcDisplayName(svc)}: ${t('timer.until') || 'until'} ${timeStr}`, 'success');
+    const targetName = svc ? svcDisplayName(svc) : cat;
+    showToast(`${targetName}: ${t('timer.until') || 'until'} ${timeStr}`, 'success');
     await loadAccessControl();
   } catch (err) {
     showToast(`${t('rules.updateFailed') || 'Update failed'}: ${err.message}`, 'error');

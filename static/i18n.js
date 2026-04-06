@@ -114,6 +114,10 @@ const TRANSLATIONS = {
     'rules.allServicesAllowed':'All services are currently allowed.',
     'rules.global':            'Global',
     'rules.unblock':           'Unblock',
+    'rules.entireCategory':    'Entire category',
+    'rules.noCatRule':         'No category rule — individual service rules apply',
+    'rules.clearCatRule':      'Clear',
+    'rules.cleared':           'Cleared',
     'rules.updateFailed':  'Update failed',
 
     // Policy Timer
@@ -794,6 +798,10 @@ const TRANSLATIONS = {
     'rules.allServicesAllowed':'Alle services zijn momenteel toegestaan.',
     'rules.global':            'Globaal',
     'rules.unblock':           'Deblokkeren',
+    'rules.entireCategory':    'Hele categorie',
+    'rules.noCatRule':         'Geen categorieregel — individuele serviceregels gelden',
+    'rules.clearCatRule':      'Wissen',
+    'rules.cleared':           'Gewist',
     'rules.updateFailed':  'Update mislukt',
 
     // Beleidstimer
