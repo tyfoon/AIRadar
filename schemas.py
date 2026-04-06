@@ -176,6 +176,7 @@ class ServicePolicyCreate(BaseModel):
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str = "alert"              # "allow" | "alert" | "block"
+    expires_at: Optional[datetime] = None  # NULL = permanent
 
 
 class ServicePolicyRead(BaseModel):
@@ -187,6 +188,7 @@ class ServicePolicyRead(BaseModel):
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str
+    expires_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

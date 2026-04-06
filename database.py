@@ -148,6 +148,7 @@ class ServicePolicy(Base):
     service_name = Column(String, nullable=True, index=True)  # e.g. "openai", "roblox"
     category = Column(String, nullable=True, index=True)      # e.g. "ai", "gaming"
     action = Column(String, nullable=False, default="alert")  # "allow" | "alert" | "block"
+    expires_at = Column(DateTime, nullable=True)               # NULL = permanent
     created_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, nullable=False,
@@ -437,6 +438,16 @@ def init_db() -> None:
             if col_name not in dev_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_type}"))
+
+    # --- Ensure service_policies.expires_at column exists ---
+    inspector = inspect(engine)
+    if "service_policies" in inspector.get_table_names():
+        sp_cols = [c["name"] for c in inspector.get_columns("service_policies")]
+        if "expires_at" not in sp_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE service_policies ADD COLUMN expires_at DATETIME"
+                ))
 
     # --- Ensure detection_events columns exist ---
     inspector = inspect(engine)

@@ -5315,11 +5315,14 @@ async function loadAccessControl() {
 
     // Index policies by service_name (only per-service global ones, no
     // category-level or device-level — those are managed from the
-    // Action Inbox modal, not the Rules page)
+    // Action Inbox modal, not the Rules page). Store both action and
+    // expires_at so the timer button can display active countdowns.
     _policyByService = {};
+    _policyExpiresByService = {};
     (Array.isArray(policiesRes) ? policiesRes : []).forEach(p => {
       if (p.scope === 'global' && p.service_name && !p.category) {
         _policyByService[p.service_name] = p.action;
+        if (p.expires_at) _policyExpiresByService[p.service_name] = p.expires_at;
       }
     });
 
@@ -5370,7 +5373,10 @@ function renderServiceCard(svc) {
         <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
       </div>
       <div class="mb-3">${seenTag}</div>
-      ${renderPolicySegment(svc.service_name, currentAction)}
+      <div class="flex items-center gap-2">
+        <div class="flex-1">${renderPolicySegment(svc.service_name, currentAction)}</div>
+        ${renderTimerButton(svc.service_name)}
+      </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-2">${lastSeenText}</p>
     </div>`;
 }
@@ -5439,6 +5445,103 @@ async function setServicePolicy(serviceName, action, buttonEl) {
   }
 }
 window.setServicePolicy = setServicePolicy;
+
+// ---------------------------------------------------------------------------
+// Policy Timer — time-limited rules
+// ---------------------------------------------------------------------------
+let _policyExpiresByService = {};
+let _timerModalService = null;
+
+function renderTimerButton(serviceName) {
+  const exp = _policyExpiresByService[serviceName];
+  if (exp) {
+    const d = new Date(exp);
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `<button onclick="openPolicyTimerModal('${serviceName}')" class="flex flex-col items-center gap-0.5 flex-shrink-0" title="${t('timer.activeUntil') || 'Active until'} ${timeStr}">
+      <i class="ph-duotone ph-clock-countdown text-lg text-blue-500"></i>
+      <span class="text-[9px] tabular-nums text-blue-500 font-medium">${timeStr}</span>
+    </button>`;
+  }
+  return `<button onclick="openPolicyTimerModal('${serviceName}')" class="flex-shrink-0 p-1 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors" title="${t('timer.setTimer') || 'Set timer'}">
+    <i class="ph-duotone ph-clock text-lg text-slate-400"></i>
+  </button>`;
+}
+
+function openPolicyTimerModal(serviceName) {
+  _timerModalService = serviceName;
+  const nameEl = document.getElementById('policy-timer-svc-name');
+  if (nameEl) nameEl.textContent = svcDisplayName(serviceName);
+  document.getElementById('policy-timer-modal').classList.remove('hidden');
+}
+
+function closePolicyTimerModal() {
+  document.getElementById('policy-timer-modal').classList.add('hidden');
+  _timerModalService = null;
+}
+
+async function setPolicyTimer(hours) {
+  if (!_timerModalService) return;
+  const svc = _timerModalService;
+  const action = _policyByService[svc] || 'alert';
+  const expires = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  closePolicyTimerModal();
+  try {
+    const res = await fetch('/api/policies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'global', mac_address: null,
+        service_name: svc, category: null,
+        action: action,
+        expires_at: expires,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const label = hours ? `${hours}h` : (t('timer.forever') || 'permanent');
+    showToast(`${svcDisplayName(svc)}: ${label}`, 'success');
+    await loadAccessControl();
+  } catch (err) {
+    showToast(`${t('rules.updateFailed') || 'Update failed'}: ${err.message}`, 'error');
+  }
+}
+
+async function setPolicyTimerAt() {
+  if (!_timerModalService) return;
+  const timeInput = document.getElementById('policy-timer-time');
+  if (!timeInput || !timeInput.value) return;
+  const [hh, mm] = timeInput.value.split(':').map(Number);
+  const target = new Date();
+  target.setHours(hh, mm, 0, 0);
+  // If the time has already passed today, set for tomorrow
+  if (target <= new Date()) target.setDate(target.getDate() + 1);
+
+  const svc = _timerModalService;
+  const action = _policyByService[svc] || 'alert';
+  closePolicyTimerModal();
+  try {
+    const res = await fetch('/api/policies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'global', mac_address: null,
+        service_name: svc, category: null,
+        action: action,
+        expires_at: target.toISOString(),
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const timeStr = target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    showToast(`${svcDisplayName(svc)}: ${t('timer.until') || 'until'} ${timeStr}`, 'success');
+    await loadAccessControl();
+  } catch (err) {
+    showToast(`${t('rules.updateFailed') || 'Update failed'}: ${err.message}`, 'error');
+  }
+}
+
+window.openPolicyTimerModal = openPolicyTimerModal;
+window.closePolicyTimerModal = closePolicyTimerModal;
+window.setPolicyTimer = setPolicyTimer;
+window.setPolicyTimerAt = setPolicyTimerAt;
 
 // ================================================================
 // ABOUT & LEGAL

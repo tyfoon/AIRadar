@@ -1726,6 +1726,43 @@
 <!-- Alert Action Modal — opens when reviewing an alert             -->
 <!-- ============================================================= -->
 <!-- ============================================================= -->
+<!-- POLICY TIMER MODAL — set time-limited rules                    -->
+<!-- ============================================================= -->
+<div id="policy-timer-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="if (event.target === this) closePolicyTimerModal()">
+  <div class="w-full max-w-sm bg-white dark:bg-[#0f1117] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 dark:border-white/[0.05]">
+      <h3 class="text-base font-semibold text-slate-800 dark:text-white" data-i18n="timer.title">Set temporary rule</h3>
+      <p id="policy-timer-svc-name" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5"></p>
+    </div>
+    <div class="px-6 py-4 space-y-4">
+      <!-- Quick duration chips -->
+      <div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2" data-i18n="timer.quickDuration">Duration</p>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="setPolicyTimer(1)" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">1h</button>
+          <button onclick="setPolicyTimer(2)" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">2h</button>
+          <button onclick="setPolicyTimer(4)" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">4h</button>
+          <button onclick="setPolicyTimer(8)" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">8h</button>
+          <button onclick="setPolicyTimer(24)" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">24h</button>
+        </div>
+      </div>
+      <!-- Specific time -->
+      <div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2" data-i18n="timer.untilTime">Until specific time</p>
+        <div class="flex items-center gap-2">
+          <input type="time" id="policy-timer-time" class="flex-1 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200">
+          <button onclick="setPolicyTimerAt()" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold transition-colors" data-i18n="timer.set">Set</button>
+        </div>
+      </div>
+    </div>
+    <div class="px-6 py-3 border-t border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
+      <button onclick="setPolicyTimer(null)" class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors" data-i18n="timer.forever">Permanent (no timer)</button>
+      <button onclick="closePolicyTimerModal()" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors" data-i18n="confirm.cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
 <!-- CONFIRM MODAL — reusable styled replacement for confirm()      -->
 <!-- ============================================================= -->
 <div id="confirm-modal" class="hidden fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="if (event.target === this) _confirmResolve(false)">

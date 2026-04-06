@@ -96,6 +96,16 @@ const TRANSLATIONS = {
     'rules.block':         'Block',
     'rules.updateFailed':  'Update failed',
 
+    // Policy Timer
+    'timer.title':         'Set temporary rule',
+    'timer.quickDuration': 'Duration',
+    'timer.untilTime':     'Until specific time',
+    'timer.set':           'Set',
+    'timer.forever':       'Permanent (no timer)',
+    'timer.activeUntil':   'Active until',
+    'timer.setTimer':      'Set timer',
+    'timer.until':         'until',
+
     // Privacy — Beaconing (malware C2) threat intelligence
     'beacon.title':        'Threat Intelligence: Beaconing',
     'beacon.subtitle':     'Detecting malware C2 command & control traffic',
@@ -737,6 +747,16 @@ const TRANSLATIONS = {
     'rules.alert':         'Waarschuw',
     'rules.block':         'Blokkeer',
     'rules.updateFailed':  'Update mislukt',
+
+    // Beleidstimer
+    'timer.title':         'Tijdelijke regel instellen',
+    'timer.quickDuration': 'Duur',
+    'timer.untilTime':     'Tot specifiek tijdstip',
+    'timer.set':           'Instellen',
+    'timer.forever':       'Permanent (geen timer)',
+    'timer.activeUntil':   'Actief tot',
+    'timer.setTimer':      'Timer instellen',
+    'timer.until':         'tot',
 
     // Privacy — Beaconing (malware C2) dreigingsdetectie
     'beacon.title':        'Dreigingsanalyse: Beaconing',

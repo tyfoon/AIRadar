@@ -544,6 +544,56 @@ async def _expire_block_rules():
             print(f"[rules] Expiry check error: {exc}")
 
 
+POLICY_EXPIRY_INTERVAL = 60  # Check every 60 seconds
+
+
+async def _expire_service_policies():
+    """Background task: delete expired ServicePolicy rows and unblock
+    any AdGuard domains they were blocking.
+
+    When a time-limited policy expires, the system reverts to default
+    behavior (no policy = allow for standard traffic, alert for AI).
+    """
+    while True:
+        await asyncio.sleep(POLICY_EXPIRY_INTERVAL)
+        try:
+            db = SessionLocal()
+            now = datetime.utcnow()
+            expired = (
+                db.query(ServicePolicy)
+                .filter(
+                    ServicePolicy.expires_at != None,   # noqa: E711
+                    ServicePolicy.expires_at <= now,
+                )
+                .all()
+            )
+            for policy in expired:
+                # If the expired policy was blocking, lift the block in AdGuard
+                if (
+                    policy.action == "block"
+                    and policy.scope == "global"
+                    and policy.service_name
+                ):
+                    info = SERVICE_DOMAINS.get(policy.service_name)
+                    if info:
+                        for domain in info.get("domains", []):
+                            try:
+                                await adguard.unblock_domain(domain)
+                            except Exception as exc:
+                                print(f"[policy-expiry] AdGuard unblock {domain}: {exc}")
+                print(
+                    f"[policy-expiry] Expired: {policy.service_name or policy.category} "
+                    f"({policy.action}) for {'device ' + policy.mac_address if policy.mac_address else 'global'}"
+                )
+                db.delete(policy)
+            if expired:
+                db.commit()
+                print(f"[policy-expiry] Cleaned up {len(expired)} expired policies")
+            db.close()
+        except Exception as exc:
+            print(f"[policy-expiry] Error: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
@@ -711,6 +761,7 @@ async def lifespan(app: FastAPI):
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
+    policy_expiry_task = asyncio.create_task(_expire_service_policies())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
     # Dynamic domain list updater — seeds from former DOMAIN_MAP on first
@@ -2562,6 +2613,7 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
     now = datetime.utcnow()
     if existing:
         existing.action = payload.action
+        existing.expires_at = payload.expires_at
         existing.updated_at = now
         db.commit()
         db.refresh(existing)
@@ -2574,6 +2626,7 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
         service_name=payload.service_name,
         category=payload.category,
         action=payload.action,
+        expires_at=payload.expires_at,
         created_at=now,
         updated_at=now,
     )
@@ -2670,9 +2723,15 @@ def _resolve_policy_action(
 
     Walks the policy list in priority order (most specific first).
     Accepts a pre-fetched list so we don't hit the DB per event.
+    Policies with an expires_at in the past are treated as non-existent
+    (the expiry background task will garbage-collect them shortly).
     """
+    now = datetime.utcnow()
     def _first(pred):
         for p in policies:
+            # Skip expired policies — they're dead but not yet GC'd.
+            if p.expires_at and p.expires_at <= now:
+                continue
             if pred(p):
                 return p.action
         return None
