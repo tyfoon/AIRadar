@@ -4988,9 +4988,15 @@ function _populateRulesDeviceFilter() {
   if (!sel) return;
   const cur = sel.value;
   sel.innerHTML = `<option value="">${t('rules.selectDevice') || 'Select a device...'}</option>`;
+  // Sort by most recently active (last_seen desc) so the device you
+  // want to set a rule for is typically at the top of the list.
   Object.entries(deviceMap)
-    .map(([mac, d]) => ({ mac, label: _bestDeviceName(mac, d) }))
-    .sort((a, b) => a.label.localeCompare(b.label))
+    .map(([mac, d]) => ({
+      mac,
+      label: _bestDeviceName(mac, d),
+      lastSeen: d.last_seen ? new Date(d.last_seen).getTime() : 0,
+    }))
+    .sort((a, b) => b.lastSeen - a.lastSeen)
     .forEach(e => { sel.innerHTML += `<option value="${e.mac}">${e.label}</option>`; });
   sel.value = cur;
 }
