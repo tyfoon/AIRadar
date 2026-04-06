@@ -5047,24 +5047,46 @@ async function loadActiveBlockRules() {
       const name = p.service_name ? svcDisplayName(p.service_name) : (p.category || '—');
       const logo = p.service_name ? svcLogo(p.service_name) : '<i class="ph-duotone ph-folder text-xl"></i>';
 
-      // Scope label
-      const scopeLabel = p.scope === 'device' && p.mac_address
-        ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">${_bestDeviceName(p.mac_address, deviceMap[p.mac_address])} </span>`
-        : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">${t('rules.global') || 'Global'}</span>`;
-
-      // Timer
-      let timerLabel = `<span class="text-[10px] text-slate-400 dark:text-slate-500">${t('timer.forever') || 'Permanent'}</span>`;
-      if (p.expires_at) {
-        const d = new Date(p.expires_at);
-        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        timerLabel = `<span class="text-[10px] text-blue-500 font-medium"><i class="ph-duotone ph-clock-countdown text-xs"></i> ${t('timer.until') || 'until'} ${dateStr} ${timeStr}</span>`;
+      // Scope badge — visually distinct per scope level
+      let scopeBadge;
+      if (p.scope === 'device' && p.mac_address) {
+        const devName = _bestDeviceName(p.mac_address, deviceMap[p.mac_address]);
+        scopeBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium">
+          <i class="ph-duotone ph-device-mobile text-xs"></i> ${devName}
+        </span>`;
+      } else if (p.scope === 'group' && p.group_name) {
+        // Future: group scope
+        scopeBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-medium">
+          <i class="ph-duotone ph-users-three text-xs"></i> ${p.group_name}
+        </span>`;
+      } else {
+        scopeBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300 font-medium">
+          <i class="ph-duotone ph-globe text-xs"></i> ${t('rules.global') || 'Global'}
+        </span>`;
       }
 
-      // Category badge
-      const catLabel = p.category
-        ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">${p.category}</span>`
-        : '';
+      // Timer badge — prominent when temporary, subtle when permanent
+      let timerBadge;
+      if (p.expires_at) {
+        const d = new Date(p.expires_at);
+        const now = new Date();
+        const remainingMs = d - now;
+        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        // Expiring within 1 hour → orange warning, otherwise blue
+        const isExpiringSoon = remainingMs > 0 && remainingMs < 3600000;
+        const timerColor = isExpiringSoon
+          ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'
+          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400';
+        const remainLabel = remainingMs > 0 ? _fmtDuration(remainingMs) : 'expired';
+        timerBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${timerColor} font-semibold">
+          <i class="ph-duotone ph-clock-countdown text-xs"></i> ${t('timer.until') || 'until'} ${dateStr} ${timeStr} <span class="opacity-70">(${remainLabel})</span>
+        </span>`;
+      } else {
+        timerBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500">
+          <i class="ph-duotone ph-infinity text-xs"></i> ${t('timer.forever') || 'Permanent'}
+        </span>`;
+      }
 
       return `
         <div class="flex items-center gap-3 p-4 bg-white dark:bg-white/[0.03] border border-red-200 dark:border-red-700/40 bg-red-50/30 dark:bg-red-900/5 rounded-xl transition-colors">
@@ -5074,11 +5096,10 @@ async function loadActiveBlockRules() {
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${name}</span>
-              ${scopeLabel}
-              ${catLabel}
+              ${scopeBadge}
             </div>
-            <div class="flex items-center gap-3 mt-1">
-              ${timerLabel}
+            <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+              ${timerBadge}
             </div>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
