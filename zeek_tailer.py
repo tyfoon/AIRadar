@@ -93,8 +93,12 @@ VPN_PROVIDER_ASNS: dict[int, str] = {
     # M247 — hosts NordVPN, Surfshark, ProtonVPN, CyberGhost, many others.
     # Heavily VPN-dominated; home users rarely have legitimate traffic here.
     9009:   "m247",
-    # Datacamp Limited / CDN77 — NordVPN, ExpressVPN exit pools.
-    60068:  "datacamp",
+    # NOTE: Datacamp/CDN77 (AS60068) intentionally removed. It hosts
+    # some NordVPN/ExpressVPN exits but is primarily a legitimate CDN
+    # used by thousands of apps. On a home network it produced false
+    # positives on normal CDN fetches (186 KB iPhone request flagged
+    # as VPN). Real VPN usage through Datacamp exits is still caught
+    # via DPD protocol signatures and VPN_PORTS.
     # Mullvad VPN AB — confirmed own ASN.
     16247:  "mullvad",
     # ExpressVPN International Limited.
