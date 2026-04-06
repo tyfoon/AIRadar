@@ -1,0 +1,21 @@
+# Zeek network logs — parsed by the base-http-scenarios, http-cve,
+# and iptables collections for detecting port scans, HTTP probing,
+# CVE exploits, and connection floods on exposed services.
+---
+source: file
+filenames:
+  - /var/log/zeek/conn.log
+labels:
+  type: zeek
+---
+source: file
+filenames:
+  - /var/log/zeek/http.log
+labels:
+  type: zeek
+---
+source: file
+filenames:
+  - /var/log/zeek/ssl.log
+labels:
+  type: zeek
