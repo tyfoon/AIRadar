@@ -3862,16 +3862,42 @@ function _categorizeService(svc, svcCategoryMap) {
   return svcCategoryMap[svc] || 'other';
 }
 
-function _heatCell(count, uploads, globalMax) {
+// Policy-aware heatmap cell. Color is driven by the active policy
+// action, not by volume alone:
+//   block  → red    (always, regardless of count)
+//   alert  → amber  (always)
+//   allow  → blue   (neutral, volume sets intensity shade)
+//   none   → blue   (same as allow)
+// Volume (count / globalMax) determines the shade darkness WITHIN
+// the policy color so high-traffic services are visually heavier.
+// policyAction: 'block'|'alert'|'allow'|null (for per-service cells)
+//   or for group cells: the "worst" policy among all services in the group.
+function _heatCell(count, uploads, globalMax, policyAction) {
   if (!count) return `<span class="inline-block w-full py-1 rounded text-[10px] text-slate-300 dark:text-slate-600">—</span>`;
-  const intensity = count / globalMax;
-  let bg, text;
-  if (intensity < 0.15)      { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
-  else if (intensity < 0.4)  { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
-  else if (intensity < 0.7)  { bg = 'bg-orange-300 dark:bg-orange-700/60'; text = 'text-orange-900 dark:text-orange-100'; }
-  else                       { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
+  const intensity = Math.min(count / (globalMax || 1), 1);
+  let bg, text, icon = '';
+
+  if (policyAction === 'block') {
+    // Red — always, with intensity shade
+    if (intensity < 0.3) { bg = 'bg-red-100 dark:bg-red-900/30'; text = 'text-red-700 dark:text-red-300'; }
+    else if (intensity < 0.6) { bg = 'bg-red-300 dark:bg-red-700/50'; text = 'text-red-900 dark:text-red-100'; }
+    else { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
+    icon = ' <i class="ph-duotone ph-prohibit text-[9px]"></i>';
+  } else if (policyAction === 'alert') {
+    // Amber — always
+    if (intensity < 0.3) { bg = 'bg-amber-100 dark:bg-amber-900/30'; text = 'text-amber-700 dark:text-amber-300'; }
+    else if (intensity < 0.6) { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
+    else { bg = 'bg-amber-300 dark:bg-amber-700/60'; text = 'text-amber-900 dark:text-amber-100'; }
+    icon = ' <i class="ph-duotone ph-warning text-[9px]"></i>';
+  } else {
+    // Blue — neutral (allow or no policy)
+    if (intensity < 0.15) { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
+    else if (intensity < 0.4) { bg = 'bg-blue-200 dark:bg-blue-800/50'; text = 'text-blue-800 dark:text-blue-200'; }
+    else if (intensity < 0.7) { bg = 'bg-blue-300 dark:bg-blue-700/60'; text = 'text-blue-900 dark:text-blue-100'; }
+    else { bg = 'bg-blue-400 dark:bg-blue-600/70'; text = 'text-white dark:text-blue-100'; }
+  }
   const uploadIcon = uploads > 0 ? ` <span class="text-orange-500" title="${uploads} upload(s)">▲</span>` : '';
-  return `<span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${count}${uploadIcon}</span>`;
+  return `<span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${count}${icon}${uploadIcon}</span>`;
 }
 
 function _toggleDevGroup(groupKey) {
@@ -4602,15 +4628,24 @@ function _renderDeviceMatrix() {
     groups.forEach(g => {
       const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
       const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
+      // Group policy = "worst" among all services in the group:
+      // block > alert > allow. If ANY service is blocked, group is red.
+      let groupPolicy = null;
+      g.services.forEach(svc => {
+        const p = _policyByService[svc];
+        if (p === 'block') groupPolicy = 'block';
+        else if (p === 'alert' && groupPolicy !== 'block') groupPolicy = 'alert';
+      });
       cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer hidden sm:table-cell" onclick="_showCellEvents('${mac}', null, '${g.key}')">
-        ${_heatCell(groupCount, groupUploads, globalMax)}
+        ${_heatCell(groupCount, groupUploads, globalMax, groupPolicy)}
       </td>`;
 
       if (expanded.has(g.key)) {
         g.services.forEach(s => {
           const v = row[s];
+          const svcPolicy = _policyByService[s] || null;
           cells += `<td class="py-2.5 px-2 text-center cursor-pointer hidden sm:table-cell" onclick="_showCellEvents('${mac}', '${s}')">
-            ${_heatCell(v?.count || 0, v?.uploads || 0, globalMax)}
+            ${_heatCell(v?.count || 0, v?.uploads || 0, globalMax, svcPolicy)}
           </td>`;
         });
       }
@@ -4665,12 +4700,22 @@ async function refreshDevices() {
   // on the backend (category NOT IN ai/cloud/tracking) that catches
   // gaming, social, streaming, shopping, gambling, and anything else
   // the classifier assigned a non-primary category to.
-  const [aiEvt, cloudEvt, trackEvt, otherEvt] = await Promise.all([
+  const [aiEvt, cloudEvt, trackEvt, otherEvt, policiesRes] = await Promise.all([
     fetch('/api/events?category=ai&' + params).then(r => r.json()),
     fetch('/api/events?category=cloud&' + params).then(r => r.json()),
     fetch('/api/events?category=tracking&' + params).then(r => r.json()),
     fetch('/api/events?category=other&' + params).then(r => r.json()),
+    fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
   ]);
+
+  // Build policy lookup for heatmap coloring — reuse the same global
+  // so the Rules page and Devices page share one source of truth.
+  _policyByService = {};
+  (Array.isArray(policiesRes) ? policiesRes : []).forEach(p => {
+    if (p.scope === 'global' && p.service_name && !p.category) {
+      _policyByService[p.service_name] = p.action;
+    }
+  });
 
   // Tag events with their category
   aiEvt.forEach(e => e._cat = 'ai');
