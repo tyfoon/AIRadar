@@ -2527,6 +2527,8 @@ _ANOMALY_DETECTION_TYPES = {
     "vpn_tunnel",
     "stealth_vpn_tunnel",
     "beaconing_threat",
+    "iot_lateral_movement",
+    "iot_suspicious_port",
 }
 
 
