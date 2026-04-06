@@ -2397,28 +2397,42 @@ function renderSankey(events) {
     serviceFlows[svc] = (serviceFlows[svc] || 0) + (e.bytes_transferred || 1);
   });
 
-  // Build per-link flows: device → service
-  const linkMap = {};
+  // Limit to top 10 devices by traffic volume to keep the chart readable.
+  const top10Devices = new Set(
+    Object.entries(deviceFlows)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([dev]) => dev)
+  );
+
+  // Rebuild device flows with only top 10
+  const filteredDeviceFlows = {};
+  Object.entries(deviceFlows).forEach(([dev, bytes]) => {
+    if (top10Devices.has(dev)) filteredDeviceFlows[dev] = bytes;
+  });
+
+  // Rebuild service flows from events of top 10 devices only
+  const filteredServiceFlows = {};
   events.forEach(e => {
     const dev = deviceName(e.source_ip);
+    if (!top10Devices.has(dev)) return;
     const svc = svcDisplayName(e.ai_service);
-    const key = dev + '→' + svc;
-    linkMap[key] = (linkMap[key] || 0) + (e.bytes_transferred || 1);
+    filteredServiceFlows[svc] = (filteredServiceFlows[svc] || 0) + (e.bytes_transferred || 1);
   });
 
   // Nodes
   const nodes = [];
   const nodeSet = new Set();
-  Object.keys(deviceFlows).forEach(d => { if (!nodeSet.has(d)) { nodeSet.add(d); nodes.push({ name: d }); } });
+  Object.keys(filteredDeviceFlows).forEach(d => { if (!nodeSet.has(d)) { nodeSet.add(d); nodes.push({ name: d }); } });
   nodes.push({ name: 'AI-Radar' });
-  Object.keys(serviceFlows).forEach(s => { if (!nodeSet.has(s)) { nodeSet.add(s); nodes.push({ name: s }); } });
+  Object.keys(filteredServiceFlows).forEach(s => { if (!nodeSet.has(s)) { nodeSet.add(s); nodes.push({ name: s }); } });
 
   // Links: device → AI-Radar, AI-Radar → service
   const links = [];
-  Object.entries(deviceFlows).forEach(([dev, bytes]) => {
+  Object.entries(filteredDeviceFlows).forEach(([dev, bytes]) => {
     links.push({ source: dev, target: 'AI-Radar', value: bytes });
   });
-  Object.entries(serviceFlows).forEach(([svc, bytes]) => {
+  Object.entries(filteredServiceFlows).forEach(([svc, bytes]) => {
     links.push({ source: 'AI-Radar', target: svc, value: bytes });
   });
 
