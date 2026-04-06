@@ -1602,29 +1602,39 @@ async function loadSummaryDashboard() {
         </div>`;
       }
       return `
-        <div class="${borderClass} border rounded-xl p-5 card-hover transition-all">
-          <div class="flex items-start justify-between gap-4">
-            <div class="flex items-start gap-3 min-w-0 flex-1">
+        <div id="alert-card-${idx}" class="${borderClass} border rounded-xl p-4 transition-all">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
               ${iconHtml}
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
-                  ${macTag}
                   <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
                 </div>
-                <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                   <span class="font-medium">${svcDisplayName(a.service_or_dest) || a.service_or_dest}</span>
-                  ${a.category ? `<span class="text-slate-400 dark:text-slate-500 ml-1">· ${a.category}</span>` : ''}
-                </p>
-                <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 tabular-nums">
-                  ${a.hits} hits · ${t('summary.firstSeen') || 'eerst'} ${firstSeen} · ${t('summary.lastSeen') || 'laatst'} ${lastSeen}
+                  <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${a.hits} hits · ${lastSeen}</span>
                 </p>
               </div>
             </div>
-            <button onclick="openAlertActionModal(${idx})"
-                    class="flex-shrink-0 px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
-              ${t('summary.review') || 'Beoordeel'}
-            </button>
+            <div class="flex items-center gap-1.5 flex-shrink-0">
+              <button onclick="_inlineDismiss(${idx})" title="Dismiss"
+                      class="w-8 h-8 rounded-lg bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 border border-green-200 dark:border-green-700/40 text-green-600 dark:text-green-400 flex items-center justify-center transition-colors">
+                <i class="ph-duotone ph-check text-sm"></i>
+              </button>
+              <button onclick="_toggleInlineActions(${idx})" title="${t('summary.review') || 'More actions'}"
+                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors">
+                <i class="ph ph-dots-three text-sm"></i>
+              </button>
+            </div>
+          </div>
+          <div id="alert-actions-${idx}" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
+            <div class="flex flex-wrap gap-1.5">
+              <button onclick="_inlineSnooze(${idx}, 1)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">Snooze 1h</button>
+              <button onclick="_inlineSnooze(${idx}, 4)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">4h</button>
+              <button onclick="_inlineSnooze(${idx}, 8)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">8h</button>
+              <button onclick="_inlineWhitelist(${idx})" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-[11px] font-medium transition-colors">${t('alertModal.ignoreForever') || 'Permanent ignore'}</button>
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -1845,6 +1855,68 @@ window.submitAlertAction = submitAlertAction;
 window.submitAlertPolicy = submitAlertPolicy;
 window.setAlertAction = setAlertAction;
 window.setAlertScope = setAlertScope;
+
+// ---------------------------------------------------------------------------
+// Inline alert actions (no modal needed)
+// ---------------------------------------------------------------------------
+
+function _toggleInlineActions(idx) {
+  const el = document.getElementById(`alert-actions-${idx}`);
+  if (el) el.classList.toggle('hidden');
+}
+
+async function _inlineAlertAction(idx, body) {
+  const card = document.getElementById(`alert-card-${idx}`);
+  try {
+    const res = await fetch('/api/exceptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (card) {
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.95)';
+      card.style.transition = 'all 0.2s ease-out';
+      setTimeout(() => { card.style.display = 'none'; }, 200);
+    }
+    showToast(t('alertModal.success') || 'Alert processed', 'success');
+  } catch (err) {
+    console.error('_inlineAlertAction:', err);
+    showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+
+function _inlineDismiss(idx) {
+  const a = _summaryAlerts[idx]; if (!a) return;
+  _inlineAlertAction(idx, {
+    mac_address: a.mac_address, alert_type: a.alert_type,
+    destination: a.service_or_dest,
+    expires_at: new Date(Date.now() + 1000).toISOString(),
+  });
+}
+
+function _inlineSnooze(idx, hours) {
+  const a = _summaryAlerts[idx]; if (!a) return;
+  _inlineAlertAction(idx, {
+    mac_address: a.mac_address, alert_type: a.alert_type,
+    destination: a.service_or_dest,
+    expires_at: new Date(Date.now() + hours * 3600 * 1000).toISOString(),
+  });
+}
+
+function _inlineWhitelist(idx) {
+  const a = _summaryAlerts[idx]; if (!a) return;
+  _inlineAlertAction(idx, {
+    mac_address: a.mac_address, alert_type: a.alert_type,
+    destination: a.service_or_dest, expires_at: null,
+  });
+}
+
+window._toggleInlineActions = _toggleInlineActions;
+window._inlineDismiss = _inlineDismiss;
+window._inlineSnooze = _inlineSnooze;
+window._inlineWhitelist = _inlineWhitelist;
 
 // ---------------------------------------------------------------------------
 // "Clear all alerts" — dismiss every visible alert
