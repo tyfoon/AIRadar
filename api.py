@@ -2813,6 +2813,13 @@ def get_active_alerts(
             alert_type = "upload" if e.possible_upload else "service_access"
             destination = e.ai_service
 
+            # Check AlertExceptions for standard-service alerts too —
+            # without this, the "Clear all alerts" snooze has no effect
+            # on upload / service_access alerts because only the anomaly
+            # path was checking exceptions.
+            if _is_exception_active(exceptions, mac, alert_type, destination, now):
+                continue
+
         key = (mac or e.source_ip, alert_type, destination)
         g = groups.get(key)
         if g is None:

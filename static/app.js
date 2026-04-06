@@ -1764,13 +1764,14 @@ window.submitAlertAction = submitAlertAction;
 // the alert reappears after 2 hours.
 async function clearAllAlerts() {
   if (!_summaryAlerts || _summaryAlerts.length === 0) {
-    alert(t('summary.noAlertsToClear') || 'No alerts to clear.');
+    showToast(t('summary.noAlertsToClear') || 'No alerts to clear.', 'info');
     return;
   }
 
   const n = _summaryAlerts.length;
-  const confirmed = confirm(
-    (t('summary.clearConfirm') || 'This will snooze all alerts for 2 hours. Continue?')
+  const confirmed = await styledConfirm(
+    t('summary.clearAllTitle') || 'Clear all alerts',
+    (t('summary.clearConfirm') || 'This will snooze all {n} alerts for 2 hours. They will only return if no rule has been set in the meantime.')
       .replace('{n}', String(n))
   );
   if (!confirmed) return;
@@ -1818,6 +1819,27 @@ async function clearAllAlerts() {
   await loadSummaryDashboard();
 }
 window.clearAllAlerts = clearAllAlerts;
+
+// ---------------------------------------------------------------------------
+// Styled confirm modal — async replacement for window.confirm()
+// ---------------------------------------------------------------------------
+// Returns a Promise<boolean>. Usage: if (await styledConfirm('Title', 'Msg')) { ... }
+let _confirmResolve = () => {};
+
+function styledConfirm(title, message) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('confirm-modal');
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-message').textContent = message;
+    modal.classList.remove('hidden');
+    _confirmResolve = (result) => {
+      modal.classList.add('hidden');
+      resolve(result);
+    };
+  });
+}
+window._confirmResolve = (result) => _confirmResolve(result);
+window.styledConfirm = styledConfirm;
 
 // ---------------------------------------------------------------------------
 // AI summary button
