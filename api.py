@@ -5681,11 +5681,33 @@ async def _check_volume_spikes():
 
                 src_ip = mac_to_ip.get(bl.mac_address, bl.mac_address)
                 dev_name = dev.display_name or dev.hostname or bl.mac_address
+                # Find top destination in the spike window for context
+                top_dest = db.query(
+                    GeoConversation.ai_service,
+                ).filter(
+                    GeoConversation.mac_address == bl.mac_address,
+                    GeoConversation.last_seen >= hour_ago,
+                ).order_by(
+                    GeoConversation.bytes_transferred.desc()
+                ).first()
+                top_svc = top_dest.ai_service if top_dest else "unknown"
+
+                def _fmt_bytes_short(b):
+                    if b >= 1_000_000:
+                        return f"{b/1_000_000:.1f} MB"
+                    return f"{b/1024:.0f} KB"
+
+                spike_label = (
+                    f"{_fmt_bytes_short(hour_bytes)}/h "
+                    f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
+                    f"→ {top_svc}"
+                )
+
                 db.add(DetectionEvent(
                     sensor_id="airadar",
                     timestamp=now,
                     detection_type="iot_volume_spike",
-                    ai_service=f"volume_{hour_bytes}",
+                    ai_service=spike_label,
                     source_ip=src_ip,
                     bytes_transferred=int(hour_bytes),
                     category="security",
