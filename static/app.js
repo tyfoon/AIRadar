@@ -1763,11 +1763,17 @@ window.submitAlertAction = submitAlertAction;
 // won't come back. If no policy is set and the underlying traffic continues,
 // the alert reappears after 2 hours.
 async function clearAllAlerts() {
-  if (!_summaryAlerts || _summaryAlerts.length === 0) return;
+  if (!_summaryAlerts || _summaryAlerts.length === 0) {
+    alert(t('summary.noAlertsToClear') || 'No alerts to clear.');
+    return;
+  }
 
-  const msg = t('summary.clearConfirm', { n: _summaryAlerts.length })
-    || `This will snooze all ${_summaryAlerts.length} alerts for 2 hours. Continue?`;
-  if (!window.confirm(msg)) return;
+  const n = _summaryAlerts.length;
+  const confirmed = confirm(
+    (t('summary.clearConfirm') || 'This will snooze all alerts for 2 hours. Continue?')
+      .replace('{n}', String(n))
+  );
+  if (!confirmed) return;
 
   const btn = document.getElementById('btn-clear-all-alerts');
   if (btn) {
@@ -1776,7 +1782,7 @@ async function clearAllAlerts() {
   }
 
   const expires = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
-  let ok = 0;
+  let okCount = 0;
   let fail = 0;
 
   for (const a of _summaryAlerts) {
@@ -1791,7 +1797,7 @@ async function clearAllAlerts() {
           expires_at: expires,
         }),
       });
-      if (res.ok) ok++;
+      if (res.ok) okCount++;
       else fail++;
     } catch (e) {
       fail++;
@@ -1804,9 +1810,9 @@ async function clearAllAlerts() {
   }
 
   if (fail === 0) {
-    showToast(t('summary.clearSuccess', { n: String(ok) }) || `${ok} alerts snoozed for 2 hours`, 'success');
+    showToast(t('summary.clearSuccess', { n: String(okCount) }) || `${okCount} alerts snoozed for 2 hours`, 'success');
   } else {
-    showToast(`${ok} snoozed, ${fail} failed`, 'warning');
+    showToast(`${okCount} snoozed, ${fail} failed`, 'warning');
   }
 
   await loadSummaryDashboard();
