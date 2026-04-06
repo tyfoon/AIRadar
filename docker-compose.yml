@@ -72,7 +72,7 @@ services:
       #   base-http-scenarios — HTTP probing, bad user-agents, aggressive crawls
       #   http-cve        — known CVE exploit attempts in HTTP
       #   whitelist-good-actors — prevents false positives on search engine bots
-      - COLLECTIONS=crowdsecurity/linux crowdsecurity/zeek-logs crowdsecurity/iptables crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/whitelist-good-actors
+      - COLLECTIONS=crowdsecurity/linux crowdsecurity/iptables crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/whitelist-good-actors
     volumes:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
