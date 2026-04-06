@@ -3500,13 +3500,12 @@ let _geoData = null;
 // Convert a 2-letter ISO country code to a flag emoji using Unicode
 // regional indicator symbols (0x1F1E6 + letter offset).
 function _flagEmoji(cc) {
-  if (!cc || cc.length !== 2) return '🏳️';
-  const base = 0x1F1E6;
-  const A = 'A'.charCodeAt(0);
-  return String.fromCodePoint(
-    base + cc.toUpperCase().charCodeAt(0) - A,
-    base + cc.toUpperCase().charCodeAt(1) - A,
-  );
+  // Returns an HTML string using the flag-icons CSS library for
+  // consistent rectangular SVG flags across all platforms (replaces
+  // OS-native Unicode emoji flags which look different on every OS).
+  if (!cc || cc.length !== 2) return '<i class="ph-duotone ph-globe text-slate-400"></i>';
+  const code = cc.toLowerCase();
+  return `<span class="fi fi-${code} rounded-sm shadow-sm inline-block" style="font-size:1.1em"></span>`;
 }
 
 function _geoFmtBytes(b) {
@@ -3740,7 +3739,7 @@ function _renderGeoMap(data) {
             true
           );
         } else {
-          tooltip.text(`${_flagEmoji(code)} ${name}`, false);
+          tooltip.text(`${_flagEmoji(code)} ${name}`, true);
         }
       },
       onRegionClick(event, code) {
@@ -3846,7 +3845,8 @@ async function openCountryDrawer(cc) {
   _countryDrawerCC = cc;
   _countryDrawerDirection = _geoDirection || 'outbound';
 
-  document.getElementById('country-drawer-flag').textContent = _flagEmoji(cc);
+  // _flagEmoji returns HTML (not a text char), so use innerHTML.
+  document.getElementById('country-drawer-flag').innerHTML = _flagEmoji(cc);
   document.getElementById('country-drawer-name').textContent = `${_countryName(cc)} (${cc})`;
   document.getElementById('country-drawer-meta').textContent = t('country.loading') || 'Loading…';
 
