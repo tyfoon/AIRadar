@@ -4753,37 +4753,86 @@ function _renderDeviceMatrix() {
   const allDeviceMacs = _devMatrix.deviceMacs;
   const globalMax = _devMatrix.globalMax;
 
-  // --- Build device type chip list from actual data ---
-  const typeCountMap = {}; // type → count
+  // --- Build device type chip list grouped into parent categories ---
+  // Maps the 50+ specific device types into ~8 usable filter categories.
+  const _TYPE_TO_GROUP = {
+    // Computers & Phones
+    'MacBook': 'Computers', 'iMac': 'Computers', 'Mac Pro': 'Computers', 'Mac mini': 'Computers',
+    'Mac Studio': 'Computers', 'PC': 'Computers', 'Surface': 'Computers', 'Laptop': 'Computers',
+    'Computer': 'Computers', 'Microsoft': 'Computers', 'Apple Device': 'Computers',
+    'Home Server': 'Computers', 'Raspberry Pi': 'Computers', 'Frigate NVR': 'Computers',
+    // Phones & Tablets
+    'iPhone': 'Phones', 'iPad': 'Phones', 'Pixel': 'Phones', 'Samsung': 'Phones',
+    'Android': 'Phones', 'Phone': 'Phones', 'Tablet': 'Phones', 'HONOR': 'Phones',
+    'HONOR Tablet': 'Phones', 'Huawei': 'Phones', 'Google Device': 'Phones',
+    // Smart Home / IoT
+    'Air Quality Monitor': 'Smart Home', 'Robot Vacuum': 'Smart Home',
+    'Smart Dryer': 'Smart Home', 'Smart Washer': 'Smart Home', 'Smart Dishwasher': 'Smart Home',
+    'Smart Airco': 'Smart Home', 'Thermostat': 'Smart Home',
+    'Smart Lighting': 'Smart Home', 'Hue Sync Box': 'Smart Home',
+    'Somfy Blinds': 'Smart Home', 'Slide Curtains': 'Smart Home',
+    'Energy Monitor': 'Smart Home', 'P1 Energy Meter': 'Smart Home', 'Water Meter': 'Smart Home',
+    'Presence Sensor': 'Smart Home', 'Smart Alarm Clock': 'Smart Home',
+    'IoT Device': 'Smart Home', 'Smart Home': 'Smart Home',
+    'Sonoff NSPanel': 'Smart Home', 'WLED LED': 'Smart Home', 'Awtrix Pixel Clock': 'Smart Home',
+    'Zigbee Coordinator': 'Smart Home', 'Home Assistant': 'Smart Home',
+    'Health Monitor': 'Smart Home', 'Doorbell': 'Smart Home',
+    // Speakers & Media
+    'Sonos Speaker': 'Media', 'Speaker': 'Media', 'HomePod': 'Media',
+    'Google Home': 'Media', 'Google Home Mini': 'Media',
+    'Denon AV Receiver': 'Media', 'AV Receiver': 'Media', 'Harmony Hub': 'Media',
+    'Apple TV': 'Media', 'Chromecast': 'Media', 'TV/Media': 'Media',
+    'LG Smart TV': 'Media', 'E-reader': 'Media',
+    // Google Nest
+    'Nest': 'Nest', 'Nest Doorbell': 'Nest', 'Nest Protect': 'Nest',
+    'Nest Hub': 'Nest', 'Nest Cam': 'Nest',
+    // Cameras
+    'IP Camera': 'Cameras', 'Camera Hub': 'Cameras',
+    // Networking
+    'Router': 'Network', 'Ubiquiti': 'Network', 'Ubiquiti AP': 'Network',
+    'Ubiquiti Switch': 'Network', 'Network Switch': 'Network',
+    'Access Point': 'Network', 'Printer': 'Network',
+    // Gaming
+    'PlayStation': 'Gaming', 'Xbox': 'Gaming', 'Nintendo': 'Gaming',
+  };
+
+  const groupCountMap = {}; // parent group → count
+  const groupTypes = {};    // parent group → Set of specific types
   allDeviceMacs.forEach(mac => {
     const dev = deviceMap[mac] || null;
     const dt = _detectDeviceType(dev);
-    typeCountMap[dt.type] = (typeCountMap[dt.type] || 0) + 1;
+    const group = _TYPE_TO_GROUP[dt.type] || 'Other';
+    groupCountMap[group] = (groupCountMap[group] || 0) + 1;
+    (groupTypes[group] = groupTypes[group] || new Set()).add(dt.type);
   });
+
   const chipContainer = document.getElementById('dev-type-chips');
   if (chipContainer) {
-    const types = Object.keys(typeCountMap).sort();
+    const groups = Object.keys(groupCountMap).sort();
     const allActive = _devTypeFilter === 'all';
-    let chips = `<button onclick="setDevTypeFilter('all')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${allActive ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-600' : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]'}">${t('dev.filterAll')} <span class="ml-0.5 text-[10px] opacity-60">${allDeviceMacs.length}</span></button>`;
-    types.forEach(typ => {
-      const active = _devTypeFilter === typ;
-      const cls = active
-        ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-600'
-        : 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]';
-      chips += `<button onclick="setDevTypeFilter('${typ.replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${cls}">${typ} <span class="ml-0.5 text-[10px] opacity-60">${typeCountMap[typ]}</span></button>`;
+    const activeCls = 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-600';
+    const inactiveCls = 'bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]';
+    let chips = `<button onclick="setDevTypeFilter('all')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${allActive ? activeCls : inactiveCls}">${t('dev.filterAll')} <span class="ml-0.5 text-[10px] opacity-60">${allDeviceMacs.length}</span></button>`;
+    groups.forEach(grp => {
+      const active = _devTypeFilter === grp;
+      chips += `<button onclick="setDevTypeFilter('${grp.replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${active ? activeCls : inactiveCls}">${grp} <span class="ml-0.5 text-[10px] opacity-60">${groupCountMap[grp]}</span></button>`;
     });
     chipContainer.innerHTML = chips;
   }
 
+  // Store the mapping so the filter can match
+  window._typeToGroupMap = _TYPE_TO_GROUP;
+
   // --- Filter devices ---
   let deviceMacs = allDeviceMacs;
 
-  // Type filter
+  // Type filter — matches the parent group, not the specific subtype
   if (_devTypeFilter !== 'all') {
     deviceMacs = deviceMacs.filter(mac => {
       const dev = deviceMap[mac] || null;
       const dt = _detectDeviceType(dev);
-      return dt.type === _devTypeFilter;
+      const group = (window._typeToGroupMap || {})[dt.type] || 'Other';
+      return group === _devTypeFilter;
     });
   }
 
