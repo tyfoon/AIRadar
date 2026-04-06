@@ -755,21 +755,9 @@ async function loadDevices() {
       deviceMap[d.mac_address] = d;
       (d.ips || []).forEach(ipRec => { ipToMac[ipRec.ip] = d.mac_address; });
     });
-    // Populate device filter dropdowns (AI + Cloud)
-    // Filter value = comma-separated IPs so backend source_ip filter still works
-    ['ai-filter-device', 'cloud-filter-device'].forEach(id => {
-      const sel = document.getElementById(id);
-      if (sel) {
-        const cur = sel.value;
-        sel.innerHTML = `<option value="">${t('ai.allDevices')}</option>`;
-        devices.forEach(d => {
-          const allIps = (d.ips || []).map(i => i.ip).join(',');
-          const label = _bestDeviceName(d.mac_address, d);
-          sel.innerHTML += `<option value="${allIps}">${label}</option>`;
-        });
-        sel.value = cur;
-      }
-    });
+    // Populate device filter dropdowns — shared helper ensures consistent
+    // names and comma-separated IP values across all insight pages.
+    ['ai-filter-device', 'cloud-filter-device'].forEach(_populateDeviceFilter);
   } catch(e) { console.error('loadDevices:', e); }
 }
 
@@ -2803,17 +2791,7 @@ async function refreshPrivacy() {
     allSvcs.forEach(s => { privSvcSel.innerHTML += `<option value="${s}">${svcDisplayName(s)}</option>`; });
     privSvcSel.value = cur;
   }
-  const privDevSel = document.getElementById('priv-filter-device');
-  if (privDevSel) {
-    const cur = privDevSel.value;
-    const allDevs = [...new Set(recent.map(e => e.source_ip))].sort();
-    privDevSel.innerHTML = `<option value="">${t('priv.allDevices')}</option>`;
-    allDevs.forEach(ip => {
-      const name = deviceName(ip);
-      privDevSel.innerHTML += `<option value="${ip}">${name !== ip ? name + ' (' + ip + ')' : ip}</option>`;
-    });
-    privDevSel.value = cur;
-  }
+  _populateDeviceFilter('priv-filter-device');
 
   // VPN stat card + expandable panel
   renderVpnAlerts(privRes.vpn_alerts || []);
@@ -3160,17 +3138,7 @@ async function refreshOther() {
   // and the services surfaced in the tree response itself.
   if (!_otherFiltersPopulated) {
     _otherFiltersPopulated = true;
-    const ipList = [];
-    const nameByIp = {};
-    (devices || []).forEach(d => {
-      const name = _bestDeviceName(d.mac_address, d);
-      (d.ips || []).forEach(ipRec => {
-        ipList.push(ipRec.ip);
-        nameByIp[ipRec.ip] = name;
-      });
-    });
-    _populateFilterSelect('other-filter-device', ipList,
-      t('ai.allDevices') || 'All devices', ip => `${nameByIp[ip] || ip} (${ip})`);
+    _populateDeviceFilter('other-filter-device');
     // Services from the current tree response — everything under
     // every category.
     const svcList = [];
@@ -3338,6 +3306,29 @@ function _populateFilterSelect(id, values, allLabel, displayFn) {
   sel.value = cur;
 }
 
+// Populate a device filter <select> from the global deviceMap.
+// Uses comma-separated IPs as value so backend source_ip filters
+// catch both IPv4 and IPv6 traffic from the same physical device.
+// This is the SINGLE source of truth for all device dropdowns —
+// use it everywhere instead of ad-hoc IP-from-events approaches.
+function _populateDeviceFilter(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${t('ai.allDevices') || 'All devices'}</option>`;
+  const entries = Object.entries(deviceMap)
+    .map(([mac, d]) => ({
+      label: _bestDeviceName(mac, d),
+      value: (d.ips || []).map(i => i.ip).join(','),
+    }))
+    .filter(e => e.value)
+    .sort((a, b) => a.label.localeCompare(b.label));
+  entries.forEach(e => {
+    sel.innerHTML += `<option value="${e.value}">${e.label}</option>`;
+  });
+  sel.value = cur;
+}
+
 async function loadGeoTraffic(direction) {
   _geoDirection = direction;
   try {
@@ -3355,20 +3346,7 @@ async function loadGeoTraffic(direction) {
     // request the first time). Only runs once per page visit.
     if (!_geoFiltersPopulated) {
       _geoFiltersPopulated = true;
-      try {
-        const devs = await fetch('/api/devices').then(r => r.json());
-        const ipList = [];
-        const nameByIp = {};
-        (devs || []).forEach(d => {
-          const name = _bestDeviceName(d.mac_address, d);
-          (d.ips || []).forEach(ipRec => {
-            ipList.push(ipRec.ip);
-            nameByIp[ipRec.ip] = name;
-          });
-        });
-        _populateFilterSelect('geo-filter-device', ipList,
-          t('ai.allDevices') || 'All devices', ip => `${nameByIp[ip] || ip} (${ip})`);
-      } catch (e) { console.warn('geo device filter:', e); }
+      _populateDeviceFilter('geo-filter-device');
 
       // Services list: pull from a quick /api/events scan (any category)
       try {
