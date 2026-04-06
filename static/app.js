@@ -4747,30 +4747,111 @@ let _currentRulesTab = 'outbound';
 
 function switchRulesTab(tab) {
   _currentRulesTab = tab;
-  const outDiv = document.getElementById('rules-tab-outbound');
-  const inDiv  = document.getElementById('rules-tab-inbound');
-  const btnOut = document.getElementById('rules-tab-btn-outbound');
-  const btnIn  = document.getElementById('rules-tab-btn-inbound');
+  const tabs = ['outbound', 'inbound', 'active'];
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const activeClass = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactiveClass = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
 
-  const activeClass = 'bg-blue-700 text-white shadow-sm';
-  const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300';
+  tabs.forEach(t => {
+    const div = document.getElementById(`rules-tab-${t}`);
+    const btn = document.getElementById(`rules-tab-btn-${t}`);
+    if (div) div.classList.toggle('hidden', t !== tab);
+    if (btn) btn.className = (t === tab) ? activeClass : inactiveClass;
+  });
 
-  if (tab === 'outbound') {
-    outDiv.classList.remove('hidden');
-    inDiv.classList.add('hidden');
-    btnOut.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
-    btnIn.className  = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
-  } else {
-    outDiv.classList.add('hidden');
-    inDiv.classList.remove('hidden');
-    btnOut.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClass}`;
-    btnIn.className  = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClass}`;
-  }
+  // Lazy-load active blocks when the tab is first selected
+  if (tab === 'active') loadActiveBlockRules();
 }
 
 async function refreshRules() {
-  await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl(), loadAdguardProtectionState()]);
+  await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl(), loadAdguardProtectionState(), loadActiveBlockRules()]);
 }
+
+// ---------------------------------------------------------------------------
+// Active Block Rules — compact overview of all active service blocks
+// ---------------------------------------------------------------------------
+async function loadActiveBlockRules() {
+  const container = document.getElementById('active-blocks-list');
+  if (!container) return;
+
+  try {
+    const policies = await fetch('/api/policies').then(r => r.json()).catch(() => []);
+    const blocked = (Array.isArray(policies) ? policies : [])
+      .filter(p => p.action === 'block');
+
+    // Update badge count on the tab button
+    const badge = document.getElementById('rules-active-count');
+    if (badge) {
+      badge.textContent = String(blocked.length);
+      badge.classList.toggle('hidden', blocked.length === 0);
+    }
+
+    if (blocked.length === 0) {
+      container.innerHTML = `
+        <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-xl p-8 text-center">
+          <i class="ph-duotone ph-shield-check text-3xl text-emerald-500 mb-2"></i>
+          <p class="text-sm text-emerald-600 dark:text-emerald-400 font-medium">${t('rules.noActiveBlockRules') || 'No active block rules.'}</p>
+          <p class="text-xs text-emerald-500/70 dark:text-emerald-400/50 mt-1">${t('rules.allServicesAllowed') || 'All services are currently allowed.'}</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = blocked.map(p => {
+      const svc = p.service_name || p.category || '—';
+      const name = p.service_name ? svcDisplayName(p.service_name) : (p.category || '—');
+      const logo = p.service_name ? svcLogo(p.service_name) : '<i class="ph-duotone ph-folder text-xl"></i>';
+
+      // Scope label
+      const scopeLabel = p.scope === 'device' && p.mac_address
+        ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">${_bestDeviceName(p.mac_address, deviceMap[p.mac_address])} </span>`
+        : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">${t('rules.global') || 'Global'}</span>`;
+
+      // Timer
+      let timerLabel = `<span class="text-[10px] text-slate-400 dark:text-slate-500">${t('timer.forever') || 'Permanent'}</span>`;
+      if (p.expires_at) {
+        const d = new Date(p.expires_at);
+        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        timerLabel = `<span class="text-[10px] text-blue-500 font-medium"><i class="ph-duotone ph-clock-countdown text-xs"></i> ${t('timer.until') || 'until'} ${dateStr} ${timeStr}</span>`;
+      }
+
+      // Category badge
+      const catLabel = p.category
+        ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">${p.category}</span>`
+        : '';
+
+      return `
+        <div class="flex items-center gap-3 p-4 bg-white dark:bg-white/[0.03] border border-red-200 dark:border-red-700/40 bg-red-50/30 dark:bg-red-900/5 rounded-xl transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 p-1.5">
+            ${logo}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${name}</span>
+              ${scopeLabel}
+              ${catLabel}
+            </div>
+            <div class="flex items-center gap-3 mt-1">
+              ${timerLabel}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            ${p.service_name ? `<button onclick="openPolicyTimerModal('${p.service_name}')" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors" title="${t('timer.setTimer') || 'Set timer'}">
+              <i class="ph-duotone ph-clock text-lg text-slate-400"></i>
+            </button>` : ''}
+            <button onclick="setServicePolicy('${p.service_name || ''}','allow',this)" class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
+              <span class="inline-flex items-center gap-1"><i class="ph-duotone ph-check text-xs"></i> ${t('rules.unblock') || 'Unblock'}</span>
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+
+  } catch (err) {
+    console.error('loadActiveBlockRules:', err);
+    container.innerHTML = `<p class="text-xs text-red-500 text-center py-4">${err.message}</p>`;
+  }
+}
+window.loadActiveBlockRules = loadActiveBlockRules;
 
 async function loadAdguardProtectionState() {
   try {

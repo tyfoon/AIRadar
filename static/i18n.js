@@ -103,6 +103,12 @@ const TRANSLATIONS = {
     'rules.allow':         'Allow',
     'rules.alert':         'Alert',
     'rules.block':         'Block',
+    'rules.activeBlocks':      'Active Blocks',
+    'rules.activeBlocksDesc':  'All currently active block rules across all services and devices.',
+    'rules.noActiveBlockRules':'No active block rules.',
+    'rules.allServicesAllowed':'All services are currently allowed.',
+    'rules.global':            'Global',
+    'rules.unblock':           'Unblock',
     'rules.updateFailed':  'Update failed',
 
     // Policy Timer
@@ -771,6 +777,12 @@ const TRANSLATIONS = {
     'rules.allow':         'Toestaan',
     'rules.alert':         'Waarschuw',
     'rules.block':         'Blokkeer',
+    'rules.activeBlocks':      'Actieve blokkeringen',
+    'rules.activeBlocksDesc':  'Alle actieve blokregels voor services en apparaten.',
+    'rules.noActiveBlockRules':'Geen actieve blokregels.',
+    'rules.allServicesAllowed':'Alle services zijn momenteel toegestaan.',
+    'rules.global':            'Globaal',
+    'rules.unblock':           'Deblokkeren',
     'rules.updateFailed':  'Update mislukt',
 
     // Beleidstimer
