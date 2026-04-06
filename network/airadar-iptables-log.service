@@ -14,7 +14,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 
-ExecStart=/bin/bash /opt/airadar/network/airadar-iptables-log.sh
+ExecStart=/bin/bash /home/goswijn/AIradar/network/airadar-iptables-log.sh
 
 # Clean up on stop
 ExecStop=/usr/sbin/iptables -D INPUT -m comment --comment "airadar-log" -j LOG
