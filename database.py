@@ -538,7 +538,7 @@ def init_db() -> None:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_type}"))
 
-    # --- Ensure notification_config.notify_service column exists ---
+    # --- Ensure notification_config columns exist ---
     inspector = inspect(engine)
     if "notification_config" in inspector.get_table_names():
         nc_cols = [c["name"] for c in inspector.get_columns("notification_config")]
@@ -546,6 +546,11 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE notification_config ADD COLUMN notify_service TEXT"
+                ))
+        if "last_notified_at" not in nc_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE notification_config ADD COLUMN last_notified_at DATETIME"
                 ))
 
     # --- Ensure service_policies columns exist ---
