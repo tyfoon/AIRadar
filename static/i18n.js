@@ -71,6 +71,11 @@ const TRANSLATIONS = {
     'other.cat.streaming': 'Streaming',
 
     // Settings — System Performance
+    'settings.dataSources':    'Data Sources',
+    'settings.dataSourcesDesc':'External lists and databases used for service classification, geo-location, and threat detection.',
+    'settings.lastUpdated':    'Last updated',
+    'settings.never':          'never',
+    'settings.pressRefresh':   'Press Refresh to load data source info.',
     'settings.performance':'System Performance',
     'settings.cpu':        'CPU',
     'settings.memory':     'Memory',
@@ -734,6 +739,11 @@ const TRANSLATIONS = {
     'other.cat.streaming': 'Streaming',
 
     // Instellingen — Systeemprestaties
+    'settings.dataSources':    'Gegevensbronnen',
+    'settings.dataSourcesDesc':'Externe lijsten en databases voor serviceclassificatie, geo-locatie en dreigingsdetectie.',
+    'settings.lastUpdated':    'Laatst bijgewerkt',
+    'settings.never':          'nooit',
+    'settings.pressRefresh':   'Druk op Vernieuwen om broninfo te laden.',
     'settings.performance':'Systeemprestaties',
     'settings.cpu':        'CPU',
     'settings.memory':     'Geheugen',

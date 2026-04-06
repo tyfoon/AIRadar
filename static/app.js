@@ -6023,6 +6023,52 @@ function _perfColor(pct) {
   return 'emerald';
 }
 
+// ---------------------------------------------------------------------------
+// Data Sources info card — shows all external lists/databases used
+// ---------------------------------------------------------------------------
+async function loadDataSources() {
+  const el = document.getElementById('data-sources-list');
+  if (!el) return;
+  el.innerHTML = `<p class="text-xs text-slate-400 text-center py-2">${t('summary.loading') || 'Loading...'}</p>`;
+  try {
+    const res = await fetch('/api/system/data-sources');
+    const data = await res.json();
+    const sources = data.sources || [];
+    if (sources.length === 0) {
+      el.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">No data sources found.</p>';
+      return;
+    }
+    el.innerHTML = sources.map(s => {
+      const entries = typeof s.entries === 'number' ? formatNumber(s.entries) : (s.entries || '—');
+      const detail = s.detail ? `<span class="text-slate-400 dark:text-slate-500 ml-1">(${s.detail})</span>` : '';
+      const lastUp = s.last_updated ? fmtTime(s.last_updated) : `<span class="text-amber-500">${t('settings.never') || 'never'}</span>`;
+      const srcLink = s.source && s.source.startsWith('github.com')
+        ? `<a href="https://${s.source}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">${s.source}</a>`
+        : (s.source || '—');
+      return `<div class="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.03]">
+        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-database text-base text-blue-600 dark:text-blue-400"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${s.name}</span>
+            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 tabular-nums">${entries} entries${detail}</span>
+          </div>
+          <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${s.description}</p>
+          <div class="flex items-center gap-3 mt-1.5 text-[10px]">
+            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-clock text-[9px]"></i> ${t('settings.lastUpdated') || 'Last updated'}: ${lastUp}</span>
+            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-link text-[9px]"></i> ${srcLink}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = `<p class="text-xs text-red-500 text-center py-4">${err.message}</p>`;
+  }
+}
+window.loadDataSources = loadDataSources;
+
+
 async function loadSystemPerformance() {
   const grid = document.getElementById('perf-host-grid');
   const section = document.getElementById('perf-container-section');

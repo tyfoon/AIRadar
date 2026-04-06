@@ -4247,6 +4247,103 @@ def _calc_container_cpu(stats: dict) -> float:
     return 0.0
 
 
+@app.get("/api/system/data-sources")
+def get_data_sources(db: Session = Depends(get_db)):
+    """Return info about all data sources / mapping lists the system uses,
+    their purpose, entry count, and when they were last refreshed.
+    """
+    from pathlib import Path as _P
+    import json as _json
+
+    sources = []
+
+    # 1. KnownDomain table (v2fly + seed)
+    kd_total = db.query(func.count(KnownDomain.id)).scalar() or 0
+    kd_seed = db.query(func.count(KnownDomain.id)).filter(KnownDomain.source == "seed").scalar() or 0
+    kd_v2fly = db.query(func.count(KnownDomain.id)).filter(KnownDomain.source == "v2fly").scalar() or 0
+    kd_last = db.query(func.max(KnownDomain.updated_at)).scalar()
+    sources.append({
+        "name": "KnownDomain (service mapping)",
+        "description": "Domain → service classification. Seeded from curated list, enriched nightly from v2fly/domain-list-community.",
+        "entries": kd_total,
+        "detail": f"{kd_seed} seed + {kd_v2fly} v2fly",
+        "last_updated": str(kd_last) if kd_last else None,
+        "source": "github.com/v2fly/domain-list-community",
+    })
+
+    # 2. Third-party services cache (AdGuard + DuckDuckGo)
+    tp_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "third_party_services.json"
+    tp_entries = 0
+    tp_fetched = None
+    if tp_file.exists():
+        try:
+            with open(tp_file) as f:
+                tp = _json.load(f)
+            tp_fetched = tp.get("fetched_at")
+            tp_entries = len(tp.get("adguard_services", {})) + len(tp.get("ddg_trackers", {}))
+        except Exception:
+            pass
+    sources.append({
+        "name": "AdGuard HostlistsRegistry",
+        "description": "Community-maintained service → domain mappings for gaming, streaming, social, shopping, gambling services.",
+        "entries": len((tp.get("adguard_services", {}) if tp_file.exists() else {})),
+        "last_updated": str(datetime.utcfromtimestamp(tp_fetched)) if tp_fetched else None,
+        "source": "github.com/AdguardTeam/HostlistsRegistry",
+    })
+    sources.append({
+        "name": "DuckDuckGo Tracker Radar",
+        "description": "Tracker domain → company ownership mapping (~3000 trackers with owner grouping).",
+        "entries": len((tp.get("ddg_trackers", {}) if tp_file.exists() else {})),
+        "last_updated": str(datetime.utcfromtimestamp(tp_fetched)) if tp_fetched else None,
+        "source": "staticcdn.duckduckgo.com",
+    })
+
+    # 3. GeoIP Country MMDB
+    geo_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "GeoLite2-Country.mmdb"
+    sources.append({
+        "name": "GeoIP Country Database",
+        "description": "IP → country mapping for the Geo Traffic dashboard (DB-IP / MaxMind format).",
+        "entries": "~200 countries",
+        "last_updated": str(datetime.utcfromtimestamp(geo_file.stat().st_mtime)) if geo_file.exists() else None,
+        "source": "github.com/sapics/ip-location-db",
+    })
+
+    # 4. ASN MMDB
+    asn_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "dbip-asn.mmdb"
+    sources.append({
+        "name": "ASN Database",
+        "description": "IP → Autonomous System (ASN + organization) for Geo drilldown and VPN provider detection.",
+        "entries": "~70k ASNs",
+        "last_updated": str(datetime.utcfromtimestamp(asn_file.stat().st_mtime)) if asn_file.exists() else None,
+        "source": "github.com/sapics/ip-location-db",
+    })
+
+    # 5. IP Metadata cache
+    meta_total = db.query(func.count(IpMetadata.ip)).scalar() or 0
+    meta_with_asn = db.query(func.count(IpMetadata.ip)).filter(IpMetadata.asn.isnot(None)).scalar() or 0
+    meta_with_ptr = db.query(func.count(IpMetadata.ip)).filter(IpMetadata.ptr.isnot(None)).scalar() or 0
+    meta_last = db.query(func.max(IpMetadata.updated_at)).scalar()
+    sources.append({
+        "name": "IP Metadata Cache",
+        "description": "Reverse DNS (PTR) + ASN lookup cache for remote IPs seen in Geo conversations.",
+        "entries": meta_total,
+        "detail": f"{meta_with_asn} with ASN, {meta_with_ptr} with PTR",
+        "last_updated": str(meta_last) if meta_last else None,
+        "source": "Runtime enrichment (DNS + MMDB)",
+    })
+
+    # 6. VPN Provider ASNs (inline in zeek_tailer)
+    sources.append({
+        "name": "VPN Provider ASN List",
+        "description": "ASN numbers of commercial VPN providers (NordVPN, ExpressVPN, Mullvad, etc.) for tunnel detection.",
+        "entries": "~15 ASNs",
+        "last_updated": None,
+        "source": "Curated (github.com/brianhama/bad-asn-list)",
+    })
+
+    return {"sources": sources}
+
+
 @app.get("/api/system/performance")
 async def system_performance():
     """Return overall host stats + per-container resource usage."""

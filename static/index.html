@@ -1532,6 +1532,18 @@
             </div>
           </div>
         </div>
+        <!-- Data Sources Info Card -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="settings.dataSources">Data Sources</h3>
+            <button onclick="loadDataSources()" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors active:scale-95" data-i18n="settings.refresh">Refresh</button>
+          </div>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mb-4" data-i18n="settings.dataSourcesDesc">External lists and databases used for service classification, geo-location, and threat detection.</p>
+          <div id="data-sources-list" class="space-y-2">
+            <p class="text-xs text-slate-400 dark:text-slate-500 text-center py-4" data-i18n="settings.pressRefresh">Press Refresh to load data source info.</p>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── ABOUT TAB ── -->
