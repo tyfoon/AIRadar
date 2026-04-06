@@ -4486,19 +4486,24 @@ async def _push_notifier_task():
             enabled_cats = set((config.enabled_categories or "").split(","))
             enabled_cats.discard("")
 
-            # Get current active alerts
-            # Reuse the same endpoint logic but inline to avoid circular calls
-            cutoff = datetime.utcnow() - timedelta(hours=1)  # only notify on recent alerts
+            # Event cutoff: look back 5 minutes for detection events
+            # (covers the last few cycles with margin for processing delay).
+            # The dedup set prevents re-notification on the same alert.
+            evt_cutoff = datetime.utcnow() - timedelta(minutes=5)
             events = (
                 db.query(DetectionEvent)
-                .filter(DetectionEvent.timestamp >= cutoff)
+                .filter(DetectionEvent.timestamp >= evt_cutoff)
                 .all()
             )
 
-            # Also check new devices
+            # New devices: use a wider 24h window (same as the summary
+            # inbox) so we don't miss devices that appeared between
+            # cycles. The dedup set ensures each device is only notified
+            # once regardless of how many cycles it appears in.
+            dev_cutoff = datetime.utcnow() - timedelta(hours=24)
             new_devices = (
                 db.query(Device)
-                .filter(Device.first_seen >= cutoff)
+                .filter(Device.first_seen >= dev_cutoff)
                 .all()
             )
 
