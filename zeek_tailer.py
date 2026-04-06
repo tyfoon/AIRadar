@@ -477,6 +477,69 @@ def _rebuild_lookup(third_party: dict[str, tuple[str, str]] | None = None) -> No
 
 DOMAIN_CACHE_SYNC_INTERVAL = 300  # refresh from DB every 5 minutes
 
+async def cleanup_memory_caches() -> None:
+    """Background task: evict stale entries from in-memory dedup dicts.
+
+    Without this, keys seen only once (e.g. a one-off VPN probe IP or
+    a transient Google context) stay in memory forever. Runs every 5
+    minutes and removes entries older than their respective TTLs.
+    """
+    while True:
+        await asyncio.sleep(300)
+        now = time.time()
+        evicted = 0
+
+        # _vpn_last_seen: (src_ip, resp_port) → ts, TTL = VPN_DEDUP_SECONDS (300)
+        for k in list(_vpn_last_seen):
+            if now - _vpn_last_seen[k] > VPN_DEDUP_SECONDS * 2:
+                del _vpn_last_seen[k]; evicted += 1
+
+        # _vpn_asn_seen: (src_ip, asn) → ts, TTL = VPN_ASN_DEDUP_SECONDS (300)
+        for k in list(_vpn_asn_seen):
+            if now - _vpn_asn_seen[k] > VPN_ASN_DEDUP_SECONDS * 2:
+                del _vpn_asn_seen[k]; evicted += 1
+
+        # _dpd_last_seen: (src_ip, proto) → ts, TTL = DPD_DEDUP_SECONDS (300)
+        for k in list(_dpd_last_seen):
+            if now - _dpd_last_seen[k] > DPD_DEDUP_SECONDS * 2:
+                del _dpd_last_seen[k]; evicted += 1
+
+        # _iot_alert_last: (type, src, dst/port) → ts, TTL = IOT_ALERT_DEDUP_SECONDS (300)
+        for k in list(_iot_alert_last):
+            if now - _iot_alert_last[k] > IOT_ALERT_DEDUP_SECONDS * 2:
+                del _iot_alert_last[k]; evicted += 1
+
+        # _google_context: src_ip → (svc, cat, ts), TTL = GOOGLE_CONTEXT_TTL (300)
+        for k in list(_google_context):
+            _, _, ts = _google_context[k]
+            if now - ts > GOOGLE_CONTEXT_TTL * 2:
+                del _google_context[k]; evicted += 1
+
+        # _known_ips: ip → (svc, cat, ts), TTL = IP_TTL_SECONDS
+        for k in list(_known_ips):
+            _, _, ts = _known_ips[k]
+            if now - ts > IP_TTL_SECONDS * 2:
+                del _known_ips[k]; evicted += 1
+
+        # _sni_last_seen: (svc, src_ip) → ts, TTL = SNI_DEDUP_SECONDS
+        for k in list(_sni_last_seen):
+            if now - _sni_last_seen[k] > SNI_DEDUP_SECONDS * 2:
+                del _sni_last_seen[k]; evicted += 1
+
+        # _device_cache: ip → ts, TTL = DEVICE_CACHE_TTL
+        for k in list(_device_cache):
+            if now - _device_cache[k] > DEVICE_CACHE_TTL * 2:
+                del _device_cache[k]; evicted += 1
+
+        # _ja4_sent: (ip, ja4, ja4s, sni) → ts, TTL = JA4_TTL_SECONDS
+        for k in list(_ja4_sent):
+            if now - _ja4_sent[k] > JA4_TTL_SECONDS * 2:
+                del _ja4_sent[k]; evicted += 1
+
+        if evicted > 0:
+            print(f"[cache-gc] Evicted {evicted} stale entries from memory caches")
+
+
 async def sync_domain_cache(client=None) -> None:
     """Background task: populate _dynamic_domain_map from KnownDomain
     every 5 minutes. This is how the zeek_tailer picks up domains
@@ -807,18 +870,22 @@ def _normalize_mac(mac: str) -> str:
         return mac.lower()
 
 
-def _resolve_mac(ip: str) -> str | None:
-    """Resolve an IP address to a MAC via ARP (IPv4) or NDP (IPv6)."""
-    # --- IPv6: use ndp -a (macOS) or ip neigh (Linux) ---
+async def _resolve_mac(ip: str) -> str | None:
+    """Resolve an IP address to a MAC via ARP (IPv4) or NDP (IPv6).
+
+    Uses async subprocess so the event loop isn't blocked during
+    network spikes when many IPs need resolution simultaneously.
+    """
     if ":" in ip:
-        return _resolve_mac_ipv6(ip)
-    # --- IPv4: use arp ---
+        return await _resolve_mac_ipv6(ip)
     try:
-        result = subprocess.run(
-            ["arp", "-n", ip],
-            capture_output=True, text=True, timeout=3,
+        proc = await asyncio.create_subprocess_exec(
+            "arp", "-n", ip,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        for line in result.stdout.splitlines():
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
+        for line in stdout.decode(errors="replace").splitlines():
             parts = line.split()
             for i, p in enumerate(parts):
                 if p == "at" and i + 1 < len(parts):
@@ -827,7 +894,7 @@ def _resolve_mac(ip: str) -> str | None:
                         return _normalize_mac(mac)
                 if p == "ether" and i + 1 < len(parts):
                     return _normalize_mac(parts[i + 1])
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (asyncio.TimeoutError, FileNotFoundError, OSError):
         pass
     return None
 
@@ -838,31 +905,39 @@ _ndp_cache_ts: float = 0.0
 _NDP_CACHE_TTL = 60  # refresh every 60s
 
 
-def _refresh_ndp_cache() -> None:
-    """Parse the full NDP neighbor table into a lookup dict."""
+async def _refresh_ndp_cache() -> None:
+    """Parse the full NDP neighbor table into a lookup dict.
+
+    Uses async subprocess to avoid blocking the event loop.
+    """
     global _ndp_cache, _ndp_cache_ts
     now = time.time()
     if now - _ndp_cache_ts < _NDP_CACHE_TTL:
         return
     _ndp_cache_ts = now
     new_cache: dict[str, str] = {}
-    try:
-        # macOS: ndp -a
-        result = subprocess.run(
-            ["ndp", "-a"], capture_output=True, text=True, timeout=5,
-        )
-        for line in result.stdout.splitlines():
-            # Format: "2a02-a447-...-8cfc.host.net a2:c0:6d:40:7:f7 en0 permanent R"
+
+    async def _run(cmd):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode(errors="replace")
+        except (asyncio.TimeoutError, FileNotFoundError, OSError):
+            return ""
+
+    # macOS: ndp -a
+    output = await _run(["ndp", "-a"])
+    if output:
+        for line in output.splitlines():
             parts = line.split()
             if len(parts) >= 2 and ":" in parts[1] and parts[1] != "(incomplete)":
-                # The hostname field encodes the IPv6 as dashes — resolve via column 0
-                # But we need the actual IPv6. Try parsing it from the hostname.
                 host = parts[0]
                 mac = _normalize_mac(parts[1])
-                # Convert dashed hostname back to IPv6
-                # "2a02-a447-d50b-0-e15b-602c-c763-8cfc.fixed6.kpn.net"
-                #  → "2a02:a447:d50b:0:e15b:602c:c763:8cfc"
-                ip_part = host.split(".")[0]  # strip domain
+                ip_part = host.split(".")[0]
                 candidate = ip_part.replace("-", ":")
                 try:
                     import ipaddress
@@ -870,28 +945,22 @@ def _refresh_ndp_cache() -> None:
                     new_cache[str(addr)] = mac
                 except ValueError:
                     pass
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    else:
         # Linux fallback: ip -6 neigh
-        try:
-            result = subprocess.run(
-                ["ip", "-6", "neigh"], capture_output=True, text=True, timeout=5,
-            )
-            for line in result.stdout.splitlines():
-                # Format: "2a02:a447:... dev eth0 lladdr a2:c0:6d:40:07:f7 REACHABLE"
-                parts = line.split()
-                if "lladdr" in parts:
-                    idx = parts.index("lladdr")
-                    if idx + 1 < len(parts):
-                        ip6 = parts[0]
-                        mac = _normalize_mac(parts[idx + 1])
-                        try:
-                            import ipaddress
-                            addr = ipaddress.ip_address(ip6)
-                            new_cache[str(addr)] = mac
-                        except ValueError:
-                            pass
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
+        output = await _run(["ip", "-6", "neigh"])
+        for line in output.splitlines():
+            parts = line.split()
+            if "lladdr" in parts:
+                idx = parts.index("lladdr")
+                if idx + 1 < len(parts):
+                    ip6 = parts[0]
+                    mac = _normalize_mac(parts[idx + 1])
+                    try:
+                        import ipaddress
+                        addr = ipaddress.ip_address(ip6)
+                        new_cache[str(addr)] = mac
+                    except ValueError:
+                        pass
     _ndp_cache = new_cache
 
 
@@ -923,10 +992,10 @@ def _eui64_to_mac(ipv6_str: str) -> str | None:
         return None
 
 
-def _resolve_mac_ipv6(ip: str) -> str | None:
+async def _resolve_mac_ipv6(ip: str) -> str | None:
     """Resolve an IPv6 address to MAC via the NDP neighbor cache,
     falling back to EUI-64 extraction for link-local addresses."""
-    _refresh_ndp_cache()
+    await _refresh_ndp_cache()
     try:
         import ipaddress
         normalized = str(ipaddress.ip_address(ip))
@@ -940,7 +1009,11 @@ def _resolve_mac_ipv6(ip: str) -> str | None:
 
 
 def _detect_local_v6_prefixes() -> list[ipaddress.IPv6Network]:
-    """Auto-detect global IPv6 /64 prefixes assigned to local interfaces."""
+    """Auto-detect global IPv6 /64 prefixes assigned to local interfaces.
+
+    This runs once at startup (not in the hot path), so synchronous
+    subprocess is acceptable here.
+    """
     prefixes: list[ipaddress.IPv6Network] = []
     try:
         result = subprocess.run(
@@ -1071,7 +1144,7 @@ async def register_device(
     if not mac:
         mac = _ip_to_mac.get(ip)  # conn.log cache
     if not mac:
-        mac = _resolve_mac(ip)    # ARP/NDP fallback
+        mac = await _resolve_mac(ip)    # ARP/NDP fallback (async)
     if mac:
         mac = _normalize_mac(mac)
     payload: dict = {"ip": ip}
@@ -2642,6 +2715,7 @@ async def main(zeek_log_dir: str) -> None:
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs
         sync_domain_cache(),           # refresh dynamic domain map from KnownDomain every 5min
+        cleanup_memory_caches(),       # evict stale entries from in-memory dedup dicts
         backfill_missing_asn(client),  # one-shot retry for pre-MMDB rows
         _refresh_device_meta(client),  # pull device metadata for Phase 2
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh

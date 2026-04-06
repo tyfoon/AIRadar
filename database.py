@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String,
-    UniqueConstraint, create_engine, inspect, text,
+    UniqueConstraint, create_engine, event, inspect, text,
 )
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
 import os
@@ -21,6 +22,19 @@ DATABASE_URL = f"sqlite:///{_db_path}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine)
+
+
+# Enable WAL (Write-Ahead Logging) to prevent "database is locked"
+# errors from concurrent writes by FastAPI (web requests) and
+# zeek_tailer (background ingest). WAL allows readers and writers
+# to operate simultaneously. PRAGMA synchronous=NORMAL gives a good
+# balance between durability and write performance.
+@event.listens_for(Engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 
 class Base(DeclarativeBase):
