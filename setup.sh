@@ -376,6 +376,12 @@ else
     info "Clients need to point their DNS to ${BRIDGE_IP_ADDR%/*}"
 fi
 
+# Install iptables LOG rules for CrowdSec port scan detection
+cp "$AIRADAR_DIR/network/airadar-iptables-log.service" /etc/systemd/system/airadar-iptables-log.service
+systemctl daemon-reload
+systemctl enable --now airadar-iptables-log.service
+ok "iptables LOG service installed (CrowdSec port scan detection)"
+
 # ── Step 7: Prepare directory structure ──────────────────────
 step 7 "Preparing AI-Radar directory structure"
 
