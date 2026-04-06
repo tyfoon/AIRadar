@@ -1552,6 +1552,10 @@ async function loadSummaryDashboard() {
     _summaryAlerts = data.alerts || [];
     _updateNavBadge(_summaryAlerts.length);
 
+    // Show/hide the "Clear all" button
+    const clearBtn = document.getElementById('btn-clear-all-alerts');
+    if (clearBtn) clearBtn.classList.toggle('hidden', _summaryAlerts.length === 0);
+
     if (_summaryAlerts.length === 0) {
       container.innerHTML = `
         <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-xl p-8 text-center">
@@ -1749,6 +1753,65 @@ async function submitAlertAction(action) {
 window.openAlertActionModal = openAlertActionModal;
 window.closeAlertActionModal = closeAlertActionModal;
 window.submitAlertAction = submitAlertAction;
+
+// ---------------------------------------------------------------------------
+// "Clear all alerts" — snooze every visible alert for 2 hours
+// ---------------------------------------------------------------------------
+// Creates one AlertException per (mac_address, alert_type, service_or_dest)
+// with expires_at = now + 2h. If the user sets a real policy (allow/block)
+// before the snooze expires, the policy takes precedence and the alert
+// won't come back. If no policy is set and the underlying traffic continues,
+// the alert reappears after 2 hours.
+async function clearAllAlerts() {
+  if (!_summaryAlerts || _summaryAlerts.length === 0) return;
+
+  const msg = t('summary.clearConfirm')
+    || `This will snooze all ${_summaryAlerts.length} alerts for 2 hours. Continue?`;
+  if (!window.confirm(msg)) return;
+
+  const btn = document.getElementById('btn-clear-all-alerts');
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('opacity-60', 'cursor-wait');
+  }
+
+  const expires = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+  let ok = 0;
+  let fail = 0;
+
+  for (const a of _summaryAlerts) {
+    try {
+      const res = await fetch('/api/exceptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mac_address: a.mac_address,
+          alert_type: a.alert_type,
+          destination: a.service_or_dest,
+          expires_at: expires,
+        }),
+      });
+      if (res.ok) ok++;
+      else fail++;
+    } catch (e) {
+      fail++;
+    }
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('opacity-60', 'cursor-wait');
+  }
+
+  if (fail === 0) {
+    showToast(t('summary.clearSuccess', { n: ok }) || `${ok} alerts snoozed for 2 hours`, 'success');
+  } else {
+    showToast(`${ok} snoozed, ${fail} failed`, 'warning');
+  }
+
+  await loadSummaryDashboard();
+}
+window.clearAllAlerts = clearAllAlerts;
 
 // ---------------------------------------------------------------------------
 // AI summary button
