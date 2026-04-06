@@ -357,26 +357,57 @@ _GOOGLE_AMBIGUOUS = {
 }
 
 
-# Merged lookup table: curated DOMAIN_MAP + third-party data (AdGuard
-# HostlistsRegistry + DuckDuckGo Tracker Radar). Built once at startup
-# by _rebuild_lookup() and refreshed periodically by the background
-# task _refresh_third_party_sources(). Curated entries always win.
+# ---------------------------------------------------------------------------
+# Dynamic domain lookup — three-layer merge
+# ---------------------------------------------------------------------------
+# Layer 1: _dynamic_domain_map (from KnownDomain DB table — seeded from
+#          former DOMAIN_MAP, enriched nightly by v2fly). Highest priority.
+# Layer 2: third-party data (AdGuard + DuckDuckGo, refreshed every 12h).
+# Layer 3: DOMAIN_MAP (static fallback until DB is populated — typically
+#          only for the first few seconds of the very first boot).
+# The merged result is _effective_domain_map, used by match_domain().
+
+_dynamic_domain_map: dict[str, tuple[str, str]] = {}
 _effective_domain_map: dict[str, tuple[str, str]] = dict(DOMAIN_MAP)
 
 
 def _rebuild_lookup(third_party: dict[str, tuple[str, str]] | None = None) -> None:
-    """Merge the curated DOMAIN_MAP with optional third-party data.
+    """Merge the three domain layers into one lookup dict.
 
-    Called once at startup and again whenever the third-party cache
-    refreshes. Keeps the hot path's lookup dict immutable during scans.
+    Called whenever _dynamic_domain_map or the third-party cache changes.
+    Priority: dynamic (KnownDomain) > curated fallback (DOMAIN_MAP) >
+    third-party (AdGuard/DDG). Keeps the hot path's lookup dict effectively
+    immutable during scans.
     """
     global _effective_domain_map
-    if third_party:
-        merged = dict(third_party)
-        merged.update(DOMAIN_MAP)  # curated wins
-        _effective_domain_map = merged
-    else:
-        _effective_domain_map = dict(DOMAIN_MAP)
+    merged = dict(third_party) if third_party else {}
+    merged.update(DOMAIN_MAP)           # static fallback wins over third-party
+    merged.update(_dynamic_domain_map)  # KnownDomain wins over everything
+    _effective_domain_map = merged
+
+
+DOMAIN_CACHE_SYNC_INTERVAL = 300  # refresh from DB every 5 minutes
+
+async def sync_domain_cache(client=None) -> None:
+    """Background task: populate _dynamic_domain_map from KnownDomain
+    every 5 minutes. This is how the zeek_tailer picks up domains
+    added/updated by the service_updater without a restart.
+    """
+    global _dynamic_domain_map
+    from database import SessionLocal as _SL, KnownDomain as _KD
+    while True:
+        try:
+            db = _SL()
+            rows = db.query(_KD.domain, _KD.service_name, _KD.category).all()
+            db.close()
+            new_map = {r.domain: (r.service_name, r.category) for r in rows}
+            if new_map != _dynamic_domain_map:
+                _dynamic_domain_map = new_map
+                _rebuild_lookup()  # merge with whatever third-party is cached
+                print(f"[domain-cache] Synced {len(new_map)} domains from KnownDomain")
+        except Exception as exc:
+            print(f"[domain-cache] Sync failed: {exc}")
+        await asyncio.sleep(DOMAIN_CACHE_SYNC_INTERVAL)
 
 
 def match_domain(
@@ -446,7 +477,9 @@ async def _refresh_third_party_sources() -> None:
                 print(
                     f"[third-party] Effective domain map rebuilt: "
                     f"{len(_effective_domain_map)} entries "
-                    f"({len(DOMAIN_MAP)} curated + {len(tp)} third-party)"
+                    f"({len(_dynamic_domain_map)} KnownDomain + "
+                    f"{len(DOMAIN_MAP)} static fallback + "
+                    f"{len(tp)} third-party)"
                 )
         except Exception as exc:
             print(f"[third-party] Refresh failed: {exc}")
@@ -2466,6 +2499,7 @@ async def main(zeek_log_dir: str) -> None:
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs
+        sync_domain_cache(),           # refresh dynamic domain map from KnownDomain every 5min
         backfill_missing_asn(client),  # one-shot retry for pre-MMDB rows
         _refresh_device_meta(client),  # pull device metadata for Phase 2
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh

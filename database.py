@@ -276,6 +276,29 @@ class IpMetadata(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class KnownDomain(Base):
+    """Dynamic domain → service mapping, populated by the service updater.
+
+    Replaces the old hardcoded DOMAIN_MAP in zeek_tailer.py. Entries
+    are seeded from the former curated list on first boot and then
+    enriched nightly by community sources (v2fly domain-list-community,
+    and in the future others). AdGuard + DuckDuckGo third-party data
+    merges separately via third_party_sources.py — KnownDomain is the
+    "curated" layer that wins on conflict.
+    """
+
+    __tablename__ = "known_domains"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, nullable=False, unique=True, index=True)
+    service_name = Column(String, nullable=False, index=True)
+    category = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False, default="seed")  # "seed", "v2fly", "manual"
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 

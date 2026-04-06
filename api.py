@@ -713,6 +713,10 @@ async def lifespan(app: FastAPI):
     expiry_task = asyncio.create_task(_expire_block_rules())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
+    # Dynamic domain list updater — seeds from former DOMAIN_MAP on first
+    # boot, then fetches v2fly community domain lists every 24h.
+    from service_updater import periodic_update_domains
+    domain_updater_task = asyncio.create_task(periodic_update_domains())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
@@ -720,6 +724,7 @@ async def lifespan(app: FastAPI):
     print(f"[rules] Block rule expiry checker running every {RULE_EXPIRY_INTERVAL}s")
     print(f"[watchdog] AdGuard auto-failsafe active (check every 30s, trigger after 3 failures)")
     print(f"[beacon] Malware C2 beacon detector running every {BEACON_SCAN_INTERVAL}s")
+    print(f"[service-updater] Domain list updater running (immediate + every 24h)")
     # Restore killswitch state from last run
     ks = _read_killswitch_state()
     if ks.get("active"):
