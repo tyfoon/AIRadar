@@ -1845,59 +1845,68 @@
 </div>
 
 <div id="alert-action-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="if (event.target === this) closeAlertActionModal()">
-  <div class="w-full max-w-lg bg-white dark:bg-[#0f1117] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden">
-    <!-- Header -->
-    <div class="px-6 py-4 border-b border-slate-200 dark:border-white/[0.05] flex items-start justify-between gap-4">
-      <div class="min-w-0 flex-1">
-        <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold" data-i18n="alertModal.eyebrow">Beoordeel melding</p>
-        <h3 id="alert-modal-title" class="text-lg font-semibold text-slate-800 dark:text-white mt-0.5 truncate">—</h3>
-        <p id="alert-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-1">—</p>
+  <div class="w-full max-w-md bg-white dark:bg-[#0f1117] border border-slate-200 dark:border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden">
+    <!-- Header: service logo + device + alert type -->
+    <div class="px-6 py-4 border-b border-slate-200 dark:border-white/[0.05]">
+      <div class="flex items-center justify-between">
+        <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold" data-i18n="alertModal.eyebrow">Review alert</p>
+        <button onclick="closeAlertActionModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"><i class="ph-duotone ph-x text-xl"></i></button>
       </div>
-      <button onclick="closeAlertActionModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
-        <i class="ph-duotone ph-x text-xl"></i>
-      </button>
+      <div class="flex items-center gap-3 mt-2">
+        <div id="alert-modal-logo" class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 overflow-hidden"></div>
+        <div class="min-w-0 flex-1">
+          <h3 id="alert-modal-title" class="text-base font-semibold text-slate-800 dark:text-white truncate">—</h3>
+          <p id="alert-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">—</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Body: Policy action group (shown for service_access / upload) -->
-    <div id="alert-modal-policy-group" class="px-6 py-5 border-b border-slate-200 dark:border-white/[0.05] hidden">
-      <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.policyTitle">Permanente beslissing</p>
-      <div class="grid grid-cols-2 gap-2">
-        <button onclick="submitAlertAction('policy_allow')"
-                class="px-3 py-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300 text-sm font-medium transition-colors flex flex-col items-center gap-1">
-          <i class="ph-duotone ph-check text-base"></i>
-          <span data-i18n="alertModal.allowAlways">Sta altijd toe</span>
+    <!-- Scope: this device or global -->
+    <div id="alert-modal-scope-section" class="px-6 py-3 border-b border-slate-200 dark:border-white/[0.05]">
+      <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-2" data-i18n="alertModal.scopeTitle">Apply to</p>
+      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+        <button id="alert-scope-btn-device" onclick="setAlertScope('device')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+          <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-device-mobile text-sm"></i> <span id="alert-scope-device-label" data-i18n="alertModal.thisDevice">This device</span></span>
         </button>
-        <button onclick="submitAlertAction('policy_block')"
-                class="px-3 py-3 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-300 text-sm font-medium transition-colors flex flex-col items-center gap-1">
-          <i class="ph-duotone ph-prohibit text-base"></i>
-          <span data-i18n="alertModal.blockNow">Blokkeer direct</span>
+        <button id="alert-scope-btn-global" onclick="setAlertScope('global')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-globe text-sm"></i> <span data-i18n="alertModal.allDevices">All devices</span></span>
         </button>
       </div>
-      <label class="mt-3 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none">
-        <input type="checkbox" id="alert-modal-global-scope" class="rounded border-slate-300 dark:border-slate-600">
-        <span data-i18n="alertModal.globalScope">Voor alle apparaten (in plaats van alleen dit apparaat)</span>
-      </label>
     </div>
 
-    <!-- Body: Snooze / exception group (shown for anomalies) -->
-    <div id="alert-modal-snooze-group" class="px-6 py-5 hidden">
-      <p class="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.snoozeTitle">Tijdelijk negeren</p>
-      <div class="grid grid-cols-3 gap-2 mb-2">
-        <button onclick="submitAlertAction('snooze_1')"
-                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze1h">Snooze 1 uur</button>
-        <button onclick="submitAlertAction('snooze_4')"
-                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze4h">Snooze 4 uur</button>
-        <button onclick="submitAlertAction('snooze_8')"
-                class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors" data-i18n="alertModal.snooze8h">Snooze 8 uur</button>
+    <!-- Policy: 3-way toggle (same as Rules page) -->
+    <div id="alert-modal-policy-group" class="px-6 py-4 border-b border-slate-200 dark:border-white/[0.05] hidden">
+      <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.policyTitle">Set rule</p>
+      <div id="alert-modal-policy-segment"></div>
+      <!-- Timer chips -->
+      <div class="mt-3">
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-2" data-i18n="timer.quickDuration">Duration</p>
+        <div class="flex flex-wrap gap-1.5">
+          <button onclick="submitAlertPolicy(null)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors" data-i18n="timer.forever">Permanent</button>
+          <button onclick="submitAlertPolicy(1)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors">1h</button>
+          <button onclick="submitAlertPolicy(2)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors">2h</button>
+          <button onclick="submitAlertPolicy(4)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors">4h</button>
+          <button onclick="submitAlertPolicy(8)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors">8h</button>
+          <button onclick="submitAlertPolicy(24)" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors">24h</button>
+        </div>
       </div>
-      <button onclick="submitAlertAction('whitelist_forever')"
-              class="w-full px-3 py-2.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors" data-i18n="alertModal.ignoreForever">Negeer voor altijd (permanente whitelist)</button>
+    </div>
+
+    <!-- Snooze group (for anomalies like VPN/beaconing) -->
+    <div id="alert-modal-snooze-group" class="px-6 py-4 hidden">
+      <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-3" data-i18n="alertModal.snoozeTitle">Snooze</p>
+      <div class="flex flex-wrap gap-1.5 mb-2">
+        <button onclick="submitAlertAction('snooze_1')" class="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors">1h</button>
+        <button onclick="submitAlertAction('snooze_4')" class="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors">4h</button>
+        <button onclick="submitAlertAction('snooze_8')" class="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-xs font-medium transition-colors">8h</button>
+        <button onclick="submitAlertAction('whitelist_forever')" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors" data-i18n="alertModal.ignoreForever">Permanent ignore</button>
+      </div>
     </div>
 
     <!-- Footer -->
     <div class="px-6 py-3 border-t border-slate-200 dark:border-white/[0.05] flex items-center justify-between">
       <p id="alert-modal-status" class="text-[11px] text-slate-400 dark:text-slate-500"></p>
-      <button onclick="closeAlertActionModal()" class="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium transition-colors" data-i18n="alertModal.cancel">Annuleer</button>
+      <button onclick="closeAlertActionModal()" class="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-medium transition-colors" data-i18n="confirm.cancel">Cancel</button>
     </div>
   </div>
 </div>

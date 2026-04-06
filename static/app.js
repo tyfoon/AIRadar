@@ -1632,82 +1632,166 @@ async function loadSummaryDashboard() {
 // ---------------------------------------------------------------------------
 // Alert action modal
 // ---------------------------------------------------------------------------
+let _alertModalScope = 'device'; // 'device' or 'global'
+let _alertModalAction = 'allow'; // currently selected action in the 3-way toggle
+
 function openAlertActionModal(idx) {
   const alert = _summaryAlerts[idx];
   if (!alert) return;
   _currentAlertContext = alert;
+  _alertModalScope = 'device'; // default to device-specific
+  _alertModalAction = 'allow';
 
   const modal = document.getElementById('alert-action-modal');
   const title = document.getElementById('alert-modal-title');
   const subtitle = document.getElementById('alert-modal-subtitle');
+  const logoEl = document.getElementById('alert-modal-logo');
   const policyGroup = document.getElementById('alert-modal-policy-group');
   const snoozeGroup = document.getElementById('alert-modal-snooze-group');
+  const scopeSection = document.getElementById('alert-modal-scope-section');
   const status = document.getElementById('alert-modal-status');
-  const globalScope = document.getElementById('alert-modal-global-scope');
 
   const devName = alert.display_name || (alert.hostname && !_isJunkHostname(alert.hostname) ? alert.hostname : null)
                 || (alert.vendor ? `${_shortVendor(alert.vendor)} device` : null)
                 || alert.mac_address;
   const svcName = svcDisplayName(alert.service_or_dest) || alert.service_or_dest;
-
-  if (title) title.textContent = `${devName} → ${svcName}`;
   const meta = _alertTypeLabel(alert.alert_type);
-  // meta.icon is now an HTML string (Phosphor), so use innerHTML.
-  if (subtitle) subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${alert.hits} hits</span>`;
+
+  if (title) title.textContent = svcName;
+  if (subtitle) subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${devName} · ${alert.hits} hits</span>`;
   if (status) status.textContent = '';
-  if (globalScope) globalScope.checked = false;
+
+  // Service logo (same 28px style as Action Inbox cards)
+  if (logoEl) {
+    const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
+    if (isAnomaly || !alert.service_or_dest) {
+      logoEl.innerHTML = `<div class="w-7 h-7 rounded bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center">${meta.icon}</div>`;
+    } else {
+      const svc = alert.service_or_dest;
+      const logoDomain = SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com';
+      const fc = svcColor(svc);
+      const fl = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
+      logoEl.innerHTML = `<img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="" style="width:28px;height:28px;object-fit:contain" onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fc};color:white;font-weight:700;font-size:14px\\'>${fl}</span>'"/>`;
+    }
+  }
+
+  // Device name in scope button
+  const devLabel = document.getElementById('alert-scope-device-label');
+  if (devLabel) devLabel.textContent = devName;
+
+  // Reset scope pills
+  setAlertScope('device');
 
   const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
-  // Anomalies: only snooze/whitelist makes sense
-  // Standard service access / upload: show both policy and snooze groups
   if (isAnomaly) {
     if (policyGroup) policyGroup.classList.add('hidden');
     if (snoozeGroup) snoozeGroup.classList.remove('hidden');
+    if (scopeSection) scopeSection.classList.add('hidden');
   } else {
     if (policyGroup) policyGroup.classList.remove('hidden');
-    if (snoozeGroup) snoozeGroup.classList.remove('hidden');
+    if (snoozeGroup) snoozeGroup.classList.add('hidden');
+    if (scopeSection) scopeSection.classList.remove('hidden');
+    // Render the 3-way toggle inside the modal
+    _renderAlertPolicyToggle(alert.service_or_dest);
   }
 
   if (modal) modal.classList.remove('hidden');
 }
 
-function closeAlertActionModal() {
-  const modal = document.getElementById('alert-action-modal');
-  if (modal) modal.classList.add('hidden');
-  _currentAlertContext = null;
+function _renderAlertPolicyToggle(serviceName) {
+  const container = document.getElementById('alert-modal-policy-segment');
+  if (!container) return;
+  // Reuse the same visual pattern as renderPolicySegment on the Rules page
+  const allowActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-semibold transition-colors bg-emerald-500 text-white shadow-sm';
+  const allowInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
+  const alertActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-semibold transition-colors bg-amber-500 text-white shadow-sm';
+  const alertInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+  const blockActive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-semibold transition-colors bg-red-500 text-white shadow-sm';
+  const blockInactive = 'flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20';
+
+  const cur = _alertModalAction;
+  container.innerHTML = `<div class="flex gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1">
+    <button type="button" onclick="setAlertAction('allow')" class="${cur === 'allow' ? allowActive : allowInactive}"><i class="ph-duotone ph-check text-xs"></i><span>${t('rules.allow') || 'Allow'}</span></button>
+    <button type="button" onclick="setAlertAction('alert')" class="${cur === 'alert' ? alertActive : alertInactive}"><i class="ph-duotone ph-warning text-xs"></i><span>${t('rules.alert') || 'Alert'}</span></button>
+    <button type="button" onclick="setAlertAction('block')" class="${cur === 'block' ? blockActive : blockInactive}"><i class="ph-duotone ph-x text-xs"></i><span>${t('rules.block') || 'Block'}</span></button>
+  </div>`;
 }
 
+function setAlertAction(action) {
+  _alertModalAction = action;
+  if (_currentAlertContext) _renderAlertPolicyToggle(_currentAlertContext.service_or_dest);
+}
+
+function setAlertScope(scope) {
+  _alertModalScope = scope;
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  const btnD = document.getElementById('alert-scope-btn-device');
+  const btnG = document.getElementById('alert-scope-btn-global');
+  if (btnD) btnD.className = scope === 'device' ? active : inactive;
+  if (btnG) btnG.className = scope === 'global' ? active : inactive;
+}
+
+// Submit the 3-way policy with optional timer from the alert modal
+async function submitAlertPolicy(hours) {
+  if (!_currentAlertContext) return;
+  const alert = _currentAlertContext;
+  const status = document.getElementById('alert-modal-status');
+  if (status) status.textContent = t('alertModal.submitting') || 'Submitting...';
+
+  const isGlobal = _alertModalScope === 'global';
+  const expires = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+
+  try {
+    const res = await fetch('/api/policies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scope: isGlobal ? 'global' : 'device',
+        mac_address: isGlobal ? null : alert.mac_address,
+        service_name: alert.service_or_dest,
+        category: alert.category,
+        action: _alertModalAction,
+        expires_at: expires,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    closeAlertActionModal();
+    const scopeLabel = isGlobal ? (t('rules.scopeGlobal') || 'Global') : (t('rules.scopePerDevice') || 'Device');
+    const actionLabel = _alertModalAction === 'allow' ? (t('rules.allow') || 'Allow')
+                      : _alertModalAction === 'alert' ? (t('rules.alert') || 'Alert')
+                      : (t('rules.block') || 'Block');
+    const timerLabel = hours ? ` (${hours}h)` : '';
+    showToast(`${svcDisplayName(alert.service_or_dest)}: ${actionLabel} · ${scopeLabel}${timerLabel}`, 'success');
+    await loadSummaryDashboard();
+  } catch (err) {
+    console.error('submitAlertPolicy:', err);
+    if (status) status.textContent = `${t('alertModal.failed') || 'Failed'}: ${err.message}`;
+  }
+}
+
+// Keep submitAlertAction for snooze/whitelist (anomaly path)
 async function submitAlertAction(action) {
   if (!_currentAlertContext) return;
   const alert = _currentAlertContext;
   const status = document.getElementById('alert-modal-status');
-  const globalScopeEl = document.getElementById('alert-modal-global-scope');
-  const globalScope = globalScopeEl ? globalScopeEl.checked : false;
-  if (status) status.textContent = t('alertModal.submitting') || 'Bezig...';
+  if (status) status.textContent = t('alertModal.submitting') || 'Submitting...';
 
   try {
-    let endpoint, body;
-    if (action === 'policy_allow' || action === 'policy_block') {
-      endpoint = '/api/policies';
-      body = {
-        scope: globalScope ? 'global' : 'device',
-        mac_address: globalScope ? null : alert.mac_address,
-        service_name: alert.service_or_dest,
-        category: alert.category,
-        action: action === 'policy_allow' ? 'allow' : 'block',
-      };
-    } else if (action.startsWith('snooze_')) {
+    let body;
+    if (action.startsWith('snooze_')) {
       const hours = parseInt(action.split('_')[1], 10);
-      const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
-      endpoint = '/api/exceptions';
       body = {
         mac_address: alert.mac_address,
         alert_type: alert.alert_type,
         destination: alert.service_or_dest,
-        expires_at: expires,
+        expires_at: new Date(Date.now() + hours * 3600 * 1000).toISOString(),
       };
     } else if (action === 'whitelist_forever') {
-      endpoint = '/api/exceptions';
       body = {
         mac_address: alert.mac_address,
         alert_type: alert.alert_type,
@@ -1717,30 +1801,33 @@ async function submitAlertAction(action) {
     } else {
       throw new Error('Unknown action: ' + action);
     }
-
-    const res = await fetch(endpoint, {
+    const res = await fetch('/api/exceptions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
-    }
-
-    // Success — close modal, toast, reload
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     closeAlertActionModal();
-    showToast(t('alertModal.success') || 'Melding verwerkt', 'success');
+    showToast(t('alertModal.success') || 'Alert processed', 'success');
     await loadSummaryDashboard();
   } catch (err) {
     console.error('submitAlertAction:', err);
-    if (status) status.textContent = `${t('alertModal.failed') || 'Mislukt'}: ${err.message}`;
+    if (status) status.textContent = `${t('alertModal.failed') || 'Failed'}: ${err.message}`;
   }
+}
+
+function closeAlertActionModal() {
+  const modal = document.getElementById('alert-action-modal');
+  if (modal) modal.classList.add('hidden');
+  _currentAlertContext = null;
 }
 
 window.openAlertActionModal = openAlertActionModal;
 window.closeAlertActionModal = closeAlertActionModal;
 window.submitAlertAction = submitAlertAction;
+window.submitAlertPolicy = submitAlertPolicy;
+window.setAlertAction = setAlertAction;
+window.setAlertScope = setAlertScope;
 
 // ---------------------------------------------------------------------------
 // "Clear all alerts" — snooze every visible alert for 2 hours
