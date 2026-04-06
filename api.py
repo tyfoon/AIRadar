@@ -2529,6 +2529,8 @@ _ANOMALY_DETECTION_TYPES = {
     "beaconing_threat",
     "iot_lateral_movement",
     "iot_suspicious_port",
+    "inbound_threat",
+    "inbound_port_scan",
 }
 
 
@@ -2882,6 +2884,31 @@ def _is_exception_active(
     return False
 
 
+def _expired_exception_cutoff(
+    expired_exceptions: list,
+    mac: Optional[str],
+    alert_type: str,
+    destination: Optional[str],
+) -> Optional[datetime]:
+    """Return the latest expires_at from matching expired exceptions.
+
+    Events that occurred before this cutoff were already "handled"
+    (snoozed or dismissed) and should not reappear after the exception
+    expires.  Returns None if no matching expired exception exists.
+    """
+    latest = None
+    for exc in expired_exceptions:
+        if exc.mac_address != mac:
+            continue
+        if exc.alert_type != alert_type:
+            continue
+        if exc.destination and exc.destination != destination:
+            continue
+        if latest is None or exc.expires_at > latest:
+            latest = exc.expires_at
+    return latest
+
+
 # ---------------------------------------------------------------------------
 # GET /api/alerts/active — the unified alert feed
 # ---------------------------------------------------------------------------
@@ -2915,8 +2942,18 @@ def get_active_alerts(
         g.id: g.parent_id
         for g in db.query(DeviceGroup).all()
     }
+    # Active exceptions suppress alerts entirely while active.
     exceptions = db.query(AlertException).filter(
         (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
+    ).all()
+
+    # Expired exceptions (within the query window) prevent old events from
+    # reappearing after a snooze/dismiss expires.  Only events that occurred
+    # AFTER the exception expired will surface as new alerts.
+    expired_exceptions = db.query(AlertException).filter(
+        AlertException.expires_at.isnot(None),
+        AlertException.expires_at <= now,
+        AlertException.expires_at >= cutoff,
     ).all()
 
     # Build IP → (mac, device) lookup map
@@ -2944,6 +2981,14 @@ def get_active_alerts(
             alert_type = e.detection_type
             destination = e.ai_service  # VPN service name or beacon dst IP
             if _is_exception_active(exceptions, mac, alert_type, destination, now):
+                continue
+            # Skip events that occurred before an expired exception —
+            # they were already handled (snoozed/dismissed) and should
+            # not reappear after the exception expires.
+            exp_cutoff = _expired_exception_cutoff(
+                expired_exceptions, mac, alert_type, destination
+            )
+            if exp_cutoff and e.timestamp <= exp_cutoff:
                 continue
             reason = "anomaly"
         else:
@@ -2982,6 +3027,12 @@ def get_active_alerts(
             # on upload / service_access alerts because only the anomaly
             # path was checking exceptions.
             if _is_exception_active(exceptions, mac, alert_type, destination, now):
+                continue
+            # Skip events handled by expired exceptions
+            exp_cutoff = _expired_exception_cutoff(
+                expired_exceptions, mac, alert_type, destination
+            )
+            if exp_cutoff and e.timestamp <= exp_cutoff:
                 continue
 
         key = (mac or e.source_ip, alert_type, destination)

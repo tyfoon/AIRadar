@@ -1498,7 +1498,7 @@ function renderDashHealthServices() {
 let _currentAlertContext = null;
 let _summaryAlerts = [];
 
-const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port']);
+const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port', 'inbound_threat', 'inbound_port_scan']);
 
 function _alertTypeLabel(type) {
   // Icons are HTML strings (Phosphor duotone). Callers must inject
@@ -1512,6 +1512,8 @@ function _alertTypeLabel(type) {
     'new_device':        { icon: '<i class="ph-duotone ph-wifi-high text-xl"></i>',        label: t('alert.newDevice') || 'New device', color: 'blue' },
     'iot_lateral_movement':{ icon: '<i class="ph-duotone ph-arrows-left-right text-xl"></i>', label: 'Lateral movement', color: 'red' },
     'iot_suspicious_port': { icon: '<i class="ph-duotone ph-warning text-xl"></i>',        label: 'Suspicious port',  color: 'red' },
+    'inbound_threat':      { icon: '<i class="ph-duotone ph-shield-warning text-xl"></i>', label: 'Inbound threat',   color: 'red' },
+    'inbound_port_scan':   { icon: '<i class="ph-duotone ph-scan text-xl"></i>',           label: 'Port scan',        color: 'orange' },
   };
   return map[type] || { icon: '<i class="ph-duotone ph-question text-xl"></i>', label: type, color: 'slate' };
 }
@@ -1687,13 +1689,13 @@ function openAlertActionModal(idx) {
   setAlertScope('device');
 
   const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
+  // Always show snooze/dismiss group so any alert can be dismissed
+  if (snoozeGroup) snoozeGroup.classList.remove('hidden');
   if (isAnomaly) {
     if (policyGroup) policyGroup.classList.add('hidden');
-    if (snoozeGroup) snoozeGroup.classList.remove('hidden');
     if (scopeSection) scopeSection.classList.add('hidden');
   } else {
     if (policyGroup) policyGroup.classList.remove('hidden');
-    if (snoozeGroup) snoozeGroup.classList.add('hidden');
     if (scopeSection) scopeSection.classList.remove('hidden');
     // Render the 3-way toggle inside the modal
     _renderAlertPolicyToggle(alert.service_or_dest);
@@ -1787,7 +1789,16 @@ async function submitAlertAction(action) {
 
   try {
     let body;
-    if (action.startsWith('snooze_')) {
+    if (action === 'dismiss') {
+      // Dismiss = exception that expires immediately.  All current events
+      // are marked as "handled"; only NEW detections will re-trigger.
+      body = {
+        mac_address: alert.mac_address,
+        alert_type: alert.alert_type,
+        destination: alert.service_or_dest,
+        expires_at: new Date(Date.now() + 1000).toISOString(),
+      };
+    } else if (action.startsWith('snooze_')) {
       const hours = parseInt(action.split('_')[1], 10);
       body = {
         mac_address: alert.mac_address,
@@ -1834,13 +1845,11 @@ window.setAlertAction = setAlertAction;
 window.setAlertScope = setAlertScope;
 
 // ---------------------------------------------------------------------------
-// "Clear all alerts" — snooze every visible alert for 2 hours
+// "Clear all alerts" — dismiss every visible alert
 // ---------------------------------------------------------------------------
 // Creates one AlertException per (mac_address, alert_type, service_or_dest)
-// with expires_at = now + 2h. If the user sets a real policy (allow/block)
-// before the snooze expires, the policy takes precedence and the alert
-// won't come back. If no policy is set and the underlying traffic continues,
-// the alert reappears after 2 hours.
+// with expires_at = now (immediately expired).  This marks all current events
+// as "handled".  Alerts only return if NEW detections occur after this point.
 async function clearAllAlerts() {
   if (!_summaryAlerts || _summaryAlerts.length === 0) {
     showToast(t('summary.noAlertsToClear') || 'No alerts to clear.', 'info');
@@ -1850,7 +1859,7 @@ async function clearAllAlerts() {
   const n = _summaryAlerts.length;
   const confirmed = await styledConfirm(
     t('summary.clearAllTitle') || 'Clear all alerts',
-    (t('summary.clearConfirm') || 'This will snooze all {n} alerts for 2 hours. They will only return if no rule has been set in the meantime.')
+    (t('summary.clearConfirm') || 'This will dismiss all {n} alerts. They will only return if new activity is detected.')
       .replace('{n}', String(n))
   );
   if (!confirmed) return;
@@ -1861,7 +1870,7 @@ async function clearAllAlerts() {
     btn.classList.add('opacity-60', 'cursor-wait');
   }
 
-  const expires = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+  const expires = new Date(Date.now() + 1000).toISOString();
   let okCount = 0;
   let fail = 0;
 
@@ -1890,9 +1899,9 @@ async function clearAllAlerts() {
   }
 
   if (fail === 0) {
-    showToast(t('summary.clearSuccess', { n: String(okCount) }) || `${okCount} alerts snoozed for 2 hours`, 'success');
+    showToast(t('summary.clearSuccess', { n: String(okCount) }) || `${okCount} alerts dismissed`, 'success');
   } else {
-    showToast(`${okCount} snoozed, ${fail} failed`, 'warning');
+    showToast(`${okCount} dismissed, ${fail} failed`, 'warning');
   }
 
   await loadSummaryDashboard();

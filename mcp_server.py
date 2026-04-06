@@ -31,6 +31,8 @@ _ANOMALY_DETECTION_TYPES = {
     "beaconing_threat",
     "iot_lateral_movement",
     "iot_suspicious_port",
+    "inbound_threat",
+    "inbound_port_scan",
 }
 
 
@@ -324,6 +326,133 @@ def snooze_anomaly(mac_address: str, alert_type: str, duration_hours: int) -> st
             f"Anomalie '{alert_type}' voor apparaat {mac_address} wordt "
             f"genegeerd voor {duration_hours} uur (tot {expires_at.strftime('%Y-%m-%d %H:%M')} UTC)."
         )
+    finally:
+        db.close()
+
+
+# ── Tool 5: search_network_activity ────────────────────────────
+
+
+@mcp.tool()
+def search_network_activity(
+    search: str = "",
+    hours: int = 24,
+    limit: int = 50,
+) -> str:
+    """Doorzoekt alle recente netwerkactiviteit (niet alleen alerts).
+    Gebruik dit om te kijken welke diensten, apps of websites worden
+    gebruikt op het netwerk en door wie.
+
+    Voorbeelden:
+    - search="hayday" of search="supercell" → kijken of Hay Day gespeeld wordt
+    - search="openai" → wie gebruikt OpenAI
+    - search="roblox" → wie speelt Roblox
+    - search="" (leeg) → alle recente activiteit
+
+    Retourneert per dienst: wie (apparaat), wanneer, hoeveel data."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        dev_ip_rows = db.query(DeviceIP).all()
+        ip_to_mac = {d.ip: d.mac_address for d in dev_ip_rows}
+        device_by_mac = {d.mac_address: d for d in db.query(Device).all()}
+
+        q = (
+            db.query(DetectionEvent)
+            .filter(DetectionEvent.timestamp >= cutoff)
+        )
+        if search:
+            pattern = f"%{search.lower()}%"
+            q = q.filter(
+                DetectionEvent.ai_service.ilike(pattern)
+                | DetectionEvent.detection_type.ilike(pattern)
+                | DetectionEvent.category.ilike(pattern)
+            )
+        events = q.order_by(DetectionEvent.timestamp.desc()).limit(limit).all()
+
+        if not events:
+            if search:
+                return (
+                    f"Geen activiteit gevonden voor '{search}' in de afgelopen "
+                    f"{hours} uur. De dienst is niet gedetecteerd op het netwerk."
+                )
+            return f"Geen netwerkactiviteit gevonden in de afgelopen {hours} uur."
+
+        # Group by (device, service)
+        groups: dict[tuple, dict] = {}
+        for e in events:
+            mac = ip_to_mac.get(e.source_ip)
+            dev = device_by_mac.get(mac) if mac else None
+            dev_name = (
+                (dev.display_name or dev.hostname or mac)
+                if dev else e.source_ip
+            )
+            key = (dev_name, e.ai_service)
+            g = groups.get(key)
+            if g is None:
+                groups[key] = {
+                    "device": dev_name,
+                    "service": e.ai_service,
+                    "category": e.category,
+                    "hits": 0,
+                    "total_bytes": 0,
+                    "first": e.timestamp,
+                    "last": e.timestamp,
+                }
+                g = groups[key]
+            g["hits"] += 1
+            g["total_bytes"] += e.bytes_transferred or 0
+            if e.timestamp < g["first"]:
+                g["first"] = e.timestamp
+            if e.timestamp > g["last"]:
+                g["last"] = e.timestamp
+
+        lines = [f"Netwerkactiviteit (afgelopen {hours} uur)"
+                 + (f", zoekterm: '{search}'" if search else "")
+                 + f": {len(groups)} resultaten\n"]
+        for g in sorted(groups.values(), key=lambda x: x["last"], reverse=True):
+            kb = g["total_bytes"] / 1024
+            lines.append(
+                f"- {g['device']} → {g['service']} ({g['category']}) "
+                f"| {g['hits']}x | {kb:.0f} KB "
+                f"| {g['first'].strftime('%H:%M')}–{g['last'].strftime('%H:%M')}"
+            )
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 6: list_devices ──────────────────────────────────────
+
+
+@mcp.tool()
+def list_devices() -> str:
+    """Geeft een overzicht van alle bekende apparaten op het netwerk,
+    inclusief naam, MAC-adres, IP-adres(sen), fabrikant en wanneer
+    ze het laatst gezien zijn. Gebruik dit om te achterhalen welke
+    apparaten er zijn en hoe ze heten."""
+    db = SessionLocal()
+    try:
+        devices = db.query(Device).order_by(Device.last_seen.desc()).all()
+        ip_rows = db.query(DeviceIP).all()
+        mac_to_ips: dict[str, list[str]] = {}
+        for row in ip_rows:
+            mac_to_ips.setdefault(row.mac_address, []).append(row.ip)
+
+        if not devices:
+            return "Geen apparaten gevonden."
+
+        lines = [f"Bekende apparaten op het netwerk: {len(devices)}\n"]
+        for d in devices:
+            name = d.display_name or d.hostname or "onbekend"
+            ips = ", ".join(mac_to_ips.get(d.mac_address, []))
+            last = d.last_seen.strftime("%Y-%m-%d %H:%M") if d.last_seen else "?"
+            vendor = d.vendor or "?"
+            lines.append(
+                f"- {name} | MAC: {d.mac_address} | IP: {ips} "
+                f"| Fabrikant: {vendor} | Laatst gezien: {last}"
+            )
+        return "\n".join(lines)
     finally:
         db.close()
 

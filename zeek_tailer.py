@@ -189,6 +189,50 @@ _IOT_SUSPICIOUS_OUTBOUND_PORTS = frozenset({
 IOT_ALERT_DEDUP_SECONDS = 300
 _iot_alert_last: dict[tuple, float] = {}
 
+# --- Inbound threat detection ---
+# Whitelist of (dest_ip, port) tuples that are expected to receive
+# external traffic (e.g. reverse proxy).  Loaded from INBOUND_WHITELIST
+# env var: "192.168.1.38:80,192.168.1.38:443"
+_INBOUND_WHITELIST: set[tuple[str, int]] = set()
+_inbound_whitelist_raw = os.environ.get("INBOUND_WHITELIST", "")
+for _entry in _inbound_whitelist_raw.split(","):
+    _entry = _entry.strip()
+    if ":" in _entry:
+        _ip, _port = _entry.rsplit(":", 1)
+        try:
+            _INBOUND_WHITELIST.add((_ip.strip(), int(_port.strip())))
+        except ValueError:
+            pass
+
+# Ports that are always suspicious when open to the internet
+_INBOUND_DANGEROUS_PORTS = frozenset({
+    22,    # SSH
+    23,    # Telnet
+    25,    # SMTP
+    445,   # SMB
+    1433,  # MSSQL
+    3306,  # MySQL
+    3389,  # RDP
+    5432,  # PostgreSQL
+    5900,  # VNC
+    6379,  # Redis
+    8080,  # HTTP alt
+    8443,  # HTTPS alt
+    27017, # MongoDB
+})
+
+INBOUND_THREAT_DEDUP_SECONDS = 300
+_inbound_threat_last: dict[tuple, float] = {}
+
+# Port scan detection: track unique ports per (src_ip, dest_ip) in a
+# sliding window.  If an external IP hits >= PORTSCAN_THRESHOLD distinct
+# ports on the same internal host within PORTSCAN_WINDOW_SECONDS, fire.
+PORTSCAN_THRESHOLD = int(os.environ.get("PORTSCAN_THRESHOLD", "5"))
+PORTSCAN_WINDOW_SECONDS = int(os.environ.get("PORTSCAN_WINDOW", "60"))
+PORTSCAN_DEDUP_SECONDS = 600
+_portscan_tracker: dict[tuple[str, str], list[tuple[float, int]]] = {}
+_portscan_last_alert: dict[tuple[str, str], float] = {}
+
 
 def _is_iot_device(mac: str | None) -> str | None:
     """Return the device type string if the MAC is an IoT device, else None.
@@ -2102,6 +2146,13 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         evasion_svc = DPD_EVASION_PROTOCOLS.get(dpd_proto)
                         if not evasion_svc:
                             continue
+                        # DTLS is used by many legitimate Apple services
+                        # (iCloud Private Relay, FaceTime, AirDrop, APNs).
+                        # Only flag DTLS when the destination is a known
+                        # VPN provider ASN to avoid false positives.
+                        if dpd_proto == "dtls":
+                            if not resp_ip or not _vpn_provider_for_ip(resp_ip):
+                                continue
                         # Dedup per (src_ip, protocol)
                         now_dpd = time.time()
                         dpd_key = (src_ip, dpd_proto)
@@ -2191,6 +2242,73 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                     f"→ external:{resp_port}"
                                 )
 
+                # --- Inbound threat detection ---
+                # External IP initiating a connection to an internal device.
+                if (
+                    resp_ip
+                    and not _is_local_ip(src_ip)
+                    and _is_local_ip(resp_ip)
+                    and proto == "tcp"
+                ):
+                    now_ib = time.time()
+
+                    # --- Port scan detection ---
+                    # Track distinct ports per (src, dest) in a sliding window.
+                    ps_key = (src_ip, resp_ip)
+                    ps_entries = _portscan_tracker.get(ps_key)
+                    if ps_entries is None:
+                        ps_entries = []
+                        _portscan_tracker[ps_key] = ps_entries
+                    ps_entries.append((now_ib, resp_port))
+                    # Prune old entries outside the window
+                    cutoff_ps = now_ib - PORTSCAN_WINDOW_SECONDS
+                    _portscan_tracker[ps_key] = [
+                        (t, p) for t, p in ps_entries if t >= cutoff_ps
+                    ]
+                    distinct_ports = {p for _, p in _portscan_tracker[ps_key]}
+                    if (
+                        len(distinct_ports) >= PORTSCAN_THRESHOLD
+                        and (now_ib - _portscan_last_alert.get(ps_key, 0)) >= PORTSCAN_DEDUP_SECONDS
+                    ):
+                        _portscan_last_alert[ps_key] = now_ib
+                        port_list = ",".join(str(p) for p in sorted(distinct_ports)[:10])
+                        await send_event(
+                            client,
+                            detection_type="inbound_port_scan",
+                            ai_service=f"portscan_{resp_ip}",
+                            source_ip=src_ip,
+                            bytes_transferred=0,
+                            category="security",
+                        )
+                        print(
+                            f"    └─ INBOUND PORT SCAN: {src_ip} → {resp_ip} "
+                            f"({len(distinct_ports)} ports: {port_list})"
+                        )
+
+                    # --- Suspicious inbound port ---
+                    # Skip whitelisted (ip, port) combos and non-dangerous ports.
+                    if (resp_ip, resp_port) not in _INBOUND_WHITELIST:
+                        is_dangerous = resp_port in _INBOUND_DANGEROUS_PORTS
+                        # For non-dangerous ports, only alert if they're not
+                        # common web ports (80/443) — those are likely legit
+                        # services even if not explicitly whitelisted.
+                        if is_dangerous or resp_port not in (80, 443):
+                            dk = ("inbound", src_ip, resp_ip, resp_port)
+                            if (now_ib - _inbound_threat_last.get(dk, 0)) >= INBOUND_THREAT_DEDUP_SECONDS:
+                                _inbound_threat_last[dk] = now_ib
+                                sev = "CRITICAL" if is_dangerous else "WARNING"
+                                await send_event(
+                                    client,
+                                    detection_type="inbound_threat",
+                                    ai_service=f"inbound_{resp_port}",
+                                    source_ip=src_ip,
+                                    bytes_transferred=orig_bytes + resp_bytes,
+                                    category="security",
+                                )
+                                print(
+                                    f"    └─ INBOUND {sev}: {src_ip} → {resp_ip}:{resp_port}"
+                                )
+
                 # --- Evict stale IP mappings before further checks ---
                 if resp_ip in _known_ips:
                     _, _, _learned = _known_ips[resp_ip]
@@ -2278,7 +2396,7 @@ DPD_EVASION_PROTOCOLS: dict[str, str] = {
     "wireguard":  "vpn_wireguard",
     "tor":        "tor_active",
     "socks":      "vpn_socks_proxy",
-    "dtls":       "vpn_dtls_tunnel",    # DTLS can indicate VPN (e.g. AnyConnect)
+    "dtls":       "vpn_dtls_tunnel",    # DTLS can indicate VPN (e.g. AnyConnect) — ASN-gated below
     # NOTE: ayiya + teredo intentionally removed. Both are IPv6-over-IPv4
     # tunnel protocols from the 2000s. SixXS (the main AYIYA provider)
     # shut down in 2017 and Microsoft Teredo has been deprecated for
