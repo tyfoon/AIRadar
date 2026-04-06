@@ -64,7 +64,15 @@ services:
     network_mode: "host"
     restart: unless-stopped
     environment:
-      - COLLECTIONS=crowdsecurity/linux
+      # Collections define which log parsers + attack scenarios CrowdSec
+      # runs. Each one adds detection capability for a specific vector:
+      #   linux           — SSH brute force, syslog anomalies
+      #   zeek-logs       — port scanning, connection floods from Zeek conn.log
+      #   iptables        — multi-port scan detection from kernel logs
+      #   base-http-scenarios — HTTP probing, bad user-agents, aggressive crawls
+      #   http-cve        — known CVE exploit attempts in HTTP
+      #   whitelist-good-actors — prevents false positives on search engine bots
+      - COLLECTIONS=crowdsecurity/linux crowdsecurity/zeek-logs crowdsecurity/iptables crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/whitelist-good-actors
     volumes:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
