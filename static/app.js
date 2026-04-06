@@ -4222,11 +4222,7 @@ function openDeviceDrawer(mac, service, category) {
     _drawerActiveTab = 'summary';
   }
 
-  // Tabs: Summary · AI Recap · (ai|cloud|tracking|other that have events).
-  // Uses the exact same Tailwind utility pattern as Rules / AI / Settings
-  // / Geo / IPS so every tab bar in the app is pixel-identical. Don't
-  // use the .drawer-tab CSS class anymore — direct utilities prevent
-  // the subtle drift that CSS overrides tend to introduce.
+  // Tabs: Summary · Connections · AI Recap · (category tabs).
   const tabBase = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap';
   const tabActive = `${tabBase} bg-blue-700 text-white shadow-sm`;
   const tabInactive = `${tabBase} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
@@ -4234,6 +4230,7 @@ function openDeviceDrawer(mac, service, category) {
 
   const tabsHtml = [
     `<button class="${tabCls('summary')}" data-tab="summary" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
+    `<button class="${tabCls('connections')}" data-tab="connections" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap text-xs"></i> ${t('dev.drawerConnectionsTab') || 'Connections'}</button>`,
     `<button class="${tabCls('report')}" data-tab="report" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
   ];
   cats.forEach(c => {
@@ -4291,6 +4288,14 @@ function _applyDrawerFilter(serviceFilter) {
     hideAll();
     if (reportView) reportView.classList.remove('hidden');
     if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  if (_drawerActiveTab === 'connections') {
+    hideAll();
+    if (summaryView) summaryView.classList.remove('hidden');
+    if (countEl) countEl.textContent = '';
+    _loadDrawerConnections();
     return;
   }
 
@@ -4444,6 +4449,81 @@ function _renderDrawerSummary() {
 
   el.innerHTML = html;
 }
+
+// ---------------------------------------------------------------------------
+// Drawer Connections tab — raw IP-level connections from geo_conversations
+// ---------------------------------------------------------------------------
+async function _loadDrawerConnections() {
+  const el = document.getElementById('drawer-summary-view');
+  if (!el || !_drawerMac) return;
+
+  el.innerHTML = `<div class="flex items-center gap-2 text-slate-400 py-6 justify-center">
+    <i class="ph-duotone ph-circle-notch animate-spin text-lg"></i>
+    <span class="text-sm">${t('dev.loadingConnections') || 'Loading connections...'}</span>
+  </div>`;
+
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(_drawerMac)}/connections`);
+    const data = await res.json();
+    const conns = data.connections || [];
+
+    if (conns.length === 0) {
+      el.innerHTML = `<div class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('dev.noConnections') || 'No connections recorded.'}</div>`;
+      return;
+    }
+
+    const totalBytes = conns.reduce((s, c) => s + (c.bytes || 0), 0);
+    const totalHits = conns.reduce((s, c) => s + (c.hits || 0), 0);
+
+    let html = `<div class="mb-3 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">${t('dev.connectionsTitle') || 'Network Connections'}</h3>
+      <span class="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">${conns.length} dest. · ${_fmtBytes(totalBytes)} · ${formatNumber(totalHits)} conn.</span>
+    </div>`;
+
+    html += '<div class="space-y-1">';
+    conns.forEach(c => {
+      const dirIcon = c.direction === 'outbound'
+        ? '<i class="ph-duotone ph-arrow-up-right text-xs text-blue-500" title="Outbound"></i>'
+        : '<i class="ph-duotone ph-arrow-down-left text-xs text-emerald-500" title="Inbound"></i>';
+      const flag = _flagEmoji(c.country_code);
+
+      // Best label: PTR > ASN org > service > raw IP
+      let primary;
+      if (c.ptr) {
+        primary = `<span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">${c.ptr}</span>`;
+      } else if (c.asn_org) {
+        primary = `<span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">AS${c.asn} · ${c.asn_org}</span>`;
+      } else if (c.service && c.service !== 'unknown') {
+        primary = `<span class="text-xs font-medium text-slate-700 dark:text-slate-200">${svcDisplayName(c.service)}</span>`;
+      } else {
+        primary = `<span class="text-xs font-mono text-slate-500 dark:text-slate-400">${c.resp_ip}</span>`;
+      }
+
+      const ipLine = c.ptr || c.asn_org
+        ? `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${c.resp_ip}</div>`
+        : '';
+
+      html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+        <span class="flex-shrink-0">${dirIcon}</span>
+        <span class="flex-shrink-0 text-sm">${flag}</span>
+        <div class="flex-1 min-w-0">
+          ${primary}
+          ${ipLine}
+        </div>
+        <div class="flex-shrink-0 text-right">
+          <div class="text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_fmtBytes(c.bytes)}</div>
+          <div class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${c.hits} conn.</div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = `<p class="text-sm text-red-500 text-center py-4">${err.message}</p>`;
+  }
+}
+
 
 function _renderDrawerEvents(reset) {
   const tbody = document.getElementById('drawer-event-body');

@@ -5074,6 +5074,54 @@ def _is_iot_backend(device: Device) -> bool:
     return bool(_classify_device_type_backend(device))
 
 
+@app.get("/api/devices/{mac_address}/connections")
+def device_connections(
+    mac_address: str,
+    db: Session = Depends(get_db),
+):
+    """Return all network connections (from geo_conversations) for a device.
+
+    This fills the gap where detection_events (SNI-based) shows zero
+    rows but the device has hundreds of IP-level connections visible
+    in conn.log via geo_conversations. Shows destination IP, country,
+    ASN/PTR, bytes, hits, direction.
+    """
+    rows = (
+        db.query(GeoConversation)
+        .filter(GeoConversation.mac_address == mac_address)
+        .order_by(GeoConversation.bytes_transferred.desc())
+        .limit(100)
+        .all()
+    )
+
+    # Enrich with ip_metadata
+    resp_ips = [r.resp_ip for r in rows]
+    meta_map = {
+        m.ip: m for m in
+        db.query(IpMetadata).filter(IpMetadata.ip.in_(resp_ips)).all()
+    } if resp_ips else {}
+
+    return {
+        "mac_address": mac_address,
+        "connections": [
+            {
+                "resp_ip": r.resp_ip,
+                "country_code": r.country_code,
+                "direction": r.direction,
+                "service": r.ai_service,
+                "bytes": r.bytes_transferred,
+                "hits": r.hits,
+                "first_seen": str(r.first_seen) if r.first_seen else None,
+                "last_seen": str(r.last_seen) if r.last_seen else None,
+                "ptr": meta_map[r.resp_ip].ptr if r.resp_ip in meta_map else None,
+                "asn": meta_map[r.resp_ip].asn if r.resp_ip in meta_map else None,
+                "asn_org": meta_map[r.resp_ip].asn_org if r.resp_ip in meta_map else None,
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.get("/api/iot/fleet")
 def iot_fleet(db: Session = Depends(get_db)):
     """Return all IoT devices with traffic stats and health scores."""
