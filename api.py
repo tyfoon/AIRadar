@@ -4273,48 +4273,62 @@ def get_data_sources(db: Session = Depends(get_db)):
 
     # 2. Third-party services cache (AdGuard + DuckDuckGo)
     tp_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "third_party_services.json"
-    tp_entries = 0
+    tp = {}  # safe default
     tp_fetched = None
     if tp_file.exists():
         try:
             with open(tp_file) as f:
-                tp = _json.load(f)
+                tp = _json.load(f) or {}
             tp_fetched = tp.get("fetched_at")
-            tp_entries = len(tp.get("adguard_services", {})) + len(tp.get("ddg_trackers", {}))
         except Exception:
+            pass
+    adguard_entries = tp.get("adguard_services", {})
+    ddg_entries = tp.get("ddg_trackers", {})
+    tp_time = None
+    if tp_fetched:
+        try:
+            tp_time = str(datetime.utcfromtimestamp(float(tp_fetched)))
+        except (TypeError, ValueError, OSError):
             pass
     sources.append({
         "name": "AdGuard HostlistsRegistry",
         "description": "Community-maintained service → domain mappings for gaming, streaming, social, shopping, gambling services.",
-        "entries": len((tp.get("adguard_services", {}) if tp_file.exists() else {})),
-        "last_updated": str(datetime.utcfromtimestamp(tp_fetched)) if tp_fetched else None,
+        "entries": len(adguard_entries),
+        "last_updated": tp_time,
         "source": "github.com/AdguardTeam/HostlistsRegistry",
     })
     sources.append({
         "name": "DuckDuckGo Tracker Radar",
         "description": "Tracker domain → company ownership mapping (~3000 trackers with owner grouping).",
-        "entries": len((tp.get("ddg_trackers", {}) if tp_file.exists() else {})),
-        "last_updated": str(datetime.utcfromtimestamp(tp_fetched)) if tp_fetched else None,
+        "entries": len(ddg_entries),
+        "last_updated": tp_time,
         "source": "staticcdn.duckduckgo.com",
     })
 
     # 3. GeoIP Country MMDB
-    geo_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "GeoLite2-Country.mmdb"
+    def _file_mtime(path):
+        try:
+            return str(datetime.utcfromtimestamp(path.stat().st_mtime)) if path.exists() else None
+        except Exception:
+            return None
+
+    data_dir = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data"))
+    geo_file = data_dir / "GeoLite2-Country.mmdb"
     sources.append({
         "name": "GeoIP Country Database",
         "description": "IP → country mapping for the Geo Traffic dashboard (DB-IP / MaxMind format).",
         "entries": "~200 countries",
-        "last_updated": str(datetime.utcfromtimestamp(geo_file.stat().st_mtime)) if geo_file.exists() else None,
+        "last_updated": _file_mtime(geo_file),
         "source": "github.com/sapics/ip-location-db",
     })
 
     # 4. ASN MMDB
-    asn_file = _P(os.environ.get("AIRADAR_DATA_DIR", "/app/data")) / "dbip-asn.mmdb"
+    asn_file = data_dir / "dbip-asn.mmdb"
     sources.append({
         "name": "ASN Database",
         "description": "IP → Autonomous System (ASN + organization) for Geo drilldown and VPN provider detection.",
         "entries": "~70k ASNs",
-        "last_updated": str(datetime.utcfromtimestamp(asn_file.stat().st_mtime)) if asn_file.exists() else None,
+        "last_updated": _file_mtime(asn_file),
         "source": "github.com/sapics/ip-location-db",
     })
 
