@@ -5098,7 +5098,7 @@ async function openGroupMembersModal(groupId, groupName) {
   document.getElementById('confirm-modal-title').textContent = `${groupName} — ${t('groups.manageMembers') || 'Manage Members'}`;
   document.getElementById('confirm-modal-message').innerHTML = `<div class="max-h-[300px] overflow-y-auto space-y-0.5 -mx-2">${msg}</div>`;
   modal.classList.remove('hidden');
-  _confirmResolve = () => { modal.classList.add('hidden'); };
+  _confirmResolve = () => { modal.classList.add('hidden'); loadGroups(); };
 }
 
 async function toggleGroupMember(groupId, mac, add) {
