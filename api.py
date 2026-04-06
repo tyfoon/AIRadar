@@ -4413,6 +4413,7 @@ def get_notification_settings(db: Session = Depends(get_db)):
         "provider": config.provider,
         "url": config.url,
         "token_masked": _mask_token(config.token),
+        "notify_service": config.notify_service,
         "enabled_categories": config.enabled_categories,
         "is_enabled": config.is_enabled,
     }
@@ -4431,6 +4432,8 @@ def update_notification_settings(
         token = payload["token"].strip()
         if "••••" not in token:
             config.token = token
+    if "notify_service" in payload:
+        config.notify_service = (payload["notify_service"] or "").strip()
     if "enabled_categories" in payload:
         config.enabled_categories = payload["enabled_categories"]
     if "is_enabled" in payload:
@@ -4446,10 +4449,14 @@ async def test_notification(db: Session = Depends(get_db)):
     if not config.url or not config.token:
         raise HTTPException(status_code=400, detail="URL and token must be configured first")
 
+    # Use the configured notify service, or fall back to the generic notify.notify
+    svc = config.notify_service or "notify"
+    service_path = f"notify/{svc}" if svc != "notify" else "notify/notify"
+
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                f"{config.url}/api/services/notify/notify",
+                f"{config.url}/api/services/{service_path}",
                 headers={
                     "Authorization": f"Bearer {config.token}",
                     "Content-Type": "application/json",
@@ -4460,7 +4467,7 @@ async def test_notification(db: Session = Depends(get_db)):
                 },
             )
             if resp.status_code in (200, 201):
-                return {"status": "ok", "message": "Test notification sent successfully"}
+                return {"status": "ok", "message": f"Test sent via {service_path}"}
             else:
                 return {"status": "error", "message": f"HA returned HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as exc:
@@ -4543,13 +4550,15 @@ async def _push_notifier_task():
 
             db.close()
 
-            # Send notifications
+            # Send notifications to the configured service (or generic notify)
             if notifications:
+                svc = config.notify_service or "notify"
+                svc_path = f"notify/{svc}" if svc != "notify" else "notify/notify"
                 async with httpx.AsyncClient(timeout=10) as client:
                     for n in notifications[:5]:  # cap at 5 per cycle
                         try:
                             await client.post(
-                                f"{config.url}/api/services/notify/notify",
+                                f"{config.url}/api/services/{svc_path}",
                                 headers={
                                     "Authorization": f"Bearer {config.token}",
                                     "Content-Type": "application/json",

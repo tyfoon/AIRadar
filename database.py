@@ -348,6 +348,7 @@ class NotificationConfig(Base):
     provider = Column(String, nullable=False, default="homeassistant")
     url = Column(String, nullable=True)          # e.g. http://homeassistant.local:8123
     token = Column(String, nullable=True)        # Long-Lived Access Token
+    notify_service = Column(String, nullable=True)  # e.g. "mobile_app_iphone_van_goswijn"
     enabled_categories = Column(String, nullable=True)  # comma-separated: "security,ai,gaming"
     is_enabled = Column(Boolean, nullable=False, default=True)
 
@@ -535,6 +536,16 @@ def init_db() -> None:
             if col_name not in dev_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_type}"))
+
+    # --- Ensure notification_config.notify_service column exists ---
+    inspector = inspect(engine)
+    if "notification_config" in inspector.get_table_names():
+        nc_cols = [c["name"] for c in inspector.get_columns("notification_config")]
+        if "notify_service" not in nc_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE notification_config ADD COLUMN notify_service TEXT"
+                ))
 
     # --- Ensure service_policies columns exist ---
     inspector = inspect(engine)

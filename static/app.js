@@ -6031,9 +6031,11 @@ async function loadNotificationSettings() {
     const data = await res.json();
     const urlEl = document.getElementById('notify-ha-url');
     const tokenEl = document.getElementById('notify-ha-token');
+    const serviceEl = document.getElementById('notify-ha-service');
     const enabledEl = document.getElementById('notify-ha-enabled');
     if (urlEl) urlEl.value = data.url || '';
     if (tokenEl) tokenEl.placeholder = data.token_masked || 'eyJhbGciOiJIUzI1NiIs...';
+    if (serviceEl) serviceEl.value = data.notify_service || '';
     if (enabledEl) enabledEl.checked = !!data.is_enabled;
     // Set category checkboxes
     const cats = new Set((data.enabled_categories || '').split(','));
@@ -6048,6 +6050,7 @@ async function loadNotificationSettings() {
 async function saveNotificationSettings() {
   const url = document.getElementById('notify-ha-url')?.value || '';
   const token = document.getElementById('notify-ha-token')?.value || '';
+  const service = document.getElementById('notify-ha-service')?.value || '';
   const enabled = document.getElementById('notify-ha-enabled')?.checked || false;
   const cats = [];
   document.querySelectorAll('#notify-categories input[type="checkbox"]').forEach(cb => {
@@ -6062,6 +6065,7 @@ async function saveNotificationSettings() {
       body: JSON.stringify({
         url: url,
         token: token || undefined,
+        notify_service: service,
         enabled_categories: cats.join(','),
         is_enabled: enabled,
       }),

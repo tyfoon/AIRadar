@@ -1693,6 +1693,14 @@
               </label>
               <input type="password" id="notify-ha-token" placeholder="eyJhbGciOiJIUzI1NiIs..." class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-mono">
             </div>
+            <div>
+              <label class="text-xs text-slate-500 dark:text-slate-400 font-medium block mb-1">
+                Notify Service (target device)
+                <span class="ml-1 text-slate-400 cursor-help" title="The HA notify service to call, e.g. 'mobile_app_iphone_van_goswijn'. Find yours in HA → Developer Tools → Services → search 'notify'. Leave empty to notify ALL devices."><i class="ph-duotone ph-info text-xs"></i></span>
+              </label>
+              <input type="text" id="notify-ha-service" placeholder="mobile_app_iphone_van_goswijn" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-mono">
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="notify.serviceHint">Find your device service in HA → Developer Tools → Services → search "notify"</p>
+            </div>
           </div>
 
           <!-- Categories -->
