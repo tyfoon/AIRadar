@@ -87,6 +87,7 @@ from database import (
     GeoTraffic,
     GeoConversation,
     IpMetadata,
+    KnownDomain,
     ServicePolicy,
     SessionLocal,
     TlsFingerprint,
