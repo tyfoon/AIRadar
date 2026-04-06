@@ -1089,7 +1089,24 @@
       <!-- ── OUTBOUND TAB ── -->
       <div id="rules-tab-outbound" class="space-y-6">
 
-        <!-- Global Filters -->
+        <!-- Scope selector -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+            <button id="rules-scope-btn-global" onclick="switchRulesScope('global')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+              <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-globe text-sm"></i> <span data-i18n="rules.scopeGlobal">Global</span></span>
+            </button>
+            <button id="rules-scope-btn-device" onclick="switchRulesScope('device')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+              <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-device-mobile text-sm"></i> <span data-i18n="rules.scopePerDevice">Per device</span></span>
+            </button>
+          </div>
+          <select id="rules-scope-device-select" onchange="onRulesDeviceSelected(this.value)" class="hidden text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5 max-w-[260px]">
+            <option value="" data-i18n="rules.selectDevice">Select a device...</option>
+          </select>
+          <span id="rules-scope-label" class="hidden text-xs text-blue-600 dark:text-blue-400 font-medium"></span>
+        </div>
+
+        <!-- Global Filters (hidden in device scope mode) -->
+        <div id="rules-global-filters-section">
         <div>
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="rules.globalFilters">Global Office Filters</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1182,6 +1199,8 @@
 
           </div>
         </div>
+
+        </div><!-- /rules-global-filters-section -->
 
         <!-- Granular App Control -->
         <div>
@@ -1614,6 +1633,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="navigateToDeviceRules(_drawerMac)" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-blue-500 transition-colors" title="Manage rules"><i class="ph-duotone ph-shield-check text-lg"></i></button>
         <button onclick="closeDeviceDrawer()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg">&times;</button>
       </div>
     </div>

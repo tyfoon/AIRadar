@@ -4690,6 +4690,7 @@ function _renderDeviceMatrix() {
 
     // Edit (pencil) button — appears on row hover via CSS .dev-edit-btn
     const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="dev-edit-btn ml-1 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.editName')}"><i class="ph-duotone ph-pencil-simple text-sm"></i></button>`;
+    const rulesBtn = dev ? `<button onclick="event.stopPropagation();navigateToDeviceRules('${mac}')" class="dev-edit-btn ml-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="${t('rules.manageRules')}"><i class="ph-duotone ph-shield-check text-sm"></i></button>` : '';
 
     // Name display: friendly name as primary, original name as secondary
     const nameEscaped = bestName.replace(/"/g, '&quot;');
@@ -4703,6 +4704,7 @@ function _renderDeviceMatrix() {
         <div class="flex items-center gap-1" id="dev-name-row-${mac.replace(/[^a-zA-Z0-9]/g, '_')}">
           <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium truncate max-w-[180px]" data-mac="${dev ? dev.mac_address : ''}" title="${nameEscaped}">${bestName}</span>
           ${editBtn}
+          ${rulesBtn}
           ${reportBtn}
         </div>
         ${secondaryName}
@@ -4814,6 +4816,10 @@ async function refreshDevices() {
 
 // --- RULES ---
 let _currentRulesTab = 'outbound';
+let _rulesScopeMode = 'global';  // 'global' or 'device'
+let _rulesScopeMac = null;
+let _devicePolicyByService = {};
+let _deviceOverrideServices = new Set();
 
 function switchRulesTab(tab) {
   _currentRulesTab = tab;
@@ -4834,8 +4840,91 @@ function switchRulesTab(tab) {
 }
 
 async function refreshRules() {
+  _populateRulesDeviceFilter();
   await Promise.all([loadGlobalFilterStatus(), loadIpsStatus(), loadAccessControl(), loadAdguardProtectionState(), loadActiveBlockRules()]);
 }
+
+// ---------------------------------------------------------------------------
+// Rules scope: Global vs Per-device
+// ---------------------------------------------------------------------------
+function switchRulesScope(mode) {
+  _rulesScopeMode = mode;
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  const btnG = document.getElementById('rules-scope-btn-global');
+  const btnD = document.getElementById('rules-scope-btn-device');
+  const sel = document.getElementById('rules-scope-device-select');
+  const lbl = document.getElementById('rules-scope-label');
+  const globalSection = document.getElementById('rules-global-filters-section');
+
+  if (mode === 'global') {
+    if (btnG) btnG.className = active;
+    if (btnD) btnD.className = inactive;
+    if (sel) sel.classList.add('hidden');
+    if (lbl) { lbl.classList.add('hidden'); lbl.textContent = ''; }
+    if (globalSection) globalSection.classList.remove('hidden');
+    _rulesScopeMac = null;
+    loadAccessControl();
+  } else {
+    if (btnG) btnG.className = inactive;
+    if (btnD) btnD.className = active;
+    if (sel) sel.classList.remove('hidden');
+    if (globalSection) globalSection.classList.add('hidden');
+    // If a device is already selected in the dropdown, load its rules
+    if (sel && sel.value) {
+      _rulesScopeMac = sel.value;
+      const dev = deviceMap[sel.value];
+      if (lbl) { lbl.textContent = dev ? _bestDeviceName(sel.value, dev) : sel.value; lbl.classList.remove('hidden'); }
+      loadAccessControl();
+    } else if (lbl) {
+      lbl.classList.add('hidden');
+    }
+  }
+}
+
+function onRulesDeviceSelected(mac) {
+  _rulesScopeMac = mac || null;
+  const lbl = document.getElementById('rules-scope-label');
+  if (mac && lbl) {
+    const dev = deviceMap[mac];
+    lbl.textContent = dev ? _bestDeviceName(mac, dev) : mac;
+    lbl.classList.remove('hidden');
+  } else if (lbl) {
+    lbl.classList.add('hidden');
+  }
+  if (mac) loadAccessControl();
+}
+
+function _populateRulesDeviceFilter() {
+  const sel = document.getElementById('rules-scope-device-select');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${t('rules.selectDevice') || 'Select a device...'}</option>`;
+  Object.entries(deviceMap)
+    .map(([mac, d]) => ({ mac, label: _bestDeviceName(mac, d) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach(e => { sel.innerHTML += `<option value="${e.mac}">${e.label}</option>`; });
+  sel.value = cur;
+}
+
+function navigateToDeviceRules(mac) {
+  if (!mac) return;
+  closeDeviceDrawer();
+  _rulesScopeMode = 'device';
+  _rulesScopeMac = mac;
+  navigate('rules');
+  // After navigation + render, pre-select the device
+  setTimeout(() => {
+    const sel = document.getElementById('rules-scope-device-select');
+    if (sel) sel.value = mac;
+    switchRulesScope('device');
+  }, 100);
+}
+
+window.switchRulesScope = switchRulesScope;
+window.onRulesDeviceSelected = onRulesDeviceSelected;
+window.navigateToDeviceRules = navigateToDeviceRules;
 
 // ---------------------------------------------------------------------------
 // Active Block Rules — compact overview of all active service blocks
@@ -5501,24 +5590,52 @@ let _policyByService = {};  // service_name → action ("allow"|"alert"|"block")
 
 async function loadAccessControl() {
   try {
-    // Fetch services and policies in parallel
-    const [servicesRes, policiesRes] = await Promise.all([
+    // Always fetch global policies. Additionally fetch device-specific
+    // policies when a device is selected in the scope bar.
+    const fetches = [
       fetch('/api/rules/services').then(r => r.json()),
       fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
-    ]);
+    ];
+    const isDeviceMode = _rulesScopeMode === 'device' && _rulesScopeMac;
+    if (isDeviceMode) {
+      fetches.push(
+        fetch(`/api/policies?scope=device&mac_address=${encodeURIComponent(_rulesScopeMac)}`)
+          .then(r => r.json()).catch(() => [])
+      );
+    }
+    const [servicesRes, globalPolicies, devicePolicies] = await Promise.all(fetches);
 
-    // Index policies by service_name (only per-service global ones, no
-    // category-level or device-level — those are managed from the
-    // Action Inbox modal, not the Rules page). Store both action and
-    // expires_at so the timer button can display active countdowns.
-    _policyByService = {};
-    _policyExpiresByService = {};
-    (Array.isArray(policiesRes) ? policiesRes : []).forEach(p => {
+    // Build global policy map
+    const globalByService = {};
+    const globalExpByService = {};
+    (Array.isArray(globalPolicies) ? globalPolicies : []).forEach(p => {
       if (p.scope === 'global' && p.service_name && !p.category) {
-        _policyByService[p.service_name] = p.action;
-        if (p.expires_at) _policyExpiresByService[p.service_name] = p.expires_at;
+        globalByService[p.service_name] = p.action;
+        if (p.expires_at) globalExpByService[p.service_name] = p.expires_at;
       }
     });
+
+    // Build device policy map (overrides global when present)
+    _devicePolicyByService = {};
+    _deviceOverrideServices = new Set();
+    if (isDeviceMode && Array.isArray(devicePolicies)) {
+      devicePolicies.forEach(p => {
+        if (p.scope === 'device' && p.service_name && !p.category) {
+          _devicePolicyByService[p.service_name] = p.action;
+          _deviceOverrideServices.add(p.service_name);
+          if (p.expires_at) globalExpByService[p.service_name] = p.expires_at;
+        }
+      });
+    }
+
+    // Merged effective policy: device wins over global
+    _policyByService = { ...globalByService };
+    _policyExpiresByService = { ...globalExpByService };
+    if (isDeviceMode) {
+      Object.entries(_devicePolicyByService).forEach(([svc, action]) => {
+        _policyByService[svc] = action;
+      });
+    }
 
     // Render service cards per category into their respective grids.
     const categories = [
@@ -5560,17 +5677,28 @@ function renderServiceCard(svc) {
 
   const lastSeenText = svc.seen && svc.last_seen ? `Last: ${lastSeenFmt}` : t('svc.noTraffic');
 
+  // Device mode: distinguish "set on this device" from "inherited from global"
+  const isDeviceMode = _rulesScopeMode === 'device' && _rulesScopeMac;
+  const isInherited = isDeviceMode && !_deviceOverrideServices.has(svc.service_name);
+
   // Border tint reflects the current action for visual clarity
   const borderClass =
     currentAction === 'block'  ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10' :
     currentAction === 'alert'  ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10' :
                                  'border-slate-200 dark:border-white/[0.05]';
 
+  const inheritedBadge = isInherited
+    ? ` <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-slate-500">${t('rules.inherited') || 'Inherited'}</span>`
+    : '';
+  const cardOpacity = isInherited ? 'opacity-60' : '';
+  const cardBorder = isInherited ? 'border-dashed' : '';
+
   return `
-    <div class="svc-card border ${borderClass} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors">
+    <div class="svc-card border ${borderClass} ${cardBorder} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors ${cardOpacity}">
       <div class="flex items-center gap-2 mb-2">
         ${logo}
         <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+        ${inheritedBadge}
       </div>
       <div class="mb-3">${seenTag}</div>
       <div class="flex items-center gap-2">
@@ -5615,12 +5743,14 @@ async function setServicePolicy(serviceName, action, buttonEl) {
   buttons.forEach(b => { b.disabled = true; });
 
   try {
+    // Send device-scoped policy when a device is selected, otherwise global.
+    const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
     const res = await fetch('/api/policies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        scope: 'global',
-        mac_address: null,
+        scope: isDeviceScope ? 'device' : 'global',
+        mac_address: isDeviceScope ? _rulesScopeMac : null,
         service_name: serviceName,
         category: null,
         action: action,
@@ -5686,13 +5816,15 @@ async function setPolicyTimer(hours) {
   const svc = _timerModalService;
   const action = _policyByService[svc] || 'alert';
   const expires = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
   closePolicyTimerModal();
   try {
     const res = await fetch('/api/policies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        scope: 'global', mac_address: null,
+        scope: isDeviceScope ? 'device' : 'global',
+        mac_address: isDeviceScope ? _rulesScopeMac : null,
         service_name: svc, category: null,
         action: action,
         expires_at: expires,
@@ -5719,13 +5851,15 @@ async function setPolicyTimerAt() {
 
   const svc = _timerModalService;
   const action = _policyByService[svc] || 'alert';
+  const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
   closePolicyTimerModal();
   try {
     const res = await fetch('/api/policies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        scope: 'global', mac_address: null,
+        scope: isDeviceScope ? 'device' : 'global',
+        mac_address: isDeviceScope ? _rulesScopeMac : null,
         service_name: svc, category: null,
         action: action,
         expires_at: target.toISOString(),
