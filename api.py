@@ -5167,22 +5167,34 @@ def iot_fleet(db: Session = Depends(get_db)):
     # Baselines
     baselines = {b.mac_address: b for b in db.query(DeviceBaseline).all()}
 
-    # Recent anomalies (last 24h)
+    # Recent anomalies (last 24h), filtered by AlertExceptions so
+    # whitelisted anomalies don't make a device show red on the IoT page.
+    now = datetime.utcnow()
+    exceptions = db.query(AlertException).filter(
+        (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
+    ).all()
+    ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
+
     anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
     anomaly_counts = {}
     for row in (
-        db.query(DetectionEvent.source_ip, func.count().label("cnt"))
+        db.query(
+            DetectionEvent.source_ip,
+            DetectionEvent.detection_type,
+            DetectionEvent.ai_service,
+            func.count().label("cnt"),
+        )
         .filter(
             DetectionEvent.detection_type.in_(anomaly_types),
             DetectionEvent.timestamp >= cutoff,
         )
-        .group_by(DetectionEvent.source_ip)
+        .group_by(DetectionEvent.source_ip, DetectionEvent.detection_type, DetectionEvent.ai_service)
         .all()
     ):
-        anomaly_counts[row.source_ip] = row.cnt
-
-    # Map IPs to MACs for anomaly lookup
-    ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
+        mac = ip_to_mac.get(row.source_ip)
+        if _is_exception_active(exceptions, mac, row.detection_type, row.ai_service, now):
+            continue
+        anomaly_counts[row.source_ip] = anomaly_counts.get(row.source_ip, 0) + row.cnt
 
     result = []
     total_bytes = 0
@@ -5237,9 +5249,20 @@ def iot_anomalies(
     hours: int = Query(24, ge=1, le=168),
     db: Session = Depends(get_db),
 ):
-    """Return IoT-specific security anomalies."""
+    """Return IoT-specific security anomalies, respecting AlertExceptions.
+
+    Anomalies that the user has whitelisted or snoozed via the Summary
+    inbox are filtered out here too, keeping both views in sync.
+    """
     cutoff = datetime.utcnow() - timedelta(hours=hours)
+    now = datetime.utcnow()
     anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
+
+    # Pre-fetch active exceptions (same pattern as /api/alerts/active)
+    exceptions = db.query(AlertException).filter(
+        (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
+    ).all()
+    ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
 
     rows = (
         db.query(
@@ -5258,6 +5281,15 @@ def iot_anomalies(
         .limit(50)
         .all()
     )
+
+    # Filter out whitelisted/snoozed anomalies
+    filtered_rows = []
+    for r in rows:
+        mac = ip_to_mac.get(r.source_ip)
+        if _is_exception_active(exceptions, mac, r.detection_type, r.ai_service, now):
+            continue
+        filtered_rows.append(r)
+    rows = filtered_rows
 
     ip_to_device = {}
     for dip in db.query(DeviceIP).all():
