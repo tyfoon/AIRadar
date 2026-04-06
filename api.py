@@ -5645,6 +5645,10 @@ async def _check_volume_spikes():
             now_ts = time.time()
             hour_ago = now - timedelta(hours=1)
 
+            # Only consider baselines with valid stddev AND enough history.
+            # A device needs at least 3 days of data for a reliable baseline;
+            # alerting on 1-2 days of data produces too many false positives.
+            min_baseline_age = now - timedelta(days=3)
             baselines = db.query(DeviceBaseline).filter(
                 DeviceBaseline.stddev_bytes > 0
             ).all()
@@ -5661,6 +5665,10 @@ async def _check_volume_spikes():
                 if not dev or not _is_iot_backend(dev):
                     continue
 
+                # Skip devices without enough baseline history
+                if dev.first_seen and dev.first_seen > min_baseline_age:
+                    continue
+
                 # Sum traffic for this device in the last hour
                 hour_bytes = db.query(
                     func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
@@ -5671,7 +5679,10 @@ async def _check_volume_spikes():
 
                 checked += 1
                 threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
-                if threshold <= 0 or hour_bytes <= threshold:
+                # Minimum threshold of 100 KB/h to avoid noise from
+                # devices with very low baselines (e.g. 50 bytes/h)
+                threshold = max(threshold, 100_000)
+                if hour_bytes <= threshold:
                     continue
 
                 # Dedup
