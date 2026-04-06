@@ -719,12 +719,23 @@ function _detectDeviceType(device) {
 }
 
 // Large device type icon (20x20) for device matrix
-function _deviceTypeIcon20(dt) {
-  return `<span class="inline-flex items-center justify-center w-5 h-5 text-base leading-none flex-shrink-0" title="${dt.type}">${dt.icon}</span>`;
+function _deviceTypeIcon20(dt, online) {
+  const colorClass = online
+    ? 'text-emerald-500 dark:text-emerald-400'
+    : 'text-slate-300 dark:text-slate-600';
+  return `<span class="inline-flex items-center justify-center w-5 h-5 text-base leading-none flex-shrink-0 ${colorClass}" title="${dt.type}${online ? ' · online' : ' · offline'}">${dt.icon}</span>`;
+}
+
+function _isDeviceOnline(device) {
+  if (!device?.last_seen) return false;
+  const lastSeen = new Date(device.last_seen).getTime();
+  const now = Date.now();
+  return (now - lastSeen) < 5 * 60 * 1000; // 5 minutes
 }
 
 function deviceTypeTag(device) {
   const dt = _detectDeviceType(device);
+  const online = _isDeviceOnline(device);
   const vendorText = device?.vendor ? ` · ${device.vendor}` : '';
 
   // p0f OS fingerprint badge
@@ -741,7 +752,7 @@ function deviceTypeTag(device) {
     osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
   }
 
-  return `<span class="inline-flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">${_deviceTypeIcon20(dt)} ${dt.type}${vendorText}</span>${osBadge}`;
+  return `<span class="inline-flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">${_deviceTypeIcon20(dt, online)} ${dt.type}${vendorText}</span>${osBadge}`;
 }
 
 async function loadDevices() {
