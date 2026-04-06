@@ -11,6 +11,7 @@ import json
 import os
 import re
 import socket
+import time
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +769,7 @@ async def lifespan(app: FastAPI):
     expiry_task = asyncio.create_task(_expire_block_rules())
     policy_expiry_task = asyncio.create_task(_expire_service_policies())
     baseline_task = asyncio.create_task(_compute_device_baselines())
+    volume_spike_task = asyncio.create_task(_check_volume_spikes())
     notifier_task = asyncio.create_task(_push_notifier_task())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
@@ -2068,6 +2070,10 @@ def geo_ingest(payload: dict, db: Session = Depends(get_db)):
     return {"status": "ok", "accepted": len(updates)}
 
 
+_IOT_COUNTRY_DEDUP_SECONDS = 3600
+_iot_country_alert_last: dict[tuple, float] = {}
+
+
 @app.post("/api/geo/conversations/ingest")
 def ingest_geo_conversations(
     payload: dict = Body(...),
@@ -2089,8 +2095,18 @@ def ingest_geo_conversations(
     if not isinstance(updates, list):
         raise HTTPException(status_code=400, detail="updates must be a list")
     now = datetime.utcnow()
+    now_ts = time.time()
     unseen_ips: set[str] = set()
     accepted = 0
+
+    # Pre-load baselines + IoT classification for new-country alerting
+    import json as _json
+    _baselines = {b.mac_address: b for b in db.query(DeviceBaseline).all()}
+    _all_devices = {d.mac_address: d for d in db.query(Device).all()}
+    _mac_to_ip = {}
+    for dip in db.query(DeviceIP).all():
+        _mac_to_ip.setdefault(dip.mac_address, dip.ip)
+
     for u in updates:
         cc = (u.get("country_code") or "").upper()[:2]
         direction = u.get("direction") or ""
@@ -2132,6 +2148,33 @@ def ingest_geo_conversations(
             ))
             unseen_ips.add(resp_ip)
         accepted += 1
+
+        # --- IoT new-country alert ---
+        # If this is an IoT device talking to a country not in its baseline,
+        # create a DetectionEvent.
+        if mac and cc and direction == "outbound":
+            dev = _all_devices.get(mac)
+            if dev and _is_iot_backend(dev):
+                bl = _baselines.get(mac)
+                if bl and bl.known_countries:
+                    try:
+                        known = _json.loads(bl.known_countries)
+                    except (ValueError, TypeError):
+                        known = []
+                    if cc not in known:
+                        dk = (mac, cc)
+                        if (now_ts - _iot_country_alert_last.get(dk, 0)) >= _IOT_COUNTRY_DEDUP_SECONDS:
+                            _iot_country_alert_last[dk] = now_ts
+                            src_ip = _mac_to_ip.get(mac, mac)
+                            db.add(DetectionEvent(
+                                sensor_id="airadar",
+                                timestamp=now,
+                                detection_type="iot_new_country",
+                                ai_service=f"country_{cc}",
+                                source_ip=src_ip,
+                                bytes_transferred=byts,
+                                category="security",
+                            ))
     db.commit()
 
     # Return the set of resp_ips that don't yet have metadata so the
@@ -2529,6 +2572,8 @@ _ANOMALY_DETECTION_TYPES = {
     "beaconing_threat",
     "iot_lateral_movement",
     "iot_suspicious_port",
+    "iot_new_country",
+    "iot_volume_spike",
     "inbound_threat",
     "inbound_port_scan",
 }
@@ -5226,7 +5271,7 @@ def iot_fleet(db: Session = Depends(get_db)):
     ).all()
     ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
 
-    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
+    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port", "iot_new_country", "iot_volume_spike")
     anomaly_counts = {}
     for row in (
         db.query(
@@ -5263,7 +5308,11 @@ def iot_fleet(db: Session = Depends(get_db)):
             anomaly_device_count += 1
         elif baseline and stats.get("bytes_24h", 0) > 0:
             avg_24h = baseline.avg_bytes_hour * 24
-            if avg_24h > 0 and stats["bytes_24h"] > avg_24h * 3:
+            stddev_24h = (baseline.stddev_bytes or 0) * 24
+            if stddev_24h > 0 and stats["bytes_24h"] > avg_24h + 3 * stddev_24h:
+                health = "orange"
+            elif avg_24h > 0 and stddev_24h == 0 and stats["bytes_24h"] > avg_24h * 3:
+                # Fallback for devices without stddev data yet
                 health = "orange"
 
         bytes_24h = stats.get("bytes_24h", 0)
@@ -5307,7 +5356,7 @@ def iot_anomalies(
     """
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     now = datetime.utcnow()
-    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
+    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port", "iot_new_country", "iot_volume_spike")
 
     # Pre-fetch active exceptions (same pattern as /api/alerts/active)
     exceptions = db.query(AlertException).filter(
@@ -5465,6 +5514,8 @@ def iot_device_profile(mac_address: str, db: Session = Depends(get_db)):
             "avg_bytes_hour": baseline.avg_bytes_hour,
             "avg_connections_hour": baseline.avg_connections_hour,
             "avg_unique_destinations": baseline.avg_unique_destinations,
+            "stddev_bytes": baseline.stddev_bytes or 0,
+            "stddev_connections": baseline.stddev_connections or 0,
             "known_countries": baseline.known_countries,
             "computed_at": str(baseline.computed_at),
         } if baseline else None,
@@ -5476,10 +5527,18 @@ BASELINE_INTERVAL = 86400  # 24 hours
 
 
 async def _compute_device_baselines():
-    """Nightly task: compute rolling 7-day traffic baselines per device."""
+    """Nightly task: compute rolling 7-day traffic baselines per device.
+
+    Calculates avg + stddev per hour from daily aggregates so that
+    volume-spike detection can use statistical thresholds (avg + 3σ)
+    instead of a crude 3× multiplier.
+    """
     await asyncio.sleep(120)  # let other tasks warm up first
     while True:
         try:
+            import json as _json
+            import statistics as _stats
+
             db = SessionLocal()
             cutoff = datetime.utcnow() - timedelta(days=7)
             macs = [r[0] for r in db.query(GeoConversation.mac_address).distinct().all() if r[0]]
@@ -5506,7 +5565,30 @@ async def _compute_device_baselines():
                 total_dests = int(convs.dests or 0)
                 hours = 7 * 24  # 7-day window
 
-                # Known countries + ASNs
+                # Per-day aggregates for stddev calculation
+                daily_rows = (
+                    db.query(
+                        func.date(GeoConversation.last_seen).label("day"),
+                        func.sum(GeoConversation.bytes_transferred).label("bytes"),
+                        func.sum(GeoConversation.hits).label("hits"),
+                    )
+                    .filter(
+                        GeoConversation.mac_address == mac,
+                        GeoConversation.last_seen >= cutoff,
+                    )
+                    .group_by(func.date(GeoConversation.last_seen))
+                    .all()
+                )
+                daily_bytes_per_hour = [int(r.bytes or 0) / 24 for r in daily_rows]
+                daily_hits_per_hour = [int(r.hits or 0) / 24 for r in daily_rows]
+
+                stddev_bytes = 0
+                stddev_connections = 0
+                if len(daily_bytes_per_hour) >= 2:
+                    stddev_bytes = int(_stats.stdev(daily_bytes_per_hour))
+                    stddev_connections = int(_stats.stdev(daily_hits_per_hour))
+
+                # Known countries
                 countries = [
                     r[0] for r in
                     db.query(GeoConversation.country_code).filter(
@@ -5515,7 +5597,6 @@ async def _compute_device_baselines():
                     if r[0]
                 ]
 
-                import json as _json
                 existing = db.query(DeviceBaseline).filter(
                     DeviceBaseline.mac_address == mac
                 ).first()
@@ -5523,6 +5604,8 @@ async def _compute_device_baselines():
                     existing.avg_bytes_hour = total_bytes // hours
                     existing.avg_connections_hour = total_hits // hours
                     existing.avg_unique_destinations = total_dests
+                    existing.stddev_bytes = stddev_bytes
+                    existing.stddev_connections = stddev_connections
                     existing.known_countries = _json.dumps(countries)
                     existing.computed_at = datetime.utcnow()
                 else:
@@ -5531,6 +5614,8 @@ async def _compute_device_baselines():
                         avg_bytes_hour=total_bytes // hours,
                         avg_connections_hour=total_hits // hours,
                         avg_unique_destinations=total_dests,
+                        stddev_bytes=stddev_bytes,
+                        stddev_connections=stddev_connections,
                         known_countries=_json.dumps(countries),
                         computed_at=datetime.utcnow(),
                     ))
@@ -5543,6 +5628,90 @@ async def _compute_device_baselines():
         except Exception as exc:
             print(f"[baseline] Error: {exc}")
         await asyncio.sleep(BASELINE_INTERVAL)
+
+
+# Volume spike checker — runs every 15 minutes
+VOLUME_SPIKE_CHECK_INTERVAL = 900
+VOLUME_SPIKE_DEDUP_SECONDS = 3600
+_volume_spike_last: dict[str, float] = {}
+
+
+async def _check_volume_spikes():
+    """Periodic task: compare IoT device traffic against baseline.
+
+    For each IoT device with a computed baseline (stddev > 0), check
+    if the last hour's traffic exceeds avg + 3σ.  If so, create a
+    DetectionEvent with detection_type='iot_volume_spike'.
+    """
+    await asyncio.sleep(300)  # let baselines compute first
+    while True:
+        try:
+            import json as _json
+            db = SessionLocal()
+            now = datetime.utcnow()
+            now_ts = time.time()
+            hour_ago = now - timedelta(hours=1)
+
+            baselines = db.query(DeviceBaseline).filter(
+                DeviceBaseline.stddev_bytes > 0
+            ).all()
+
+            all_devices = {d.mac_address: d for d in db.query(Device).all()}
+            mac_to_ip = {}
+            for dip in db.query(DeviceIP).all():
+                mac_to_ip.setdefault(dip.mac_address, dip.ip)
+
+            checked = 0
+            alerted = 0
+            for bl in baselines:
+                dev = all_devices.get(bl.mac_address)
+                if not dev or not _is_iot_backend(dev):
+                    continue
+
+                # Sum traffic for this device in the last hour
+                hour_bytes = db.query(
+                    func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
+                ).filter(
+                    GeoConversation.mac_address == bl.mac_address,
+                    GeoConversation.last_seen >= hour_ago,
+                ).scalar() or 0
+
+                checked += 1
+                threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
+                if threshold <= 0 or hour_bytes <= threshold:
+                    continue
+
+                # Dedup
+                if (now_ts - _volume_spike_last.get(bl.mac_address, 0)) < VOLUME_SPIKE_DEDUP_SECONDS:
+                    continue
+                _volume_spike_last[bl.mac_address] = now_ts
+
+                src_ip = mac_to_ip.get(bl.mac_address, bl.mac_address)
+                dev_name = dev.display_name or dev.hostname or bl.mac_address
+                db.add(DetectionEvent(
+                    sensor_id="airadar",
+                    timestamp=now,
+                    detection_type="iot_volume_spike",
+                    ai_service=f"volume_{hour_bytes}",
+                    source_ip=src_ip,
+                    bytes_transferred=int(hour_bytes),
+                    category="security",
+                ))
+                alerted += 1
+                print(
+                    f"[volume-spike] {dev_name} ({bl.mac_address}): "
+                    f"{hour_bytes/1024:.0f} KB/h vs baseline "
+                    f"{bl.avg_bytes_hour/1024:.0f} ± {bl.stddev_bytes/1024:.0f} KB/h"
+                )
+
+            if alerted:
+                db.commit()
+            db.close()
+            if checked:
+                print(f"[volume-spike] Checked {checked} IoT devices, {alerted} alerts")
+        except Exception as exc:
+            print(f"[volume-spike] Error: {exc}")
+        await asyncio.sleep(VOLUME_SPIKE_CHECK_INTERVAL)
 
 
 @app.get("/api/system/performance")

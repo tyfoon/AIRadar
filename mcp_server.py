@@ -31,6 +31,8 @@ _ANOMALY_DETECTION_TYPES = {
     "beaconing_threat",
     "iot_lateral_movement",
     "iot_suspicious_port",
+    "iot_new_country",
+    "iot_volume_spike",
     "inbound_threat",
     "inbound_port_scan",
 }

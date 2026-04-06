@@ -1498,7 +1498,7 @@ function renderDashHealthServices() {
 let _currentAlertContext = null;
 let _summaryAlerts = [];
 
-const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port', 'inbound_threat', 'inbound_port_scan']);
+const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port', 'iot_new_country', 'iot_volume_spike', 'inbound_threat', 'inbound_port_scan']);
 
 function _alertTypeLabel(type) {
   // Icons are HTML strings (Phosphor duotone). Callers must inject
@@ -1512,8 +1512,10 @@ function _alertTypeLabel(type) {
     'new_device':        { icon: '<i class="ph-duotone ph-wifi-high text-xl"></i>',        label: t('alert.newDevice') || 'New device', color: 'blue' },
     'iot_lateral_movement':{ icon: '<i class="ph-duotone ph-arrows-left-right text-xl"></i>', label: 'Lateral movement', color: 'red' },
     'iot_suspicious_port': { icon: '<i class="ph-duotone ph-warning text-xl"></i>',        label: 'Suspicious port',  color: 'red' },
-    'inbound_threat':      { icon: '<i class="ph-duotone ph-shield-warning text-xl"></i>', label: 'Inbound threat',   color: 'red' },
-    'inbound_port_scan':   { icon: '<i class="ph-duotone ph-scan text-xl"></i>',           label: 'Port scan',        color: 'orange' },
+    'iot_new_country':     { icon: '<i class="ph-duotone ph-globe-hemisphere-west text-xl"></i>', label: 'New country',   color: 'red' },
+    'iot_volume_spike':    { icon: '<i class="ph-duotone ph-chart-line-up text-xl"></i>',   label: 'Volume spike',  color: 'orange' },
+    'inbound_threat':      { icon: '<i class="ph-duotone ph-shield-warning text-xl"></i>',  label: 'Inbound threat',   color: 'red' },
+    'inbound_port_scan':   { icon: '<i class="ph-duotone ph-scan text-xl"></i>',            label: 'Port scan',        color: 'orange' },
   };
   return map[type] || { icon: '<i class="ph-duotone ph-question text-xl"></i>', label: type, color: 'slate' };
 }
@@ -3304,9 +3306,14 @@ function _renderIotAnomalies(data) {
       <div class="space-y-2">
         ${anomalies.map(a => {
           const devName = a.display_name || a.hostname || a.mac || a.source_ip;
-          const typeLabel = a.detection_type === 'iot_lateral_movement'
-            ? `<span class="text-red-600 dark:text-red-400 font-semibold">${t('iot.lateralMovement') || 'Lateral Movement'}</span>`
-            : `<span class="text-orange-600 dark:text-orange-400 font-semibold">${t('iot.suspiciousPort') || 'Suspicious Port'}</span>`;
+          const _iotTypeLabels = {
+            'iot_lateral_movement': { label: t('iot.lateralMovement') || 'Lateral Movement', cls: 'text-red-600 dark:text-red-400' },
+            'iot_suspicious_port':  { label: t('iot.suspiciousPort') || 'Suspicious Port',   cls: 'text-orange-600 dark:text-orange-400' },
+            'iot_new_country':      { label: 'New Country',      cls: 'text-red-600 dark:text-red-400' },
+            'iot_volume_spike':     { label: 'Volume Spike',     cls: 'text-orange-600 dark:text-orange-400' },
+          };
+          const _tl = _iotTypeLabels[a.detection_type] || { label: a.detection_type, cls: 'text-slate-600' };
+          const typeLabel = `<span class="${_tl.cls} font-semibold">${_tl.label}</span>`;
           return `<div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-white/[0.03] border border-red-100 dark:border-red-800/30">
             <div class="flex items-center gap-3 min-w-0">
               <i class="ph-duotone ph-warning text-lg text-red-500 flex-shrink-0"></i>
@@ -4456,7 +4463,49 @@ function _renderDrawerSummary() {
     </span>
   </div>`;
 
+  // Baseline section (async — loaded after summary renders)
+  html += '<div id="drawer-baseline-section"></div>';
   el.innerHTML = html;
+
+  // Fetch IoT profile for baseline data (non-blocking)
+  if (_drawerMac) {
+    fetch(`/api/iot/device/${encodeURIComponent(_drawerMac)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(profile => {
+        const bsEl = document.getElementById('drawer-baseline-section');
+        if (!bsEl || !profile || !profile.baseline) return;
+        const bl = profile.baseline;
+        let countries = [];
+        try { countries = JSON.parse(bl.known_countries || '[]'); } catch {}
+        const countryBadges = countries.length
+          ? countries.map(c => `<span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-[10px] font-mono">${c}</span>`).join(' ')
+          : '<span class="text-slate-400">—</span>';
+        bsEl.innerHTML = `
+          <div class="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
+            <h4 class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-semibold mb-2">7-day Baseline</h4>
+            <div class="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200">${_fmtBytes(bl.avg_bytes_hour)}<span class="text-[10px] text-slate-400 font-normal">/h</span></div>
+                <div class="text-[10px] text-slate-400">Avg traffic</div>
+                ${bl.stddev_bytes ? `<div class="text-[10px] text-slate-400">±${_fmtBytes(bl.stddev_bytes)}</div>` : ''}
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200">${bl.avg_connections_hour}</div>
+                <div class="text-[10px] text-slate-400">Conn/h</div>
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200">${bl.avg_unique_destinations}</div>
+                <div class="text-[10px] text-slate-400">Destinations</div>
+              </div>
+            </div>
+            <div class="mt-2">
+              <span class="text-[10px] text-slate-400">Known countries:</span>
+              <div class="mt-1 flex flex-wrap gap-1">${countryBadges}</div>
+            </div>
+          </div>`;
+      })
+      .catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
