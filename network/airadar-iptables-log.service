@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────────
+# AI-Radar — iptables LOG rules for CrowdSec port scan detection
+# Logs inbound NEW connections so CrowdSec's iptables-scan-multi_ports
+# scenario can detect port scanning and HTTP probing.
+#
+# Deployed to: /etc/systemd/system/airadar-iptables-log.service
+# ──────────────────────────────────────────────────────────────
+[Unit]
+Description=AI-Radar iptables LOG for CrowdSec port scan detection
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+ExecStart=/bin/bash /opt/airadar/network/airadar-iptables-log.sh
+
+# Clean up on stop
+ExecStop=/usr/sbin/iptables -D INPUT -m comment --comment "airadar-log" -j LOG
+
+[Install]
+WantedBy=multi-user.target
