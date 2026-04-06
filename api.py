@@ -3010,13 +3010,58 @@ def get_active_alerts(
         if e.timestamp < g["first_seen"]:
             g["first_seen"] = e.timestamp
 
-    # Sort: anomalies first, then by last_seen desc
+    # --- New device alerts ---
+    # Devices whose first_seen is within the alert window are surfaced
+    # as "new_device" alerts. This is purely informational — the user
+    # sees a new device appeared and can assign it to a group / set rules.
+    new_device_alerts = []
+    new_devices = (
+        db.query(Device)
+        .filter(Device.first_seen >= cutoff)
+        .order_by(Device.first_seen.desc())
+        .all()
+    )
+    for d in new_devices:
+        # Skip if snoozed via AlertException
+        if _is_exception_active(exceptions, d.mac_address, "new_device", d.mac_address, now):
+            continue
+        device_ips = [dip.ip for dip in d.ips][:3] if d.ips else []
+        new_device_alerts.append({
+            "alert_id": f"{d.mac_address}|new_device|{d.mac_address}",
+            "mac_address": d.mac_address,
+            "hostname": d.hostname,
+            "display_name": d.display_name,
+            "vendor": d.vendor,
+            "alert_type": "new_device",
+            "service_or_dest": d.mac_address,
+            "category": None,
+            "first_seen": d.first_seen,
+            "timestamp": d.first_seen,
+            "hits": 1,
+            "total_bytes": 0,
+            "details": {
+                "reason": "new_device",
+                "detection_type": "new_device",
+                "ips": device_ips,
+            },
+        })
+
+    all_alerts = list(groups.values()) + new_device_alerts
+
+    # Sort: anomalies first, new devices next, then by last_seen desc
     def _priority(item):
         a = item["alert_type"]
-        anomaly_rank = 0 if a in _ANOMALY_DETECTION_TYPES else (1 if a == "upload" else 2)
-        return (anomaly_rank, -item["timestamp"].timestamp())
+        if a in _ANOMALY_DETECTION_TYPES:
+            rank = 0
+        elif a == "new_device":
+            rank = 1
+        elif a == "upload":
+            rank = 2
+        else:
+            rank = 3
+        return (rank, -item["timestamp"].timestamp())
 
-    result = sorted(groups.values(), key=_priority)
+    result = sorted(all_alerts, key=_priority)
     return {
         "count": len(result),
         "window_hours": hours,

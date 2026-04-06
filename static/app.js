@@ -1498,7 +1498,7 @@ function renderDashHealthServices() {
 let _currentAlertContext = null;
 let _summaryAlerts = [];
 
-const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel']);
+const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port']);
 
 function _alertTypeLabel(type) {
   // Icons are HTML strings (Phosphor duotone). Callers must inject
@@ -1509,6 +1509,9 @@ function _alertTypeLabel(type) {
     'stealth_vpn_tunnel':{ icon: '<i class="ph-duotone ph-mask-sad text-xl"></i>',         label: 'Stealth tunnel', color: 'red' },
     'upload':            { icon: '<i class="ph-duotone ph-upload-simple text-xl"></i>',    label: 'Data upload',    color: 'amber' },
     'service_access':    { icon: '<i class="ph-duotone ph-globe text-xl"></i>',            label: 'Service access', color: 'indigo' },
+    'new_device':        { icon: '<i class="ph-duotone ph-wifi-high text-xl"></i>',        label: t('alert.newDevice') || 'New device', color: 'blue' },
+    'iot_lateral_movement':{ icon: '<i class="ph-duotone ph-arrows-left-right text-xl"></i>', label: 'Lateral movement', color: 'red' },
+    'iot_suspicious_port': { icon: '<i class="ph-duotone ph-warning text-xl"></i>',        label: 'Suspicious port',  color: 'red' },
   };
   return map[type] || { icon: '<i class="ph-duotone ph-question text-xl"></i>', label: type, color: 'slate' };
 }
