@@ -4919,6 +4919,204 @@ function _renderDeviceMatrix() {
   }).join('');
 }
 
+// ---------------------------------------------------------------------------
+// Devices page tab switching (Devices / Groups)
+// ---------------------------------------------------------------------------
+let _currentDevicesTab = 'devices';
+
+function switchDevicesTab(tab) {
+  _currentDevicesTab = tab;
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const active = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  ['devices', 'groups'].forEach(t => {
+    const div = document.getElementById(`dev-tab-${t}`);
+    const btn = document.getElementById(`dev-tab-btn-${t}`);
+    if (div) div.classList.toggle('hidden', t !== tab);
+    if (btn) btn.className = (t === tab) ? active : inactive;
+  });
+  if (tab === 'groups') loadGroups();
+}
+window.switchDevicesTab = switchDevicesTab;
+
+// ---------------------------------------------------------------------------
+// Groups management
+// ---------------------------------------------------------------------------
+async function loadGroups() {
+  const container = document.getElementById('groups-list');
+  if (!container) return;
+  try {
+    const data = await fetch('/api/groups').then(r => r.json());
+    const groups = data.groups || [];
+    if (groups.length === 0) {
+      container.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-sm text-center py-8">${t('groups.noGroups') || 'No groups created yet.'}</p>`;
+      return;
+    }
+
+    // Build parent→children map
+    const childrenOf = {};
+    const topLevel = [];
+    groups.forEach(g => {
+      if (g.parent_id) {
+        (childrenOf[g.parent_id] = childrenOf[g.parent_id] || []).push(g);
+      } else {
+        topLevel.push(g);
+      }
+    });
+
+    container.innerHTML = topLevel.map(g => _renderGroupCard(g, childrenOf, groups)).join('');
+  } catch (err) {
+    container.innerHTML = `<p class="text-red-500 text-xs text-center py-4">${err.message}</p>`;
+  }
+}
+
+function _renderGroupCard(group, childrenOf, allGroups) {
+  const children = childrenOf[group.id] || [];
+  const childrenHtml = children.length
+    ? `<div class="ml-6 mt-2 space-y-2 border-l-2 border-slate-200 dark:border-white/[0.06] pl-3">${children.map(c => `
+        <div class="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.03]">
+          <div class="flex items-center gap-2">
+            <i class="ph-duotone ph-${c.icon || 'users-three'} text-lg text-${c.color || 'blue'}-500"></i>
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${c.name}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-500">${c.member_count} ${t('groups.members') || 'members'}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="openGroupMembersModal(${c.id}, '${c.name}')" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-blue-500 transition-colors" title="${t('groups.manageMembers') || 'Manage members'}"><i class="ph-duotone ph-user-plus text-base"></i></button>
+            <button onclick="navigateToGroupRules(${c.id})" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-blue-500 transition-colors" title="${t('rules.manageRules') || 'Manage rules'}"><i class="ph-duotone ph-shield-check text-base"></i></button>
+            <button onclick="deleteGroup(${c.id})" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-red-500 transition-colors" title="${t('groups.delete') || 'Delete'}"><i class="ph-duotone ph-trash text-base"></i></button>
+          </div>
+        </div>`).join('')}</div>`
+    : '';
+
+  // Parent selector for nesting
+  const otherTopLevel = allGroups.filter(g => !g.parent_id && g.id !== group.id);
+
+  return `
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-${group.color || 'blue'}-100 dark:bg-${group.color || 'blue'}-900/30 flex items-center justify-center">
+            <i class="ph-duotone ph-${group.icon || 'users-three'} text-xl text-${group.color || 'blue'}-600 dark:text-${group.color || 'blue'}-400"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-slate-800 dark:text-white">${group.name}</h3>
+            <p class="text-[11px] text-slate-400 dark:text-slate-500">${group.member_count} ${t('groups.members') || 'members'}${children.length ? ` · ${children.length} ${t('groups.subgroups') || 'subgroups'}` : ''}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="openGroupMembersModal(${group.id}, '${group.name}')" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-blue-500 transition-colors" title="${t('groups.manageMembers') || 'Manage members'}"><i class="ph-duotone ph-user-plus text-base"></i></button>
+          <button onclick="navigateToGroupRules(${group.id})" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-blue-500 transition-colors" title="${t('rules.manageRules') || 'Manage rules'}"><i class="ph-duotone ph-shield-check text-base"></i></button>
+          <button onclick="deleteGroup(${group.id})" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-red-500 transition-colors" title="${t('groups.delete') || 'Delete'}"><i class="ph-duotone ph-trash text-base"></i></button>
+        </div>
+      </div>
+      ${childrenHtml}
+    </div>`;
+}
+
+async function createGroup() {
+  const input = document.getElementById('new-group-name');
+  const name = (input?.value || '').trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    input.value = '';
+    showToast(`${t('groups.created') || 'Group created'}: ${name}`, 'success');
+    await loadGroups();
+  } catch (err) {
+    showToast(`${t('groups.createFailed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+
+async function deleteGroup(groupId) {
+  const confirmed = await styledConfirm(
+    t('groups.deleteTitle') || 'Delete group',
+    t('groups.deleteConfirm') || 'This will remove the group, all memberships, and all group-scoped rules. Continue?'
+  );
+  if (!confirmed) return;
+  try {
+    await fetch(`/api/groups/${groupId}`, { method: 'DELETE' });
+    showToast(t('groups.deleted') || 'Group deleted', 'success');
+    await loadGroups();
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, 'error');
+  }
+}
+
+async function openGroupMembersModal(groupId, groupName) {
+  // Fetch current members + all devices
+  const [membersRes, devicesRes] = await Promise.all([
+    fetch(`/api/groups/${groupId}/members`).then(r => r.json()),
+    fetch('/api/devices').then(r => r.json()),
+  ]);
+  const members = new Set((membersRes.members || []).map(m => m.mac_address));
+
+  // Build device list sorted by activity
+  const devices = (devicesRes || [])
+    .map(d => ({
+      mac: d.mac_address,
+      name: _bestDeviceName(d.mac_address, d),
+      isMember: members.has(d.mac_address),
+      lastSeen: d.last_seen ? new Date(d.last_seen).getTime() : 0,
+    }))
+    .sort((a, b) => {
+      if (a.isMember !== b.isMember) return a.isMember ? -1 : 1;
+      return b.lastSeen - a.lastSeen;
+    });
+
+  const msg = devices.map(d => {
+    const checked = d.isMember ? 'checked' : '';
+    return `<label class="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer">
+      <input type="checkbox" ${checked} onchange="toggleGroupMember(${groupId}, '${d.mac}', this.checked)" class="rounded border-slate-300 dark:border-slate-600 w-4 h-4">
+      <span class="text-sm text-slate-700 dark:text-slate-200">${d.name}</span>
+    </label>`;
+  }).join('');
+
+  // Reuse the confirm modal structure but with custom content
+  const modal = document.getElementById('confirm-modal');
+  document.getElementById('confirm-modal-title').textContent = `${groupName} — ${t('groups.manageMembers') || 'Manage Members'}`;
+  document.getElementById('confirm-modal-message').innerHTML = `<div class="max-h-[300px] overflow-y-auto space-y-0.5 -mx-2">${msg}</div>`;
+  modal.classList.remove('hidden');
+  _confirmResolve = () => { modal.classList.add('hidden'); };
+}
+
+async function toggleGroupMember(groupId, mac, add) {
+  try {
+    if (add) {
+      await fetch(`/api/groups/${groupId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac_address: mac }),
+      });
+    } else {
+      await fetch(`/api/groups/${groupId}/members/${encodeURIComponent(mac)}`, { method: 'DELETE' });
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, 'error');
+  }
+}
+
+function navigateToGroupRules(groupId) {
+  // Navigate to Rules page with group scope pre-selected
+  // For now, navigate to rules — group scope in Rules page is future work
+  navigate('rules');
+  showToast(t('groups.rulesHint') || 'Select "Per group" on the Rules page to set group rules', 'info');
+}
+
+window.createGroup = createGroup;
+window.deleteGroup = deleteGroup;
+window.openGroupMembersModal = openGroupMembersModal;
+window.toggleGroupMember = toggleGroupMember;
+window.navigateToGroupRules = navigateToGroupRules;
+
+
 async function refreshDevices() {
   const per = document.getElementById('dev-filter-period')?.value;
   const params = new URLSearchParams();
@@ -5051,6 +5249,8 @@ async function refreshRules() {
 // ---------------------------------------------------------------------------
 // Rules scope: Global vs Per-device
 // ---------------------------------------------------------------------------
+let _rulesScopeGroupId = null;
+
 function switchRulesScope(mode) {
   _rulesScopeMode = mode;
   const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
@@ -5058,34 +5258,77 @@ function switchRulesScope(mode) {
   const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
   const btnG = document.getElementById('rules-scope-btn-global');
   const btnD = document.getElementById('rules-scope-btn-device');
-  const sel = document.getElementById('rules-scope-device-select');
+  const btnGr = document.getElementById('rules-scope-btn-group');
+  const selD = document.getElementById('rules-scope-device-select');
+  const selGr = document.getElementById('rules-scope-group-select');
   const lbl = document.getElementById('rules-scope-label');
   const globalSection = document.getElementById('rules-global-filters-section');
 
+  if (btnG) btnG.className = inactive;
+  if (btnD) btnD.className = inactive;
+  if (btnGr) btnGr.className = inactive;
+  if (selD) selD.classList.add('hidden');
+  if (selGr) selGr.classList.add('hidden');
+  if (lbl) { lbl.classList.add('hidden'); lbl.textContent = ''; }
+
   if (mode === 'global') {
     if (btnG) btnG.className = active;
-    if (btnD) btnD.className = inactive;
-    if (sel) sel.classList.add('hidden');
-    if (lbl) { lbl.classList.add('hidden'); lbl.textContent = ''; }
     if (globalSection) globalSection.classList.remove('hidden');
     _rulesScopeMac = null;
+    _rulesScopeGroupId = null;
     loadAccessControl();
-  } else {
-    if (btnG) btnG.className = inactive;
+  } else if (mode === 'device') {
     if (btnD) btnD.className = active;
-    if (sel) sel.classList.remove('hidden');
+    if (selD) selD.classList.remove('hidden');
     if (globalSection) globalSection.classList.add('hidden');
-    // If a device is already selected in the dropdown, load its rules
-    if (sel && sel.value) {
-      _rulesScopeMac = sel.value;
-      const dev = deviceMap[sel.value];
-      if (lbl) { lbl.textContent = dev ? _bestDeviceName(sel.value, dev) : sel.value; lbl.classList.remove('hidden'); }
+    _rulesScopeGroupId = null;
+    if (selD && selD.value) {
+      _rulesScopeMac = selD.value;
+      const dev = deviceMap[selD.value];
+      if (lbl) { lbl.textContent = dev ? _bestDeviceName(selD.value, dev) : selD.value; lbl.classList.remove('hidden'); }
       loadAccessControl();
-    } else if (lbl) {
-      lbl.classList.add('hidden');
+    }
+  } else if (mode === 'group') {
+    if (btnGr) btnGr.className = active;
+    if (selGr) selGr.classList.remove('hidden');
+    if (globalSection) globalSection.classList.add('hidden');
+    _rulesScopeMac = null;
+    _populateRulesGroupFilter();
+    if (selGr && selGr.value) {
+      _rulesScopeGroupId = parseInt(selGr.value);
+      if (lbl) { lbl.textContent = selGr.options[selGr.selectedIndex]?.text || ''; lbl.classList.remove('hidden'); }
+      loadAccessControl();
     }
   }
 }
+
+function onRulesGroupSelected(groupId) {
+  _rulesScopeGroupId = groupId ? parseInt(groupId) : null;
+  const lbl = document.getElementById('rules-scope-label');
+  const sel = document.getElementById('rules-scope-group-select');
+  if (groupId && lbl && sel) {
+    lbl.textContent = sel.options[sel.selectedIndex]?.text || '';
+    lbl.classList.remove('hidden');
+  } else if (lbl) {
+    lbl.classList.add('hidden');
+  }
+  if (groupId) loadAccessControl();
+}
+
+async function _populateRulesGroupFilter() {
+  const sel = document.getElementById('rules-scope-group-select');
+  if (!sel) return;
+  try {
+    const data = await fetch('/api/groups').then(r => r.json());
+    const groups = data.groups || [];
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${t('rules.selectGroup') || 'Select a group...'}</option>`;
+    groups.forEach(g => { sel.innerHTML += `<option value="${g.id}">${g.name} (${g.member_count})</option>`; });
+    sel.value = cur;
+  } catch (e) { console.warn('populate group filter:', e); }
+}
+
+window.onRulesGroupSelected = onRulesGroupSelected;
 
 function onRulesDeviceSelected(mac) {
   _rulesScopeMac = mac || null;
@@ -5828,13 +6071,24 @@ async function loadAccessControl() {
       fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
     ];
     const isDeviceMode = _rulesScopeMode === 'device' && _rulesScopeMac;
+    const isGroupMode = _rulesScopeMode === 'group' && _rulesScopeGroupId;
     if (isDeviceMode) {
       fetches.push(
         fetch(`/api/policies?scope=device&mac_address=${encodeURIComponent(_rulesScopeMac)}`)
           .then(r => r.json()).catch(() => [])
       );
     }
-    const [servicesRes, globalPolicies, devicePolicies] = await Promise.all(fetches);
+    if (isGroupMode) {
+      fetches.push(
+        fetch(`/api/policies?scope=group&group_id=${_rulesScopeGroupId}`)
+          .then(r => r.json()).catch(() => [])
+      );
+    }
+    const results = await Promise.all(fetches);
+    const servicesRes = results[0];
+    const globalPolicies = results[1];
+    const devicePolicies = isDeviceMode ? results[2] : [];
+    const groupPolicies = isGroupMode ? results[2] : [];
 
     // Build global policy map
     const globalByService = {};
@@ -5846,12 +6100,21 @@ async function loadAccessControl() {
       }
     });
 
-    // Build device policy map (overrides global when present)
+    // Build device/group policy map (overrides global when present)
     _devicePolicyByService = {};
     _deviceOverrideServices = new Set();
     if (isDeviceMode && Array.isArray(devicePolicies)) {
       devicePolicies.forEach(p => {
         if (p.scope === 'device' && p.service_name && !p.category) {
+          _devicePolicyByService[p.service_name] = p.action;
+          _deviceOverrideServices.add(p.service_name);
+          if (p.expires_at) globalExpByService[p.service_name] = p.expires_at;
+        }
+      });
+    }
+    if (isGroupMode && Array.isArray(groupPolicies)) {
+      groupPolicies.forEach(p => {
+        if (p.scope === 'group' && p.service_name && !p.category) {
           _devicePolicyByService[p.service_name] = p.action;
           _deviceOverrideServices.add(p.service_name);
           if (p.expires_at) globalExpByService[p.service_name] = p.expires_at;
@@ -5995,14 +6258,17 @@ async function setServicePolicy(serviceName, action, buttonEl) {
   buttons.forEach(b => { b.disabled = true; });
 
   try {
-    // Send device-scoped policy when a device is selected, otherwise global.
-    const isDeviceScope = _rulesScopeMode === 'device' && _rulesScopeMac;
+    // Send scoped policy based on the active scope selector.
+    const scope = _rulesScopeMode === 'device' && _rulesScopeMac ? 'device'
+                : _rulesScopeMode === 'group' && _rulesScopeGroupId ? 'group'
+                : 'global';
     const res = await fetch('/api/policies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        scope: isDeviceScope ? 'device' : 'global',
-        mac_address: isDeviceScope ? _rulesScopeMac : null,
+        scope: scope,
+        mac_address: scope === 'device' ? _rulesScopeMac : null,
+        group_id: scope === 'group' ? _rulesScopeGroupId : null,
         service_name: serviceName,
         category: null,
         action: action,

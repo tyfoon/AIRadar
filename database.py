@@ -143,8 +143,9 @@ class ServicePolicy(Base):
     __tablename__ = "service_policies"
 
     id = Column(Integer, primary_key=True, index=True)
-    scope = Column(String, nullable=False, default="global", index=True)  # "global" | "device"
+    scope = Column(String, nullable=False, default="global", index=True)  # "global" | "group" | "device"
     mac_address = Column(String, nullable=True, index=True)
+    group_id = Column(Integer, nullable=True, index=True)  # FK to device_groups.id
     service_name = Column(String, nullable=True, index=True)  # e.g. "openai", "roblox"
     category = Column(String, nullable=True, index=True)      # e.g. "ai", "gaming"
     action = Column(String, nullable=False, default="alert")  # "allow" | "alert" | "block"
@@ -275,6 +276,47 @@ class IpMetadata(Base):
     updated_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+
+class DeviceGroup(Base):
+    """A named group of devices for policy management.
+
+    Groups can be nested one level deep (parent_id). A device can belong
+    to multiple groups. Policies set on a group apply to all member
+    devices, with priority: device > child-group > parent-group > global.
+
+    auto_match_rules is a JSON array of match criteria that automatically
+    add new devices to the group:
+      [{"field": "vendor", "operator": "contains", "value": "espressif"}]
+    """
+
+    __tablename__ = "device_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    parent_id = Column(Integer, nullable=True, index=True)  # FK to self for nesting
+    icon = Column(String, nullable=True, default="users-three")  # Phosphor icon name
+    color = Column(String, nullable=True, default="blue")
+    auto_match_rules = Column(String, nullable=True)  # JSON array
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
+class DeviceGroupMember(Base):
+    """Maps a device to a group."""
+
+    __tablename__ = "device_group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, nullable=False, index=True)
+    mac_address = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False, default="manual")  # "manual" or "auto"
+    added_at = Column(DateTime, nullable=False,
+                      default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "mac_address", name="uq_group_member"),
+    )
 
 
 class DeviceBaseline(Base):
@@ -460,6 +502,16 @@ def init_db() -> None:
             if col_name not in dev_cols:
                 with engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE devices ADD COLUMN {col_name} {col_type}"))
+
+    # --- Ensure service_policies columns exist ---
+    inspector = inspect(engine)
+    if "service_policies" in inspector.get_table_names():
+        sp_cols = [c["name"] for c in inspector.get_columns("service_policies")]
+        if "group_id" not in sp_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE service_policies ADD COLUMN group_id INTEGER"
+                ))
 
     # --- Ensure service_policies.expires_at column exists ---
     inspector = inspect(engine)

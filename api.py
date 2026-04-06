@@ -84,6 +84,8 @@ from database import (
     DetectionEvent,
     Device,
     DeviceBaseline,
+    DeviceGroup,
+    DeviceGroupMember,
     DeviceIP,
     GeoTraffic,
     GeoConversation,
@@ -2528,8 +2530,9 @@ _ANOMALY_DETECTION_TYPES = {
 
 @app.get("/api/policies", response_model=list[ServicePolicyRead])
 def list_policies(
-    scope: Optional[str] = Query(None, description="filter by scope: global|device"),
+    scope: Optional[str] = Query(None, description="filter by scope: global|group|device"),
     mac_address: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     q = db.query(ServicePolicy)
@@ -2537,6 +2540,8 @@ def list_policies(
         q = q.filter(ServicePolicy.scope == scope)
     if mac_address:
         q = q.filter(ServicePolicy.mac_address == mac_address)
+    if group_id:
+        q = q.filter(ServicePolicy.group_id == group_id)
     return q.order_by(
         ServicePolicy.scope.desc(),
         ServicePolicy.updated_at.desc(),
@@ -2606,12 +2611,14 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
     is synced automatically so the ServicePolicy table is the single
     source of truth for both dashboard alerts AND real DNS blocking.
     """
-    if payload.scope not in ("global", "device"):
-        raise HTTPException(status_code=400, detail="scope must be 'global' or 'device'")
+    if payload.scope not in ("global", "group", "device"):
+        raise HTTPException(status_code=400, detail="scope must be 'global', 'group', or 'device'")
     if payload.scope == "device" and not payload.mac_address:
         raise HTTPException(status_code=400, detail="mac_address is required when scope='device'")
-    if payload.scope == "global" and payload.mac_address:
-        raise HTTPException(status_code=400, detail="mac_address must be null when scope='global'")
+    if payload.scope == "group" and not payload.group_id:
+        raise HTTPException(status_code=400, detail="group_id is required when scope='group'")
+    if payload.scope == "global" and (payload.mac_address or payload.group_id):
+        raise HTTPException(status_code=400, detail="mac_address and group_id must be null when scope='global'")
     if payload.action not in ("allow", "alert", "block"):
         raise HTTPException(status_code=400, detail="action must be 'allow', 'alert' or 'block'")
     if not payload.service_name and not payload.category:
@@ -2622,6 +2629,7 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
         .filter(
             ServicePolicy.scope == payload.scope,
             ServicePolicy.mac_address == payload.mac_address,
+            ServicePolicy.group_id == payload.group_id,
             ServicePolicy.service_name == payload.service_name,
             ServicePolicy.category == payload.category,
         )
@@ -2640,6 +2648,7 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
     policy = ServicePolicy(
         scope=payload.scope,
         mac_address=payload.mac_address,
+        group_id=payload.group_id,
         service_name=payload.service_name,
         category=payload.category,
         action=payload.action,
@@ -2735,23 +2744,46 @@ def _resolve_policy_action(
     mac: Optional[str],
     service_name: Optional[str],
     category: Optional[str],
+    device_group_ids: Optional[list] = None,
 ) -> Optional[str]:
     """Return the resolved action string ("allow"/"alert"/"block") or None.
 
-    Walks the policy list in priority order (most specific first).
-    Accepts a pre-fetched list so we don't hit the DB per event.
-    Policies with an expires_at in the past are treated as non-existent
-    (the expiry background task will garbage-collect them shortly).
+    Priority order (most specific first):
+      1. device + service_name
+      2. device + category
+      3. child-group + service_name  (most restrictive if multiple groups)
+      4. child-group + category
+      5. parent-group + service_name
+      6. parent-group + category
+      7. global + service_name
+      8. global + category
+
+    When a device belongs to multiple groups at the same nesting level,
+    the most restrictive action wins (block > alert > allow).
+
+    Policies with an expires_at in the past are treated as non-existent.
     """
     now = datetime.utcnow()
+    _action_rank = {"block": 3, "alert": 2, "allow": 1}
+
     def _first(pred):
         for p in policies:
-            # Skip expired policies — they're dead but not yet GC'd.
             if p.expires_at and p.expires_at <= now:
                 continue
             if pred(p):
                 return p.action
         return None
+
+    def _most_restrictive(pred):
+        """Among all matching policies, return the most restrictive action."""
+        best = None
+        for p in policies:
+            if p.expires_at and p.expires_at <= now:
+                continue
+            if pred(p):
+                if best is None or _action_rank.get(p.action, 0) > _action_rank.get(best, 0):
+                    best = p.action
+        return best
 
     # 1. device + service_name
     if mac and service_name:
@@ -2768,14 +2800,52 @@ def _resolve_policy_action(
                      and not p.service_name)
         if hit:
             return hit
-    # 3. global + service_name
+
+    # 3-6. Group policies (child-groups first, then parent-groups)
+    # device_group_ids is pre-fetched: [(group_id, parent_id), ...]
+    if device_group_ids:
+        child_ids = [gid for gid, pid in device_group_ids if pid is not None]
+        parent_ids = [gid for gid, pid in device_group_ids if pid is None]
+
+        # 3. child-group + service_name (most restrictive wins)
+        if child_ids and service_name:
+            hit = _most_restrictive(lambda p: p.scope == "group"
+                                    and p.group_id in child_ids
+                                    and p.service_name == service_name)
+            if hit:
+                return hit
+        # 4. child-group + category
+        if child_ids and category:
+            hit = _most_restrictive(lambda p: p.scope == "group"
+                                    and p.group_id in child_ids
+                                    and p.category == category
+                                    and not p.service_name)
+            if hit:
+                return hit
+        # 5. parent-group + service_name
+        if parent_ids and service_name:
+            hit = _most_restrictive(lambda p: p.scope == "group"
+                                    and p.group_id in parent_ids
+                                    and p.service_name == service_name)
+            if hit:
+                return hit
+        # 6. parent-group + category
+        if parent_ids and category:
+            hit = _most_restrictive(lambda p: p.scope == "group"
+                                    and p.group_id in parent_ids
+                                    and p.category == category
+                                    and not p.service_name)
+            if hit:
+                return hit
+
+    # 7. global + service_name
     if service_name:
         hit = _first(lambda p: p.scope == "global"
                      and not p.mac_address
                      and p.service_name == service_name)
         if hit:
             return hit
-    # 4. global + category
+    # 8. global + category
     if category:
         hit = _first(lambda p: p.scope == "global"
                      and not p.mac_address
@@ -2834,8 +2904,13 @@ def get_active_alerts(
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     now = datetime.utcnow()
 
-    # Eager-load policies + exceptions once
+    # Eager-load policies + exceptions + group memberships once
     policies = db.query(ServicePolicy).all()
+    all_memberships = db.query(DeviceGroupMember).all()
+    group_parent_map = {
+        g.id: g.parent_id
+        for g in db.query(DeviceGroup).all()
+    }
     exceptions = db.query(AlertException).filter(
         (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
     ).all()
@@ -2869,8 +2944,17 @@ def get_active_alerts(
             reason = "anomaly"
         else:
             # ---------- Standard-service path ----------
+            # Look up the device's group memberships for group-level policy resolution
+            _dev_groups = None
+            if mac:
+                _memberships = [m for m in all_memberships if m.mac_address == mac]
+                if _memberships:
+                    _dev_groups = [
+                        (m.group_id, group_parent_map.get(m.group_id))
+                        for m in _memberships
+                    ]
             action = _resolve_policy_action(
-                policies, mac, e.ai_service, e.category
+                policies, mac, e.ai_service, e.category, _dev_groups
             )
             if action is None:
                 # No explicit policy → default allow. The old logic
@@ -4359,6 +4443,171 @@ def get_data_sources(db: Session = Depends(get_db)):
     })
 
     return {"sources": sources}
+
+
+# ---------------------------------------------------------------------------
+# Device Groups — CRUD + membership + auto-match
+# ---------------------------------------------------------------------------
+
+@app.get("/api/groups")
+def list_groups(db: Session = Depends(get_db)):
+    """Return all device groups with member counts."""
+    groups = db.query(DeviceGroup).order_by(DeviceGroup.name).all()
+    result = []
+    for g in groups:
+        member_count = db.query(DeviceGroupMember).filter(
+            DeviceGroupMember.group_id == g.id
+        ).count()
+        result.append({
+            "id": g.id,
+            "name": g.name,
+            "parent_id": g.parent_id,
+            "icon": g.icon or "users-three",
+            "color": g.color or "blue",
+            "auto_match_rules": g.auto_match_rules,
+            "member_count": member_count,
+            "created_at": str(g.created_at),
+        })
+    return {"groups": result}
+
+
+@app.post("/api/groups", status_code=201)
+def create_group(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Create a new device group."""
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    existing = db.query(DeviceGroup).filter(DeviceGroup.name == name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Group name already exists")
+    group = DeviceGroup(
+        name=name,
+        parent_id=payload.get("parent_id"),
+        icon=payload.get("icon", "users-three"),
+        color=payload.get("color", "blue"),
+        auto_match_rules=payload.get("auto_match_rules"),
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return {"id": group.id, "name": group.name}
+
+
+@app.put("/api/groups/{group_id}")
+def update_group(group_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Update a group's name, icon, color, parent, or auto-match rules."""
+    group = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if "name" in payload:
+        group.name = payload["name"]
+    if "parent_id" in payload:
+        group.parent_id = payload["parent_id"]
+    if "icon" in payload:
+        group.icon = payload["icon"]
+    if "color" in payload:
+        group.color = payload["color"]
+    if "auto_match_rules" in payload:
+        group.auto_match_rules = payload["auto_match_rules"]
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.delete("/api/groups/{group_id}", status_code=204)
+def delete_group(group_id: int, db: Session = Depends(get_db)):
+    """Delete a group and all its memberships + policies."""
+    group = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    # Remove memberships
+    db.query(DeviceGroupMember).filter(DeviceGroupMember.group_id == group_id).delete()
+    # Remove group-scoped policies
+    db.query(ServicePolicy).filter(
+        ServicePolicy.scope == "group",
+        ServicePolicy.group_id == group_id,
+    ).delete()
+    # Re-parent children to this group's parent (flatten)
+    db.query(DeviceGroup).filter(DeviceGroup.parent_id == group_id).update(
+        {DeviceGroup.parent_id: group.parent_id}, synchronize_session="fetch"
+    )
+    db.delete(group)
+    db.commit()
+    return None
+
+
+@app.get("/api/groups/{group_id}/members")
+def list_group_members(group_id: int, db: Session = Depends(get_db)):
+    """Return all devices in a group."""
+    members = (
+        db.query(DeviceGroupMember)
+        .filter(DeviceGroupMember.group_id == group_id)
+        .all()
+    )
+    devs = {d.mac_address: d for d in db.query(Device).all()}
+    return {
+        "members": [
+            {
+                "mac_address": m.mac_address,
+                "source": m.source,
+                "hostname": devs[m.mac_address].hostname if m.mac_address in devs else None,
+                "display_name": devs[m.mac_address].display_name if m.mac_address in devs else None,
+                "vendor": devs[m.mac_address].vendor if m.mac_address in devs else None,
+            }
+            for m in members
+        ]
+    }
+
+
+@app.post("/api/groups/{group_id}/members", status_code=201)
+def add_group_member(group_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Add a device to a group."""
+    mac = payload.get("mac_address")
+    if not mac:
+        raise HTTPException(status_code=400, detail="mac_address required")
+    existing = db.query(DeviceGroupMember).filter(
+        DeviceGroupMember.group_id == group_id,
+        DeviceGroupMember.mac_address == mac,
+    ).first()
+    if existing:
+        return {"status": "already_member"}
+    db.add(DeviceGroupMember(
+        group_id=group_id,
+        mac_address=mac,
+        source=payload.get("source", "manual"),
+    ))
+    db.commit()
+    return {"status": "added"}
+
+
+@app.delete("/api/groups/{group_id}/members/{mac_address}", status_code=204)
+def remove_group_member(group_id: int, mac_address: str, db: Session = Depends(get_db)):
+    """Remove a device from a group."""
+    db.query(DeviceGroupMember).filter(
+        DeviceGroupMember.group_id == group_id,
+        DeviceGroupMember.mac_address == mac_address,
+    ).delete()
+    db.commit()
+    return None
+
+
+@app.get("/api/devices/{mac_address}/groups")
+def device_groups(mac_address: str, db: Session = Depends(get_db)):
+    """Return all groups a device belongs to."""
+    memberships = db.query(DeviceGroupMember).filter(
+        DeviceGroupMember.mac_address == mac_address
+    ).all()
+    groups = {g.id: g for g in db.query(DeviceGroup).all()}
+    return {
+        "groups": [
+            {
+                "id": m.group_id,
+                "name": groups[m.group_id].name if m.group_id in groups else "?",
+                "source": m.source,
+            }
+            for m in memberships
+            if m.group_id in groups
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------

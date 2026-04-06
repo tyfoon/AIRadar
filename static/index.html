@@ -888,6 +888,19 @@
     <!-- ============================================================= -->
     <section id="page-devices" class="page space-y-6">
 
+      <!-- Tab navigation -->
+      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+        <button id="dev-tab-btn-devices" onclick="switchDevicesTab('devices')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+          <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-devices text-sm"></i> <span data-i18n="dev.tabDevices">Devices</span></span>
+        </button>
+        <button id="dev-tab-btn-groups" onclick="switchDevicesTab('groups')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-users-three text-sm"></i> <span data-i18n="dev.tabGroups">Groups</span></span>
+        </button>
+      </div>
+
+      <!-- ── DEVICES TAB ── -->
+      <div id="dev-tab-devices">
+
       <!-- Summary row -->
       <div class="stat-grid grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
@@ -961,6 +974,26 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      </div><!-- /dev-tab-devices -->
+
+      <!-- ── GROUPS TAB ── -->
+      <div id="dev-tab-groups" class="space-y-6 hidden">
+
+        <!-- Create group -->
+        <div class="flex items-center gap-3">
+          <input type="text" id="new-group-name" placeholder="New group name..." class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200">
+          <button onclick="createGroup()" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
+            <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-plus text-sm"></i> <span data-i18n="groups.create">Create Group</span></span>
+          </button>
+        </div>
+
+        <!-- Groups list -->
+        <div id="groups-list" class="space-y-3">
+          <p class="text-slate-400 dark:text-slate-500 text-sm text-center py-8" data-i18n="groups.noGroups">No groups created yet.</p>
+        </div>
+
       </div>
 
     </section>
@@ -1125,8 +1158,15 @@
               <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-device-mobile text-sm"></i> <span data-i18n="rules.scopePerDevice">Per device</span></span>
             </button>
           </div>
+          <button id="rules-scope-btn-group" onclick="switchRulesScope('group')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+              <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-users-three text-sm"></i> <span data-i18n="rules.scopePerGroup">Per group</span></span>
+            </button>
+          </div>
           <select id="rules-scope-device-select" onchange="onRulesDeviceSelected(this.value)" class="hidden text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5 max-w-[260px]">
             <option value="" data-i18n="rules.selectDevice">Select a device...</option>
+          </select>
+          <select id="rules-scope-group-select" onchange="onRulesGroupSelected(this.value)" class="hidden text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5 max-w-[260px]">
+            <option value="" data-i18n="rules.selectGroup">Select a group...</option>
           </select>
           <span id="rules-scope-label" class="hidden text-xs text-blue-600 dark:text-blue-400 font-medium"></span>
         </div>

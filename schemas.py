@@ -171,8 +171,9 @@ class PrivacyStats(BaseModel):
 class ServicePolicyCreate(BaseModel):
     """Payload for POST /api/policies."""
 
-    scope: str = "global"              # "global" or "device"
+    scope: str = "global"              # "global", "group", or "device"
     mac_address: Optional[str] = None  # required when scope == "device"
+    group_id: Optional[int] = None     # required when scope == "group"
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str = "alert"              # "allow" | "alert" | "block"
@@ -185,6 +186,7 @@ class ServicePolicyRead(BaseModel):
     id: int
     scope: str
     mac_address: Optional[str] = None
+    group_id: Optional[int] = None
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str
