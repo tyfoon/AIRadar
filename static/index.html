@@ -754,7 +754,10 @@
     <!-- ============================================================= -->
     <section id="page-other" class="page space-y-6">
 
-      <!-- Filter bar (mirrors the AI Radar pattern) -->
+      <!-- Stats row -->
+      <div id="other-stats" class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"></div>
+
+      <!-- Filter bar (mirrors the AI Radar pattern — sits below the stats) -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
         <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.filters">Filters</span>
         <select id="other-filter-service"><option value="" data-i18n="ai.allServices">All services</option></select>
@@ -767,9 +770,6 @@
         </select>
         <button onclick="refreshPage('other')" class="ml-auto px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors" data-i18n="ai.apply">Apply</button>
       </div>
-
-      <!-- Stats row -->
-      <div id="other-stats" class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"></div>
 
       <!-- Tree accordion -->
       <div id="other-usage-tree-container" class="space-y-3">
@@ -784,20 +784,6 @@
     <!-- PAGE: GEO TRAFFIC                                              -->
     <!-- ============================================================= -->
     <section id="page-geo" class="page space-y-6">
-
-      <!-- Filter bar (mirrors the AI Radar pattern) -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.filters">Filters</span>
-        <select id="geo-filter-service"><option value="" data-i18n="ai.allServices">All services</option></select>
-        <select id="geo-filter-device"><option value="" data-i18n="ai.allDevices">All devices</option></select>
-        <select id="geo-filter-period">
-          <option value="" data-i18n="ai.allTime">All time</option>
-          <option value="60" data-i18n="ai.lastHour">Last hour</option>
-          <option value="1440" selected data-i18n="ai.last24h">Last 24 h</option>
-          <option value="10080" data-i18n="ai.last7d">Last 7 days</option>
-        </select>
-        <button onclick="refreshPage('geo')" class="ml-auto px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors" data-i18n="ai.apply">Apply</button>
-      </div>
 
       <!-- Direction tabs (uses shared tab pattern — see Rules) -->
       <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
@@ -819,6 +805,20 @@
 
       <!-- Stats row -->
       <div id="geo-stats" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+
+      <!-- Filter bar (mirrors the AI Radar pattern — sits below the stats) -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.filters">Filters</span>
+        <select id="geo-filter-service"><option value="" data-i18n="ai.allServices">All services</option></select>
+        <select id="geo-filter-device"><option value="" data-i18n="ai.allDevices">All devices</option></select>
+        <select id="geo-filter-period">
+          <option value="" data-i18n="ai.allTime">All time</option>
+          <option value="60" data-i18n="ai.lastHour">Last hour</option>
+          <option value="1440" selected data-i18n="ai.last24h">Last 24 h</option>
+          <option value="10080" data-i18n="ai.last7d">Last 7 days</option>
+        </select>
+        <button onclick="refreshPage('geo')" class="ml-auto px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors" data-i18n="ai.apply">Apply</button>
+      </div>
 
       <!-- World map card -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
