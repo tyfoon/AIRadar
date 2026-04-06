@@ -34,7 +34,7 @@ ok()   { echo -e "    ${GREEN}✓${NC}  $1"; }
 err()  { echo -e "    ${RED}✗${NC}  $1"; }
 
 AIRADAR_DIR="$(cd "$(dirname "$0")" && pwd)"
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 
 # Ensure Zeek is always in PATH for this script
 export PATH=/opt/zeek/bin:$PATH
@@ -444,8 +444,24 @@ else
     ok "ASN database already present at $ASN_DB_PATH"
 fi
 
-# ── Step 8: SQLite backup cron ───────────────────────────────
-step 8 "Setting up automated database backup"
+# ── Step 8: MCP server virtual environment ──────────────────
+step 8 "Setting up MCP server Python environment"
+
+MCP_VENV="$AIRADAR_DIR/mcp-venv"
+if [ ! -d "$MCP_VENV" ]; then
+    python3 -m venv "$MCP_VENV"
+    ok "Created Python venv at $MCP_VENV"
+else
+    ok "Python venv already exists at $MCP_VENV"
+fi
+
+"$MCP_VENV/bin/pip" install --quiet --upgrade pip
+"$MCP_VENV/bin/pip" install --quiet -r "$AIRADAR_DIR/requirements.txt"
+ok "MCP server dependencies installed"
+info "Run MCP server with: ${BOLD}$MCP_VENV/bin/python $AIRADAR_DIR/mcp_server.py${NC}"
+
+# ── Step 9: SQLite backup cron ───────────────────────────────
+step 9 "Setting up automated database backup"
 
 BACKUP_DIR="$AIRADAR_DIR/backups"
 mkdir -p "$BACKUP_DIR"
@@ -455,8 +471,8 @@ CRON_LINE="0 3 * * * sqlite3 $AIRADAR_DIR/data/airadar.db \".backup $BACKUP_DIR/
 (crontab -l 2>/dev/null | grep -v "airadar.*backup"; echo "$CRON_LINE") | crontab -
 ok "Daily backup at 03:00 → $BACKUP_DIR (7-day retention)"
 
-# ── Step 9: Start the stack ──────────────────────────────────
-step 9 "Starting AI-Radar stack"
+# ── Step 10: Start the stack ─────────────────────────────────
+step 10 "Starting AI-Radar stack"
 
 cd "$AIRADAR_DIR"
 docker compose up -d --build
