@@ -4446,6 +4446,171 @@ def get_data_sources(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
+# "Ask anything" — natural language network queries via Gemini
+# ---------------------------------------------------------------------------
+_ask_rate_limit: dict[str, list] = {}  # IP → list of timestamps
+ASK_RATE_LIMIT_PER_HOUR = 10
+
+
+@app.post("/api/ask")
+async def ask_network(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Answer a natural-language question about the network using Gemini.
+
+    Builds a context block from recent network data, sends it to Gemini
+    with a strict system prompt that limits answers to network topics only.
+    Rate-limited to 10 questions per hour.
+    """
+    question = (payload.get("question") or "").strip()
+    if len(question) < 5:
+        raise HTTPException(status_code=400, detail="Question too short")
+
+    # Rate limiting (simple in-memory, keyed by constant since single-user)
+    now = datetime.utcnow()
+    timestamps = _ask_rate_limit.setdefault("global", [])
+    cutoff = now - timedelta(hours=1)
+    timestamps[:] = [t for t in timestamps if t > cutoff]
+    if len(timestamps) >= ASK_RATE_LIMIT_PER_HOUR:
+        raise HTTPException(status_code=429, detail="Rate limit: max 10 questions per hour")
+    timestamps.append(now)
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
+
+    # Build context block from recent network data
+    hours_back = 4
+    ctx_cutoff = now - timedelta(hours=hours_back)
+
+    # Recent events grouped by device + service
+    events = (
+        db.query(
+            DetectionEvent.source_ip,
+            DetectionEvent.ai_service,
+            DetectionEvent.category,
+            func.count().label("hits"),
+            func.sum(DetectionEvent.bytes_transferred).label("bytes"),
+            func.max(DetectionEvent.timestamp).label("last_seen"),
+        )
+        .filter(DetectionEvent.timestamp >= ctx_cutoff)
+        .group_by(DetectionEvent.source_ip, DetectionEvent.ai_service)
+        .order_by(func.count().desc())
+        .limit(50)
+        .all()
+    )
+
+    # Device lookup
+    ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
+    devices = {d.mac_address: d for d in db.query(Device).all()}
+
+    def dev_name(ip):
+        mac = ip_to_mac.get(ip)
+        if mac and mac in devices:
+            d = devices[mac]
+            return d.display_name or d.hostname or mac
+        return ip
+
+    event_lines = []
+    for e in events:
+        name = dev_name(e.source_ip)
+        b = int(e.bytes or 0)
+        event_lines.append(
+            f"- {name} → {e.ai_service} ({e.category}): "
+            f"{e.hits} hits, {b:,} bytes, last {e.last_seen}"
+        )
+
+    # Active policies
+    policies = db.query(ServicePolicy).filter(ServicePolicy.action != "allow").all()
+    policy_lines = [
+        f"- {p.service_name or p.category}: {p.action} "
+        f"({'global' if p.scope == 'global' else 'device ' + (p.mac_address or '')})"
+        for p in policies[:20]
+    ]
+
+    # Device list
+    device_lines = []
+    for d in sorted(devices.values(), key=lambda x: x.last_seen or datetime.min, reverse=True)[:30]:
+        ips = [dip.ip for dip in d.ips][:2] if d.ips else []
+        device_lines.append(
+            f"- {d.display_name or d.hostname or d.mac_address} "
+            f"(vendor={d.vendor or '?'}, mac={d.mac_address}, ips={','.join(ips)})"
+        )
+
+    # Groups
+    groups = db.query(DeviceGroup).all()
+    group_lines = [f"- {g.name} (id={g.id})" for g in groups]
+
+    context = f"""=== NETWORK DATA (last {hours_back}h) ===
+Timestamp: {now.strftime('%Y-%m-%d %H:%M UTC')}
+
+=== RECENT ACTIVITY (top 50 device→service pairs) ===
+{chr(10).join(event_lines) if event_lines else '- No recent activity'}
+
+=== ACTIVE POLICIES (alert/block only) ===
+{chr(10).join(policy_lines) if policy_lines else '- No active alert/block policies'}
+
+=== DEVICES ({len(devices)} total, top 30 by last_seen) ===
+{chr(10).join(device_lines)}
+
+=== GROUPS ===
+{chr(10).join(group_lines) if group_lines else '- No groups'}
+"""
+
+    lang = payload.get("lang", "en")
+    if lang == "nl":
+        system_prompt = (
+            "Je bent UITSLUITEND een netwerk-analist voor AI-Radar. "
+            "Je beantwoordt ALLEEN vragen over devices, services, traffic, "
+            "regels en beveiliging op dit specifieke netwerk. "
+            "Als de vraag niet over het netwerk gaat, antwoord je: "
+            "'Ik kan alleen vragen beantwoorden over je netwerk.' "
+            "Antwoord beknopt in het Nederlands, in markdown."
+        )
+    else:
+        system_prompt = (
+            "You are EXCLUSIVELY a network analyst for AI-Radar. "
+            "You answer ONLY questions about devices, services, traffic, "
+            "rules, and security on this specific network. "
+            "If the question is not about the network, respond: "
+            "'I can only answer questions about your network.' "
+            "Answer concisely in English, in markdown."
+        )
+
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    try:
+        from google import genai
+        import time as _time
+
+        client = genai.Client(api_key=gemini_key)
+        _t0 = _time.time()
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=gemini_model,
+                contents=f"{system_prompt}\n\n{context}\n\nVRAAG: {question}",
+            ),
+            timeout=30,
+        )
+        elapsed = _time.time() - _t0
+        answer = response.text
+        usage = response.usage_metadata
+        tokens = {
+            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
+            "response_tokens": getattr(usage, "candidates_token_count", 0),
+            "total_tokens": getattr(usage, "total_token_count", 0),
+        }
+        return {
+            "answer": answer,
+            "model": gemini_model,
+            "tokens": tokens,
+            "elapsed_s": round(elapsed, 1),
+        }
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Gemini timeout (30s)")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Gemini error: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Device Groups — CRUD + membership + auto-match
 # ---------------------------------------------------------------------------
 

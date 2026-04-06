@@ -4934,6 +4934,60 @@ function _renderDeviceMatrix() {
 }
 
 // ---------------------------------------------------------------------------
+// "Ask anything" — natural language network queries
+// ---------------------------------------------------------------------------
+async function askNetwork() {
+  const input = document.getElementById('ask-network-input');
+  const btn = document.getElementById('ask-network-btn');
+  const responseDiv = document.getElementById('ask-network-response');
+  const contentDiv = document.getElementById('ask-network-content');
+  const question = (input?.value || '').trim();
+  if (!question || question.length < 5) {
+    showToast(t('ask.tooShort') || 'Question too short — please be more specific.', 'info');
+    return;
+  }
+
+  // Loading state
+  if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-wait'); }
+  if (responseDiv) responseDiv.classList.remove('hidden');
+  if (contentDiv) contentDiv.innerHTML = `<div class="flex items-center gap-2 text-indigo-500 py-2">
+    <i class="ph-duotone ph-circle-notch animate-spin text-lg"></i>
+    <span class="text-sm">${t('ask.thinking') || 'Analyzing your network...'}</span>
+  </div>`;
+
+  try {
+    const lang = (typeof getLocale === 'function' ? getLocale() : 'en');
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, lang }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+
+    // Render markdown answer
+    let html = renderSimpleMarkdown(data.answer || '');
+
+    // Cost + timing footer
+    const tok = data.tokens || {};
+    const totalCost = (tok.prompt_tokens || 0) * 0.10 / 1e6 + (tok.response_tokens || 0) * 0.40 / 1e6;
+    const costLabel = totalCost >= 0.01 ? `${(totalCost * 100).toFixed(2)}¢` : `${(totalCost * 1000).toFixed(3)}m¢`;
+    html += `<div class="mt-3 pt-2 border-t border-slate-100 dark:border-white/[0.05] flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500">
+      <span>${data.model || ''} · ${formatNumber(tok.total_tokens || 0)} tokens · ${data.elapsed_s || '?'}s</span>
+      <span>${costLabel}</span>
+    </div>`;
+
+    if (contentDiv) contentDiv.innerHTML = html;
+  } catch (err) {
+    if (contentDiv) contentDiv.innerHTML = `<p class="text-sm text-red-500">${err.message}</p>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60', 'cursor-wait'); }
+  }
+}
+window.askNetwork = askNetwork;
+
+
+// ---------------------------------------------------------------------------
 // Devices page tab switching (Devices / Groups)
 // ---------------------------------------------------------------------------
 let _currentDevicesTab = 'devices';
