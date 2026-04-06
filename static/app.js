@@ -1903,7 +1903,7 @@ window.showToast = showToast;
 // --- DASHBOARD ---
 async function refreshDashboard() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const [aiEvt, cloudEvt, privRes, healthRes, sankeyAi, sankeyCloud, ksState] = await Promise.all([
+  const [aiEvt, cloudEvt, privRes, healthRes, sankeyAi, sankeyCloud, ksState, policiesRes] = await Promise.all([
     // Counter: meaningful activity only (heartbeats excluded). Users see
     // a realistic "real events today" number, not thousands of 0-byte pings.
     fetch('/api/events?category=ai&limit=200&include_heartbeats=false&start=' + todayStart.toISOString()).then(r => r.json()),
@@ -1915,7 +1915,19 @@ async function refreshDashboard() {
     fetch('/api/events?category=ai&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/events?category=cloud&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/killswitch').then(r => r.json()).catch(() => ({ active: false })),
+    // Policies — needed for the "Services Blocked" stat card + list.
+    fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
   ]);
+
+  // Build policy lookup so the dashboard knows which services are blocked.
+  _policyByService = {};
+  _policyExpiresByService = {};
+  (Array.isArray(policiesRes) ? policiesRes : []).forEach(p => {
+    if (p.scope === 'global' && p.service_name && !p.category) {
+      _policyByService[p.service_name] = p.action;
+      if (p.expires_at) _policyExpiresByService[p.service_name] = p.expires_at;
+    }
+  });
 
   // Update global killswitch banner
   updateGlobalKsBanner(ksState);
@@ -1929,14 +1941,10 @@ async function refreshDashboard() {
   const evtCount = aiEvt.length + cloudEvt.length;
   document.getElementById('dash-events-today').textContent = formatNumber(evtCount);
 
-  const ag = privRes?.adguard || {};
-  document.getElementById('dash-blocked').textContent = formatNumber(ag.blocked_queries || 0);
-  // Show block rate percentage if available
-  const rateEl = document.getElementById('dash-blocked-rate');
-  if (rateEl && ag.total_queries && ag.total_queries > 0) {
-    const pct = ((ag.blocked_queries / ag.total_queries) * 100).toFixed(1);
-    rateEl.textContent = t('dash.blockRate', { pct });
-  }
+  // Services Blocked stat card — shows count of YOUR active block rules,
+  // not AdGuard's raw blocked_queries (which was misleading).
+  const blockedSvcCount = Object.values(_policyByService).filter(a => a === 'block').length;
+  document.getElementById('dash-blocked').textContent = blockedSvcCount;
 
   // Security stat card (beaconing threats + any security-category events)
   renderSecurityStats(privRes?.security || {}, 'dash-security', 'dash-security-7d', 'dash-security-spark');
@@ -2004,18 +2012,35 @@ async function refreshDashboard() {
     renderHtmlLegend('dash-cloud-donut-legend', cloudDonut, cloudKeys, 4);
   }
 
-  const privDonut = getOrCreateChart('dash-priv-donut', makeDoughnutConfig());
-  if (privDonut && ag.top_blocked?.length) {
-    // Group raw domains into tracker categories
-    const grouped = groupBlockedByCategory(ag.top_blocked);
-    const topGrouped = grouped.slice(0, 6);
-    const privTotal = topGrouped.reduce((s, g) => s + g.count, 0);
-    privDonut.data.labels = topGrouped.map(g => g.label);
-    privDonut.data.datasets[0].data = topGrouped.map(g => g.count);
-    privDonut.data.datasets[0].backgroundColor = topGrouped.map((_, i) => ACCENT_COLORS[i % ACCENT_COLORS.length]);
-    privDonut.options.plugins.doughnutCenterText = { text: formatNumber(privTotal), subText: t('dash.events') };
-    privDonut.update();
-    renderHtmlLegend('dash-priv-donut-legend', privDonut, null, 4);
+  // Services Blocked panel — show actual blocked services with logos
+  const blockedListEl = document.getElementById('dash-blocked-services-list');
+  if (blockedListEl) {
+    const blockedSvcs = Object.entries(_policyByService)
+      .filter(([, action]) => action === 'block')
+      .map(([svc]) => svc)
+      .sort((a, b) => svcDisplayName(a).localeCompare(svcDisplayName(b)));
+    if (blockedSvcs.length === 0) {
+      blockedListEl.innerHTML = `
+        <div class="text-center py-6">
+          <i class="ph-duotone ph-shield-check text-3xl text-emerald-500 mb-2"></i>
+          <p class="text-xs text-emerald-600 dark:text-emerald-400">${t('rules.allServicesAllowed') || 'All services are currently allowed.'}</p>
+        </div>`;
+    } else {
+      blockedListEl.innerHTML = blockedSvcs.map(svc => {
+        const name = svcDisplayName(svc);
+        const logo = svcLogo(svc);
+        const exp = _policyExpiresByService?.[svc];
+        const timerLabel = exp
+          ? `<span class="text-[9px] text-blue-500"><i class="ph-duotone ph-clock-countdown"></i> ${new Date(exp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>`
+          : '';
+        return `<div class="flex items-center gap-2 py-1.5">
+          <div class="flex-shrink-0">${logo}</div>
+          <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+          ${timerLabel}
+          <i class="ph-duotone ph-prohibit text-xs text-red-500 flex-shrink-0 ml-auto"></i>
+        </div>`;
+      }).join('');
+    }
   }
 
   // Alarms — grouping, pagination, severity filter

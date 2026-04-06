@@ -286,13 +286,10 @@
           <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
           <div id="dash-events-trend" class="hidden mt-1"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('privacy')">
-          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.dnsBlocked">Threats Blocked</p>
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-red-300 dark:hover:border-red-600" onclick="navigate('rules', 'active')">
+          <p class="text-xs text-red-500 dark:text-red-400 font-medium" data-i18n="dash.servicesBlocked">Services Blocked</p>
           <p id="dash-blocked" class="text-2xl font-bold mt-2 tabular-nums text-red-500">0</p>
-          <p id="dash-blocked-subtitle" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="dash.adsTrackers">ads & trackers stopped</p>
-          <p id="dash-blocked-rate" class="text-[11px] text-slate-400 dark:text-slate-500"></p>
-          <!-- Trend placeholder: populated by renderTrend() when API provides comparison data -->
-          <div id="dash-blocked-trend" class="hidden mt-1"></div>
+          <p id="dash-blocked-subtitle" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="dash.blockedByYou">blocked by your rules</p>
         </div>
         <div class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-red-400 dark:hover:border-red-500" onclick="navigate('privacy')">
           <p class="text-xs text-red-500 dark:text-red-400 font-medium" data-i18n="dash.securityEvents">Security Events</p>
@@ -336,10 +333,9 @@
           <canvas id="dash-cloud-donut" height="200"></canvas>
           <div id="dash-cloud-donut-legend" class="flex flex-wrap gap-1.5 mt-3"></div>
         </div>
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('privacy')">
-          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.privacyBlocks">Privacy Blocks</h3>
-          <canvas id="dash-priv-donut" height="200"></canvas>
-          <div id="dash-priv-donut-legend" class="flex flex-wrap gap-1.5 mt-3"></div>
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-red-300 dark:hover:border-red-600" onclick="navigate('rules', 'active')">
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="dash.servicesBlocked">Services Blocked</h3>
+          <div id="dash-blocked-services-list"></div>
         </div>
       </div>
 
