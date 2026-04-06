@@ -5942,6 +5942,86 @@ async function adminCleanupRun() {
 }
 window.adminCleanupRun = adminCleanupRun;
 
+// ---------------------------------------------------------------------------
+// Notification Settings — Home Assistant integration
+// ---------------------------------------------------------------------------
+async function loadNotificationSettings() {
+  try {
+    const res = await fetch('/api/settings/notifications');
+    const data = await res.json();
+    const urlEl = document.getElementById('notify-ha-url');
+    const tokenEl = document.getElementById('notify-ha-token');
+    const enabledEl = document.getElementById('notify-ha-enabled');
+    if (urlEl) urlEl.value = data.url || '';
+    if (tokenEl) tokenEl.placeholder = data.token_masked || 'eyJhbGciOiJIUzI1NiIs...';
+    if (enabledEl) enabledEl.checked = !!data.is_enabled;
+    // Set category checkboxes
+    const cats = new Set((data.enabled_categories || '').split(','));
+    document.querySelectorAll('#notify-categories input[type="checkbox"]').forEach(cb => {
+      cb.checked = cats.has(cb.value);
+    });
+  } catch (err) {
+    console.error('loadNotificationSettings:', err);
+  }
+}
+
+async function saveNotificationSettings() {
+  const url = document.getElementById('notify-ha-url')?.value || '';
+  const token = document.getElementById('notify-ha-token')?.value || '';
+  const enabled = document.getElementById('notify-ha-enabled')?.checked || false;
+  const cats = [];
+  document.querySelectorAll('#notify-categories input[type="checkbox"]').forEach(cb => {
+    if (cb.checked) cats.push(cb.value);
+  });
+  const statusEl = document.getElementById('notify-status');
+
+  try {
+    const res = await fetch('/api/settings/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        token: token || undefined,
+        enabled_categories: cats.join(','),
+        is_enabled: enabled,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast(t('notify.saved') || 'Notification settings saved', 'success');
+    if (statusEl) statusEl.textContent = '';
+    loadNotificationSettings(); // reload to show masked token
+  } catch (err) {
+    showToast(`${t('notify.saveFailed') || 'Save failed'}: ${err.message}`, 'error');
+  }
+}
+
+async function testHaNotification() {
+  const statusEl = document.getElementById('notify-status');
+  if (statusEl) statusEl.textContent = t('notify.testing') || 'Sending test...';
+  try {
+    // Save first to make sure latest config is used
+    await saveNotificationSettings();
+    const res = await fetch('/api/settings/notifications/test', { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast(t('notify.testOk') || 'Test notification sent!', 'success');
+      if (statusEl) statusEl.textContent = '✓ ' + (data.message || 'OK');
+      if (statusEl) statusEl.className = 'text-[11px] text-emerald-500';
+    } else {
+      showToast(`${t('notify.testFailed') || 'Test failed'}: ${data.message}`, 'error');
+      if (statusEl) statusEl.textContent = '✗ ' + data.message;
+      if (statusEl) statusEl.className = 'text-[11px] text-red-500';
+    }
+  } catch (err) {
+    showToast(`Test failed: ${err.message}`, 'error');
+    if (statusEl) { statusEl.textContent = '✗ ' + err.message; statusEl.className = 'text-[11px] text-red-500'; }
+  }
+}
+
+window.loadNotificationSettings = loadNotificationSettings;
+window.saveNotificationSettings = saveNotificationSettings;
+window.testHaNotification = testHaNotification;
+
 // --- Active Protect (IPS) ---
 async function refreshIps() {
   await loadIpsStatus();
@@ -7003,7 +7083,8 @@ async function runHealthCheck() {
 let _currentSettingsTab = 'protection';
 
 function switchSettingsTab(tab) {
-  const tabs = ['protection', 'system', 'about'];
+  const tabs = ['protection', 'system', 'notifications', 'about'];
+  if (tab === 'notifications') loadNotificationSettings();
   if (!tabs.includes(tab)) tab = 'protection';
   _currentSettingsTab = tab;
 

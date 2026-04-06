@@ -333,6 +333,25 @@ class DeviceGroupMember(Base):
     )
 
 
+class NotificationConfig(Base):
+    """Notification integration configuration (currently Home Assistant only).
+
+    Stores connection details and which alert categories should trigger
+    push notifications. The token is stored in plaintext in SQLite
+    (acceptable for a local-only appliance — the DB file is already
+    root-owned on the host filesystem).
+    """
+
+    __tablename__ = "notification_config"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, nullable=False, default="homeassistant")
+    url = Column(String, nullable=True)          # e.g. http://homeassistant.local:8123
+    token = Column(String, nullable=True)        # Long-Lived Access Token
+    enabled_categories = Column(String, nullable=True)  # comma-separated: "security,ai,gaming"
+    is_enabled = Column(Boolean, nullable=False, default=True)
+
+
 class DeviceBaseline(Base):
     """Rolling 7-day traffic baseline per device for IoT anomaly detection.
 

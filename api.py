@@ -91,6 +91,7 @@ from database import (
     GeoConversation,
     IpMetadata,
     KnownDomain,
+    NotificationConfig,
     ServicePolicy,
     SessionLocal,
     TlsFingerprint,
@@ -767,6 +768,7 @@ async def lifespan(app: FastAPI):
     expiry_task = asyncio.create_task(_expire_block_rules())
     policy_expiry_task = asyncio.create_task(_expire_service_policies())
     baseline_task = asyncio.create_task(_compute_device_baselines())
+    notifier_task = asyncio.create_task(_push_notifier_task())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
     # Dynamic domain list updater — seeds from former DOMAIN_MAP on first
@@ -4377,6 +4379,189 @@ def _calc_container_cpu(stats: dict) -> float:
     except (KeyError, TypeError, ZeroDivisionError):
         pass
     return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Notification Settings — Home Assistant integration
+# ---------------------------------------------------------------------------
+
+def _mask_token(token: str | None) -> str | None:
+    if not token or len(token) < 8:
+        return token
+    return token[:4] + "••••••••" + token[-4:]
+
+
+def _get_or_create_notification_config(db) -> NotificationConfig:
+    config = db.query(NotificationConfig).first()
+    if not config:
+        config = NotificationConfig(
+            provider="homeassistant",
+            is_enabled=False,
+            enabled_categories="security,new_device",
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+@app.get("/api/settings/notifications")
+def get_notification_settings(db: Session = Depends(get_db)):
+    config = _get_or_create_notification_config(db)
+    return {
+        "id": config.id,
+        "provider": config.provider,
+        "url": config.url,
+        "token_masked": _mask_token(config.token),
+        "enabled_categories": config.enabled_categories,
+        "is_enabled": config.is_enabled,
+    }
+
+
+@app.post("/api/settings/notifications")
+def update_notification_settings(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    config = _get_or_create_notification_config(db)
+    if "url" in payload:
+        config.url = (payload["url"] or "").strip().rstrip("/")
+    if "token" in payload and payload["token"]:
+        # Only update token if a new one is provided (not the masked version)
+        token = payload["token"].strip()
+        if "••••" not in token:
+            config.token = token
+    if "enabled_categories" in payload:
+        config.enabled_categories = payload["enabled_categories"]
+    if "is_enabled" in payload:
+        config.is_enabled = bool(payload["is_enabled"])
+    db.commit()
+    return {"status": "ok", "is_enabled": config.is_enabled}
+
+
+@app.post("/api/settings/notifications/test")
+async def test_notification(db: Session = Depends(get_db)):
+    """Send a test notification to Home Assistant."""
+    config = _get_or_create_notification_config(db)
+    if not config.url or not config.token:
+        raise HTTPException(status_code=400, detail="URL and token must be configured first")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{config.url}/api/services/notify/notify",
+                headers={
+                    "Authorization": f"Bearer {config.token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "message": "AI-Radar test notification — connection successful!",
+                    "title": "AI-Radar",
+                },
+            )
+            if resp.status_code in (200, 201):
+                return {"status": "ok", "message": "Test notification sent successfully"}
+            else:
+                return {"status": "error", "message": f"HA returned HTTP {resp.status_code}: {resp.text[:200]}"}
+    except Exception as exc:
+        return {"status": "error", "message": f"Connection failed: {exc}"}
+
+
+# Background task: push alerts to Home Assistant
+_last_notified_alert_ids: set = set()
+
+
+async def _push_notifier_task():
+    """Background task: check for new alerts every 60s and push to Home Assistant."""
+    await asyncio.sleep(30)  # warm-up
+    while True:
+        await asyncio.sleep(60)
+        try:
+            db = SessionLocal()
+            config = db.query(NotificationConfig).first()
+            if not config or not config.is_enabled or not config.url or not config.token:
+                db.close()
+                continue
+
+            enabled_cats = set((config.enabled_categories or "").split(","))
+            enabled_cats.discard("")
+
+            # Get current active alerts
+            # Reuse the same endpoint logic but inline to avoid circular calls
+            cutoff = datetime.utcnow() - timedelta(hours=1)  # only notify on recent alerts
+            events = (
+                db.query(DetectionEvent)
+                .filter(DetectionEvent.timestamp >= cutoff)
+                .all()
+            )
+
+            # Also check new devices
+            new_devices = (
+                db.query(Device)
+                .filter(Device.first_seen >= cutoff)
+                .all()
+            )
+
+            notifications = []
+
+            # Anomaly events
+            anomaly_types = {"vpn_tunnel", "stealth_vpn_tunnel", "beaconing_threat",
+                             "iot_lateral_movement", "iot_suspicious_port"}
+            for e in events:
+                if e.detection_type not in anomaly_types:
+                    continue
+                # Map detection type to category for filtering
+                cat = "security" if e.detection_type in anomaly_types else e.category
+                if cat not in enabled_cats:
+                    continue
+                alert_id = f"{e.source_ip}|{e.detection_type}|{e.ai_service}"
+                if alert_id in _last_notified_alert_ids:
+                    continue
+                _last_notified_alert_ids.add(alert_id)
+                notifications.append({
+                    "title": f"AI-Radar: {e.detection_type.replace('_', ' ').title()}",
+                    "message": f"{e.source_ip} → {e.ai_service} ({e.detection_type})",
+                })
+
+            # New device notifications
+            if "new_device" in enabled_cats:
+                for d in new_devices:
+                    alert_id = f"new_device|{d.mac_address}"
+                    if alert_id in _last_notified_alert_ids:
+                        continue
+                    _last_notified_alert_ids.add(alert_id)
+                    name = d.display_name or d.hostname or d.mac_address
+                    notifications.append({
+                        "title": "AI-Radar: New Device",
+                        "message": f"{name} ({d.vendor or 'unknown vendor'}) joined the network",
+                    })
+
+            db.close()
+
+            # Send notifications
+            if notifications:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    for n in notifications[:5]:  # cap at 5 per cycle
+                        try:
+                            await client.post(
+                                f"{config.url}/api/services/notify/notify",
+                                headers={
+                                    "Authorization": f"Bearer {config.token}",
+                                    "Content-Type": "application/json",
+                                },
+                                json=n,
+                            )
+                        except Exception as exc:
+                            print(f"[notify] HA push failed: {exc}")
+                            break
+                print(f"[notify] Sent {len(notifications)} notification(s) to Home Assistant")
+
+            # Prune old alert IDs to prevent memory leak
+            if len(_last_notified_alert_ids) > 1000:
+                _last_notified_alert_ids.clear()
+
+        except Exception as exc:
+            print(f"[notify] Error: {exc}")
 
 
 @app.get("/api/system/data-sources")

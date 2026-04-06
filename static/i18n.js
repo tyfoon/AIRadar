@@ -71,6 +71,16 @@ const TRANSLATIONS = {
     'other.cat.streaming': 'Streaming',
 
     // Settings — System Performance
+    'settings.tabNotifications':'Notifications',
+    'notify.haDesc':           'Push alerts to your Home Assistant instance',
+    'notify.categories':       'Alert categories to notify',
+    'notify.save':             'Save',
+    'notify.saved':            'Notification settings saved',
+    'notify.saveFailed':       'Save failed',
+    'notify.test':             'Test HA Notification',
+    'notify.testing':          'Sending test...',
+    'notify.testOk':           'Test notification sent!',
+    'notify.testFailed':       'Test failed',
     'settings.dataSources':    'Data Sources',
     'settings.dataSourcesDesc':'External lists and databases used for service classification, geo-location, and threat detection.',
     'settings.lastUpdated':    'Last updated',
@@ -786,6 +796,16 @@ const TRANSLATIONS = {
     'other.cat.streaming': 'Streaming',
 
     // Instellingen — Systeemprestaties
+    'settings.tabNotifications':'Notificaties',
+    'notify.haDesc':           'Push meldingen naar je Home Assistant',
+    'notify.categories':       'Meldingscategorieën',
+    'notify.save':             'Opslaan',
+    'notify.saved':            'Notificatie-instellingen opgeslagen',
+    'notify.saveFailed':       'Opslaan mislukt',
+    'notify.test':             'Test HA Notificatie',
+    'notify.testing':          'Test verzenden...',
+    'notify.testOk':           'Testnotificatie verzonden!',
+    'notify.testFailed':       'Test mislukt',
     'settings.dataSources':    'Gegevensbronnen',
     'settings.dataSourcesDesc':'Externe lijsten en databases voor serviceclassificatie, geo-locatie en dreigingsdetectie.',
     'settings.lastUpdated':    'Laatst bijgewerkt',

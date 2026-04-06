@@ -197,6 +197,24 @@ class ServicePolicyRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NotificationConfigRead(BaseModel):
+    id: int
+    provider: str
+    url: Optional[str] = None
+    token_masked: Optional[str] = None  # partially masked
+    enabled_categories: Optional[str] = None
+    is_enabled: bool
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationConfigUpdate(BaseModel):
+    url: Optional[str] = None
+    token: Optional[str] = None
+    enabled_categories: Optional[str] = None
+    is_enabled: bool = True
+
+
 class AlertExceptionCreate(BaseModel):
     """Payload for POST /api/exceptions."""
 

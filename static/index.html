@@ -1419,6 +1419,12 @@
             <span data-i18n="settings.tabSystem">System</span>
           </span>
         </button>
+        <button id="settings-tab-btn-notifications" onclick="switchSettingsTab('notifications')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-bell text-sm"></i>
+            <span data-i18n="settings.tabNotifications">Notifications</span>
+          </span>
+        </button>
         <button id="settings-tab-btn-about" onclick="switchSettingsTab('about')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-info text-sm"></i>
@@ -1656,6 +1662,73 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- ── NOTIFICATIONS TAB ── -->
+      <div id="settings-tab-notifications" class="space-y-6 hidden">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <i class="ph-duotone ph-house text-xl text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300">Home Assistant</h3>
+              <p class="text-xs text-slate-400 dark:text-slate-500" data-i18n="notify.haDesc">Push alerts to your Home Assistant instance</p>
+            </div>
+            <label class="toggle ml-auto"><input type="checkbox" id="notify-ha-enabled" onchange="saveNotificationSettings()"><span class="slider"></span></label>
+          </div>
+
+          <!-- Connection -->
+          <div class="space-y-3 mb-5">
+            <div>
+              <label class="text-xs text-slate-500 dark:text-slate-400 font-medium block mb-1">Home Assistant URL</label>
+              <input type="url" id="notify-ha-url" placeholder="http://homeassistant.local:8123" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200">
+            </div>
+            <div>
+              <label class="text-xs text-slate-500 dark:text-slate-400 font-medium block mb-1">
+                Long-Lived Access Token
+                <span class="ml-1 text-slate-400 cursor-help" title="Create a Long-Lived Access Token in Home Assistant under your profile settings (bottom of the page)."><i class="ph-duotone ph-info text-xs"></i></span>
+              </label>
+              <input type="password" id="notify-ha-token" placeholder="eyJhbGciOiJIUzI1NiIs..." class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-mono">
+            </div>
+          </div>
+
+          <!-- Categories -->
+          <div class="mb-5">
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium mb-2" data-i18n="notify.categories">Alert categories to notify</p>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="notify-categories">
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="security" class="rounded border-slate-300 dark:border-slate-600" checked> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-siren text-sm text-red-500"></i> Security</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="new_device" class="rounded border-slate-300 dark:border-slate-600" checked> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-wifi-high text-sm text-blue-500"></i> New devices</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="ai" class="rounded border-slate-300 dark:border-slate-600"> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-brain text-sm text-indigo-500"></i> AI uploads</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="cloud" class="rounded border-slate-300 dark:border-slate-600"> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-cloud text-sm text-sky-500"></i> Cloud storage</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="gaming" class="rounded border-slate-300 dark:border-slate-600"> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-game-controller text-sm text-indigo-500"></i> Gaming</span>
+              </label>
+              <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.04] cursor-pointer">
+                <input type="checkbox" value="social" class="rounded border-slate-300 dark:border-slate-600"> <span class="text-xs text-slate-600 dark:text-slate-300"><i class="ph-duotone ph-chat-circle-text text-sm text-pink-500"></i> Social media</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-3">
+            <button onclick="saveNotificationSettings()" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold shadow-sm transition-colors active:scale-95">
+              <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-floppy-disk text-sm"></i> <span data-i18n="notify.save">Save</span></span>
+            </button>
+            <button onclick="testHaNotification()" class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-slate-300 dark:hover:bg-white/[0.1] text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors">
+              <span class="inline-flex items-center gap-1.5"><i class="ph-duotone ph-paper-plane-tilt text-sm"></i> <span data-i18n="notify.test">Test HA Notification</span></span>
+            </button>
+            <span id="notify-status" class="text-[11px] text-slate-400 dark:text-slate-500"></span>
+          </div>
+        </div>
       </div>
 
       <!-- ── ABOUT TAB ── -->
