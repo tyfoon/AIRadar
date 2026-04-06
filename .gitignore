@@ -10,6 +10,7 @@ dist/
 build/
 .venv/
 venv/
+mcp-venv/
 
 # OS
 .DS_Store
