@@ -147,6 +147,95 @@ def _vpn_provider_for_ip(ip: str) -> tuple[int, str] | None:
     return None
 
 # ---------------------------------------------------------------------------
+# IoT anomaly detection — lateral movement + suspicious ports
+# ---------------------------------------------------------------------------
+# These run in the conn.log hot path and fire detection_events
+# with category='security' for IoT devices behaving abnormally.
+
+# Device types that count as "IoT" for anomaly monitoring. Matches
+# the same classification _detectDeviceType uses in app.js.
+_IOT_DEVICE_TYPES = frozenset({
+    "air quality monitor", "robot vacuum", "smart dryer", "smart washer",
+    "smart dishwasher", "smart airco", "somfy blinds", "slide curtains",
+    "energy monitor", "p1 energy meter", "water meter", "smart home",
+    "home assistant", "wled led", "awtrix pixel clock", "sonoff nspanel",
+    "smart alarm clock", "health monitor", "presence sensor", "camera hub",
+    "zigbee coordinator", "iot device", "thermostat", "smart lighting",
+    "google home", "google home mini", "nest doorbell", "nest protect",
+    "nest hub", "nest cam", "nest", "speaker", "sonos speaker",
+    "homepod", "ip camera", "doorbell", "router", "hue sync box",
+    "harmony hub", "denon av receiver", "av receiver", "e-reader",
+    "chromecast", "apple tv", "tv/media", "lg smart tv",
+})
+
+# Ports that indicate lateral scan / exploitation when an IoT device
+# connects to another LAN host on them.
+_LATERAL_MOVEMENT_PORTS = frozenset({22, 23, 80, 443, 445, 3389, 8080, 8443})
+
+# Ports an IoT device should never talk to externally — these are
+# strong indicators of compromise (botnet C2, spam relay, etc.)
+_IOT_SUSPICIOUS_OUTBOUND_PORTS = frozenset({
+    22,    # SSH — IoT shouldn't initiate SSH
+    23,    # Telnet — classic Mirai
+    25,    # SMTP — spam relay
+    6667,  # IRC — botnet C2
+    6660, 6661, 6662, 6663, 6664, 6665, 6666, 6668, 6669,  # IRC range
+})
+
+IOT_ALERT_DEDUP_SECONDS = 300
+_iot_alert_last: dict[tuple, float] = {}
+
+
+def _is_iot_device(mac: str | None) -> str | None:
+    """Return the device type string if the MAC is an IoT device, else None.
+
+    Uses the cached _device_meta dict (refreshed every 60s from the API).
+    Classification mirrors _detectDeviceType in app.js: checks hostname,
+    vendor, display_name, device_class against known IoT patterns.
+    """
+    if not mac:
+        return None
+    meta = _device_meta.get(mac)
+    if not meta:
+        return None
+
+    # Build a haystack from the device metadata — same fields as app.js
+    haystack = " ".join(filter(None, [
+        meta.get("hostname"),
+        meta.get("vendor"),
+        meta.get("display_name") if hasattr(meta, "get") else None,
+    ])).lower()
+
+    # Quick vendor checks
+    vendor = (meta.get("vendor") or "").lower()
+    if any(v in vendor for v in (
+        "espressif", "hikvision", "sonos", "nest", "signify",
+        "philips lighting", "lumi", "withings", "xiaomi", "myenergi",
+        "resideo", "honeywell", "texas instruments", "shanghai high",
+    )):
+        return vendor
+
+    # Hostname pattern checks — check the haystack against known IoT keywords
+    for iot_type in _IOT_DEVICE_TYPES:
+        # Simple substring check (good enough for a hot-path filter)
+        keywords = iot_type.split()
+        if all(kw in haystack for kw in keywords):
+            return iot_type
+
+    # DHCP vendor class check
+    dvc = (meta.get("dhcp_vendor_class") or "").lower()
+    if dvc.startswith("udhcp"):  # BusyBox embedded Linux
+        return "embedded_iot"
+
+    # device_class from p0f
+    dc = (meta.get("device_class") or "").lower()
+    if dc == "iot":
+        return "iot"
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Domain → service mapping (AI + Cloud)
 # ---------------------------------------------------------------------------
 
@@ -1971,6 +2060,59 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             f"on port {resp_port} ({proto.upper()}) "
                             f"from {src_ip} — {dpd_total/1024:,.0f} KB"
                         )
+
+                # --- IoT anomaly detection ---
+                # Lateral movement: IoT device talking to another LAN host
+                # on scan-typical ports = possible compromise.
+                # Suspicious outbound: IoT device talking to external host
+                # on SSH/Telnet/IRC/SMTP = botnet indicator.
+                if l2_mac and _is_local_ip(src_ip):
+                    iot_type = _is_iot_device(_normalize_mac(l2_mac))
+                    if iot_type:
+                        now_iot = time.time()
+                        # Lateral movement check
+                        if (
+                            resp_ip and _is_local_ip(resp_ip)
+                            and resp_port in _LATERAL_MOVEMENT_PORTS
+                            and src_ip != resp_ip
+                        ):
+                            dk = ("lateral", src_ip, resp_ip, resp_port)
+                            if (now_iot - _iot_alert_last.get(dk, 0)) >= IOT_ALERT_DEDUP_SECONDS:
+                                _iot_alert_last[dk] = now_iot
+                                asyncio.create_task(register_device(client, src_ip, l2_mac))
+                                await send_event(
+                                    client,
+                                    detection_type="iot_lateral_movement",
+                                    ai_service=f"lateral_{resp_port}",
+                                    source_ip=src_ip,
+                                    bytes_transferred=0,
+                                    category="security",
+                                )
+                                print(
+                                    f"    └─ IoT LATERAL MOVEMENT: {iot_type} ({src_ip}) "
+                                    f"→ {resp_ip}:{resp_port}"
+                                )
+                        # Suspicious outbound port check
+                        if (
+                            resp_ip and not _is_local_ip(resp_ip)
+                            and resp_port in _IOT_SUSPICIOUS_OUTBOUND_PORTS
+                        ):
+                            dk = ("susport", src_ip, resp_port)
+                            if (now_iot - _iot_alert_last.get(dk, 0)) >= IOT_ALERT_DEDUP_SECONDS:
+                                _iot_alert_last[dk] = now_iot
+                                asyncio.create_task(register_device(client, src_ip, l2_mac))
+                                await send_event(
+                                    client,
+                                    detection_type="iot_suspicious_port",
+                                    ai_service=f"port_{resp_port}",
+                                    source_ip=src_ip,
+                                    bytes_transferred=0,
+                                    category="security",
+                                )
+                                print(
+                                    f"    └─ IoT SUSPICIOUS PORT: {iot_type} ({src_ip}) "
+                                    f"→ external:{resp_port}"
+                                )
 
                 # --- Evict stale IP mappings before further checks ---
                 if resp_ip in _known_ips:

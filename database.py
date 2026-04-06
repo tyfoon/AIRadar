@@ -277,6 +277,28 @@ class IpMetadata(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class DeviceBaseline(Base):
+    """Rolling 7-day traffic baseline per device for IoT anomaly detection.
+
+    Computed nightly by a background task. The IoT page compares live
+    traffic against these baselines to flag volume spikes, fan-out
+    spikes, and new country/ASN appearances.
+    """
+
+    __tablename__ = "device_baselines"
+
+    mac_address = Column(String, primary_key=True)
+    avg_bytes_hour = Column(Integer, nullable=False, default=0)
+    avg_connections_hour = Column(Integer, nullable=False, default=0)
+    avg_unique_destinations = Column(Integer, nullable=False, default=0)
+    stddev_bytes = Column(Integer, nullable=False, default=0)
+    stddev_connections = Column(Integer, nullable=False, default=0)
+    known_asns = Column(String, nullable=True)        # JSON array of ASN numbers
+    known_countries = Column(String, nullable=True)    # JSON array of country codes
+    computed_at = Column(DateTime, nullable=False,
+                         default=lambda: datetime.now(timezone.utc))
+
+
 class KnownDomain(Base):
     """Dynamic domain → service mapping, populated by the service updater.
 

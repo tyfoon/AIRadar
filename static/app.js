@@ -194,7 +194,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','other','geo','devices','ips','rules','settings'];
+const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','devices','ips','rules','settings'];
 
 let currentPage = 'summary';
 
@@ -1416,6 +1416,7 @@ async function refreshPage(page) {
     else if (page === 'devices') await refreshDevices();
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
+    else if (page === 'iot') await refreshIot();
     else if (page === 'other') await refreshOther();
     else if (page === 'geo') await refreshGeo();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
@@ -3216,6 +3217,120 @@ function renderTrackerDetailsList() {
     </div>`;
   }).join('');
 }
+
+// ================================================================
+// IoT DEVICES — fleet overview + anomaly alerts
+// ================================================================
+
+async function refreshIot() {
+  try {
+    const [fleet, anomalies] = await Promise.all([
+      fetch('/api/iot/fleet').then(r => r.json()),
+      fetch('/api/iot/anomalies').then(r => r.json()),
+    ]);
+    _renderIotStats(fleet);
+    _renderIotAnomalies(anomalies);
+    _renderIotFleet(fleet);
+  } catch (err) {
+    console.error('refreshIot:', err);
+  }
+}
+
+function _renderIotStats(data) {
+  const el = document.getElementById('iot-stats');
+  if (!el) return;
+  const healthCounts = { green: 0, orange: 0, red: 0 };
+  (data.devices || []).forEach(d => { healthCounts[d.health] = (healthCounts[d.health] || 0) + 1; });
+
+  el.innerHTML = `
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('iot.totalDevices') || 'IoT Devices'}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums">${data.total_devices || 0}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('iot.dataToday') || 'Data Today'}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums">${_fmtBytes(data.total_bytes_24h || 0)}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border ${data.anomaly_devices > 0 ? 'border-red-300 dark:border-red-700/40' : 'border-slate-200 dark:border-white/[0.05]'} rounded-xl p-5 card-hover">
+      <p class="text-xs ${data.anomaly_devices > 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'} font-medium">${t('iot.anomalies') || 'Anomalies'}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums ${data.anomaly_devices > 0 ? 'text-red-500' : ''}">${data.anomaly_devices || 0}</p>
+    </div>
+    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('iot.topTalker') || 'Top Talker'}</p>
+      <p class="text-lg font-bold mt-2 truncate">${data.top_talker || '—'}</p>
+    </div>
+  `;
+}
+
+function _renderIotAnomalies(data) {
+  const el = document.getElementById('iot-anomalies-section');
+  if (!el) return;
+  const anomalies = data.anomalies || [];
+  if (anomalies.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 rounded-xl p-5">
+      <h3 class="text-lg font-semibold text-red-600 dark:text-red-400 mb-3 flex items-center gap-2">
+        <i class="ph-duotone ph-siren text-xl"></i> ${t('iot.anomalyTitle') || 'Security Anomalies'}
+      </h3>
+      <div class="space-y-2">
+        ${anomalies.map(a => {
+          const devName = a.display_name || a.hostname || a.mac || a.source_ip;
+          const typeLabel = a.detection_type === 'iot_lateral_movement'
+            ? `<span class="text-red-600 dark:text-red-400 font-semibold">${t('iot.lateralMovement') || 'Lateral Movement'}</span>`
+            : `<span class="text-orange-600 dark:text-orange-400 font-semibold">${t('iot.suspiciousPort') || 'Suspicious Port'}</span>`;
+          return `<div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-white/[0.03] border border-red-100 dark:border-red-800/30">
+            <div class="flex items-center gap-3 min-w-0">
+              <i class="ph-duotone ph-warning text-lg text-red-500 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800 dark:text-white truncate">${devName}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">${typeLabel} · ${a.detail} · ${a.hits} hits</div>
+              </div>
+            </div>
+            <span class="text-[10px] text-slate-400 tabular-nums flex-shrink-0">${fmtTime(a.last_seen)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function _renderIotFleet(data) {
+  const el = document.getElementById('iot-fleet-grid');
+  if (!el) return;
+  const devices = data.devices || [];
+  if (devices.length === 0) {
+    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-8">${t('iot.noDevices') || 'No IoT devices detected on your network.'}</p>`;
+    return;
+  }
+
+  el.innerHTML = devices.map(d => {
+    const name = d.display_name || d.hostname || d.mac_address;
+    const healthColor = d.health === 'red' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/5'
+                      : d.health === 'orange' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/5'
+                      : 'border-slate-200 dark:border-white/[0.05]';
+    const healthDot = d.health === 'red' ? 'bg-red-500'
+                    : d.health === 'orange' ? 'bg-amber-500'
+                    : 'bg-emerald-500';
+    const dt = _detectDeviceType(d);
+
+    return `<div class="border ${healthColor} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors cursor-pointer hover:shadow-md" onclick="openDeviceDrawer('${d.mac_address}', null, null)">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="flex-shrink-0">${dt.icon}</span>
+        <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+        <span class="w-2 h-2 rounded-full ${healthDot} flex-shrink-0 ml-auto"></span>
+      </div>
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-2">${d.device_type || dt.type}</p>
+      <div class="flex items-center justify-between text-[10px] tabular-nums">
+        <span class="text-slate-500 dark:text-slate-400">${_fmtBytes(d.bytes_24h)}/day</span>
+        <span class="text-slate-400 dark:text-slate-500">${d.destinations} dest.</span>
+        ${d.anomalies > 0 ? `<span class="text-red-500 font-semibold">${d.anomalies} <i class="ph-duotone ph-warning text-[9px]"></i></span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 
 let _otherFiltersPopulated = false;
 

@@ -64,6 +64,11 @@
       <span class="nav-label" data-i18n="nav.privacy">Privacy</span>
       <span class="nav-tooltip" data-i18n="nav.privacy">Privacy</span>
     </a>
+    <a href="#/iot" data-page="iot" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+      <i class="ph-duotone ph-cpu text-xl flex-shrink-0"></i>
+      <span class="nav-label" data-i18n="nav.iot">IoT Devices</span>
+      <span class="nav-tooltip" data-i18n="nav.iot">IoT Devices</span>
+    </a>
     <a href="#/other" data-page="other" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-dots-nine text-xl flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.other">Other Usage</span>
@@ -776,6 +781,27 @@
       <div id="other-usage-tree-container" class="space-y-3">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
           <p class="text-slate-400 dark:text-slate-500 text-sm" data-i18n="other.noData">No other usage detected yet.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- PAGE: IoT DEVICES                                              -->
+    <!-- ============================================================= -->
+    <section id="page-iot" class="page space-y-6">
+
+      <!-- Stats row -->
+      <div id="iot-stats" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+
+      <!-- Anomaly Alerts -->
+      <div id="iot-anomalies-section"></div>
+
+      <!-- Device Fleet Grid -->
+      <div>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="iot.fleetTitle">IoT Fleet</h3>
+        <div id="iot-fleet-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-8" data-i18n="iot.loading">Loading IoT devices...</p>
         </div>
       </div>
 

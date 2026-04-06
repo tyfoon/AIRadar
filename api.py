@@ -83,6 +83,7 @@ from database import (
     BlockRule,
     DetectionEvent,
     Device,
+    DeviceBaseline,
     DeviceIP,
     GeoTraffic,
     GeoConversation,
@@ -763,6 +764,7 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
     policy_expiry_task = asyncio.create_task(_expire_service_policies())
+    baseline_task = asyncio.create_task(_compute_device_baselines())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
     # Dynamic domain list updater — seeds from former DOMAIN_MAP on first
@@ -4357,6 +4359,386 @@ def get_data_sources(db: Session = Depends(get_db)):
     })
 
     return {"sources": sources}
+
+
+# ---------------------------------------------------------------------------
+# IoT Fleet + Anomaly + Device Profile endpoints
+# ---------------------------------------------------------------------------
+
+# Device types considered "IoT" — mirrors _IOT_DEVICE_TYPES in zeek_tailer.py
+# plus the _detectDeviceType patterns in app.js. Keep in sync.
+_IOT_TYPE_KEYWORDS = {
+    "air quality", "vacuum", "dryer", "washer", "dishwasher", "airco",
+    "blinds", "curtains", "energy", "meter", "smart home", "home assistant",
+    "wled", "awtrix", "nspanel", "alarm clock", "health monitor",
+    "presence sensor", "camera hub", "zigbee", "iot", "thermostat",
+    "smart lighting", "google home", "nest", "speaker", "sonos",
+    "homepod", "ip camera", "doorbell", "hue sync", "harmony",
+    "denon", "av receiver", "chromecast", "apple tv", "tv/media",
+    "lg smart tv", "e-reader",
+}
+
+
+def _classify_device_type_backend(device: Device) -> str:
+    """Return the device type string, mirroring app.js _detectDeviceType.
+
+    Uses hostname, vendor, display_name, device_class, dhcp_vendor_class.
+    """
+    haystack = " ".join(filter(None, [
+        device.hostname, device.vendor, device.display_name
+    ])).lower()
+
+    # Check against IoT keywords
+    for kw in _IOT_TYPE_KEYWORDS:
+        if kw in haystack:
+            return kw
+
+    # Vendor-based
+    v = (device.vendor or "").lower()
+    for iot_vendor in ("espressif", "hikvision", "sonos", "nest", "signify",
+                       "philips lighting", "lumi", "withings", "xiaomi",
+                       "myenergi", "resideo", "honeywell", "texas instruments"):
+        if iot_vendor in v:
+            return iot_vendor
+
+    # DHCP vendor class
+    dvc = (device.dhcp_vendor_class or "").lower()
+    if dvc.startswith("udhcp"):
+        return "embedded_iot"
+
+    dc = (device.device_class or "").lower()
+    if dc == "iot":
+        return "iot"
+
+    return ""
+
+
+def _is_iot_backend(device: Device) -> bool:
+    return bool(_classify_device_type_backend(device))
+
+
+@app.get("/api/iot/fleet")
+def iot_fleet(db: Session = Depends(get_db)):
+    """Return all IoT devices with traffic stats and health scores."""
+    devices = db.query(Device).all()
+    iot_devices = [d for d in devices if _is_iot_backend(d)]
+
+    # Traffic stats from geo_conversations (last 24h approximation)
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    conv_stats = {}
+    for row in (
+        db.query(
+            GeoConversation.mac_address,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(GeoConversation.hits).label("hits"),
+            func.count(func.distinct(GeoConversation.resp_ip)).label("destinations"),
+        )
+        .filter(GeoConversation.last_seen >= cutoff)
+        .group_by(GeoConversation.mac_address)
+        .all()
+    ):
+        conv_stats[row.mac_address] = {
+            "bytes_24h": int(row.bytes or 0),
+            "hits_24h": int(row.hits or 0),
+            "destinations": int(row.destinations or 0),
+        }
+
+    # Baselines
+    baselines = {b.mac_address: b for b in db.query(DeviceBaseline).all()}
+
+    # Recent anomalies (last 24h)
+    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
+    anomaly_counts = {}
+    for row in (
+        db.query(DetectionEvent.source_ip, func.count().label("cnt"))
+        .filter(
+            DetectionEvent.detection_type.in_(anomaly_types),
+            DetectionEvent.timestamp >= cutoff,
+        )
+        .group_by(DetectionEvent.source_ip)
+        .all()
+    ):
+        anomaly_counts[row.source_ip] = row.cnt
+
+    # Map IPs to MACs for anomaly lookup
+    ip_to_mac = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
+
+    result = []
+    total_bytes = 0
+    anomaly_device_count = 0
+    for d in iot_devices:
+        stats = conv_stats.get(d.mac_address, {})
+        baseline = baselines.get(d.mac_address)
+        device_ips = [dip.ip for dip in d.ips] if d.ips else []
+
+        # Health score: green/orange/red
+        anomalies = sum(anomaly_counts.get(ip, 0) for ip in device_ips)
+        health = "green"
+        if anomalies > 0:
+            health = "red"
+            anomaly_device_count += 1
+        elif baseline and stats.get("bytes_24h", 0) > 0:
+            avg_24h = baseline.avg_bytes_hour * 24
+            if avg_24h > 0 and stats["bytes_24h"] > avg_24h * 3:
+                health = "orange"
+
+        bytes_24h = stats.get("bytes_24h", 0)
+        total_bytes += bytes_24h
+
+        result.append({
+            "mac_address": d.mac_address,
+            "hostname": d.hostname,
+            "display_name": d.display_name,
+            "vendor": d.vendor,
+            "device_type": _classify_device_type_backend(d),
+            "health": health,
+            "bytes_24h": bytes_24h,
+            "hits_24h": stats.get("hits_24h", 0),
+            "destinations": stats.get("destinations", 0),
+            "anomalies": anomalies,
+            "last_seen": str(d.last_seen) if d.last_seen else None,
+            "ips": device_ips[:3],
+        })
+
+    result.sort(key=lambda x: -x["bytes_24h"])
+
+    return {
+        "total_devices": len(result),
+        "total_bytes_24h": total_bytes,
+        "anomaly_devices": anomaly_device_count,
+        "top_talker": result[0]["display_name"] or result[0]["hostname"] or result[0]["mac_address"] if result else None,
+        "devices": result,
+    }
+
+
+@app.get("/api/iot/anomalies")
+def iot_anomalies(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return IoT-specific security anomalies."""
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    anomaly_types = ("iot_lateral_movement", "iot_suspicious_port")
+
+    rows = (
+        db.query(
+            DetectionEvent.source_ip,
+            DetectionEvent.detection_type,
+            DetectionEvent.ai_service,
+            func.count().label("hits"),
+            func.max(DetectionEvent.timestamp).label("last_seen"),
+        )
+        .filter(
+            DetectionEvent.detection_type.in_(anomaly_types),
+            DetectionEvent.timestamp >= cutoff,
+        )
+        .group_by(DetectionEvent.source_ip, DetectionEvent.detection_type, DetectionEvent.ai_service)
+        .order_by(func.max(DetectionEvent.timestamp).desc())
+        .limit(50)
+        .all()
+    )
+
+    ip_to_device = {}
+    for dip in db.query(DeviceIP).all():
+        dev = db.query(Device).filter(Device.mac_address == dip.mac_address).first()
+        if dev:
+            ip_to_device[dip.ip] = {
+                "mac": dev.mac_address,
+                "hostname": dev.hostname,
+                "display_name": dev.display_name,
+                "vendor": dev.vendor,
+            }
+
+    return {
+        "anomalies": [
+            {
+                "source_ip": r.source_ip,
+                "detection_type": r.detection_type,
+                "detail": r.ai_service,
+                "hits": r.hits,
+                "last_seen": str(r.last_seen),
+                **(ip_to_device.get(r.source_ip, {})),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/iot/device/{mac_address}")
+def iot_device_profile(mac_address: str, db: Session = Depends(get_db)):
+    """Return detailed IoT profile for a specific device."""
+    device = db.query(Device).filter(Device.mac_address == mac_address).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    device_ips = [dip.ip for dip in device.ips] if device.ips else []
+
+    # Top destinations from geo_conversations
+    top_dests = (
+        db.query(
+            GeoConversation.resp_ip,
+            GeoConversation.country_code,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(GeoConversation.hits).label("hits"),
+        )
+        .filter(GeoConversation.mac_address == mac_address)
+        .group_by(GeoConversation.resp_ip, GeoConversation.country_code)
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .limit(10)
+        .all()
+    )
+
+    # Enrich with ASN/PTR
+    dest_ips = [r.resp_ip for r in top_dests]
+    meta_map = {
+        m.ip: m for m in
+        db.query(IpMetadata).filter(IpMetadata.ip.in_(dest_ips)).all()
+    } if dest_ips else {}
+
+    destinations = []
+    for r in top_dests:
+        m = meta_map.get(r.resp_ip)
+        destinations.append({
+            "ip": r.resp_ip,
+            "country": r.country_code,
+            "bytes": int(r.bytes or 0),
+            "hits": int(r.hits or 0),
+            "ptr": m.ptr if m else None,
+            "asn": m.asn if m else None,
+            "asn_org": m.asn_org if m else None,
+        })
+
+    # TLS fingerprints
+    tls_fps = (
+        db.query(TlsFingerprint)
+        .filter(TlsFingerprint.mac_address == mac_address)
+        .order_by(TlsFingerprint.hit_count.desc())
+        .limit(5)
+        .all()
+    )
+
+    # Baseline
+    baseline = db.query(DeviceBaseline).filter(
+        DeviceBaseline.mac_address == mac_address
+    ).first()
+
+    # Traffic stats
+    total_bytes = db.query(
+        func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
+    ).filter(GeoConversation.mac_address == mac_address).scalar() or 0
+    total_hits = db.query(
+        func.coalesce(func.sum(GeoConversation.hits), 0)
+    ).filter(GeoConversation.mac_address == mac_address).scalar() or 0
+
+    # First/last activity
+    first_conv = db.query(func.min(GeoConversation.first_seen)).filter(
+        GeoConversation.mac_address == mac_address
+    ).scalar()
+    last_conv = db.query(func.max(GeoConversation.last_seen)).filter(
+        GeoConversation.mac_address == mac_address
+    ).scalar()
+
+    hours_active = 0
+    if first_conv and last_conv:
+        hours_active = max(1, (last_conv - first_conv).total_seconds() / 3600)
+
+    return {
+        "mac_address": mac_address,
+        "hostname": device.hostname,
+        "display_name": device.display_name,
+        "vendor": device.vendor,
+        "device_type": _classify_device_type_backend(device),
+        "total_bytes": int(total_bytes),
+        "total_hits": int(total_hits),
+        "avg_bytes_hour": int(total_bytes / hours_active) if hours_active > 0 else 0,
+        "contact_frequency": f"every {max(1, int(hours_active * 60 / max(1, total_hits)))} min",
+        "destinations": destinations,
+        "tls_fingerprints": [
+            {"ja4": t.ja4, "sni": t.sni, "hits": t.hit_count}
+            for t in tls_fps
+        ],
+        "baseline": {
+            "avg_bytes_hour": baseline.avg_bytes_hour,
+            "avg_connections_hour": baseline.avg_connections_hour,
+            "avg_unique_destinations": baseline.avg_unique_destinations,
+            "known_countries": baseline.known_countries,
+            "computed_at": str(baseline.computed_at),
+        } if baseline else None,
+    }
+
+
+# Baseline computation — runs daily
+BASELINE_INTERVAL = 86400  # 24 hours
+
+
+async def _compute_device_baselines():
+    """Nightly task: compute rolling 7-day traffic baselines per device."""
+    await asyncio.sleep(120)  # let other tasks warm up first
+    while True:
+        try:
+            db = SessionLocal()
+            cutoff = datetime.utcnow() - timedelta(days=7)
+            macs = [r[0] for r in db.query(GeoConversation.mac_address).distinct().all() if r[0]]
+
+            updated = 0
+            for mac in macs:
+                convs = (
+                    db.query(
+                        func.sum(GeoConversation.bytes_transferred).label("bytes"),
+                        func.sum(GeoConversation.hits).label("hits"),
+                        func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+                    )
+                    .filter(
+                        GeoConversation.mac_address == mac,
+                        GeoConversation.last_seen >= cutoff,
+                    )
+                    .first()
+                )
+                if not convs or not convs.hits:
+                    continue
+
+                total_bytes = int(convs.bytes or 0)
+                total_hits = int(convs.hits or 0)
+                total_dests = int(convs.dests or 0)
+                hours = 7 * 24  # 7-day window
+
+                # Known countries + ASNs
+                countries = [
+                    r[0] for r in
+                    db.query(GeoConversation.country_code).filter(
+                        GeoConversation.mac_address == mac,
+                    ).distinct().all()
+                    if r[0]
+                ]
+
+                import json as _json
+                existing = db.query(DeviceBaseline).filter(
+                    DeviceBaseline.mac_address == mac
+                ).first()
+                if existing:
+                    existing.avg_bytes_hour = total_bytes // hours
+                    existing.avg_connections_hour = total_hits // hours
+                    existing.avg_unique_destinations = total_dests
+                    existing.known_countries = _json.dumps(countries)
+                    existing.computed_at = datetime.utcnow()
+                else:
+                    db.add(DeviceBaseline(
+                        mac_address=mac,
+                        avg_bytes_hour=total_bytes // hours,
+                        avg_connections_hour=total_hits // hours,
+                        avg_unique_destinations=total_dests,
+                        known_countries=_json.dumps(countries),
+                        computed_at=datetime.utcnow(),
+                    ))
+                updated += 1
+
+            db.commit()
+            db.close()
+            if updated:
+                print(f"[baseline] Updated baselines for {updated} devices")
+        except Exception as exc:
+            print(f"[baseline] Error: {exc}")
+        await asyncio.sleep(BASELINE_INTERVAL)
 
 
 @app.get("/api/system/performance")
