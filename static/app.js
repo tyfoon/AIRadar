@@ -5326,16 +5326,22 @@ async function loadAccessControl() {
       }
     });
 
-    const aiContainer = document.getElementById('access-control-ai');
-    const cloudContainer = document.getElementById('access-control-cloud');
-    const aiSvcs = servicesRes.filter(s => s.category === 'ai');
-    const cloudSvcs = servicesRes.filter(s => s.category === 'cloud');
-    aiContainer.innerHTML = aiSvcs.length
-      ? aiSvcs.map(renderServiceCard).join('')
-      : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noAiServices')}</p>`;
-    cloudContainer.innerHTML = cloudSvcs.length
-      ? cloudSvcs.map(renderServiceCard).join('')
-      : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noCloudServices')}</p>`;
+    // Render service cards per category into their respective grids.
+    const categories = [
+      { key: 'ai',        containerId: 'access-control-ai' },
+      { key: 'cloud',     containerId: 'access-control-cloud' },
+      { key: 'social',    containerId: 'access-control-social' },
+      { key: 'gaming',    containerId: 'access-control-gaming' },
+      { key: 'streaming', containerId: 'access-control-streaming' },
+    ];
+    for (const cat of categories) {
+      const el = document.getElementById(cat.containerId);
+      if (!el) continue;
+      const svcs = servicesRes.filter(s => s.category === cat.key);
+      el.innerHTML = svcs.length
+        ? svcs.map(renderServiceCard).join('')
+        : `<p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-4">${t('rules.noServices') || 'No services detected.'}</p>`;
+    }
   } catch(e) { console.error('loadAccessControl:', e); }
 }
 

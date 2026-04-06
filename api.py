@@ -3755,17 +3755,41 @@ SERVICE_DOMAINS: dict[str, dict] = {
     "dropbox":          {"domains": ["dropbox.com"], "category": "cloud"},
     "wetransfer":       {"domains": ["wetransfer.com"], "category": "cloud"},
     "google_drive":     {"domains": ["drive.google.com", "docs.google.com"], "category": "cloud"},
-    # Phase 2 context-aware labels — same domain, different meaning per
-    # device kind. We don't expose them as blockable in the Rules page
-    # (can't block storage.googleapis.com without breaking Drive), so
-    # they're informational/alert-only. Empty domain list keeps the
-    # Rules UI from trying to call AdGuard.
     "google_device_sync":  {"domains": [], "category": "cloud"},
     "google_generic_cdn":  {"domains": [], "category": "cloud"},
     "onedrive":         {"domains": ["onedrive.live.com", "storage.live.com"], "category": "cloud"},
     "icloud":           {"domains": ["icloud.com"], "category": "cloud"},
     "box":              {"domains": ["box.com"], "category": "cloud"},
     "mega":             {"domains": ["mega.nz"], "category": "cloud"},
+    # Social
+    "facebook":         {"domains": ["facebook.com", "fbcdn.net"], "category": "social"},
+    "instagram":        {"domains": ["instagram.com", "cdninstagram.com"], "category": "social"},
+    "tiktok":           {"domains": ["tiktok.com", "tiktokcdn.com", "musical.ly"], "category": "social"},
+    "snapchat":         {"domains": ["snapchat.com", "sc-cdn.net"], "category": "social"},
+    "twitter":          {"domains": ["twitter.com", "x.com", "twimg.com"], "category": "social"},
+    "pinterest":        {"domains": ["pinterest.com", "pinimg.com"], "category": "social"},
+    "linkedin":         {"domains": ["linkedin.com"], "category": "social"},
+    "reddit":           {"domains": ["reddit.com", "redditmedia.com", "redditstatic.com"], "category": "social"},
+    "whatsapp":         {"domains": ["whatsapp.com", "whatsapp.net"], "category": "social"},
+    # Gaming
+    "steam":            {"domains": ["steampowered.com", "steamcommunity.com", "steamstatic.com"], "category": "gaming"},
+    "epic_games":       {"domains": ["epicgames.com", "unrealengine.com", "fortnite.com"], "category": "gaming"},
+    "roblox":           {"domains": ["roblox.com", "rbxcdn.com"], "category": "gaming"},
+    "ea_games":         {"domains": ["ea.com", "origin.com"], "category": "gaming"},
+    "xbox_live":        {"domains": ["xboxlive.com", "xbox.com"], "category": "gaming"},
+    "playstation":      {"domains": ["playstation.com", "playstation.net"], "category": "gaming"},
+    "nintendo":         {"domains": ["nintendo.com", "nintendo.net"], "category": "gaming"},
+    "discord":          {"domains": ["discord.com", "discordapp.com", "discord.gg"], "category": "gaming"},
+    "twitch":           {"domains": ["twitch.tv", "twitchcdn.net"], "category": "gaming"},
+    "supercell":        {"domains": ["supercell.com", "supercell.net", "hayday.com", "clashofclans.com", "brawlstars.com", "clashroyale.com"], "category": "gaming"},
+    # Streaming
+    "netflix":          {"domains": ["netflix.com", "nflxvideo.net", "nflximg.net"], "category": "streaming"},
+    "youtube":          {"domains": ["youtube.com", "googlevideo.com", "ytimg.com", "youtu.be"], "category": "streaming"},
+    "spotify":          {"domains": ["spotify.com", "spotifycdn.com", "scdn.co"], "category": "streaming"},
+    "disney_plus":      {"domains": ["disneyplus.com", "disney-plus.net", "dssott.com"], "category": "streaming"},
+    "hbo_max":          {"domains": ["hbomax.com", "max.com"], "category": "streaming"},
+    "prime_video":      {"domains": ["primevideo.com", "aiv-cdn.net", "amazonvideo.com"], "category": "streaming"},
+    "apple_tv":         {"domains": ["tv.apple.com"], "category": "streaming"},
 }
 
 
@@ -3890,14 +3914,16 @@ def get_known_services(db: Session = Depends(get_db)):
                 "is_permanent": rule.expires_at is None,
             }
 
-    # Query actual traffic per service (ai + cloud only, not tracking)
+    # Query actual traffic per service — all categories that are in
+    # SERVICE_DOMAINS so gaming/social/streaming show "seen" correctly.
+    svc_categories = list({info["category"] for info in SERVICE_DOMAINS.values() if info["category"]})
     seen_raw = (
         db.query(
             DetectionEvent.ai_service,
             func.count(DetectionEvent.id).label("hits"),
             func.max(DetectionEvent.timestamp).label("last_seen"),
         )
-        .filter(DetectionEvent.category.in_(["ai", "cloud"]))
+        .filter(DetectionEvent.category.in_(svc_categories))
         .group_by(DetectionEvent.ai_service)
         .all()
     )
