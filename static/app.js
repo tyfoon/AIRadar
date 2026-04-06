@@ -1765,7 +1765,7 @@ window.submitAlertAction = submitAlertAction;
 async function clearAllAlerts() {
   if (!_summaryAlerts || _summaryAlerts.length === 0) return;
 
-  const msg = t('summary.clearConfirm')
+  const msg = t('summary.clearConfirm', { n: _summaryAlerts.length })
     || `This will snooze all ${_summaryAlerts.length} alerts for 2 hours. Continue?`;
   if (!window.confirm(msg)) return;
 
@@ -1804,7 +1804,7 @@ async function clearAllAlerts() {
   }
 
   if (fail === 0) {
-    showToast(t('summary.clearSuccess', { n: ok }) || `${ok} alerts snoozed for 2 hours`, 'success');
+    showToast(t('summary.clearSuccess', { n: String(ok) }) || `${ok} alerts snoozed for 2 hours`, 'success');
   } else {
     showToast(`${ok} snoozed, ${fail} failed`, 'warning');
   }

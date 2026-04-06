@@ -725,7 +725,14 @@ async def lifespan(app: FastAPI):
     print(f"[watchdog] AdGuard auto-failsafe active (check every 30s, trigger after 3 failures)")
     print(f"[beacon] Malware C2 beacon detector running every {BEACON_SCAN_INTERVAL}s")
     print(f"[service-updater] Domain list updater running (immediate + every 24h)")
-    # Restore killswitch state from last run
+    # Restore IPS (CrowdSec) toggle state — defaults to ON on first run
+    # so the network is protected from the start without manual action.
+    ips_pref = _read_ips_pref()
+    crowdsec.enabled = bool(ips_pref.get("enabled", True))
+    ips_tag = "user preference" if ips_pref.get("user_set") else "first-run default"
+    print(f"[ips] Active Protect set to {'ON' if crowdsec.enabled else 'OFF'} ({ips_tag})")
+
+    # Restore killswitch state from last run — overrides IPS if active
     ks = _read_killswitch_state()
     if ks.get("active"):
         print(f"[killswitch] ⚠️  Killswitch was active before restart — still active")
@@ -3552,10 +3559,36 @@ async def get_ips_status():
     }
 
 
+_IPS_PREF_FILE = os.path.join(os.path.dirname(__file__), "data", "ips_enabled.json")
+
+
+def _read_ips_pref() -> dict:
+    """Read persisted user preference for IPS (CrowdSec) toggle."""
+    try:
+        if os.path.exists(_IPS_PREF_FILE):
+            with open(_IPS_PREF_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    # First-run default: IPS ON (CrowdSec should protect from the start)
+    return {"enabled": True, "user_set": False}
+
+
+def _write_ips_pref(enabled: bool):
+    """Persist the user's IPS toggle state so it survives restarts."""
+    try:
+        os.makedirs(os.path.dirname(_IPS_PREF_FILE), exist_ok=True)
+        with open(_IPS_PREF_FILE, "w") as f:
+            json.dump({"enabled": bool(enabled), "user_set": True}, f, indent=2)
+    except Exception as exc:
+        print(f"[ips] Failed to write IPS preference: {exc}")
+
+
 @app.post("/api/ips/toggle")
 async def toggle_ips(payload: GlobalFilterToggle):
     """Enable or disable Active Protect (IPS)."""
     crowdsec.enabled = payload.enabled
+    _write_ips_pref(payload.enabled)
     state = "enabled" if payload.enabled else "disabled"
     print(f"[ips] Active Protect {state}")
     return {"enabled": crowdsec.enabled}
