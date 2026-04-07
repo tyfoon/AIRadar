@@ -6169,6 +6169,23 @@ async def _check_volume_spikes():
     DetectionEvent with detection_type='iot_volume_spike'.
     """
     await asyncio.sleep(300)  # let baselines compute first
+
+    # Seed dedup dict from DB so restarts don't re-alert existing spikes
+    try:
+        _db = SessionLocal()
+        _cutoff = datetime.utcnow() - timedelta(seconds=VOLUME_SPIKE_DEDUP_SECONDS)
+        ip_to_mac = {dip.ip: dip.mac_address for dip in _db.query(DeviceIP).all()}
+        for evt in _db.query(DetectionEvent).filter(
+            DetectionEvent.detection_type == "iot_volume_spike",
+            DetectionEvent.timestamp >= _cutoff,
+        ).all():
+            mac = ip_to_mac.get(evt.source_ip)
+            if mac:
+                _volume_spike_last[mac] = evt.timestamp.timestamp()
+        _db.close()
+    except Exception:
+        pass
+
     while True:
         try:
             import json as _json
