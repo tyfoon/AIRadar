@@ -1827,7 +1827,7 @@ async function submitAlertAction(action) {
         mac_address: alert.mac_address,
         alert_type: alert.alert_type,
         destination: alert.service_or_dest,
-        expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        expires_at: null,
       };
     } else if (action.startsWith('snooze_')) {
       const hours = parseInt(action.split('_')[1], 10);
@@ -1911,7 +1911,7 @@ function _inlineDismiss(idx) {
   _inlineAlertAction(idx, {
     mac_address: a.mac_address, alert_type: a.alert_type,
     destination: a.service_or_dest,
-    expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    expires_at: null,
   });
 }
 
@@ -1963,7 +1963,7 @@ async function clearAllAlerts() {
     btn.classList.add('opacity-60', 'cursor-wait');
   }
 
-  const expires = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+  const expires = null;
   let okCount = 0;
   let fail = 0;
 
