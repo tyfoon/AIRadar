@@ -520,6 +520,7 @@ async def _periodic_beacon_scan():
                             continue
 
                         event = DetectionEvent(
+                            sensor_id="airadar",
                             timestamp=datetime.utcnow(),
                             detection_type="beaconing_threat",
                             ai_service=f["dst"],        # destination IP lives here
