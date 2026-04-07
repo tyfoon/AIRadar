@@ -526,7 +526,7 @@ async def _periodic_beacon_scan():
                             ai_service=f["dst"],        # destination IP lives here
                             source_ip=f["src"],
                             category="security",
-                            bytes_transferred=0,
+                            bytes_transferred=int(f.get("score", 0) * 10),  # score × 10
                             possible_upload=False,
                         )
                         db.add(event)
@@ -4002,6 +4002,7 @@ async def privacy_stats(
             DetectionEvent.ai_service,        # destination IP
             func.max(DetectionEvent.timestamp).label("last_seen"),
             func.count(DetectionEvent.id).label("hits"),
+            func.max(DetectionEvent.bytes_transferred).label("score_x10"),
         )
         .filter(
             DetectionEvent.detection_type == "beaconing_threat",
@@ -4074,6 +4075,7 @@ async def privacy_stats(
             "dest_sni": dest_sni,
             "last_seen": str(row.last_seen),
             "hits": row.hits,
+            "score": round((row.score_x10 or 0) / 10.0, 1),
             "dismissed": _dismissed,
             **device_info,
             **dest_info,

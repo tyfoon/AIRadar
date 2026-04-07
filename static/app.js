@@ -3162,7 +3162,14 @@ function renderBeaconAlerts(alerts, status) {
           : '';
         const srcIpColor = isDismissed ? 'text-slate-400 dark:text-slate-500' : 'text-red-600 dark:text-red-400';
         const icon = isDismissed ? '<i class="ph-duotone ph-check-circle text-lg text-slate-400"></i>' : '<span class="text-lg">🚨</span>';
-        const deleteBtn = `<button onclick="_deleteBeaconAlert('${a.source_ip}','${a.dest_ip}')" class="mt-1 text-[10px] text-red-500 hover:text-red-700 dark:hover:text-red-300 underline" title="Permanently remove">Delete</button>`;
+        const scoreVal = a.score || 0;
+        const scoreColor = scoreVal >= 90 ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
+          : scoreVal >= 80 ? 'text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/30'
+          : 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30';
+        const scoreBadge = scoreVal > 0
+          ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${scoreColor} font-bold tabular-nums">${scoreVal}</span>`
+          : '';
+        const deleteBtn = `<button onclick="_deleteBeaconAlert('${a.source_ip}','${a.dest_ip}')" class="mt-1 w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Permanently remove"><i class="ph-duotone ph-trash text-sm"></i></button>`;
         return `<div class="flex items-center justify-between px-3 py-2 rounded-lg border ${cardBg} transition-colors">
           <div class="flex items-center gap-3 min-w-0 flex-1">
             ${icon}
@@ -3170,6 +3177,7 @@ function renderBeaconAlerts(alerts, status) {
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${devName}</span>
                 ${macTag}
+                ${scoreBadge}
                 ${dismissBadge}
               </div>
               <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
