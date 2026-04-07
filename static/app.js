@@ -4977,6 +4977,28 @@ window.closeDeviceDrawer = closeDeviceDrawer;
 window.setDrawerTab = setDrawerTab;
 window.drawerLoadMore = drawerLoadMore;
 
+// Sort state for device matrix columns
+let _devSortCol = 'name';  // 'name', 'total', or a group/service key
+let _devSortDir = 'asc';   // 'asc' or 'desc'
+
+function _setDevSort(col) {
+  if (_devSortCol === col) {
+    _devSortDir = _devSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _devSortCol = col;
+    _devSortDir = col === 'name' ? 'asc' : 'desc'; // numbers default desc
+  }
+  _renderDeviceMatrix();
+}
+window._setDevSort = _setDevSort;
+
+function _sortArrow(col) {
+  if (_devSortCol !== col) return '<span class="text-[9px] opacity-30 ml-0.5">↕</span>';
+  return _devSortDir === 'asc'
+    ? '<span class="text-[9px] text-indigo-400 ml-0.5">↑</span>'
+    : '<span class="text-[9px] text-indigo-400 ml-0.5">↓</span>';
+}
+
 function _renderDeviceMatrix() {
   if (!_devMatrix.deviceMacs) return;
   const matrix = _devMatrix.matrix;
@@ -5091,6 +5113,29 @@ function _renderDeviceMatrix() {
     });
   }
 
+  // Sort devices
+  deviceMacs = [...deviceMacs].sort((a, b) => {
+    const devA = deviceMap[a] || {};
+    const devB = deviceMap[b] || {};
+    const rowA = matrix[a] || {};
+    const rowB = matrix[b] || {};
+    let cmp = 0;
+    if (_devSortCol === 'name') {
+      cmp = (_bestDeviceName(a, devA)).localeCompare(_bestDeviceName(b, devB));
+    } else if (_devSortCol === 'total') {
+      const tA = Object.values(rowA).reduce((s, v) => s + v.count, 0);
+      const tB = Object.values(rowB).reduce((s, v) => s + v.count, 0);
+      cmp = tA - tB;
+    } else if (_devSortCol.startsWith('grp_')) {
+      const grpKey = _devSortCol.slice(4);
+      const grpSvcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === grpKey);
+      const gA = grpSvcs.reduce((s, svc) => s + (rowA[svc]?.count || 0), 0);
+      const gB = grpSvcs.reduce((s, svc) => s + (rowB[svc]?.count || 0), 0);
+      cmp = gA - gB;
+    }
+    return _devSortDir === 'asc' ? cmp : -cmp;
+  });
+
   // Group services by category
   const groups = getCategoryGroups().map(g => {
     const svcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === g.key).sort();
@@ -5101,15 +5146,15 @@ function _renderDeviceMatrix() {
   const thead = document.getElementById('devices-matrix-head');
   const expanded = _devExpandedGroups;
 
-  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[220px]">${t('dev.device')}</th>
-    <th class="py-3 px-3 font-medium text-right min-w-[60px]">${t('dev.total')}</th>`;
+  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[220px] cursor-pointer select-none hover:text-indigo-400 transition-colors" onclick="_setDevSort('name')"><span class="inline-flex items-center">${t('dev.device')} ${_sortArrow('name')}</span></th>
+    <th class="py-3 px-3 font-medium text-right min-w-[60px] cursor-pointer select-none hover:text-indigo-400 transition-colors" onclick="_setDevSort('total')"><span class="inline-flex items-center justify-end">${t('dev.total')} ${_sortArrow('total')}</span></th>`;
 
   groups.forEach(g => {
     const isExpanded = expanded.has(g.key);
     const chevron = isExpanded ? '▾' : '▸';
     headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[90px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06] hidden sm:table-cell"
-      onclick="_toggleDevGroup('${g.key}')" title="Click to ${isExpanded ? 'collapse' : 'expand'} ${g.label}">
-      <span class="inline-flex items-center gap-1 justify-center">${g.icon} ${g.label} <span class="text-[10px] opacity-60">${chevron}</span></span>
+      onclick="event.shiftKey ? _toggleDevGroup('${g.key}') : _setDevSort('grp_${g.key}')" title="Click to sort · Shift+click to ${isExpanded ? 'collapse' : 'expand'}">
+      <span class="inline-flex items-center gap-1 justify-center">${g.icon} ${g.label} ${_sortArrow('grp_' + g.key)} <span class="text-[10px] opacity-60">${chevron}</span></span>
     </th>`;
     if (isExpanded) {
       g.services.forEach(s => {
