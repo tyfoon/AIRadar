@@ -4223,6 +4223,13 @@ async def toggle_ips(payload: GlobalFilterToggle):
 #   - Orphaned tls_fingerprints pointing to non-existent devices
 # Then runs VACUUM to reclaim disk space. Service policies, block
 # rules, and device metadata are untouched — only noisy event rows.
+@app.post("/api/admin/fix-macs")
+def admin_fix_macs():
+    """On-demand trigger for MAC address normalization + dedup migration."""
+    _normalize_mac_addresses()
+    return {"status": "ok"}
+
+
 @app.post("/api/admin/cleanup")
 def admin_cleanup(db: Session = Depends(get_db)):
     from database import engine as _db_engine  # local to avoid circular-ish feel

@@ -27,7 +27,11 @@ def normalize_mac(mac: str) -> str:
 
 def main():
     print(f"Using database: {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
+    if not os.path.exists(DB_PATH):
+        print(f"ERROR: database not found at {DB_PATH}")
+        return
+    conn = sqlite3.connect(DB_PATH, timeout=60)
+    conn.execute("PRAGMA busy_timeout = 60000")
     conn.execute("PRAGMA foreign_keys = OFF")
     c = conn.cursor()
 
