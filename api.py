@@ -92,6 +92,7 @@ from database import (
     GeoConversation,
     IpMetadata,
     KnownDomain,
+    NetworkPerformance,
     NotificationConfig,
     ServicePolicy,
     SessionLocal,
@@ -388,12 +389,21 @@ async def _periodic_cleanup():
                     ).delete(synchronize_session=False)
                     overflow = len(ids)
 
+            # 3) Prune old performance snapshots (keep 7 days)
+            perf_cutoff = datetime.utcnow() - timedelta(days=7)
+            old_perf = db.query(NetworkPerformance).filter(
+                NetworkPerformance.timestamp < perf_cutoff
+            ).delete(synchronize_session=False)
+
             db.commit()
 
             remaining = db.query(func.count(DetectionEvent.id)).scalar() or 0
             db.close()
 
-            # 3) VACUUM to reclaim disk space (runs outside SQLAlchemy session)
+            if old_perf > 0:
+                print(f"[cleanup] Pruned {old_perf} old performance snapshots")
+
+            # 4) VACUUM to reclaim disk space (runs outside SQLAlchemy session)
             if old > 0 or overflow > 0:
                 from sqlalchemy import create_engine, text
                 engine = create_engine(f"sqlite:///{DB_PATH}")
@@ -759,6 +769,117 @@ def _cleanup_empty_sentinel_strings():
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Network performance collector — stores a snapshot every 60s
+# ---------------------------------------------------------------------------
+PERF_COLLECT_INTERVAL = 60  # seconds
+
+async def _collect_network_performance():
+    """Background task: measure DNS, ping, interface stats, system load."""
+    import subprocess, psutil
+
+    await asyncio.sleep(10)  # Let other services start first
+    print("[perf] Network performance collector running every 60s")
+
+    while True:
+        try:
+            row = {}
+
+            # --- DNS latency: resolve google.com via system DNS (AdGuard) ---
+            try:
+                t0 = time.monotonic()
+                await asyncio.to_thread(socket.getaddrinfo, "google.com", 80,
+                                        socket.AF_INET, socket.SOCK_STREAM)
+                row["dns_latency_ms"] = round((time.monotonic() - t0) * 1000)
+            except Exception:
+                row["dns_latency_ms"] = None
+
+            # --- Ping gateway + internet ---
+            async def _ping(host):
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "ping", "-c", "3", "-W", "2", host,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                    text_out = stdout.decode(errors="replace")
+                    # Parse avg from "rtt min/avg/max/mdev = 0.5/1.2/2.0/0.3 ms"
+                    m = re.search(r"rtt [^=]+=\s*[\d.]+/([\d.]+)/", text_out)
+                    avg_ms = round(float(m.group(1))) if m else None
+                    # Parse packet loss "3 packets transmitted, 3 received, 0% packet loss"
+                    lm = re.search(r"(\d+)% packet loss", text_out)
+                    loss = int(lm.group(1)) if lm else None
+                    return avg_ms, loss
+                except Exception:
+                    return None, None
+
+            # Detect default gateway
+            gw_ip = None
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ip", "route", "show", "default",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                out, _ = await proc.communicate()
+                gw_match = re.search(r"default via ([\d.]+)", out.decode(errors="replace"))
+                if gw_match:
+                    gw_ip = gw_match.group(1)
+            except Exception:
+                pass
+
+            gw_ms, gw_loss = (None, None)
+            inet_ms, inet_loss = (None, None)
+            if gw_ip:
+                gw_ms, gw_loss = await _ping(gw_ip)
+            inet_ms, inet_loss = await _ping("8.8.8.8")
+
+            row["ping_gateway_ms"] = gw_ms
+            row["ping_internet_ms"] = inet_ms
+            row["packet_loss_pct"] = inet_loss if inet_loss is not None else gw_loss
+
+            # --- Bridge interface stats from /proc/net/dev ---
+            try:
+                iface_stats = await asyncio.to_thread(psutil.net_io_counters, pernic=True)
+                br = iface_stats.get("br0")
+                if br:
+                    row["br_rx_bytes"] = br.bytes_recv
+                    row["br_tx_bytes"] = br.bytes_sent
+                    row["br_rx_packets"] = br.packets_recv
+                    row["br_tx_packets"] = br.packets_sent
+                    row["br_rx_errors"] = br.errin
+                    row["br_tx_errors"] = br.errout
+                    row["br_rx_drops"] = br.dropin
+                    row["br_tx_drops"] = br.dropout
+            except Exception:
+                pass
+
+            # --- System load ---
+            try:
+                row["cpu_percent"] = round(psutil.cpu_percent(interval=0))
+                row["memory_percent"] = round(psutil.virtual_memory().percent)
+                load1, load5, load15 = psutil.getloadavg()
+                row["load_avg_1"] = round(load1 * 100)
+                row["load_avg_5"] = round(load5 * 100)
+                row["load_avg_15"] = round(load15 * 100)
+            except Exception:
+                pass
+
+            # --- Store in DB ---
+            db = SessionLocal()
+            try:
+                db.add(NetworkPerformance(**row))
+                db.commit()
+            finally:
+                db.close()
+
+        except Exception as exc:
+            print(f"[perf] Collection error: {exc}")
+
+        await asyncio.sleep(PERF_COLLECT_INTERVAL)
+
+
 async def lifespan(app: FastAPI):
     init_db()
     _backfill_vendors()
@@ -777,6 +898,7 @@ async def lifespan(app: FastAPI):
     # boot, then fetches v2fly community domain lists every 24h.
     from service_updater import periodic_update_domains
     domain_updater_task = asyncio.create_task(periodic_update_domains())
+    perf_task = asyncio.create_task(_collect_network_performance())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
@@ -817,6 +939,7 @@ async def lifespan(app: FastAPI):
     expiry_task.cancel()
     watchdog_task.cancel()
     beacon_task.cancel()
+    perf_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
@@ -5827,6 +5950,71 @@ async def system_performance():
         }
 
     return {"host": host, "containers": containers}
+
+
+# GET /api/network/performance/history — historical performance time series
+# ---------------------------------------------------------------------------
+@app.get("/api/network/performance/history")
+def network_performance_history(
+    hours: int = Query(default=24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return time-series performance data for the last N hours."""
+    from datetime import timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = (
+        db.query(NetworkPerformance)
+        .filter(NetworkPerformance.timestamp >= cutoff)
+        .order_by(NetworkPerformance.timestamp.asc())
+        .all()
+    )
+
+    # Compute deltas for cumulative interface counters
+    result = []
+    prev = None
+    for r in rows:
+        entry = {
+            "ts": r.timestamp.isoformat() + "Z" if r.timestamp else None,
+            "dns_ms": r.dns_latency_ms,
+            "ping_gw_ms": r.ping_gateway_ms,
+            "ping_inet_ms": r.ping_internet_ms,
+            "loss_pct": r.packet_loss_pct,
+            "cpu_pct": r.cpu_percent,
+            "mem_pct": r.memory_percent,
+            "load1": round(r.load_avg_1 / 100, 2) if r.load_avg_1 is not None else None,
+            "load5": round(r.load_avg_5 / 100, 2) if r.load_avg_5 is not None else None,
+            "load15": round(r.load_avg_15 / 100, 2) if r.load_avg_15 is not None else None,
+            # Interface throughput (bytes/sec between samples)
+            "br_rx_bps": None,
+            "br_tx_bps": None,
+            # Error/drop rates (per interval)
+            "br_rx_errors": None,
+            "br_tx_errors": None,
+            "br_rx_drops": None,
+            "br_tx_drops": None,
+        }
+        if prev and r.br_rx_bytes is not None and prev.br_rx_bytes is not None:
+            dt = max((r.timestamp - prev.timestamp).total_seconds(), 1)
+            rx_delta = r.br_rx_bytes - prev.br_rx_bytes
+            tx_delta = r.br_tx_bytes - prev.br_tx_bytes
+            # Handle counter wrap (reboot)
+            if rx_delta >= 0 and tx_delta >= 0:
+                entry["br_rx_bps"] = round(rx_delta / dt)
+                entry["br_tx_bps"] = round(tx_delta / dt)
+            if r.br_rx_errors is not None and prev.br_rx_errors is not None:
+                err_rx = r.br_rx_errors - prev.br_rx_errors
+                err_tx = r.br_tx_errors - prev.br_tx_errors
+                drp_rx = r.br_rx_drops - prev.br_rx_drops
+                drp_tx = r.br_tx_drops - prev.br_tx_drops
+                if err_rx >= 0:
+                    entry["br_rx_errors"] = err_rx
+                    entry["br_tx_errors"] = err_tx
+                    entry["br_rx_drops"] = drp_rx
+                    entry["br_tx_drops"] = drp_tx
+        prev = r
+        result.append(entry)
+
+    return {"hours": hours, "count": len(result), "data": result}
 
 
 # GET /api/health — system health check for all services

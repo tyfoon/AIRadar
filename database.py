@@ -399,6 +399,48 @@ class KnownDomain(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class NetworkPerformance(Base):
+    """Periodic network + system performance snapshots for troubleshooting.
+
+    Collected every 60 seconds by a background task. Stores DNS latency,
+    ping latency, packet loss, bridge interface counters, and system load
+    so users can review historical performance instead of guessing.
+    """
+
+    __tablename__ = "network_performance"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True,
+                       default=lambda: datetime.now(timezone.utc))
+
+    # DNS resolution latency (ms) — time to resolve a test domain via AdGuard
+    dns_latency_ms = Column(Integer, nullable=True)
+
+    # Ping latency to default gateway (ms)
+    ping_gateway_ms = Column(Integer, nullable=True)
+    # Ping latency to internet (8.8.8.8) (ms)
+    ping_internet_ms = Column(Integer, nullable=True)
+    # Packet loss percentage (0-100) from ping test
+    packet_loss_pct = Column(Integer, nullable=True)
+
+    # Bridge interface counters (cumulative from /proc/net/dev)
+    br_rx_bytes = Column(Integer, nullable=True)
+    br_tx_bytes = Column(Integer, nullable=True)
+    br_rx_packets = Column(Integer, nullable=True)
+    br_tx_packets = Column(Integer, nullable=True)
+    br_rx_errors = Column(Integer, nullable=True)
+    br_tx_errors = Column(Integer, nullable=True)
+    br_rx_drops = Column(Integer, nullable=True)
+    br_tx_drops = Column(Integer, nullable=True)
+
+    # System load
+    cpu_percent = Column(Integer, nullable=True)
+    memory_percent = Column(Integer, nullable=True)
+    load_avg_1 = Column(Integer, nullable=True)   # x100 for precision without float
+    load_avg_5 = Column(Integer, nullable=True)
+    load_avg_15 = Column(Integer, nullable=True)
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 

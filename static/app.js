@@ -194,7 +194,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','devices','ips','rules','settings'];
+const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','performance','devices','ips','rules','settings'];
 
 let currentPage = 'summary';
 
@@ -1430,6 +1430,7 @@ async function refreshPage(page) {
     else if (page === 'iot') await refreshIot();
     else if (page === 'other') await refreshOther();
     else if (page === 'geo') await refreshGeo();
+    else if (page === 'performance') await refreshPerformance();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
@@ -7628,3 +7629,211 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (d) { _navIpsCount = d.active_threats_blocked || 0; updateNavBadges(); }
   }).catch(() => {});
 });
+
+
+// ===========================================================================
+// PAGE: PERFORMANCE — Network performance history
+// ===========================================================================
+let _perfChartLatency = null;
+let _perfChartThroughput = null;
+let _perfChartSystem = null;
+let _perfChartErrors = null;
+let _perfAutoRefreshTimer = null;
+
+function _perfChartOpts(yLabel, suggestedMax) {
+  const isDark = document.documentElement.classList.contains('dark');
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#94a3b8' : '#64748b';
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { labels: { boxWidth: 10, font: { size: 11 }, color: tickColor } } },
+    scales: {
+      x: {
+        type: 'category',
+        ticks: { maxTicksLimit: 12, font: { size: 10 }, color: tickColor },
+        grid: { color: gridColor },
+      },
+      y: {
+        beginAtZero: true,
+        suggestedMax: suggestedMax || undefined,
+        ticks: { font: { size: 10 }, color: tickColor },
+        grid: { color: gridColor },
+        title: { display: !!yLabel, text: yLabel || '', font: { size: 11 }, color: tickColor },
+      },
+    },
+  };
+}
+
+function _fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function _fmtBps(bps) {
+  if (bps == null) return '-';
+  if (bps > 1e9) return (bps / 1e9).toFixed(1) + ' GB/s';
+  if (bps > 1e6) return (bps / 1e6).toFixed(1) + ' MB/s';
+  if (bps > 1e3) return (bps / 1e3).toFixed(1) + ' KB/s';
+  return bps + ' B/s';
+}
+
+async function refreshPerformance() {
+  const hoursEl = document.getElementById('perf-hours');
+  const hours = hoursEl ? parseInt(hoursEl.value) : 24;
+
+  // Start auto-refresh
+  _perfSetupAutoRefresh();
+
+  let data;
+  try {
+    const resp = await fetch(`/api/network/performance/history?hours=${hours}`);
+    data = await resp.json();
+  } catch (err) {
+    console.error('[perf] fetch error:', err);
+    return;
+  }
+
+  const points = data.data || [];
+  const labels = points.map(p => _fmtTime(p.ts));
+
+  // --- Snapshot cards ---
+  const snap = document.getElementById('perf-snapshot');
+  if (snap && points.length > 0) {
+    const last = points[points.length - 1];
+    const dnsColor = (last.dns_ms ?? 0) > 100 ? 'red' : (last.dns_ms ?? 0) > 30 ? 'amber' : 'emerald';
+    const pingColor = (last.ping_inet_ms ?? 0) > 50 ? 'red' : (last.ping_inet_ms ?? 0) > 20 ? 'amber' : 'emerald';
+    const lossColor = (last.loss_pct ?? 0) > 5 ? 'red' : (last.loss_pct ?? 0) > 0 ? 'amber' : 'emerald';
+    const cpuColor = (last.cpu_pct ?? 0) > 80 ? 'red' : (last.cpu_pct ?? 0) > 50 ? 'amber' : 'emerald';
+
+    snap.innerHTML = `
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">${t('perf.dnsLatency') || 'DNS Latency'}</p>
+        <p class="text-2xl font-bold tabular-nums text-${dnsColor}-500">${last.dns_ms ?? '-'}<span class="text-xs font-normal ml-0.5">ms</span></p>
+      </div>
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">${t('perf.pingInternet') || 'Ping Internet'}</p>
+        <p class="text-2xl font-bold tabular-nums text-${pingColor}-500">${last.ping_inet_ms ?? '-'}<span class="text-xs font-normal ml-0.5">ms</span></p>
+      </div>
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">${t('perf.packetLoss') || 'Packet Loss'}</p>
+        <p class="text-2xl font-bold tabular-nums text-${lossColor}-500">${last.loss_pct ?? '-'}<span class="text-xs font-normal ml-0.5">%</span></p>
+      </div>
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">${t('perf.cpuUsage') || 'CPU'}</p>
+        <p class="text-2xl font-bold tabular-nums text-${cpuColor}-500">${last.cpu_pct ?? '-'}<span class="text-xs font-normal ml-0.5">%</span></p>
+      </div>
+    `;
+  } else if (snap) {
+    snap.innerHTML = `<p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-6">${t('perf.noData') || 'No performance data yet. Data collection starts automatically — check back in a few minutes.'}</p>`;
+  }
+
+  if (points.length < 2) return;
+
+  // --- Latency chart ---
+  const ctxL = document.getElementById('perf-chart-latency');
+  if (ctxL) {
+    const cfg = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: t('perf.dns') || 'DNS', data: points.map(p => p.dns_ms), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: t('perf.pingGw') || 'Gateway', data: points.map(p => p.ping_gw_ms), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: t('perf.pingInet') || 'Internet', data: points.map(p => p.ping_inet_ms), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        ],
+      },
+      options: _perfChartOpts('ms'),
+    };
+    if (_perfChartLatency) { Object.assign(_perfChartLatency.data, cfg.data); _perfChartLatency.update('none'); }
+    else { _perfChartLatency = new Chart(ctxL, cfg); }
+  }
+
+  // --- Throughput chart ---
+  const ctxT = document.getElementById('perf-chart-throughput');
+  if (ctxT) {
+    const cfg = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: t('perf.rxBps') || 'RX (download)', data: points.map(p => p.br_rx_bps), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: t('perf.txBps') || 'TX (upload)', data: points.map(p => p.br_tx_bps), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        ],
+      },
+      options: {
+        ..._perfChartOpts('bytes/s'),
+        plugins: {
+          ..._perfChartOpts('bytes/s').plugins,
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${_fmtBps(ctx.parsed.y)}`,
+            },
+          },
+        },
+      },
+    };
+    if (_perfChartThroughput) { Object.assign(_perfChartThroughput.data, cfg.data); _perfChartThroughput.update('none'); }
+    else { _perfChartThroughput = new Chart(ctxT, cfg); }
+  }
+
+  // --- System chart ---
+  const ctxS = document.getElementById('perf-chart-system');
+  if (ctxS) {
+    const cfg = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'CPU %', data: points.map(p => p.cpu_pct), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: t('perf.memory') || 'Memory %', data: points.map(p => p.mem_pct), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: 'Load (1m)', data: points.map(p => p.load1), borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1, borderDash: [4, 2] },
+        ],
+      },
+      options: _perfChartOpts('%', 100),
+    };
+    if (_perfChartSystem) { Object.assign(_perfChartSystem.data, cfg.data); _perfChartSystem.update('none'); }
+    else { _perfChartSystem = new Chart(ctxS, cfg); }
+  }
+
+  // --- Errors & drops chart ---
+  const ctxE = document.getElementById('perf-chart-errors');
+  if (ctxE) {
+    const hasErrors = points.some(p => (p.br_rx_errors || 0) + (p.br_tx_errors || 0) + (p.br_rx_drops || 0) + (p.br_tx_drops || 0) + (p.loss_pct || 0) > 0);
+    const cfg = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: t('perf.pktLoss') || 'Packet loss %', data: points.map(p => p.loss_pct), borderColor: '#ef4444', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: 'RX errors', data: points.map(p => p.br_rx_errors), borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+          { label: 'TX errors', data: points.map(p => p.br_tx_errors), borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+          { label: 'RX drops', data: points.map(p => p.br_rx_drops), borderColor: '#8b5cf6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+          { label: 'TX drops', data: points.map(p => p.br_tx_drops), borderColor: '#a855f7', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+        ],
+      },
+      options: _perfChartOpts(t('perf.count') || 'count'),
+    };
+    if (_perfChartErrors) { Object.assign(_perfChartErrors.data, cfg.data); _perfChartErrors.update('none'); }
+    else { _perfChartErrors = new Chart(ctxE, cfg); }
+
+    // Show a "no errors" message if all zero
+    if (!hasErrors) {
+      ctxE.parentElement.querySelector('h3').innerHTML += ' <span class="text-xs font-normal text-emerald-500 ml-2">&#10003; ' + (t('perf.noErrors') || 'No errors or drops detected') + '</span>';
+    }
+  }
+}
+
+function _perfSetupAutoRefresh() {
+  if (_perfAutoRefreshTimer) clearInterval(_perfAutoRefreshTimer);
+  const cb = document.getElementById('perf-auto');
+  if (cb && cb.checked) {
+    _perfAutoRefreshTimer = setInterval(() => {
+      if (currentPage === 'performance') refreshPerformance();
+    }, 60000);
+  }
+}
+
+window.refreshPerformance = refreshPerformance;
