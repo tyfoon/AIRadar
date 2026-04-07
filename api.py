@@ -3364,6 +3364,13 @@ def get_active_alerts(
         # Skip if snoozed via AlertException
         if _is_exception_active(exceptions, d.mac_address, "new_device", d.mac_address, now):
             continue
+        # Skip devices that were already dismissed — their first_seen
+        # predates the expired exception, so they shouldn't reappear.
+        exp_cutoff = _expired_exception_cutoff(
+            expired_exceptions, d.mac_address, "new_device", d.mac_address
+        )
+        if exp_cutoff and d.first_seen <= exp_cutoff:
+            continue
         device_ips = [dip.ip for dip in d.ips][:3] if d.ips else []
         # Build a short human-readable summary of what we know about this device
         info_parts = []
