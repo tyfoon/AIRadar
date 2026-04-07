@@ -6292,7 +6292,7 @@ function _renderIpsThreats(data) {
           ? `${a.asn_org ? a.asn_org + ' ' : ''}(${a.country_code})`
           : (a.asn_org || '');
         const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
-        return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}">
+        return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}" data-severity="${a.severity}">
           <td class="py-2 px-4 font-mono text-xs">${a.source_ip}</td>
           <td class="py-2 px-4 text-xs">${a.target_ip}</td>
           <td class="py-2 px-4 text-xs tabular-nums">${a.target_port}</td>
@@ -6323,6 +6323,19 @@ function _renderIpsThreats(data) {
     }
   }
 }
+
+function _filterIpsTable() {
+  const filter = document.getElementById('ips-severity-filter')?.value || 'all';
+  const rows = document.querySelectorAll('#ips-alerts-body tr[data-severity]');
+  rows.forEach(row => {
+    if (filter === 'all' || row.dataset.severity === filter) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+window._filterIpsTable = _filterIpsTable;
 
 function switchIpsTab(tab) {
   const alertsTab = document.getElementById('ips-tab-alerts');

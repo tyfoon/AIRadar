@@ -1064,6 +1064,21 @@ async def lifespan(app: FastAPI):
     _cleanup_junk_hostnames()
     _cleanup_empty_sentinel_strings()
     _normalize_mac_addresses()
+    # One-shot: clear false-positive inbound attacks (established connections
+    # to open web ports recorded before the conn_state filter was added).
+    _db = SessionLocal()
+    try:
+        cleared = _db.query(InboundAttack).filter(
+            InboundAttack.target_port.in_([80, 443]),
+            InboundAttack.severity == "blocked",
+        ).delete(synchronize_session=False)
+        if cleared:
+            _db.commit()
+            print(f"[cleanup] Cleared {cleared} false-positive inbound entries (legit web traffic)")
+    except Exception:
+        pass
+    finally:
+        _db.close()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())

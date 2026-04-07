@@ -2370,18 +2370,30 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 # --- Inbound threat detection ---
                 # External IP initiating a connection to an internal device.
+                conn_state = record.get("conn_state", "")
                 if (
                     resp_ip
                     and not _is_local_ip(src_ip)
                     and _is_local_ip(resp_ip)
                     and proto == "tcp"
                 ):
-                    # Track ALL inbound connections for the attack dashboard
-                    target_mac = _ip_to_mac.get(resp_ip)
-                    await _record_inbound_attack(
-                        src_ip, resp_ip, resp_port, target_mac,
-                        orig_bytes + resp_bytes, proto,
-                    )
+                    # Track inbound connection attempts for the attack dashboard.
+                    # Only record SUSPICIOUS states — not established connections
+                    # to intentionally open services (S1/SF on port 80/443).
+                    # S0  = SYN, no reply (port scan / probe)
+                    # REJ = connection refused (closed port probe)
+                    # RSTO/RSTR = reset (half-open scan, banner grab)
+                    # S2/S3 = partial handshake
+                    # OTH = other anomalous state
+                    # S1/SF to non-standard ports = suspicious service access
+                    is_probe_state = conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR")
+                    is_unexpected_port = conn_state in ("S1", "SF") and resp_port not in (80, 443)
+                    if is_probe_state or is_unexpected_port:
+                        target_mac = _ip_to_mac.get(resp_ip)
+                        await _record_inbound_attack(
+                            src_ip, resp_ip, resp_port, target_mac,
+                            orig_bytes + resp_bytes, proto,
+                        )
 
                     now_ib = time.time()
 
