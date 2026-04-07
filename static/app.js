@@ -3221,6 +3221,26 @@ async function _deleteBeaconAlert(sourceIp, destIp) {
 }
 window._deleteBeaconAlert = _deleteBeaconAlert;
 
+async function _deleteIotAnomaly(sourceIp, detectionType, detail) {
+  const confirmed = await styledConfirm(
+    t('iot.deleteTitle') || 'Delete anomaly',
+    (t('iot.deleteConfirm') || 'Permanently delete this anomaly? It will not come back after a restart.')
+  );
+  if (!confirmed) return;
+  try {
+    const params = new URLSearchParams({ source_ip: sourceIp, detection_type: detectionType });
+    if (detail) params.set('detail', detail);
+    const res = await fetch(`/api/iot-anomaly?${params}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast(t('iot.deleted') || 'Anomaly deleted', 'success');
+    await refreshIot();
+  } catch (err) {
+    console.error('_deleteIotAnomaly:', err);
+    showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+window._deleteIotAnomaly = _deleteIotAnomaly;
+
 // VPN toggle + rendering
 function toggleVpnDetail() {
   const panel = document.getElementById('vpn-detail-panel');
@@ -3441,10 +3461,19 @@ function _renderIotAnomalies(data) {
     el.innerHTML = '';
     return;
   }
+  const activeCount = anomalies.filter(a => !a.dismissed).length;
+  const headerColor = activeCount > 0
+    ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-700/30'
+    : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]';
+  const titleColor = activeCount > 0
+    ? 'text-red-600 dark:text-red-400'
+    : 'text-slate-500 dark:text-slate-400';
+
   el.innerHTML = `
-    <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 rounded-xl p-5">
-      <h3 class="text-lg font-semibold text-red-600 dark:text-red-400 mb-3 flex items-center gap-2">
+    <div class="${headerColor} border rounded-xl p-5">
+      <h3 class="text-lg font-semibold ${titleColor} mb-3 flex items-center gap-2">
         <i class="ph-duotone ph-siren text-xl"></i> ${t('iot.anomalyTitle') || 'Security Anomalies'}
+        ${activeCount > 0 ? `<span class="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white font-bold">${activeCount}</span>` : ''}
       </h3>
       <div class="space-y-2">
         ${anomalies.map(a => {
@@ -3456,16 +3485,33 @@ function _renderIotAnomalies(data) {
             'iot_volume_spike':     { label: 'Volume Spike',     cls: 'text-orange-600 dark:text-orange-400' },
           };
           const _tl = _iotTypeLabels[a.detection_type] || { label: a.detection_type, cls: 'text-slate-600' };
-          const typeLabel = `<span class="${_tl.cls} font-semibold">${_tl.label}</span>`;
-          return `<div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-white/[0.03] border border-red-100 dark:border-red-800/30">
-            <div class="flex items-center gap-3 min-w-0">
-              <i class="ph-duotone ph-warning text-lg text-red-500 flex-shrink-0"></i>
+          const isDismissed = a.dismissed;
+          const typeLabel = isDismissed
+            ? `<span class="text-slate-400 dark:text-slate-500 font-semibold">${_tl.label}</span>`
+            : `<span class="${_tl.cls} font-semibold">${_tl.label}</span>`;
+          const cardBorder = isDismissed
+            ? 'border-slate-200 dark:border-white/[0.06] opacity-50'
+            : 'border-red-100 dark:border-red-800/30';
+          const cardIcon = isDismissed
+            ? '<i class="ph-duotone ph-check-circle text-lg text-slate-400 flex-shrink-0"></i>'
+            : '<i class="ph-duotone ph-warning text-lg text-red-500 flex-shrink-0"></i>';
+          const dismissBadge = isDismissed
+            ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium ml-1">dismissed</span>'
+            : '';
+          const detail = a.detail || '';
+          const deleteBtn = `<button onclick="_deleteIotAnomaly('${a.source_ip}','${a.detection_type}','${detail.replace(/'/g, "\\'")}')" class="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0" title="Permanently remove"><i class="ph-duotone ph-trash text-sm"></i></button>`;
+          return `<div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-white/[0.03] border ${cardBorder} transition-colors">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              ${cardIcon}
               <div class="min-w-0">
-                <div class="text-sm font-medium text-slate-800 dark:text-white truncate">${devName}</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">${typeLabel} · ${a.detail} · ${a.hits} hits</div>
+                <div class="text-sm font-medium text-slate-800 dark:text-white truncate">${devName}${dismissBadge}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400">${typeLabel} · ${detail} · ${a.hits} hits</div>
               </div>
             </div>
-            <span class="text-[10px] text-slate-400 tabular-nums flex-shrink-0">${fmtTime(a.last_seen)}</span>
+            <div class="flex items-center gap-2 flex-shrink-0 ml-2">
+              <span class="text-[10px] text-slate-400 tabular-nums">${fmtTime(a.last_seen)}</span>
+              ${deleteBtn}
+            </div>
           </div>`;
         }).join('')}
       </div>

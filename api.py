@@ -3199,6 +3199,42 @@ def delete_beacon_alert(
     return None
 
 
+@app.delete("/api/iot-anomaly", status_code=204)
+def delete_iot_anomaly(
+    source_ip: str = Query(...),
+    detection_type: str = Query(...),
+    detail: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete IoT anomaly events and create a permanent exception."""
+    q = db.query(DetectionEvent).filter(
+        DetectionEvent.detection_type == detection_type,
+        DetectionEvent.source_ip == source_ip,
+    )
+    if detail:
+        q = q.filter(DetectionEvent.ai_service == detail)
+    q.delete()
+    dip = db.query(DeviceIP).filter(DeviceIP.ip == source_ip).first()
+    mac = dip.mac_address if dip else source_ip
+    dest = detail or None
+    existing = db.query(AlertException).filter(
+        AlertException.mac_address == mac,
+        AlertException.alert_type == detection_type,
+        AlertException.destination == dest if dest else AlertException.destination.is_(None),
+        (AlertException.expires_at.is_(None)),
+    ).first()
+    if not existing:
+        db.add(AlertException(
+            mac_address=mac,
+            alert_type=detection_type,
+            destination=dest,
+            expires_at=None,
+            created_at=datetime.utcnow(),
+        ))
+    db.commit()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Policy resolver + exception matcher (used by /api/alerts/active)
 # ---------------------------------------------------------------------------
@@ -5966,15 +6002,7 @@ def iot_anomalies(
         .all()
     )
 
-    # Filter out whitelisted/snoozed anomalies
-    filtered_rows = []
-    for r in rows:
-        mac = ip_to_mac.get(r.source_ip)
-        if _is_exception_active(exceptions, mac, r.detection_type, r.ai_service, now):
-            continue
-        filtered_rows.append(r)
-    rows = filtered_rows
-
+    # Mark dismissed anomalies instead of filtering them out
     ip_to_device = {}
     for dip in db.query(DeviceIP).all():
         dev = db.query(Device).filter(Device.mac_address == dip.mac_address).first()
@@ -5986,19 +6014,21 @@ def iot_anomalies(
                 "vendor": dev.vendor,
             }
 
-    return {
-        "anomalies": [
-            {
-                "source_ip": r.source_ip,
-                "detection_type": r.detection_type,
-                "detail": r.ai_service,
-                "hits": r.hits,
-                "last_seen": str(r.last_seen),
-                **(ip_to_device.get(r.source_ip, {})),
-            }
-            for r in rows
-        ]
-    }
+    anomalies = []
+    for r in rows:
+        mac = ip_to_mac.get(r.source_ip)
+        dismissed = _is_exception_active(exceptions, mac, r.detection_type, r.ai_service, now)
+        anomalies.append({
+            "source_ip": r.source_ip,
+            "detection_type": r.detection_type,
+            "detail": r.ai_service,
+            "hits": r.hits,
+            "last_seen": str(r.last_seen),
+            "dismissed": dismissed,
+            **(ip_to_device.get(r.source_ip, {})),
+        })
+
+    return {"anomalies": anomalies}
 
 
 @app.get("/api/iot/device/{mac_address}")
