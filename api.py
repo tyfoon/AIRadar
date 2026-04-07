@@ -3162,6 +3162,42 @@ def delete_exception(exception_id: int, db: Session = Depends(get_db)):
     return None
 
 
+@app.delete("/api/beacon-alert", status_code=204)
+def delete_beacon_alert(
+    source_ip: str = Query(...),
+    dest_ip: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete beacon events for a src→dst pair and create
+    a permanent exception so they never come back."""
+    # Delete all matching detection events
+    deleted = db.query(DetectionEvent).filter(
+        DetectionEvent.detection_type == "beaconing_threat",
+        DetectionEvent.source_ip == source_ip,
+        DetectionEvent.ai_service == dest_ip,
+    ).delete()
+    # Resolve MAC address for the exception
+    dip = db.query(DeviceIP).filter(DeviceIP.ip == source_ip).first()
+    mac = dip.mac_address if dip else source_ip
+    # Create permanent exception (if not already present)
+    existing = db.query(AlertException).filter(
+        AlertException.mac_address == mac,
+        AlertException.alert_type == "beaconing_threat",
+        AlertException.destination == dest_ip,
+        (AlertException.expires_at.is_(None)),
+    ).first()
+    if not existing:
+        db.add(AlertException(
+            mac_address=mac,
+            alert_type="beaconing_threat",
+            destination=dest_ip,
+            expires_at=None,
+            created_at=datetime.utcnow(),
+        ))
+    db.commit()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Policy resolver + exception matcher (used by /api/alerts/active)
 # ---------------------------------------------------------------------------
@@ -3975,6 +4011,14 @@ async def privacy_stats(
         .limit(20)
         .all()
     )
+    # Pre-fetch active exceptions so we can mark dismissed beacons
+    now = datetime.utcnow()
+    beacon_exceptions = db.query(AlertException).filter(
+        AlertException.alert_type == "beaconing_threat",
+        (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now),
+    ).all()
+    ip_to_mac_map = {dip.ip: dip.mac_address for dip in db.query(DeviceIP).all()}
+
     beacon_alerts = []
     for row in beacon_rows:
         device_ip = db.query(DeviceIP).filter(DeviceIP.ip == row.source_ip).first()
@@ -4017,12 +4061,19 @@ async def privacy_stats(
                 "total_bytes": geo_ctx.bytes_transferred,
                 "total_hits": geo_ctx.hits,
             }
+        # Check if this beacon has been dismissed via AlertException
+        _mac = ip_to_mac_map.get(row.source_ip)
+        _dismissed = _is_exception_active(
+            beacon_exceptions, _mac, "beaconing_threat", row.ai_service, now
+        ) if _mac else False
+
         beacon_alerts.append({
             "source_ip": row.source_ip,
             "dest_ip": row.ai_service,
             "dest_sni": dest_sni,
             "last_seen": str(row.last_seen),
             "hits": row.hits,
+            "dismissed": _dismissed,
             **device_info,
             **dest_info,
             **geo_info,

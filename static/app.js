@@ -3123,17 +3123,26 @@ function renderBeaconAlerts(alerts, status) {
   }
 
   // Threats found — show a prominent red alert list
-  badge.textContent = `${alerts.length} ${t('beacon.detected') || 'threats'}`;
-  badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse';
+  const activeCount = alerts.filter(a => !a.dismissed).length;
+  if (activeCount > 0) {
+    badge.textContent = `${activeCount} ${t('beacon.detected') || 'threats'}`;
+    badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse';
+  } else {
+    badge.textContent = `${alerts.length} dismissed`;
+    badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium';
+  }
+
+  const activeAlerts = alerts.filter(a => !a.dismissed);
+  const dismissedAlerts = alerts.filter(a => a.dismissed);
 
   body.innerHTML = `
-    <div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
+    ${activeAlerts.length > 0 ? `<div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
       <i class="ph-duotone ph-warning text-base mt-0.5 text-red-500 flex-shrink-0"></i>
       <p class="text-xs text-red-700 dark:text-red-300">
         <span class="font-semibold">${t('beacon.warning') || 'Warning'}:</span>
         ${t('beacon.warningText') || 'One or more devices are exhibiting highly periodic outbound connection patterns consistent with malware command &amp; control traffic.'}
       </p>
-    </div>
+    </div>` : ''}
     <div class="space-y-2">
       ${alerts.map(a => {
         const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
@@ -3144,18 +3153,29 @@ function renderBeaconAlerts(alerts, status) {
           ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.mac_address}</span>`
           : '';
         const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
-        return `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200 dark:border-red-700/30 hover:bg-red-100/60 dark:hover:bg-red-900/20 transition-colors">
+        const isDismissed = a.dismissed;
+        const cardBg = isDismissed
+          ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06] opacity-50'
+          : 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-700/30 hover:bg-red-100/60 dark:hover:bg-red-900/20';
+        const dismissBadge = isDismissed
+          ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium">dismissed</span>'
+          : '';
+        const srcIpColor = isDismissed ? 'text-slate-400 dark:text-slate-500' : 'text-red-600 dark:text-red-400';
+        const icon = isDismissed ? '<i class="ph-duotone ph-check-circle text-lg text-slate-400"></i>' : '<span class="text-lg">🚨</span>';
+        const deleteBtn = `<button onclick="_deleteBeaconAlert('${a.source_ip}','${a.dest_ip}')" class="mt-1 text-[10px] text-red-500 hover:text-red-700 dark:hover:text-red-300 underline" title="Permanently remove">Delete</button>`;
+        return `<div class="flex items-center justify-between px-3 py-2 rounded-lg border ${cardBg} transition-colors">
           <div class="flex items-center gap-3 min-w-0 flex-1">
-            <span class="text-lg flex-shrink-0">🚨</span>
+            ${icon}
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${devName}</span>
                 ${macTag}
+                ${dismissBadge}
               </div>
               <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                <span class="font-mono text-red-600 dark:text-red-400">${a.source_ip}</span>
+                <span class="font-mono ${srcIpColor}">${a.source_ip}</span>
                 <span class="mx-1">→</span>
-                <span class="font-mono text-red-600 dark:text-red-400">${a.dest_ip}</span>
+                <span class="font-mono ${srcIpColor}">${a.dest_ip}</span>
               </div>
               <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
                 ${a.dest_asn_org ? `<span>${a.dest_country ? _flagEmoji(a.dest_country) + ' ' : ''}${a.dest_asn_org}</span>` : ''}
@@ -3167,12 +3187,31 @@ function renderBeaconAlerts(alerts, status) {
           <div class="text-right flex-shrink-0 ml-3">
             <div class="text-[10px] text-slate-400 dark:text-slate-500">${t('beacon.lastSeen') || 'Last seen'}</div>
             <div class="text-[11px] tabular-nums text-slate-600 dark:text-slate-300">${lastSeen}</div>
+            ${deleteBtn}
           </div>
         </div>`;
       }).join('')}
     </div>
     ${_beaconStatusFooter(status)}`;
 }
+
+async function _deleteBeaconAlert(sourceIp, destIp) {
+  const confirmed = await styledConfirm(
+    t('beacon.deleteTitle') || 'Delete beacon alert',
+    (t('beacon.deleteConfirm') || 'Permanently delete this beacon alert? It will not come back after a restart.')
+  );
+  if (!confirmed) return;
+  try {
+    const res = await fetch(`/api/beacon-alert?source_ip=${encodeURIComponent(sourceIp)}&dest_ip=${encodeURIComponent(destIp)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast(t('beacon.deleted') || 'Beacon alert deleted', 'success');
+    await loadIpsStatus();
+  } catch (err) {
+    console.error('_deleteBeaconAlert:', err);
+    showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+window._deleteBeaconAlert = _deleteBeaconAlert;
 
 // VPN toggle + rendering
 function toggleVpnDetail() {
@@ -6330,7 +6369,8 @@ async function loadIpsStatus() {
       const privRes = await fetch('/api/privacy/stats').then(r => r.json());
       renderBeaconAlerts(privRes.beaconing_alerts || [], privRes.beaconing_status || null);
       const outboundCountEl = document.getElementById('ips-tab-outbound-count');
-      if (outboundCountEl) outboundCountEl.textContent = (privRes.beaconing_alerts || []).length;
+      const activeBeacons = (privRes.beaconing_alerts || []).filter(a => !a.dismissed).length;
+      if (outboundCountEl) outboundCountEl.textContent = activeBeacons;
     } catch(e2) { console.error('loadBeaconData:', e2); }
   } catch(e) { console.error('loadIpsStatus:', e); }
 }
