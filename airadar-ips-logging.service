@@ -17,15 +17,15 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 
-# Log new inbound TCP connections from external sources traversing the bridge.
+# Log new inbound connections from EXTERNAL sources only (not local 192.168.1.0/24).
 # The "crowdsec: " prefix is recognized by CrowdSec's iptables-logs parser.
 # Rate-limited to avoid log flooding during heavy scans.
-ExecStart=/usr/sbin/iptables -I FORWARD -i br0 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
-ExecStart=/usr/sbin/iptables -I FORWARD -i br0 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStart=/usr/sbin/iptables -I FORWARD -i br0 ! -s 192.168.1.0/24 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStart=/usr/sbin/iptables -I FORWARD -i br0 ! -s 192.168.1.0/24 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
 
 # Clean up on stop
-ExecStop=/usr/sbin/iptables -D FORWARD -i br0 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
-ExecStop=/usr/sbin/iptables -D FORWARD -i br0 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStop=/usr/sbin/iptables -D FORWARD -i br0 ! -s 192.168.1.0/24 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStop=/usr/sbin/iptables -D FORWARD -i br0 ! -s 192.168.1.0/24 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
 
 [Install]
 WantedBy=multi-user.target
