@@ -2378,23 +2378,16 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     and proto == "tcp"
                 ):
                     # Track inbound connection attempts for the attack dashboard.
-                    # Only record SUSPICIOUS states — not established connections
-                    # to open services or ephemeral-port callbacks.
-                    # S0  = SYN, no reply (port scan / probe)
-                    # REJ = connection refused (closed port probe)
-                    # RSTO/RSTR = reset (half-open scan, banner grab)
-                    # S2/S3 = partial handshake
-                    # OTH = other anomalous state
-                    # S1/SF to low service ports (excl 80/443) = suspicious
-                    # Ports >= 1024 with S1/SF are typically ephemeral callbacks
-                    # (e.g. Google push, QUIC, media streams) — not attacks.
-                    is_probe_state = conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR")
-                    is_unexpected_service = (
-                        conn_state in ("S1", "SF")
-                        and resp_port < 1024
-                        and resp_port not in (80, 443)
-                    )
-                    if is_probe_state or is_unexpected_service:
+                    # Only record SUSPICIOUS states on SERVICE PORTS (<1024).
+                    # High ports (>=1024) are ephemeral — used for callbacks,
+                    # push notifications, QUIC, Cast, media streams. A failed
+                    # connection (S0) from Google to port 48048 is a missed
+                    # callback, not a port scan.
+                    # Real attacks target: SSH(22), Telnet(23), FTP(21),
+                    # SMTP(25), HTTP(80/443), RDP(3389), etc.
+                    if resp_port >= 1024 or resp_port in (80, 443):
+                        pass  # skip: ephemeral callback or open web service
+                    elif conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR", "S1", "SF"):
                         target_mac = _ip_to_mac.get(resp_ip)
                         await _record_inbound_attack(
                             src_ip, resp_ip, resp_port, target_mac,

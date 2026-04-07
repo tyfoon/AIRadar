@@ -1071,7 +1071,6 @@ async def lifespan(app: FastAPI):
         cleared = _db.query(InboundAttack).filter(
             (InboundAttack.target_port.in_([80, 443]) |
              (InboundAttack.target_port >= 1024)),
-            InboundAttack.severity == "blocked",
         ).delete(synchronize_session=False)
         if cleared:
             _db.commit()
