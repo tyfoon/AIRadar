@@ -395,23 +395,51 @@ async def _periodic_cleanup():
                 NetworkPerformance.timestamp < perf_cutoff
             ).delete(synchronize_session=False)
 
+            # 4) Prune old geo_conversations (keep 30 days)
+            geo_cutoff = datetime.utcnow() - timedelta(days=30)
+            old_geo = db.query(GeoConversation).filter(
+                GeoConversation.last_seen < geo_cutoff
+            ).delete(synchronize_session=False)
+
+            # 5) Prune stale ip_metadata (not updated in 30 days)
+            ip_cutoff = datetime.utcnow() - timedelta(days=30)
+            old_ip = db.query(IpMetadata).filter(
+                IpMetadata.updated_at < ip_cutoff
+            ).delete(synchronize_session=False)
+
+            # 6) Prune old tls_fingerprints (not seen in 30 days)
+            tls_cutoff = datetime.utcnow() - timedelta(days=30)
+            old_tls = db.query(TlsFingerprint).filter(
+                TlsFingerprint.last_seen < tls_cutoff
+            ).delete(synchronize_session=False)
+
+            # 7) Remove expired alert_exceptions
+            old_alerts = db.query(AlertException).filter(
+                AlertException.expires_at.isnot(None),
+                AlertException.expires_at < datetime.utcnow(),
+            ).delete(synchronize_session=False)
+
             db.commit()
 
             remaining = db.query(func.count(DetectionEvent.id)).scalar() or 0
             db.close()
 
-            if old_perf > 0:
-                print(f"[cleanup] Pruned {old_perf} old performance snapshots")
+            pruned_extras = old_perf + old_geo + old_ip + old_tls + old_alerts
+            if pruned_extras > 0:
+                print(
+                    f"[cleanup] Pruned: {old_perf} perf, {old_geo} geo_conv, "
+                    f"{old_ip} ip_meta, {old_tls} tls_fp, {old_alerts} expired alerts"
+                )
 
-            # 4) VACUUM to reclaim disk space (runs outside SQLAlchemy session)
-            if old > 0 or overflow > 0:
+            # 8) VACUUM to reclaim disk space (runs outside SQLAlchemy session)
+            if old > 0 or overflow > 0 or pruned_extras > 0:
                 from sqlalchemy import create_engine, text
                 engine = create_engine(f"sqlite:///{DB_PATH}")
                 with engine.connect() as conn:
                     conn.execute(text("VACUUM"))
                 engine.dispose()
 
-            # 4) Log cleanup results
+            # 9) Log cleanup results
             db_size_mb = DB_PATH.stat().st_size / (1024 * 1024) if DB_PATH.exists() else 0
             if old > 0 or overflow > 0:
                 print(

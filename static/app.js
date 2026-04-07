@@ -7747,8 +7747,8 @@ async function refreshPerformance() {
       },
       options: _perfChartOpts('ms'),
     };
-    if (_perfChartLatency) { Object.assign(_perfChartLatency.data, cfg.data); _perfChartLatency.update('none'); }
-    else { _perfChartLatency = new Chart(ctxL, cfg); }
+    if (_perfChartLatency) { _perfChartLatency.destroy(); _perfChartLatency = null; }
+    _perfChartLatency = new Chart(ctxL, cfg);
   }
 
   // --- Throughput chart ---
@@ -7775,8 +7775,8 @@ async function refreshPerformance() {
         },
       },
     };
-    if (_perfChartThroughput) { Object.assign(_perfChartThroughput.data, cfg.data); _perfChartThroughput.update('none'); }
-    else { _perfChartThroughput = new Chart(ctxT, cfg); }
+    if (_perfChartThroughput) { _perfChartThroughput.destroy(); _perfChartThroughput = null; }
+    _perfChartThroughput = new Chart(ctxT, cfg);
   }
 
   // --- System chart ---
@@ -7794,8 +7794,8 @@ async function refreshPerformance() {
       },
       options: _perfChartOpts('%', 100),
     };
-    if (_perfChartSystem) { Object.assign(_perfChartSystem.data, cfg.data); _perfChartSystem.update('none'); }
-    else { _perfChartSystem = new Chart(ctxS, cfg); }
+    if (_perfChartSystem) { _perfChartSystem.destroy(); _perfChartSystem = null; }
+    _perfChartSystem = new Chart(ctxS, cfg);
   }
 
   // --- Errors & drops chart ---
@@ -7816,8 +7816,8 @@ async function refreshPerformance() {
       },
       options: _perfChartOpts(t('perf.count') || 'count'),
     };
-    if (_perfChartErrors) { Object.assign(_perfChartErrors.data, cfg.data); _perfChartErrors.update('none'); }
-    else { _perfChartErrors = new Chart(ctxE, cfg); }
+    if (_perfChartErrors) { _perfChartErrors.destroy(); _perfChartErrors = null; }
+    _perfChartErrors = new Chart(ctxE, cfg);
 
     // Show a "no errors" message if all zero
     if (!hasErrors) {

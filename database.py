@@ -629,3 +629,27 @@ def init_db() -> None:
                 conn.execute(text(
                     "ALTER TABLE detection_events ADD COLUMN category TEXT NOT NULL DEFAULT 'ai'"
                 ))
+
+    # --- Performance indexes for large tables ---
+    # These CREATE INDEX IF NOT EXISTS are idempotent and safe to run on every boot.
+    with engine.begin() as conn:
+        # geo_conversations: speed up GROUP BY country queries and retention cleanup
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_geo_conv_last_seen "
+            "ON geo_conversations (last_seen)"
+        ))
+        # ip_metadata: speed up NULL-asn enrichment scan
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ip_metadata_asn "
+            "ON ip_metadata (asn)"
+        ))
+        # alert_exceptions: speed up active-exception lookups and expired cleanup
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_alert_exc_expires "
+            "ON alert_exceptions (expires_at)"
+        ))
+        # tls_fingerprints: speed up retention cleanup
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_tls_fp_last_seen "
+            "ON tls_fingerprints (last_seen)"
+        ))
