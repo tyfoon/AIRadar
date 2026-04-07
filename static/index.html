@@ -705,25 +705,6 @@
         <button onclick="exportCSV('tracking')" class="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors" data-i18n="priv.exportCsv">Export CSV</button>
       </div>
 
-      <!-- Threat Intelligence: Beaconing / C2 Detection -->
-      <div id="beacon-card" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2.5">
-            <div class="w-9 h-9 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-              <i class="ph-duotone ph-siren text-xl text-red-500 dark:text-red-400"></i>
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="beacon.title">Threat Intelligence: Beaconing</h3>
-              <p class="text-[11px] text-slate-400 dark:text-slate-500" data-i18n="beacon.subtitle">Detecting malware C2 command &amp; control traffic</p>
-            </div>
-          </div>
-          <span id="beacon-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium" data-i18n="beacon.scanning">Scanning</span>
-        </div>
-        <div id="beacon-body">
-          <p class="text-sm text-slate-400 dark:text-slate-500 italic" data-i18n="priv.waitingData">Waiting for data...</p>
-        </div>
-      </div>
-
       <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
@@ -1059,7 +1040,10 @@
         <div class="px-5 pt-5 pb-3">
           <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
             <button id="ips-tab-alerts" onclick="switchIpsTab('alerts')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
-              Inbound Activity <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">0</span>
+              Inbound <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">0</span>
+            </button>
+            <button id="ips-tab-outbound" onclick="switchIpsTab('outbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+              Outbound <span id="ips-tab-outbound-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
             </button>
             <button id="ips-tab-blocklist" onclick="switchIpsTab('blocklist')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
               Community Blocklist <span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
@@ -1098,6 +1082,25 @@
                 </td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Outbound tab content (hidden by default) -->
+        <div id="ips-panel-outbound" class="hidden">
+          <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-white/[0.05]">
+            <p class="text-xs text-slate-400 dark:text-slate-500">Devices on your network exhibiting periodic outbound connection patterns (beaconing). Could indicate malware C2 traffic or legitimate app heartbeats.</p>
+          </div>
+          <div class="p-5">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <i class="ph-duotone ph-siren text-lg text-red-500"></i>
+                <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Beaconing Detection</span>
+              </div>
+              <span id="beacon-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium">Scanning</span>
+            </div>
+            <div id="beacon-body">
+              <p class="text-sm text-slate-400 dark:text-slate-500 italic">Waiting for data...</p>
+            </div>
           </div>
         </div>
 

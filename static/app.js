@@ -6324,6 +6324,14 @@ async function loadIpsStatus() {
     _updateIpsBanner(data);
     _updateIpsStats(data);
     _renderIpsThreats(data);
+
+    // Load beaconing data for the Outbound tab
+    try {
+      const privRes = await fetch('/api/privacy/stats').then(r => r.json());
+      renderBeaconAlerts(privRes.beaconing_alerts || [], privRes.beaconing_status || null);
+      const outboundCountEl = document.getElementById('ips-tab-outbound-count');
+      if (outboundCountEl) outboundCountEl.textContent = (privRes.beaconing_alerts || []).length;
+    } catch(e2) { console.error('loadBeaconData:', e2); }
   } catch(e) { console.error('loadIpsStatus:', e); }
 }
 
@@ -6403,40 +6411,25 @@ function _filterIpsTable() {
 window._filterIpsTable = _filterIpsTable;
 
 function switchIpsTab(tab) {
-  const alertsTab = document.getElementById('ips-tab-alerts');
-  const blocklistTab = document.getElementById('ips-tab-blocklist');
-  const alertsPanel = document.getElementById('ips-panel-alerts');
-  const blocklistPanel = document.getElementById('ips-panel-blocklist');
-  if (!alertsTab || !blocklistTab) return;
-
-  // Shared tab classes — match the Rules / AI / Settings style.
+  const tabs = {
+    alerts:    { btn: document.getElementById('ips-tab-alerts'),    panel: document.getElementById('ips-panel-alerts'),    label: 'Inbound',    countId: 'ips-tab-alerts-count' },
+    outbound:  { btn: document.getElementById('ips-tab-outbound'),  panel: document.getElementById('ips-panel-outbound'),  label: 'Outbound',   countId: 'ips-tab-outbound-count' },
+    blocklist: { btn: document.getElementById('ips-tab-blocklist'), panel: document.getElementById('ips-panel-blocklist'), label: 'Community Blocklist', countId: 'ips-tab-blocklist-count' },
+  };
   const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
-  const active = `${base} bg-blue-700 text-white shadow-sm`;
-  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  const activeCls = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactiveCls = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
 
-  // Children (the count pills) live inside the <button> via innerHTML,
-  // so we must rebuild the markup rather than just rewrite className.
-  const alertsCount = document.getElementById('ips-tab-alerts-count')?.textContent || '0';
-  const blocklistCount = document.getElementById('ips-tab-blocklist-count')?.textContent || '0';
-  const activePill = `<span class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
-  const inactivePill = `<span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">${alertsCount}</span>`;
-  const activeBlocklistPill = `<span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${blocklistCount}</span>`;
-  const inactiveBlocklistPill = `<span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">${blocklistCount}</span>`;
-
-  if (tab === 'alerts') {
-    alertsTab.className = active;
-    alertsTab.innerHTML = `Inbound Activity <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
-    blocklistTab.className = inactive;
-    blocklistTab.innerHTML = `Community Blocklist ${inactiveBlocklistPill}`;
-    alertsPanel.classList.remove('hidden');
-    blocklistPanel.classList.add('hidden');
-  } else {
-    alertsTab.className = inactive;
-    alertsTab.innerHTML = `Inbound Activity ${inactivePill}`;
-    blocklistTab.className = active;
-    blocklistTab.innerHTML = `Community Blocklist ${activeBlocklistPill}`;
-    alertsPanel.classList.add('hidden');
-    blocklistPanel.classList.remove('hidden');
+  for (const [key, t] of Object.entries(tabs)) {
+    if (!t.btn || !t.panel) continue;
+    const count = document.getElementById(t.countId)?.textContent || '0';
+    const isActive = key === tab;
+    t.btn.className = isActive ? activeCls : inactiveCls;
+    const pillCls = isActive
+      ? 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white'
+      : 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400';
+    t.btn.innerHTML = `${t.label} <span id="${t.countId}" class="${pillCls}">${count}</span>`;
+    t.panel.classList.toggle('hidden', !isActive);
   }
 }
 
