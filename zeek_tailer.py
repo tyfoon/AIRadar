@@ -478,7 +478,11 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
 # → cloud).  When we see www.googleapis.com from the same IP, we use the most
 # recent context to classify it.
 
-# Maps source_ip → (service, category, timestamp)
+# Maps device key → (service, category, timestamp)
+# Uses MAC address when available (via _ip_to_mac), falls back to source_ip.
+# MAC-based keying is critical because IPv6 privacy extensions rotate the
+# source IP, so context set via one IP would not match a later request
+# from the same device using a different IPv6 address.
 _google_context: dict[str, tuple[str, str, float]] = {}
 GOOGLE_CONTEXT_TTL = 300  # 5 minutes
 
@@ -635,17 +639,20 @@ def match_domain(
         return None
 
     # 1) Update Google context if this is a context-setting domain
+    #    Key by MAC (via _ip_to_mac) so context survives IPv6 rotation.
     if source_ip:
+        ctx_key = _ip_to_mac.get(source_ip, source_ip)
         for ctx_domain, (ctx_svc, ctx_cat) in _GOOGLE_CONTEXT_SETTERS.items():
             if hostname == ctx_domain or hostname.endswith("." + ctx_domain):
-                _google_context[source_ip] = (ctx_svc, ctx_cat, time.time())
+                _google_context[ctx_key] = (ctx_svc, ctx_cat, time.time())
                 break
 
     # 2) Handle ambiguous Google domains using context
     for amb_domain in _GOOGLE_AMBIGUOUS:
         if hostname == amb_domain or hostname.endswith("." + amb_domain):
-            if source_ip and source_ip in _google_context:
-                svc, cat, ts = _google_context[source_ip]
+            ctx_key = _ip_to_mac.get(source_ip, source_ip) if source_ip else None
+            if ctx_key and ctx_key in _google_context:
+                svc, cat, ts = _google_context[ctx_key]
                 if (time.time() - ts) < GOOGLE_CONTEXT_TTL:
                     return svc, cat, hostname
             # No context → default to google_drive / cloud
