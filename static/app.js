@@ -757,7 +757,7 @@ function deviceTypeTag(device) {
     osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
   }
 
-  return `<span class="inline-flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">${_deviceTypeIcon20(dt, online)} ${dt.type}${vendorText}</span>${osBadge}`;
+  return `<span class="inline-flex items-center flex-wrap gap-x-1.5 gap-y-0 text-[10px] text-slate-400 dark:text-slate-500">${_deviceTypeIcon20(dt, online)} ${dt.type}${vendorText}${osBadge}</span>`;
 }
 
 async function loadDevices() {
