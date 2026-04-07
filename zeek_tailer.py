@@ -39,6 +39,10 @@ GEO_META_API_URL = os.environ.get(
     "AIRADAR_GEO_META_API_URL",
     "http://localhost:8000/api/geo/metadata/ingest",
 )
+INBOUND_API_URL = os.environ.get(
+    "AIRADAR_INBOUND_API_URL",
+    "http://localhost:8000/api/inbound/ingest",
+)
 SENSOR_ID = socket.gethostname()
 
 # Volumetric upload threshold (bytes)
@@ -1738,6 +1742,19 @@ _geo_conv_buckets: dict[tuple[str, str, str | None, str, str], dict] = {}
 _ip_enrich_queue: set[str] = set()
 _ip_enrich_lock = asyncio.Lock()
 
+# ---------------------------------------------------------------------------
+# Inbound attack tracking — Firewalla-style "all inbound connections" +
+# CrowdSec severity upgrade for known-bad IPs.
+# ---------------------------------------------------------------------------
+# Key: (source_ip, target_ip, target_port)
+_inbound_buckets: dict[tuple[str, str, int], dict] = {}
+INBOUND_FLUSH_INTERVAL = 15  # same cadence as geo flush
+
+# CrowdSec blocklist cache — refreshed periodically from LAPI
+_crowdsec_blocked_ips: set[str] = set()
+_crowdsec_ip_reasons: dict[str, str] = {}  # ip -> scenario
+CROWDSEC_CACHE_REFRESH = 120  # seconds
+
 
 async def _record_geo_traffic(country_code: str, direction: str, total_bytes: int) -> None:
     """Add a connection's bytes to the in-memory buffer."""
@@ -1772,6 +1789,71 @@ async def _record_geo_conversation(
             bucket["hits"] += 1
         else:
             _geo_conv_buckets[key] = {"bytes": total_bytes, "hits": 1}
+
+
+async def _record_inbound_attack(
+    src_ip: str, target_ip: str, target_port: int,
+    target_mac: str | None, total_bytes: int, proto: str = "tcp",
+) -> None:
+    """Buffer an inbound connection attempt for periodic flush."""
+    key = (src_ip, target_ip, target_port)
+    is_threat = src_ip in _crowdsec_blocked_ips
+    async with _geo_lock:
+        bucket = _inbound_buckets.get(key)
+        if bucket:
+            bucket["bytes"] += total_bytes
+            bucket["hits"] += 1
+            if is_threat and bucket["severity"] != "threat":
+                bucket["severity"] = "threat"
+                bucket["crowdsec_reason"] = _crowdsec_ip_reasons.get(src_ip)
+        else:
+            cc = _resolve_country(src_ip)
+            asn_num, asn_org = _resolve_asn(src_ip)
+            _inbound_buckets[key] = {
+                "bytes": total_bytes,
+                "hits": 1,
+                "severity": "threat" if is_threat else "blocked",
+                "crowdsec_reason": _crowdsec_ip_reasons.get(src_ip) if is_threat else None,
+                "target_mac": target_mac,
+                "proto": proto,
+                "country_code": cc,
+                "asn": asn_num,
+                "asn_org": asn_org,
+            }
+
+
+async def _refresh_crowdsec_cache(client: httpx.AsyncClient) -> None:
+    """Background task: pull CrowdSec decisions into a fast lookup set."""
+    crowdsec_url = os.environ.get("CROWDSEC_URL", "http://localhost:8080")
+    api_key = os.environ.get("CROWDSEC_API_KEY", "")
+    if not api_key:
+        print("[crowdsec-cache] No CROWDSEC_API_KEY — skipping cache")
+        return
+    while True:
+        try:
+            r = await client.get(
+                f"{crowdsec_url}/v1/decisions",
+                headers={"X-Api-Key": api_key},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                decisions = r.json() or []
+                new_ips = set()
+                new_reasons = {}
+                for d in decisions:
+                    ip = d.get("value", "")
+                    if ip:
+                        new_ips.add(ip)
+                        new_reasons[ip] = d.get("scenario", "")
+                _crowdsec_blocked_ips.clear()
+                _crowdsec_blocked_ips.update(new_ips)
+                _crowdsec_ip_reasons.clear()
+                _crowdsec_ip_reasons.update(new_reasons)
+                if new_ips:
+                    print(f"[crowdsec-cache] Refreshed: {len(new_ips)} blocked IPs")
+        except Exception as exc:
+            print(f"[crowdsec-cache] Refresh failed: {exc}")
+        await asyncio.sleep(CROWDSEC_CACHE_REFRESH)
 
 
 async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
@@ -1829,6 +1911,38 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                     pass
             except httpx.HTTPError as exc:
                 print(f"[geo-conv] Flush failed ({len(conv_snapshot)} updates): {exc}")
+
+        # --- Inbound attack buffer flush ---
+        async with _geo_lock:
+            inbound_snapshot = [
+                {
+                    "source_ip": src,
+                    "target_ip": tgt,
+                    "target_port": port,
+                    "target_mac": v["target_mac"],
+                    "protocol": v["proto"],
+                    "severity": v["severity"],
+                    "crowdsec_reason": v["crowdsec_reason"],
+                    "country_code": v["country_code"],
+                    "asn": v["asn"],
+                    "asn_org": v["asn_org"],
+                    "bytes": v["bytes"],
+                    "hits": v["hits"],
+                }
+                for (src, tgt, port), v in _inbound_buckets.items()
+            ] if _inbound_buckets else []
+            if inbound_snapshot:
+                _inbound_buckets.clear()
+
+        if inbound_snapshot:
+            try:
+                await client.post(
+                    INBOUND_API_URL,
+                    json={"updates": inbound_snapshot},
+                    timeout=10,
+                )
+            except httpx.HTTPError as exc:
+                print(f"[inbound] Flush failed ({len(inbound_snapshot)} updates): {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -2250,6 +2364,13 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     and _is_local_ip(resp_ip)
                     and proto == "tcp"
                 ):
+                    # Track ALL inbound connections for the attack dashboard
+                    target_mac = _ip_to_mac.get(resp_ip)
+                    await _record_inbound_attack(
+                        src_ip, resp_ip, resp_port, target_mac,
+                        orig_bytes + resp_bytes, proto,
+                    )
+
                     now_ib = time.time()
 
                     # --- Port scan detection ---
@@ -2841,6 +2962,7 @@ async def main(zeek_log_dir: str) -> None:
         backfill_missing_asn(client),  # one-shot retry for pre-MMDB rows
         _refresh_device_meta(client),  # pull device metadata for Phase 2
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh
+        _refresh_crowdsec_cache(client), # CrowdSec IP blocklist → fast local set
     ]
     if p0f_task is not None:
         tasks.append(p0f_task)

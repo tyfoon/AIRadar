@@ -6273,44 +6273,33 @@ async function loadIpsStatus() {
 }
 
 function _renderIpsThreats(data) {
-  // --- Alerts tab: real attacks on our network ---
+  // --- Inbound Activity tab: all inbound connection attempts ---
   const alertsBody = document.getElementById('ips-alerts-body');
   if (alertsBody) {
-    const rows = [];
-    for (const a of (data.alerts || [])) {
-      rows.push({
-        time: a.created_at,
-        ip: a.ip,
-        reason: a.scenario.replace(/^crowdsecurity\//, ''),
-        source: a.country ? `${a.as_name || ''} (${a.country})`.trim() : (a.as_name || 'local'),
-        events: a.events_count || 0,
-      });
-    }
-    for (const d of (data.local_decisions || [])) {
-      if (rows.some(r => r.ip === d.ip)) continue;
-      rows.push({
-        time: d.created_at,
-        ip: d.ip,
-        reason: d.reason.replace(/^crowdsecurity\//, ''),
-        source: d.origin || 'local',
-        events: '',
-      });
-    }
-    rows.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
-
-    if (rows.length === 0) {
-      alertsBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
-        <div class="flex flex-col items-center gap-2"><span class="text-2xl">🛡️</span><span>No attacks detected on your network yet.</span></div>
+    const attacks = data.inbound_attacks || [];
+    if (attacks.length === 0) {
+      alertsBody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+        <div class="flex flex-col items-center gap-2"><i class="ph-duotone ph-shield-check text-2xl"></i><span>No inbound connection attempts detected yet.</span></div>
       </td></tr>`;
     } else {
-      alertsBody.innerHTML = rows.slice(0, 50).map(r => {
-        const timeStr = r.time ? new Date(r.time).toLocaleString() : '';
-        return `<tr class="border-t border-slate-100 dark:border-white/[0.04]">
-          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${timeStr}</td>
-          <td class="py-2 px-4 font-mono text-xs">${r.ip}</td>
-          <td class="py-2 px-4 text-xs">${r.reason}</td>
-          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">${r.source}</td>
-          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">${r.events}</td>
+      alertsBody.innerHTML = attacks.slice(0, 100).map(a => {
+        const isThreat = a.severity === 'threat';
+        const borderClass = isThreat ? 'border-l-2 border-l-red-500' : '';
+        const sevBadge = isThreat
+          ? `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title="${a.crowdsec_reason || ''}">threat</span>`
+          : `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">blocked</span>`;
+        const origin = a.country_code
+          ? `${a.asn_org ? a.asn_org + ' ' : ''}(${a.country_code})`
+          : (a.asn_org || '');
+        const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
+        return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}">
+          <td class="py-2 px-4 font-mono text-xs">${a.source_ip}</td>
+          <td class="py-2 px-4 text-xs">${a.target_ip}</td>
+          <td class="py-2 px-4 text-xs tabular-nums">${a.target_port}</td>
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">${origin}</td>
+          <td class="py-2 px-4 text-xs">${sevBadge}</td>
+          <td class="py-2 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
+          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
         </tr>`;
       }).join('');
     }
@@ -6358,14 +6347,14 @@ function switchIpsTab(tab) {
 
   if (tab === 'alerts') {
     alertsTab.className = active;
-    alertsTab.innerHTML = `Attacks on your network <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
+    alertsTab.innerHTML = `Inbound Activity <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">${alertsCount}</span>`;
     blocklistTab.className = inactive;
     blocklistTab.innerHTML = `Community Blocklist ${inactiveBlocklistPill}`;
     alertsPanel.classList.remove('hidden');
     blocklistPanel.classList.add('hidden');
   } else {
     alertsTab.className = inactive;
-    alertsTab.innerHTML = `Attacks on your network ${inactivePill}`;
+    alertsTab.innerHTML = `Inbound Activity ${inactivePill}`;
     blocklistTab.className = active;
     blocklistTab.innerHTML = `Community Blocklist ${activeBlocklistPill}`;
     alertsPanel.classList.add('hidden');
@@ -6401,23 +6390,32 @@ function _updateIpsBanner(data) {
 }
 
 function _updateIpsStats(data) {
-  // Local alerts count (real attacks on our network)
+  // Inbound blocked count (24h)
   const blockedEl = document.getElementById('ips-stat-blocked');
-  if (blockedEl) blockedEl.textContent = formatNumber(data.local_alerts_count || 0);
+  if (blockedEl) blockedEl.textContent = formatNumber(data.inbound_attacks_24h || 0);
+
+  // Threats count (24h) — CrowdSec-matched
+  const threatsEl = document.getElementById('ips-stat-threats');
+  if (threatsEl) threatsEl.textContent = formatNumber(data.inbound_threats_24h || 0);
+
+  // Unique attackers (24h)
+  const attackersEl = document.getElementById('ips-stat-attackers');
+  if (attackersEl) attackersEl.textContent = formatNumber(data.inbound_unique_ips_24h || 0);
 
   // Community blocklist count
   const decisionsEl = document.getElementById('ips-stat-decisions');
   if (decisionsEl) decisionsEl.textContent = formatNumber(data.blocklist_count || 0);
 
   // Tab counts
+  const inboundTotal = (data.inbound_attacks || []).length;
   const alertsCountEl = document.getElementById('ips-tab-alerts-count');
-  if (alertsCountEl) alertsCountEl.textContent = formatNumber(data.local_alerts_count || 0);
+  if (alertsCountEl) alertsCountEl.textContent = formatNumber(inboundTotal);
   const blocklistCountEl = document.getElementById('ips-tab-blocklist-count');
   if (blocklistCountEl) blocklistCountEl.textContent = formatNumber(data.blocklist_count || 0);
 
-  // Rules card badge — only show local alerts (real attacks)
+  // Rules card badge — inbound attack count for nav
   const countEl = document.getElementById('ips-threats-count');
-  if (countEl) countEl.textContent = formatNumber(data.local_alerts_count || 0);
+  if (countEl) countEl.textContent = formatNumber(data.inbound_attacks_24h || 0);
 
   // Engine status
   const engineEl = document.getElementById('ips-engine-status');
@@ -6451,8 +6449,8 @@ function _updateIpsStats(data) {
   const guide = document.getElementById('ips-setup-guide');
   if (guide) guide.classList.toggle('hidden', data.crowdsec_running);
 
-  // Nav badge — only local alerts (real attacks), not blocklist
-  _navIpsCount = data.local_alerts_count || 0;
+  // Nav badge — inbound attacks count
+  _navIpsCount = data.inbound_attacks_24h || 0;
   updateNavBadges();
 }
 
@@ -7629,7 +7627,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load killswitch + IPS state for nav badges
   loadKillswitchState();
   fetch('/api/ips/status').then(r => r.ok ? r.json() : null).then(d => {
-    if (d) { _navIpsCount = d.active_threats_blocked || 0; updateNavBadges(); }
+    if (d) { _navIpsCount = d.inbound_attacks_24h || 0; updateNavBadges(); }
   }).catch(() => {});
 });
 

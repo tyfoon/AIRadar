@@ -91,6 +91,7 @@ from database import (
     GeoTraffic,
     GeoConversation,
     IpMetadata,
+    InboundAttack,
     KnownDomain,
     NetworkPerformance,
     NotificationConfig,
@@ -419,12 +420,18 @@ async def _periodic_cleanup():
                 AlertException.expires_at < datetime.utcnow(),
             ).delete(synchronize_session=False)
 
+            # 8) Prune old inbound_attacks (keep 7 days)
+            inbound_cutoff = datetime.utcnow() - timedelta(days=7)
+            old_inbound = db.query(InboundAttack).filter(
+                InboundAttack.last_seen < inbound_cutoff
+            ).delete(synchronize_session=False)
+
             db.commit()
 
             remaining = db.query(func.count(DetectionEvent.id)).scalar() or 0
             db.close()
 
-            pruned_extras = old_perf + old_geo + old_ip + old_tls + old_alerts
+            pruned_extras = old_perf + old_geo + old_ip + old_tls + old_alerts + old_inbound
             if pruned_extras > 0:
                 print(
                     f"[cleanup] Pruned: {old_perf} perf, {old_geo} geo_conv, "
@@ -4171,13 +4178,61 @@ async def get_ips_status():
         else:
             local_decisions.append(entry)
 
+    # --- Inbound attack stats from Zeek conn.log ---
+    db = SessionLocal()
+    try:
+        cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+        from sqlalchemy import func as sa_func
+        total_blocked_24h = db.query(
+            sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
+        ).filter(InboundAttack.last_seen >= cutoff_24h).scalar()
+        threats_24h = db.query(
+            sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
+        ).filter(
+            InboundAttack.last_seen >= cutoff_24h,
+            InboundAttack.severity == "threat",
+        ).scalar()
+        unique_attackers_24h = db.query(
+            sa_func.count(sa_func.distinct(InboundAttack.source_ip))
+        ).filter(InboundAttack.last_seen >= cutoff_24h).scalar()
+
+        recent_attacks = (
+            db.query(InboundAttack)
+            .filter(InboundAttack.last_seen >= cutoff_24h)
+            .order_by(InboundAttack.last_seen.desc())
+            .limit(100)
+            .all()
+        )
+        inbound_list = [
+            {
+                "source_ip": a.source_ip,
+                "target_ip": a.target_ip,
+                "target_mac": a.target_mac,
+                "target_port": a.target_port,
+                "severity": a.severity,
+                "crowdsec_reason": a.crowdsec_reason,
+                "country_code": a.country_code,
+                "asn_org": a.asn_org,
+                "hit_count": a.hit_count,
+                "first_seen": a.first_seen.isoformat() if a.first_seen else None,
+                "last_seen": a.last_seen.isoformat() if a.last_seen else None,
+            }
+            for a in recent_attacks
+        ]
+    finally:
+        db.close()
+
     return {
         "enabled": crowdsec.enabled,
         "crowdsec_running": running,
-        "local_alerts_count": len(alerts) + len(local_decisions),
+        "local_alerts_count": len(alerts) + len(local_decisions) + (threats_24h or 0),
         "blocklist_count": len(blocklist),
+        "inbound_attacks_24h": total_blocked_24h or 0,
+        "inbound_threats_24h": threats_24h or 0,
+        "inbound_unique_ips_24h": unique_attackers_24h or 0,
         "alerts": alerts,
         "local_decisions": local_decisions,
+        "inbound_attacks": inbound_list,
         "blocklist": blocklist[:100],  # Limit blocklist to 100 for UI performance
     }
 
@@ -4237,6 +4292,54 @@ def admin_fix_macs():
     """On-demand trigger for MAC address normalization + dedup migration."""
     _normalize_mac_addresses()
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Inbound attack ingest — aggregated by (source_ip, target_ip, target_port)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/inbound/ingest")
+def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
+    """Upsert inbound connection attempts from the Zeek tailer buffer."""
+    updates = payload.get("updates") or []
+    now = datetime.utcnow()
+    for u in updates:
+        src = u.get("source_ip")
+        tgt = u.get("target_ip")
+        port = u.get("target_port")
+        if not src or not tgt or port is None:
+            continue
+        row = db.query(InboundAttack).filter(
+            InboundAttack.source_ip == src,
+            InboundAttack.target_ip == tgt,
+            InboundAttack.target_port == port,
+        ).first()
+        if row:
+            row.hit_count += u.get("hits", 1)
+            row.bytes_transferred += u.get("bytes", 0)
+            row.last_seen = now
+            if u.get("severity") == "threat" and row.severity != "threat":
+                row.severity = "threat"
+                row.crowdsec_reason = u.get("crowdsec_reason")
+        else:
+            db.add(InboundAttack(
+                source_ip=src,
+                target_ip=tgt,
+                target_port=port,
+                target_mac=u.get("target_mac"),
+                protocol=u.get("protocol", "tcp"),
+                severity=u.get("severity", "blocked"),
+                crowdsec_reason=u.get("crowdsec_reason"),
+                country_code=u.get("country_code"),
+                asn=u.get("asn"),
+                asn_org=u.get("asn_org"),
+                hit_count=u.get("hits", 1),
+                bytes_transferred=u.get("bytes", 0),
+                first_seen=now,
+                last_seen=now,
+            ))
+    db.commit()
+    return {"accepted": len(updates)}
 
 
 @app.post("/api/admin/cleanup")

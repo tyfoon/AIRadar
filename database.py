@@ -441,6 +441,40 @@ class NetworkPerformance(Base):
     load_avg_15 = Column(Integer, nullable=True)
 
 
+class InboundAttack(Base):
+    """Aggregated inbound connection attempts from external IPs.
+
+    One row per (source_ip, target_ip, target_port) tuple. Accumulates
+    hit_count over time. severity is "blocked" (any inbound) or "threat"
+    (source IP found in CrowdSec blocklist).
+    """
+
+    __tablename__ = "inbound_attacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_ip = Column(String, nullable=False, index=True)
+    target_ip = Column(String, nullable=False, index=True)
+    target_mac = Column(String, nullable=True, index=True)
+    target_port = Column(Integer, nullable=False)
+    protocol = Column(String, nullable=False, default="tcp")
+    severity = Column(String, nullable=False, default="blocked")  # "blocked" | "threat"
+    crowdsec_reason = Column(String, nullable=True)
+    country_code = Column(String, nullable=True)
+    asn = Column(Integer, nullable=True)
+    asn_org = Column(String, nullable=True)
+    hit_count = Column(Integer, nullable=False, default=1)
+    bytes_transferred = Column(Integer, nullable=False, default=0)
+    first_seen = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("source_ip", "target_ip", "target_port",
+                         name="uq_inbound_attack_tuple"),
+    )
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 
