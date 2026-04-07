@@ -801,22 +801,17 @@ def _normalize_mac_addresses():
     """One-shot startup sweep: re-pad any MAC addresses that were stored
     without leading zeros (e.g. 'a2:c0:6d:40:7:f7' → 'a2:c0:6d:40:07:f7').
 
-    Must update the primary key in devices and all tables that reference it.
+    Handles three cases:
+    1. Simple rename: old non-padded MAC → new padded MAC (no conflict).
+    2. Merge: both old and new MAC exist as separate devices — merge them,
+       keeping the richer record (hostname, vendor, earliest first_seen).
+    3. Destination column in alert_exceptions also stores MACs for
+       new_device alerts.
     """
     db = SessionLocal()
     try:
-        # Find all MACs in devices table that need fixing (have an octet < 2 chars)
-        all_devices = db.execute(text("SELECT mac_address FROM devices")).fetchall()
-        fixes = {}
-        for (mac,) in all_devices:
-            if not mac or mac.startswith("unknown_"):
-                continue
-            normalized = _normalize_mac(mac)
-            if normalized != mac:
-                fixes[mac] = normalized
-
-        if not fixes:
-            return
+        # Disable FK checks for SQLite so we can freely update PKs
+        db.execute(text("PRAGMA foreign_keys = OFF"))
 
         # Tables that have a mac_address column referencing devices
         fk_tables = ["device_ips", "tls_fingerprints"]
@@ -824,40 +819,83 @@ def _normalize_mac_addresses():
         ref_tables = ["detection_events", "block_rules", "alert_exceptions",
                       "device_baselines", "service_policies",
                       "geo_conversations", "device_group_members"]
+        all_ref_tables = fk_tables + ref_tables
 
-        for old_mac, new_mac in fixes.items():
-            # Check if the normalized MAC already exists (merge case)
-            existing = db.execute(
-                text("SELECT mac_address FROM devices WHERE mac_address = :m"),
-                {"m": new_mac},
-            ).fetchone()
+        # Find all MACs in devices table that need fixing
+        all_devices = db.execute(text(
+            "SELECT mac_address, hostname, vendor, display_name, "
+            "       first_seen, last_seen FROM devices"
+        )).fetchall()
 
-            if existing:
-                # Merge: move FK rows to the existing device, delete the old one
-                for tbl in fk_tables:
+        # Group by normalized MAC to detect duplicates AND renames
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for row in all_devices:
+            mac = row[0]
+            if not mac or mac.startswith("unknown_"):
+                continue
+            norm = _normalize_mac(mac)
+            groups[norm].append(row)
+
+        fixed = 0
+        merged = 0
+
+        for norm_mac, entries in groups.items():
+            if len(entries) == 1 and entries[0][0] == norm_mac:
+                continue  # Already correct, nothing to do
+
+            # Pick the richest record as keeper (prefer hostname, then vendor,
+            # then display_name). Among equals, prefer the oldest first_seen.
+            entries.sort(key=lambda e: (
+                e[1] is not None,   # has hostname
+                e[3] is not None,   # has display_name
+                e[2] is not None,   # has vendor
+            ), reverse=True)
+
+            keeper_mac = entries[0][0]
+            earliest_first = min(e[4] for e in entries)
+            latest_last = max(e[5] for e in entries if e[5])
+
+            # Move all references from non-keeper MACs to keeper
+            for entry in entries[1:]:
+                old_mac = entry[0]
+                for tbl in all_ref_tables:
                     db.execute(text(
                         f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": old_mac, "new": new_mac})
-                for tbl in ref_tables:
-                    db.execute(text(
-                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": old_mac, "new": new_mac})
+                    ), {"old": old_mac, "new": keeper_mac})
+                db.execute(text(
+                    "UPDATE alert_exceptions SET destination = :new "
+                    "WHERE destination = :old"
+                ), {"old": old_mac, "new": keeper_mac})
                 db.execute(text(
                     "DELETE FROM devices WHERE mac_address = :old"
                 ), {"old": old_mac})
-            else:
-                # Rename: update FK tables first, then the PK
-                for tbl in fk_tables:
+                merged += 1
+
+            # Rename keeper to normalized MAC if needed
+            if keeper_mac != norm_mac:
+                for tbl in all_ref_tables:
                     db.execute(text(
                         f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": old_mac, "new": new_mac})
-                for tbl in ref_tables:
-                    db.execute(text(
-                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": old_mac, "new": new_mac})
+                    ), {"old": keeper_mac, "new": norm_mac})
                 db.execute(text(
-                    "UPDATE devices SET mac_address = :new WHERE mac_address = :old"
-                ), {"old": old_mac, "new": new_mac})
+                    "UPDATE alert_exceptions SET destination = :new "
+                    "WHERE destination = :old"
+                ), {"old": keeper_mac, "new": norm_mac})
+                db.execute(text(
+                    "UPDATE devices SET mac_address = :new, "
+                    "       first_seen = :fs, last_seen = :ls "
+                    "WHERE mac_address = :old"
+                ), {"new": norm_mac, "old": keeper_mac,
+                    "fs": earliest_first, "ls": latest_last})
+            else:
+                # Just restore the earliest timestamps from merged records
+                db.execute(text(
+                    "UPDATE devices SET first_seen = :fs, last_seen = :ls "
+                    "WHERE mac_address = :mac"
+                ), {"mac": norm_mac, "fs": earliest_first, "ls": latest_last})
+
+            fixed += 1
 
         # Also fix the 'destination' column in alert_exceptions where it
         # stores a MAC address (new_device alerts use MAC as destination)
@@ -874,9 +912,18 @@ def _normalize_mac_addresses():
                 ), {"new": norm_dest, "id": row_id})
                 ae_fixed += 1
 
-        db.commit()
-        print(f"[cleanup] Re-padded {len(fixes)} MAC address(es) with leading zeros"
-              + (f" + {ae_fixed} alert exception destination(s)" if ae_fixed else ""))
+        if fixed or ae_fixed:
+            db.commit()
+            parts = []
+            if fixed:
+                parts.append(f"normalized {fixed} MAC group(s)")
+            if merged:
+                parts.append(f"merged {merged} duplicate(s)")
+            if ae_fixed:
+                parts.append(f"fixed {ae_fixed} alert exception destination(s)")
+            print(f"[cleanup] {', '.join(parts)}")
+
+        db.execute(text("PRAGMA foreign_keys = ON"))
     except Exception as exc:
         print(f"[cleanup] MAC normalization sweep failed: {exc}")
         db.rollback()
