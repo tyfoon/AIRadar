@@ -1,0 +1,31 @@
+# ──────────────────────────────────────────────────────────────
+# AI-Radar — Inbound attack logging (iptables)
+# Logs new inbound connections traversing the bridge so CrowdSec
+# can detect port scans, brute force, and other attack patterns.
+#
+# Only NEW connections are logged (not established traffic),
+# and rate-limited to 10/sec to avoid flooding kern.log.
+#
+# Deployed to: /etc/systemd/system/airadar-ips-logging.service
+# ──────────────────────────────────────────────────────────────
+[Unit]
+Description=AI-Radar inbound attack logging for CrowdSec (iptables)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Log new inbound TCP connections from external sources traversing the bridge.
+# The "crowdsec: " prefix is recognized by CrowdSec's iptables-logs parser.
+# Rate-limited to avoid log flooding during heavy scans.
+ExecStart=/usr/sbin/iptables -I FORWARD -i br0 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStart=/usr/sbin/iptables -I FORWARD -i br0 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+
+# Clean up on stop
+ExecStop=/usr/sbin/iptables -D FORWARD -i br0 -p tcp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+ExecStop=/usr/sbin/iptables -D FORWARD -i br0 -p udp -m state --state NEW -m limit --limit 10/sec --limit-burst 50 -j LOG --log-prefix "crowdsec: " --log-level 4
+
+[Install]
+WantedBy=multi-user.target
