@@ -6162,7 +6162,7 @@ async def _compute_device_baselines():
 
 # Volume spike checker — runs every 15 minutes
 VOLUME_SPIKE_CHECK_INTERVAL = 900
-VOLUME_SPIKE_DEDUP_SECONDS = 3600
+VOLUME_SPIKE_DEDUP_SECONDS = 86400  # 24h — one alert per device per day
 _volume_spike_last: dict[str, float] = {}
 
 
@@ -6173,24 +6173,30 @@ async def _check_volume_spikes():
     if the last hour's traffic exceeds avg + 3σ.  If so, create a
     DetectionEvent with detection_type='iot_volume_spike'.
     """
-    await asyncio.sleep(300)  # let baselines compute first
-
-    # Seed dedup dict from DB so restarts don't re-alert existing spikes
+    # On startup, deduplicate existing volume spike events: keep only the
+    # most recent per source_ip per day to clean up restart duplicates.
     try:
         _db = SessionLocal()
-        _cutoff = datetime.utcnow() - timedelta(seconds=VOLUME_SPIKE_DEDUP_SECONDS)
-        ip_to_mac = {dip.ip: dip.mac_address for dip in _db.query(DeviceIP).all()}
-        for evt in _db.query(DetectionEvent).filter(
+        all_spikes = _db.query(DetectionEvent).filter(
             DetectionEvent.detection_type == "iot_volume_spike",
-            DetectionEvent.timestamp >= _cutoff,
-        ).all():
-            mac = ip_to_mac.get(evt.source_ip)
-            if mac:
-                _volume_spike_last[mac] = evt.timestamp.timestamp()
+        ).order_by(DetectionEvent.timestamp.desc()).all()
+        seen: set[tuple[str, str]] = set()  # (source_ip, date)
+        removed = 0
+        for evt in all_spikes:
+            key = (evt.source_ip, evt.timestamp.strftime("%Y-%m-%d"))
+            if key in seen:
+                _db.delete(evt)
+                removed += 1
+            else:
+                seen.add(key)
+        if removed:
+            _db.commit()
+            log.info("volume-spike cleanup: removed %d duplicate events", removed)
         _db.close()
     except Exception:
         pass
 
+    await asyncio.sleep(300)  # let baselines compute first
     while True:
         try:
             import json as _json
@@ -6239,8 +6245,17 @@ async def _check_volume_spikes():
                 if hour_bytes <= threshold:
                     continue
 
-                # Dedup
+                # Dedup: check both in-memory dict AND DB to survive restarts
                 if (now_ts - _volume_spike_last.get(bl.mac_address, 0)) < VOLUME_SPIKE_DEDUP_SECONDS:
+                    continue
+                src_ip_check = mac_to_ip.get(bl.mac_address, bl.mac_address)
+                recent_db_spike = db.query(DetectionEvent).filter(
+                    DetectionEvent.detection_type == "iot_volume_spike",
+                    DetectionEvent.source_ip == src_ip_check,
+                    DetectionEvent.timestamp >= now - timedelta(seconds=VOLUME_SPIKE_DEDUP_SECONDS),
+                ).first()
+                if recent_db_spike:
+                    _volume_spike_last[bl.mac_address] = recent_db_spike.timestamp.timestamp()
                     continue
                 _volume_spike_last[bl.mac_address] = now_ts
 
