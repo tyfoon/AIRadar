@@ -908,12 +908,12 @@ def _is_junk_hostname(name) -> bool:
 
 
 def _normalize_mac(mac: str) -> str:
-    """Normalize MAC: lowercase, strip leading zeros per octet.
-    e.g. 'A2:C0:6D:40:07:F7' → 'a2:c0:6d:40:7:f7'
+    """Normalize MAC: lowercase, zero-padded octets, colon-separated.
+    e.g. 'A2:C0:6D:40:7:F7' → 'a2:c0:6d:40:07:f7'
     """
     try:
         parts = mac.lower().replace("-", ":").split(":")
-        return ":".join(format(int(p, 16), "x") for p in parts)
+        return ":".join(format(int(p, 16), "02x") for p in parts)
     except (ValueError, AttributeError):
         return mac.lower()
 

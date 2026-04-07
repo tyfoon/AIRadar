@@ -797,6 +797,77 @@ def _cleanup_empty_sentinel_strings():
         db.close()
 
 
+def _normalize_mac_addresses():
+    """One-shot startup sweep: re-pad any MAC addresses that were stored
+    without leading zeros (e.g. 'a2:c0:6d:40:7:f7' → 'a2:c0:6d:40:07:f7').
+
+    Must update the primary key in devices and all tables that reference it.
+    """
+    db = SessionLocal()
+    try:
+        # Find all MACs in devices table that need fixing (have an octet < 2 chars)
+        all_devices = db.execute(text("SELECT mac_address FROM devices")).fetchall()
+        fixes = {}
+        for (mac,) in all_devices:
+            if not mac or mac.startswith("unknown_"):
+                continue
+            normalized = _normalize_mac(mac)
+            if normalized != mac:
+                fixes[mac] = normalized
+
+        if not fixes:
+            return
+
+        # Tables that have a mac_address column referencing devices
+        fk_tables = ["device_ips", "tls_fingerprints"]
+        # Tables with mac_address column but no FK constraint
+        ref_tables = ["detection_events", "block_rules", "alert_exceptions",
+                      "device_baselines", "service_policies",
+                      "geo_conversations", "device_group_members"]
+
+        for old_mac, new_mac in fixes.items():
+            # Check if the normalized MAC already exists (merge case)
+            existing = db.execute(
+                text("SELECT mac_address FROM devices WHERE mac_address = :m"),
+                {"m": new_mac},
+            ).fetchone()
+
+            if existing:
+                # Merge: move FK rows to the existing device, delete the old one
+                for tbl in fk_tables:
+                    db.execute(text(
+                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
+                    ), {"old": old_mac, "new": new_mac})
+                for tbl in ref_tables:
+                    db.execute(text(
+                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
+                    ), {"old": old_mac, "new": new_mac})
+                db.execute(text(
+                    "DELETE FROM devices WHERE mac_address = :old"
+                ), {"old": old_mac})
+            else:
+                # Rename: update FK tables first, then the PK
+                for tbl in fk_tables:
+                    db.execute(text(
+                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
+                    ), {"old": old_mac, "new": new_mac})
+                for tbl in ref_tables:
+                    db.execute(text(
+                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
+                    ), {"old": old_mac, "new": new_mac})
+                db.execute(text(
+                    "UPDATE devices SET mac_address = :new WHERE mac_address = :old"
+                ), {"old": old_mac, "new": new_mac})
+
+        db.commit()
+        print(f"[cleanup] Re-padded {len(fixes)} MAC address(es) with leading zeros")
+    except Exception as exc:
+        print(f"[cleanup] MAC normalization sweep failed: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # Network performance collector — stores a snapshot every 60s
 # ---------------------------------------------------------------------------
@@ -913,6 +984,7 @@ async def lifespan(app: FastAPI):
     _backfill_vendors()
     _cleanup_junk_hostnames()
     _cleanup_empty_sentinel_strings()
+    _normalize_mac_addresses()
     # Start background tasks
     cleanup_task = asyncio.create_task(_periodic_cleanup())
     expiry_task = asyncio.create_task(_expire_block_rules())
@@ -1837,14 +1909,14 @@ async def device_ai_report(
 
 
 def _normalize_mac(mac: str) -> str:
-    """Normalize MAC to consistent lowercase format without leading zeros.
-    e.g. 'A2:C0:6D:40:07:F7' → 'a2:c0:6d:40:7:f7'
+    """Normalize MAC: lowercase, zero-padded octets, colon-separated.
+    e.g. 'A2:C0:6D:40:7:F7' → 'a2:c0:6d:40:07:f7'
     """
     if not mac:
         return mac
     try:
         parts = mac.lower().replace("-", ":").split(":")
-        return ":".join(format(int(p, 16), "x") for p in parts)
+        return ":".join(format(int(p, 16), "02x") for p in parts)
     except (ValueError, AttributeError):
         return mac.lower()
 
@@ -3277,6 +3349,14 @@ def get_active_alerts(
         if _is_exception_active(exceptions, d.mac_address, "new_device", d.mac_address, now):
             continue
         device_ips = [dip.ip for dip in d.ips][:3] if d.ips else []
+        # Build a short human-readable summary of what we know about this device
+        info_parts = []
+        if d.vendor:
+            info_parts.append(d.vendor)
+        if d.os_full or d.os_name:
+            info_parts.append(d.os_full or d.os_name)
+        if device_ips:
+            info_parts.append(", ".join(device_ips))
         new_device_alerts.append({
             "alert_id": f"{d.mac_address}|new_device|{d.mac_address}",
             "mac_address": d.mac_address,
@@ -3284,7 +3364,7 @@ def get_active_alerts(
             "display_name": d.display_name,
             "vendor": d.vendor,
             "alert_type": "new_device",
-            "service_or_dest": d.mac_address,
+            "service_or_dest": None,
             "category": None,
             "first_seen": d.first_seen,
             "timestamp": d.first_seen,
@@ -3294,6 +3374,7 @@ def get_active_alerts(
                 "reason": "new_device",
                 "detection_type": "new_device",
                 "ips": device_ips,
+                "info_summary": " · ".join(info_parts) if info_parts else None,
             },
         })
 

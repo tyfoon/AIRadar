@@ -1622,10 +1622,13 @@ async function loadSummaryDashboard() {
                   <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
                   <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
                 </div>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                  <span class="font-medium">${svcDisplayName(a.service_or_dest) || a.service_or_dest}</span>
-                  <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${a.hits} hits · ${lastSeen}</span>
-                </p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">${
+                  a.alert_type === 'new_device'
+                    ? `<span class="font-medium">${a.details?.info_summary || a.mac_address}</span>
+                       <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${firstSeen || lastSeen}</span>`
+                    : `<span class="font-medium">${svcDisplayName(a.service_or_dest) || a.service_or_dest}</span>
+                       <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${a.hits} hits · ${lastSeen}</span>`
+                }</p>
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-shrink-0">
