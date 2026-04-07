@@ -859,8 +859,24 @@ def _normalize_mac_addresses():
                     "UPDATE devices SET mac_address = :new WHERE mac_address = :old"
                 ), {"old": old_mac, "new": new_mac})
 
+        # Also fix the 'destination' column in alert_exceptions where it
+        # stores a MAC address (new_device alerts use MAC as destination)
+        ae_rows = db.execute(text(
+            "SELECT id, destination FROM alert_exceptions "
+            "WHERE destination IS NOT NULL AND destination LIKE '%:%'"
+        )).fetchall()
+        ae_fixed = 0
+        for row_id, dest in ae_rows:
+            norm_dest = _normalize_mac(dest)
+            if norm_dest != dest:
+                db.execute(text(
+                    "UPDATE alert_exceptions SET destination = :new WHERE id = :id"
+                ), {"new": norm_dest, "id": row_id})
+                ae_fixed += 1
+
         db.commit()
-        print(f"[cleanup] Re-padded {len(fixes)} MAC address(es) with leading zeros")
+        print(f"[cleanup] Re-padded {len(fixes)} MAC address(es) with leading zeros"
+              + (f" + {ae_fixed} alert exception destination(s)" if ae_fixed else ""))
     except Exception as exc:
         print(f"[cleanup] MAC normalization sweep failed: {exc}")
         db.rollback()
