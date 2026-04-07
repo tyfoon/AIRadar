@@ -6288,10 +6288,8 @@ function _renderIpsThreats(data) {
         const sevBadge = isThreat
           ? `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">threat</span>`
           : `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">blocked</span>`;
-        // Country flag emoji from ISO code
-        const flag = a.country_code
-          ? a.country_code.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))) + ' '
-          : '';
+        // Country flag using flag-icons CSS (same as geo traffic page)
+        const flag = a.country_code ? _flagEmoji(a.country_code) + ' ' : '';
         const asnShort = a.asn_org ? a.asn_org.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International)\.?)+$/i, '').trim() : '';
         const origin = `${flag}${asnShort}${a.country_code ? ' (' + a.country_code + ')' : ''}`;
         const target = a.target_name || a.target_ip;
