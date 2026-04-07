@@ -1069,12 +1069,29 @@ async def lifespan(app: FastAPI):
     _db = SessionLocal()
     try:
         cleared = _db.query(InboundAttack).filter(
-            (InboundAttack.target_port.in_([80, 443]) |
-             (InboundAttack.target_port >= 1024)),
+            InboundAttack.target_port >= 1024,
         ).delete(synchronize_session=False)
+        # Also remove false-positive inbound_threat detection events on high ports
+        cleared2 = _db.query(DetectionEvent).filter(
+            DetectionEvent.detection_type == "inbound_threat",
+            DetectionEvent.ai_service.like("inbound_%"),
+        ).all()
+        high_port_ids = []
+        for e in cleared2:
+            try:
+                port = int(e.ai_service.replace("inbound_", ""))
+                if port >= 1024:
+                    high_port_ids.append(e.id)
+            except ValueError:
+                pass
+        if high_port_ids:
+            _db.query(DetectionEvent).filter(
+                DetectionEvent.id.in_(high_port_ids)
+            ).delete(synchronize_session=False)
+            cleared += len(high_port_ids)
         if cleared:
             _db.commit()
-            print(f"[cleanup] Cleared {cleared} false-positive inbound entries (legit web traffic)")
+            print(f"[cleanup] Cleared {cleared} false-positive inbound entries")
     except Exception:
         pass
     finally:
