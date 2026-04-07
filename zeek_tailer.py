@@ -484,7 +484,7 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
 # source IP, so context set via one IP would not match a later request
 # from the same device using a different IPv6 address.
 _google_context: dict[str, tuple[str, str, float]] = {}
-GOOGLE_CONTEXT_TTL = 300  # 5 minutes
+GOOGLE_CONTEXT_TTL = 3600  # 1 hour — Gemini sessions last longer than 5 min
 
 # Domains that set Google context (but are NOT ambiguous themselves)
 _GOOGLE_CONTEXT_SETTERS = {
@@ -655,7 +655,15 @@ def match_domain(
                 svc, cat, ts = _google_context[ctx_key]
                 if (time.time() - ts) < GOOGLE_CONTEXT_TTL:
                     return svc, cat, hostname
-            # No context → default to google_drive / cloud
+            # No context → classify based on domain specifics
+            # content-autofill and fonts are clearly not AI
+            if hostname in ("content-autofill.googleapis.com", "fonts.googleapis.com"):
+                return "google", "tracking", hostname
+            # www.googleapis.com is the main Google API gateway used by
+            # Gemini API, Drive API, etc. Default to google_api (ai)
+            # because the most interesting signal is API usage.
+            if hostname == "www.googleapis.com":
+                return "google_api", "ai", hostname
             return "google_drive", "cloud", hostname
 
     # 3) Fast lookup via the merged map. Exact match first, then walk

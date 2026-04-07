@@ -293,8 +293,8 @@ const SERVICE_COLORS = {
 const SERVICE_NAMES = {
   // AI
   openai:'OpenAI', anthropic_claude:'Claude', google_gemini:'Gemini',
-  microsoft_copilot:'Copilot', perplexity:'Perplexity', huggingface:'Hugging Face',
-  mistral:'Mistral',
+  google_api:'Google API', microsoft_copilot:'Copilot', perplexity:'Perplexity',
+  huggingface:'Hugging Face', mistral:'Mistral',
   // Cloud
   dropbox:'Dropbox', wetransfer:'WeTransfer', google_drive:'Google Drive',
   google_device_sync:'Google Device Sync', google_generic_cdn:'Google Cloud (CDN)',
