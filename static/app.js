@@ -722,8 +722,11 @@ function _detectDeviceType(device) {
 function _deviceTypeIcon20(dt, online) {
   const colorClass = online
     ? 'text-emerald-500 dark:text-emerald-400'
-    : 'text-slate-300 dark:text-slate-600';
-  return `<span class="inline-flex items-center justify-center w-5 h-5 text-base leading-none flex-shrink-0 ${colorClass}" title="${dt.type}${online ? ' · online' : ' · offline'}">${dt.icon}</span>`;
+    : 'text-slate-400 dark:text-slate-600';
+  const dot = online
+    ? '<span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-white dark:border-[#0B0C10]"></span>'
+    : '';
+  return `<span class="relative inline-flex items-center justify-center w-5 h-5 text-base leading-none flex-shrink-0 ${colorClass}" title="${dt.type}${online ? ' · online' : ' · offline'}">${dt.icon}${dot}</span>`;
 }
 
 function _isDeviceOnline(device) {
