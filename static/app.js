@@ -731,7 +731,9 @@ function _deviceTypeIcon20(dt, online) {
 
 function _isDeviceOnline(device) {
   if (!device?.last_seen) return false;
-  const lastSeen = new Date(device.last_seen).getTime();
+  // API returns timestamps without 'Z' suffix — force UTC interpretation
+  const ts = device.last_seen.endsWith('Z') ? device.last_seen : device.last_seen + 'Z';
+  const lastSeen = new Date(ts).getTime();
   const now = Date.now();
   return (now - lastSeen) < 5 * 60 * 1000; // 5 minutes
 }
