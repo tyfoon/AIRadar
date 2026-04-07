@@ -3157,6 +3157,11 @@ function renderBeaconAlerts(alerts, status) {
                 <span class="mx-1">→</span>
                 <span class="font-mono text-red-600 dark:text-red-400">${a.dest_ip}</span>
               </div>
+              <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
+                ${a.dest_asn_org ? `<span>${a.dest_country ? _flagEmoji(a.dest_country) + ' ' : ''}${a.dest_asn_org}</span>` : ''}
+                ${a.dest_sni ? `<span class="font-mono">${a.dest_sni}</span>` : ''}
+                ${a.total_hits ? `<span>${formatNumber(a.total_hits)} connections · ${a.total_bytes > 1048576 ? (a.total_bytes/1048576).toFixed(1) + ' MB' : Math.round(a.total_bytes/1024) + ' KB'}</span>` : ''}
+              </div>
             </div>
           </div>
           <div class="text-right flex-shrink-0 ml-3">

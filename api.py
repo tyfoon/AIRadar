@@ -3982,12 +3982,45 @@ async def privacy_stats(
                 "display_name": dev.display_name,
                 "vendor": dev.vendor,
             }
+        # Enrich destination IP with ASN, country, PTR
+        dest_meta = db.query(IpMetadata).filter(IpMetadata.ip == row.ai_service).first()
+        dest_info = {}
+        if dest_meta:
+            dest_info = {
+                "dest_asn_org": dest_meta.asn_org,
+                "dest_country": dest_meta.country_code,
+                "dest_ptr": dest_meta.ptr,
+            }
+        # Find SNI domain from TLS fingerprints for this device+dest
+        dest_sni = None
+        if device_info.get("mac_address"):
+            # Look for any TLS fingerprint where the SNI resolves to this IP
+            # by checking geo_conversations for a service name
+            geo_row = db.query(GeoConversation).filter(
+                GeoConversation.resp_ip == row.ai_service,
+                GeoConversation.mac_address == device_info["mac_address"],
+            ).order_by(GeoConversation.hits.desc()).first()
+            if geo_row and geo_row.ai_service and geo_row.ai_service != "unknown":
+                dest_sni = geo_row.ai_service
+        # Also check geo for bytes/hits context
+        geo_ctx = db.query(GeoConversation).filter(
+            GeoConversation.resp_ip == row.ai_service,
+        ).order_by(GeoConversation.hits.desc()).first()
+        geo_info = {}
+        if geo_ctx:
+            geo_info = {
+                "total_bytes": geo_ctx.bytes_transferred,
+                "total_hits": geo_ctx.hits,
+            }
         beacon_alerts.append({
             "source_ip": row.source_ip,
             "dest_ip": row.ai_service,
+            "dest_sni": dest_sni,
             "last_seen": str(row.last_seen),
             "hits": row.hits,
             **device_info,
+            **dest_info,
+            **geo_info,
         })
 
     return {
