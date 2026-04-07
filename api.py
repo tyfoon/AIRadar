@@ -1823,6 +1823,20 @@ async def device_ai_report(
             "Correct: 'Spotify is installed and reachable but shows no "
             "active playback signature.'\n\n"
 
+            "SECURITY & PRIVACY — ALWAYS FLAG THESE:\n"
+            "  - Any service starting with 'vpn_' (e.g. vpn_nordvpn, "
+            "vpn_mullvad) is a VPN connection — ALWAYS mention this "
+            "prominently. VPN usage is privacy-relevant.\n"
+            "  - If many ad-tracking services appear (adform, openx, "
+            "index_exchange, rtb_house, ogury, vidazoo, etc.), flag "
+            "this as 'significant ad-tracker presence' — it may "
+            "indicate adware or ad-heavy browsing.\n"
+            "  - Unexpected services for the device type (e.g. baidu "
+            "on a Dutch PC, or AI services on a child's device) "
+            "should be called out specifically.\n"
+            "  - AI service usage (openai, google_gemini, copilot, "
+            "anthropic, etc.) should always be mentioned.\n\n"
+
             "REQUIRED STRUCTURE — stick to it exactly:\n\n"
             "## Summary\n"
             "3 to 4 sentences in plain language, in this order:\n"
@@ -1844,7 +1858,9 @@ async def device_ai_report(
             "session. Max one paragraph.\n\n"
             "## Notable observations\n"
             "Exactly 3 bullets with specific noteworthy findings. Each "
-            "bullet starts with a short bold header.\n"
+            "bullet starts with a short bold header. Prioritize: VPN "
+            "usage, AI usage, unusual services, ad-tracker density, "
+            "large uploads — over generic observations.\n"
         )
     else:
         system_prompt = (
@@ -1882,6 +1898,20 @@ async def device_ai_report(
             "Goed: 'Spotify is geïnstalleerd en bereikbaar, maar er is "
             "geen actieve afspeelsignatuur te zien.'\n\n"
 
+            "BEVEILIGING & PRIVACY — BENOEM DEZE ALTIJD:\n"
+            "  - Elke service die begint met 'vpn_' (bv. vpn_nordvpn, "
+            "vpn_mullvad) is een VPN-verbinding — benoem dit ALTIJD "
+            "prominent. VPN-gebruik is privacy-relevant.\n"
+            "  - Als er veel ad-tracking services verschijnen (adform, "
+            "openx, index_exchange, rtb_house, ogury, vidazoo, etc.), "
+            "meld dit als 'opvallend veel ad-trackers' — kan duiden "
+            "op adware of ad-intensief browsen.\n"
+            "  - Onverwachte services voor het type apparaat (bv. baidu "
+            "op een Nederlandse PC, of AI-services op een kinder-"
+            "apparaat) moeten specifiek benoemd worden.\n"
+            "  - AI-gebruik (openai, google_gemini, copilot, anthropic, "
+            "etc.) moet altijd vermeld worden.\n\n"
+
             "VERPLICHTE STRUCTUUR — houd je hier strikt aan:\n\n"
             "## Samenvatting\n"
             "3 tot 4 zinnen in gewone taal, in deze volgorde:\n"
@@ -1907,7 +1937,9 @@ async def device_ai_report(
             "## Opvallende observaties\n"
             "Exact 3 bullets met specifieke dingen die de moeite waard "
             "zijn om te weten. Elke bullet begint met een korte kop in "
-            "vet.\n"
+            "vet. Prioriteer: VPN-gebruik, AI-gebruik, onverwachte "
+            "services, ad-tracker concentratie, grote uploads — boven "
+            "generieke observaties.\n"
         )
 
     prompt_chars = len(system_prompt) + len(data_block)
