@@ -4218,15 +4218,24 @@ async def get_ips_status():
             .limit(100)
             .all()
         )
+        # Resolve target MAC → device name for display
+        target_macs = {a.target_mac for a in recent_attacks if a.target_mac}
+        mac_to_name = {}
+        if target_macs:
+            devs = db.query(Device).filter(Device.mac_address.in_(target_macs)).all()
+            for d in devs:
+                mac_to_name[d.mac_address] = d.display_name or d.hostname or d.vendor
+
         inbound_list = [
             {
                 "source_ip": a.source_ip,
                 "target_ip": a.target_ip,
-                "target_mac": a.target_mac,
+                "target_name": mac_to_name.get(a.target_mac),
                 "target_port": a.target_port,
                 "severity": a.severity,
                 "crowdsec_reason": a.crowdsec_reason,
                 "country_code": a.country_code,
+                "asn": a.asn,
                 "asn_org": a.asn_org,
                 "hit_count": a.hit_count,
                 "first_seen": a.first_seen.isoformat() if a.first_seen else None,

@@ -6286,20 +6286,32 @@ function _renderIpsThreats(data) {
         const isThreat = a.severity === 'threat';
         const borderClass = isThreat ? 'border-l-2 border-l-red-500' : '';
         const sevBadge = isThreat
-          ? `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title="${a.crowdsec_reason || ''}">threat</span>`
+          ? `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">threat</span>`
           : `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">blocked</span>`;
-        const origin = a.country_code
-          ? `${a.asn_org ? a.asn_org + ' ' : ''}(${a.country_code})`
-          : (a.asn_org || '');
+        // Country flag emoji from ISO code
+        const flag = a.country_code
+          ? a.country_code.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))) + ' '
+          : '';
+        const asnShort = a.asn_org ? a.asn_org.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International)\.?)+$/i, '').trim() : '';
+        const origin = `${flag}${asnShort}${a.country_code ? ' (' + a.country_code + ')' : ''}`;
+        const target = a.target_name || a.target_ip;
+        const reason = a.crowdsec_reason
+          ? a.crowdsec_reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ')
+          : (isThreat ? 'blocklist match' : 'probe / scan');
         const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
         return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}" data-severity="${a.severity}">
-          <td class="py-2 px-4 font-mono text-xs">${a.source_ip}</td>
-          <td class="py-2 px-4 text-xs">${a.target_ip}</td>
-          <td class="py-2 px-4 text-xs tabular-nums">${a.target_port}</td>
-          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">${origin}</td>
-          <td class="py-2 px-4 text-xs">${sevBadge}</td>
-          <td class="py-2 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
-          <td class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
+          <td class="py-2.5 px-4">
+            <div class="font-mono text-xs">${a.source_ip}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${origin}</div>
+          </td>
+          <td class="py-2.5 px-4">
+            <div class="text-xs font-medium">${target}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">:${a.target_port}</div>
+          </td>
+          <td class="py-2.5 px-4 text-xs">${sevBadge}</td>
+          <td class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400">${reason}</td>
+          <td class="py-2.5 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
+          <td class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
         </tr>`;
       }).join('');
     }
