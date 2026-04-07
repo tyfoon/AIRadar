@@ -1001,6 +1001,28 @@
     <!-- ============================================================= -->
     <section id="page-ips" class="page space-y-6">
 
+      <!-- Direction tabs (top-level, same pattern as Geo Traffic) -->
+      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+        <button id="ips-tab-alerts" onclick="switchIpsTab('alerts')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-arrow-down-left text-sm"></i>
+            Inbound <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">0</span>
+          </span>
+        </button>
+        <button id="ips-tab-outbound" onclick="switchIpsTab('outbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-arrow-up-right text-sm"></i>
+            Outbound <span id="ips-tab-outbound-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+          </span>
+        </button>
+        <button id="ips-tab-blocklist" onclick="switchIpsTab('blocklist')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-list-bullets text-sm"></i>
+            Blocklist <span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+          </span>
+        </button>
+      </div>
+
       <!-- Status Banner -->
       <div id="ips-banner" class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-6 card-hover">
         <div class="flex items-center justify-between">
@@ -1033,28 +1055,6 @@
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Community Blocklist</p>
           <p id="ips-stat-decisions" class="text-2xl font-bold mt-2 tabular-nums text-slate-500 dark:text-slate-400">0</p>
         </div>
-      </div>
-
-      <!-- Direction tabs (top-level, same pattern as Geo Traffic) -->
-      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
-        <button id="ips-tab-alerts" onclick="switchIpsTab('alerts')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-arrow-down-left text-sm"></i>
-            Inbound <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">0</span>
-          </span>
-        </button>
-        <button id="ips-tab-outbound" onclick="switchIpsTab('outbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-arrow-up-right text-sm"></i>
-            Outbound <span id="ips-tab-outbound-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
-          </span>
-        </button>
-        <button id="ips-tab-blocklist" onclick="switchIpsTab('blocklist')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-list-bullets text-sm"></i>
-            Blocklist <span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
-          </span>
-        </button>
       </div>
 
       <!-- Inbound panel -->
