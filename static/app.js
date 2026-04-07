@@ -4978,8 +4978,8 @@ window.setDrawerTab = setDrawerTab;
 window.drawerLoadMore = drawerLoadMore;
 
 // Sort state for device matrix columns
-let _devSortCol = 'name';  // 'name', 'total', or a group/service key
-let _devSortDir = 'asc';   // 'asc' or 'desc'
+let _devSortCol = 'total';  // 'name', 'total', or a group/service key
+let _devSortDir = 'desc';  // 'asc' or 'desc'
 
 function _setDevSort(col) {
   if (_devSortCol === col) {
