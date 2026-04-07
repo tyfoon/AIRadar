@@ -444,6 +444,14 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     "discord.com":                       ("discord", "gaming"),
     "discordapp.com":                    ("discord", "gaming"),
     "discord.gg":                        ("discord", "gaming"),
+    "supercell.com":                     ("supercell", "gaming"),
+    "supercell.net":                     ("supercell", "gaming"),
+    "hayday.com":                        ("supercell", "gaming"),
+    "haydaygame.com":                    ("supercell", "gaming"),
+    "clashofclans.com":                  ("supercell", "gaming"),
+    "clashroyale.com":                   ("supercell", "gaming"),
+    "brawlstars.com":                    ("supercell", "gaming"),
+    "boombeach.com":                     ("supercell", "gaming"),
 
     # --- Streaming (category="streaming") ---
     "netflix.com":                       ("netflix", "streaming"),
