@@ -194,7 +194,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','performance','devices','ips','rules','settings'];
+const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','devices','ips','rules','settings'];
 
 let currentPage = 'summary';
 
@@ -1430,7 +1430,6 @@ async function refreshPage(page) {
     else if (page === 'iot') await refreshIot();
     else if (page === 'other') await refreshOther();
     else if (page === 'geo') await refreshGeo();
-    else if (page === 'performance') await refreshPerformance();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
   } catch(err) { console.error('Page refresh error:', err); }
 }
@@ -7309,8 +7308,9 @@ async function runHealthCheck() {
 let _currentSettingsTab = 'protection';
 
 function switchSettingsTab(tab) {
-  const tabs = ['protection', 'system', 'notifications', 'about'];
+  const tabs = ['protection', 'system', 'performance', 'notifications', 'about'];
   if (tab === 'notifications') loadNotificationSettings();
+  if (tab === 'performance') { loadSystemPerformance(); refreshPerformance(); }
   if (!tabs.includes(tab)) tab = 'protection';
   _currentSettingsTab = tab;
 
@@ -7499,7 +7499,7 @@ function _togglePerfAutoRefresh() {
   if (cb.checked) {
     if (_perfAutoTimer) clearInterval(_perfAutoTimer);
     _perfAutoTimer = setInterval(() => {
-      if (currentPage === 'settings' && _currentSettingsTab === 'system') {
+      if (currentPage === 'settings' && (_currentSettingsTab === 'system' || _currentSettingsTab === 'performance')) {
         loadSystemPerformance();
       }
     }, 5000);
@@ -7831,7 +7831,7 @@ function _perfSetupAutoRefresh() {
   const cb = document.getElementById('perf-auto');
   if (cb && cb.checked) {
     _perfAutoRefreshTimer = setInterval(() => {
-      if (currentPage === 'performance') refreshPerformance();
+      if (currentPage === 'settings' && _currentSettingsTab === 'performance') refreshPerformance();
     }, 60000);
   }
 }

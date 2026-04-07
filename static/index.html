@@ -81,11 +81,6 @@
       <span class="nav-label" data-i18n="nav.geo">Geo Traffic</span>
       <span class="nav-tooltip" data-i18n="nav.geo">Geo Traffic</span>
     </a>
-    <a href="#/performance" data-page="performance" class="nav-item relative group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
-      <i class="ph-duotone ph-gauge text-xl flex-shrink-0"></i>
-      <span class="nav-label" data-i18n="nav.performance">Performance</span>
-      <span class="nav-tooltip" data-i18n="nav.performance">Performance</span>
-    </a>
 
     <!-- Divider -->
     <div class="my-2 border-t border-slate-200 dark:border-slate-700/50"></div>
@@ -891,56 +886,6 @@
     </section>
 
     <!-- ============================================================= -->
-    <!-- PAGE: PERFORMANCE                                              -->
-    <!-- ============================================================= -->
-    <section id="page-performance" class="page space-y-6">
-
-      <!-- Time range selector -->
-      <div class="flex items-center gap-3">
-        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="perf.timeRange">Time range</span>
-        <select id="perf-hours" onchange="refreshPerformance()" class="text-xs rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03] text-slate-600 dark:text-slate-300 px-3 py-1.5">
-          <option value="1" data-i18n="perf.1h">Last hour</option>
-          <option value="6" data-i18n="perf.6h">Last 6 hours</option>
-          <option value="24" selected data-i18n="perf.24h">Last 24 hours</option>
-          <option value="72" data-i18n="perf.72h">Last 3 days</option>
-          <option value="168" data-i18n="perf.168h">Last 7 days</option>
-        </select>
-        <label class="ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-          <input type="checkbox" id="perf-auto" checked class="rounded border-slate-300 dark:border-slate-600">
-          <span data-i18n="perf.autoRefresh">Auto-refresh</span>
-        </label>
-      </div>
-
-      <!-- Current snapshot cards -->
-      <div id="perf-snapshot" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
-
-      <!-- DNS & Ping chart -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.latencyTitle">DNS & Ping Latency</h3>
-        <canvas id="perf-chart-latency" height="200"></canvas>
-      </div>
-
-      <!-- Throughput chart -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.throughputTitle">Bridge Throughput</h3>
-        <canvas id="perf-chart-throughput" height="200"></canvas>
-      </div>
-
-      <!-- System load chart -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.systemTitle">CPU & Memory</h3>
-        <canvas id="perf-chart-system" height="200"></canvas>
-      </div>
-
-      <!-- Errors & drops chart -->
-      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.errorsTitle">Errors & Drops</h3>
-        <canvas id="perf-chart-errors" height="200"></canvas>
-      </div>
-
-    </section>
-
-    <!-- ============================================================= -->
     <!-- PAGE: DEVICES                                                  -->
     <!-- ============================================================= -->
     <section id="page-devices" class="page space-y-6">
@@ -1482,6 +1427,12 @@
             <span data-i18n="settings.tabNotifications">Notifications</span>
           </span>
         </button>
+        <button id="settings-tab-btn-performance" onclick="switchSettingsTab('performance')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-gauge text-sm"></i>
+            <span data-i18n="settings.tabPerformance">Performance</span>
+          </span>
+        </button>
         <button id="settings-tab-btn-about" onclick="switchSettingsTab('about')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-info text-sm"></i>
@@ -1602,44 +1553,6 @@
           </div>
         </div>
 
-        <!-- System Performance -->
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="settings.performance">System Performance</h3>
-            <div class="flex items-center gap-2">
-              <label class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none">
-                <input type="checkbox" id="perf-autorefresh" class="rounded border-slate-300 dark:border-slate-600">
-                <span data-i18n="settings.autoRefresh">Auto-refresh</span>
-              </label>
-              <button id="perf-refresh-btn" onclick="loadSystemPerformance()" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors active:scale-95" data-i18n="settings.refresh">Refresh</button>
-            </div>
-          </div>
-
-          <!-- Host totals -->
-          <div id="perf-host-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-            <p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-6" data-i18n="settings.perfLoading">Loading performance data...</p>
-          </div>
-
-          <!-- Container table -->
-          <div id="perf-container-section" class="hidden">
-            <h4 class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium mb-2" data-i18n="settings.containers">Containers</h4>
-            <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/[0.05]">
-              <table class="w-full text-sm text-left">
-                <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02]">
-                  <tr>
-                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thContainer">Container</th>
-                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thState">State</th>
-                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thCpu">CPU</th>
-                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thMemory">Memory</th>
-                  </tr>
-                </thead>
-                <tbody id="perf-container-tbody" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
-              </table>
-            </div>
-            <p id="perf-docker-error" class="hidden mt-2 text-[11px] text-amber-500 dark:text-amber-400"></p>
-          </div>
-        </div>
-
         <!-- Appliance Config -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
@@ -1717,6 +1630,92 @@
           <div id="data-sources-list" class="space-y-2">
             <p class="text-xs text-slate-400 dark:text-slate-500 text-center py-4" data-i18n="settings.pressRefresh">Press Refresh to load data source info.</p>
           </div>
+        </div>
+
+      </div>
+
+      <!-- ── PERFORMANCE TAB ── -->
+      <div id="settings-tab-performance" class="space-y-6 hidden">
+
+        <!-- Live system stats (moved from System tab) -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300" data-i18n="settings.performance">System Performance</h3>
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                <input type="checkbox" id="perf-autorefresh" class="rounded border-slate-300 dark:border-slate-600">
+                <span data-i18n="settings.autoRefresh">Auto-refresh</span>
+              </label>
+              <button id="perf-refresh-btn" onclick="loadSystemPerformance()" class="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors active:scale-95" data-i18n="settings.refresh">Refresh</button>
+            </div>
+          </div>
+
+          <!-- Host totals -->
+          <div id="perf-host-grid" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+            <p class="col-span-full text-center text-sm text-slate-400 dark:text-slate-500 py-6" data-i18n="settings.perfLoading">Loading performance data...</p>
+          </div>
+
+          <!-- Container table -->
+          <div id="perf-container-section" class="hidden">
+            <h4 class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium mb-2" data-i18n="settings.containers">Containers</h4>
+            <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/[0.05]">
+              <table class="w-full text-sm text-left">
+                <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02]">
+                  <tr>
+                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thContainer">Container</th>
+                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thState">State</th>
+                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thCpu">CPU</th>
+                    <th class="py-2.5 px-4 font-medium" data-i18n="settings.thMemory">Memory</th>
+                  </tr>
+                </thead>
+                <tbody id="perf-container-tbody" class="text-slate-600 dark:text-slate-300 striped-rows"></tbody>
+              </table>
+            </div>
+            <p id="perf-docker-error" class="hidden mt-2 text-[11px] text-amber-500 dark:text-amber-400"></p>
+          </div>
+        </div>
+
+        <!-- Time range selector for history charts -->
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="perf.timeRange">Time range</span>
+          <select id="perf-hours" onchange="refreshPerformance()" class="text-xs rounded-lg border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03] text-slate-600 dark:text-slate-300 px-3 py-1.5">
+            <option value="1" data-i18n="perf.1h">Last hour</option>
+            <option value="6" data-i18n="perf.6h">Last 6 hours</option>
+            <option value="24" selected data-i18n="perf.24h">Last 24 hours</option>
+            <option value="72" data-i18n="perf.72h">Last 3 days</option>
+            <option value="168" data-i18n="perf.168h">Last 7 days</option>
+          </select>
+          <label class="ml-auto flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
+            <input type="checkbox" id="perf-auto" checked class="rounded border-slate-300 dark:border-slate-600">
+            <span data-i18n="perf.autoRefresh">Auto-refresh</span>
+          </label>
+        </div>
+
+        <!-- Current snapshot cards -->
+        <div id="perf-snapshot" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+
+        <!-- DNS & Ping chart -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.latencyTitle">DNS & Ping Latency</h3>
+          <canvas id="perf-chart-latency" height="200"></canvas>
+        </div>
+
+        <!-- Throughput chart -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.throughputTitle">Bridge Throughput</h3>
+          <canvas id="perf-chart-throughput" height="200"></canvas>
+        </div>
+
+        <!-- System load chart -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.systemTitle">CPU & Memory</h3>
+          <canvas id="perf-chart-system" height="200"></canvas>
+        </div>
+
+        <!-- Errors & drops chart -->
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="perf.errorsTitle">Errors & Drops</h3>
+          <canvas id="perf-chart-errors" height="200"></canvas>
         </div>
 
       </div>

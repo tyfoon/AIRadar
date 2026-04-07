@@ -29,7 +29,6 @@ const TRANSLATIONS = {
     'nav.devices':         'Devices',
     'nav.rules':           'Rules',
     'nav.settings':        'Settings',
-    'nav.performance':     'Performance',
     'nav.toggleTheme':     'Toggle Theme',
     'nav.collapse':        'Collapse',
     'nav.groupMonitor':    'Monitor',
@@ -59,9 +58,8 @@ const TRANSLATIONS = {
     'page.geo':            'Geo Traffic',
     'page.rules':          'Rules & Access Control',
     'page.settings':       'Settings',
-    'page.performance':    'Network Performance',
 
-    // Performance page
+    // Performance page (settings tab)
     'perf.timeRange':      'Time range',
     'perf.1h':             'Last hour',
     'perf.6h':             'Last 6 hours',
@@ -658,6 +656,7 @@ const TRANSLATIONS = {
     // Settings tabs
     'settings.tabProtection':'Protection',
     'settings.tabSystem':  'System',
+    'settings.tabPerformance': 'Performance',
     'settings.tabAbout':   'About',
     'settings.ksExplainer':'The Emergency Killswitch immediately disables all network filtering and protection. Use this if the network stops working correctly.',
     'settings.killswitch': 'Emergency Killswitch',
@@ -789,7 +788,6 @@ const TRANSLATIONS = {
     'nav.devices':         'Apparaten',
     'nav.rules':           'Regels',
     'nav.settings':        'Instellingen',
-    'nav.performance':     'Prestaties',
     'nav.toggleTheme':     'Thema wisselen',
     'nav.collapse':        'Inklappen',
     'nav.groupMonitor':    'Monitor',
@@ -819,9 +817,8 @@ const TRANSLATIONS = {
     'page.geo':            'Geo-verkeer',
     'page.rules':          'Regels & Toegangsbeheer',
     'page.settings':       'Instellingen',
-    'page.performance':    'Netwerkprestaties',
 
-    // Prestaties pagina
+    // Prestaties pagina (instellingen tab)
     'perf.timeRange':      'Tijdsbereik',
     'perf.1h':             'Laatste uur',
     'perf.6h':             'Laatste 6 uur',
@@ -1418,6 +1415,7 @@ const TRANSLATIONS = {
     // Instellingen tabbladen
     'settings.tabProtection':'Bescherming',
     'settings.tabSystem':  'Systeem',
+    'settings.tabPerformance': 'Prestaties',
     'settings.tabAbout':   'Over',
     'settings.ksExplainer':'De noodschakelaar schakelt onmiddellijk alle netwerkfiltering en -bescherming uit. Gebruik dit als het netwerk niet meer goed werkt.',
     'settings.killswitch': 'Noodschakelaar',
