@@ -2379,16 +2379,22 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 ):
                     # Track inbound connection attempts for the attack dashboard.
                     # Only record SUSPICIOUS states — not established connections
-                    # to intentionally open services (S1/SF on port 80/443).
+                    # to open services or ephemeral-port callbacks.
                     # S0  = SYN, no reply (port scan / probe)
                     # REJ = connection refused (closed port probe)
                     # RSTO/RSTR = reset (half-open scan, banner grab)
                     # S2/S3 = partial handshake
                     # OTH = other anomalous state
-                    # S1/SF to non-standard ports = suspicious service access
+                    # S1/SF to low service ports (excl 80/443) = suspicious
+                    # Ports >= 1024 with S1/SF are typically ephemeral callbacks
+                    # (e.g. Google push, QUIC, media streams) — not attacks.
                     is_probe_state = conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR")
-                    is_unexpected_port = conn_state in ("S1", "SF") and resp_port not in (80, 443)
-                    if is_probe_state or is_unexpected_port:
+                    is_unexpected_service = (
+                        conn_state in ("S1", "SF")
+                        and resp_port < 1024
+                        and resp_port not in (80, 443)
+                    )
+                    if is_probe_state or is_unexpected_service:
                         target_mac = _ip_to_mac.get(resp_ip)
                         await _record_inbound_attack(
                             src_ip, resp_ip, resp_port, target_mac,
