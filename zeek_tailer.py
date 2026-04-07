@@ -2162,6 +2162,18 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 except ValueError:
                     resp_port = 0
 
+                # Parse byte counters early (used by geo, inbound, upload)
+                try:
+                    _ob = record.get("orig_bytes", "0")
+                    orig_bytes = int(_ob) if _ob and _ob != "-" else 0
+                except ValueError:
+                    orig_bytes = 0
+                try:
+                    _rb = record.get("resp_bytes", "0")
+                    resp_bytes = int(_rb) if _rb and _rb != "-" else 0
+                except ValueError:
+                    resp_bytes = 0
+
                 # --- Geo traffic accumulation ---
                 # For every connection where one side is local and the
                 # other is public, resolve the public IP to a country and
