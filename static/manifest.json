@@ -1,0 +1,13 @@
+{
+  "name": "AI-Radar",
+  "short_name": "AI-Radar",
+  "description": "Network monitoring dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0C10",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "/static/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/static/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
+  ]
+}

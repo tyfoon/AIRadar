@@ -1166,6 +1166,11 @@ def dashboard():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
 # ---------------------------------------------------------------------------
 # DB session dependency
 # ---------------------------------------------------------------------------

@@ -66,7 +66,12 @@ function initSidebar() {
 }
 
 function toggleMobileSidebar() {
-  // For mobile, we could show the sidebar as an overlay — for now, just navigate
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  const isOpen = sb.classList.contains('mobile-open');
+  sb.classList.toggle('mobile-open', !isOpen);
+  bd.classList.toggle('hidden', isOpen);
+  document.body.classList.toggle('overflow-hidden', !isOpen);
 }
 
 // ================================================================
@@ -83,7 +88,7 @@ function closeMobOverflow() {
 }
 
 function _updateMobileBadges() {
-  // IPS badge in overflow
+  // IPS badge
   const mobIps = document.getElementById('mob-badge-ips');
   if (mobIps) {
     if (_navIpsCount > 0) {
@@ -94,7 +99,7 @@ function _updateMobileBadges() {
     }
   }
 
-  // Settings badge in overflow
+  // Settings badge
   const mobSettings = document.getElementById('mob-badge-settings');
   if (mobSettings) {
     if (_killswitchActive) {
@@ -102,13 +107,6 @@ function _updateMobileBadges() {
     } else {
       mobSettings.classList.add('hidden');
     }
-  }
-
-  // "More" button dot: show if any overflow item has a badge
-  const mobMore = document.getElementById('mob-badge-more');
-  if (mobMore) {
-    const hasAny = _navIpsCount > 0 || _killswitchActive;
-    mobMore.classList.toggle('hidden', !hasAny);
   }
 }
 
@@ -202,7 +200,9 @@ function navigate(page) {
   if (!VALID_PAGES.includes(page)) page = 'summary';
   currentPage = page;
 
-  // Close mobile overflow panel if open
+  // Close mobile sidebar/overflow if open
+  const _sb = document.getElementById('sidebar');
+  if (_sb && _sb.classList.contains('mobile-open')) toggleMobileSidebar();
   closeMobOverflow();
 
   // Update page visibility
@@ -754,7 +754,7 @@ function deviceTypeTag(device) {
     const osIcon = osIcons[device.os_name] || '💻';
     const osLabel = device.os_version ? `${device.os_name} ${device.os_version}` : device.os_name;
     const distText = device.network_distance != null ? ` · ${device.network_distance} ${device.network_distance !== 1 ? t('dev.hops') : t('dev.hop')}` : '';
-    osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
+    osBadge = `<span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-medium">${osIcon} ${osLabel}${distText}</span>`;
   }
 
   return `<span class="inline-flex items-center flex-wrap gap-x-1.5 gap-y-0 text-[10px] text-slate-400 dark:text-slate-500">${_deviceTypeIcon20(dt, online)} ${dt.type}${vendorText}${osBadge}</span>`;
@@ -1243,7 +1243,7 @@ function _collapseConsecutiveEvents(events, keyFn, windowSec = COLLAPSE_WINDOW_S
 // and a time-range so the user sees "Spotify · 19:29:24 ×12 (over 45s)".
 function _countBadge(e) {
   if (!e || !e._count || e._count <= 1) return '';
-  return ` <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold tabular-nums bg-slate-200/70 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300" title="${e._count} events between ${fmtTime(e._oldest_ts)} and ${fmtTime(e._newest_ts)}">×${e._count}</span>`;
+  return ` <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums bg-slate-200/70 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300" title="${e._count} events between ${fmtTime(e._oldest_ts)} and ${fmtTime(e._newest_ts)}">×${e._count}</span>`;
 }
 
 function _eventDescription(e) {
@@ -2224,7 +2224,7 @@ async function refreshDashboard() {
         const logo = svcLogo(svc);
         const exp = _policyExpiresByService?.[svc];
         const timerLabel = exp
-          ? `<span class="text-[9px] text-blue-500"><i class="ph-duotone ph-clock-countdown"></i> ${new Date(exp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>`
+          ? `<span class="text-[10px] text-blue-500"><i class="ph-duotone ph-clock-countdown"></i> ${new Date(exp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>`
           : '';
         return `<div class="flex items-center gap-2 py-1.5">
           <div class="flex-shrink-0">${logo}</div>
@@ -2462,12 +2462,12 @@ function renderDashAlarms() {
         : t('dash.highVolume', { kb: (e0.bytes_transferred / 1024).toFixed(0) });
 
       html += `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer group" onclick="_navigateToDevice('${e0.source_ip}')">
-        <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e0.timestamp)}</td>
-        ${showSevCol ? `<td class="py-3 px-4">${_severityBadge(sev)}</td>` : ''}
-        <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
-        <td class="py-3 px-4">${badge(e0.ai_service)}</td>
-        <td class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e0.source_ip)).icon} ${deviceName(e0.source_ip)}</td>
-        <td class="w-8 text-right pr-3"><span class="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 transition-opacity text-xs">→</span></td>
+        <td data-label="${t('dash.alarmTime')}" class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(e0.timestamp)}</td>
+        ${showSevCol ? `<td data-label="${t('dash.alarmSeverity')}" class="py-3 px-4">${_severityBadge(sev)}</td>` : ''}
+        <td data-label="${t('dash.alarmEvent')}" class="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">${desc}</td>
+        <td data-label="Service" class="py-3 px-4">${badge(e0.ai_service)}</td>
+        <td data-label="Device" class="py-3 px-4 text-xs">${_detectDeviceType(_deviceByIp(e0.source_ip)).icon} ${deviceName(e0.source_ip)}</td>
+        <td data-label="" class="w-8 text-right pr-3"><span class="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-slate-500 transition-opacity text-xs">→</span></td>
       </tr>`;
     }
   });
@@ -2751,12 +2751,12 @@ function renderAiAdoption(events) {
   container.innerHTML = deviceRows.map(d => {
     const pct = Math.round((d.count / maxCount) * 100);
     const svcLogos = d.svcs.slice(0, 5).map(s => svcLogo(s)).join('');
-    const uploadBadge = d.uploads > 0 ? ` <span class="text-[9px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${d.uploads}▲</span>` : '';
+    const uploadBadge = d.uploads > 0 ? ` <span class="text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${d.uploads}▲</span>` : '';
     return `<div class="flex items-center gap-2 text-[11px]">
       <span class="w-[140px] truncate flex-shrink-0 text-slate-600 dark:text-slate-300" title="${d.name}">${d.dt.icon} ${d.name}</span>
       <div class="flex-1 h-4 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
         <div class="h-full rounded bg-gradient-to-r from-blue-500/80 to-blue-700/80 transition-all duration-500" style="width:${pct}%"></div>
-        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 40 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${d.count}</span>
+        <span class="absolute inset-0 flex items-center px-2 text-[10px] font-medium tabular-nums ${pct > 40 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${d.count}</span>
       </div>
       <span class="flex items-center gap-0.5 flex-shrink-0">${svcLogos}</span>
       ${uploadBadge}
@@ -2778,7 +2778,7 @@ function renderAiAdoption(events) {
       <span class="w-[120px] flex-shrink-0">${svcLogoName(svc)}</span>
       <div class="flex-1 h-5 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
         <div class="h-full rounded bg-gradient-to-r from-blue-500/70 to-blue-700/70" style="width:${pct}%"></div>
-        <span class="absolute inset-0 flex items-center px-2 text-[9px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} ${t('adopt.queries')} · ${share}% ${t('adopt.share')} · ${usersCount} ${usersCount !== 1 ? t('adopt.users') : t('adopt.user')}</span>
+        <span class="absolute inset-0 flex items-center px-2 text-[10px] font-medium tabular-nums ${pct > 30 ? 'text-white' : 'text-slate-500 dark:text-slate-400'}">${count} ${t('adopt.queries')} · ${share}% ${t('adopt.share')} · ${usersCount} ${usersCount !== 1 ? t('adopt.users') : t('adopt.user')}</span>
       </div>
     </div>`;
   }).join('');
@@ -3005,10 +3005,10 @@ async function refreshPrivacy() {
           : fmtTime(e.timestamp);
 
         return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20">
-          <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${timeCell}</td>
-          <td class="py-3 px-4"><div>${trackerBadge}${_countBadge(e)}</div>${categoryLine}</td>
-          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${typeLabel}</td>
-          <td class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${srcDisplay}</td>
+          <td data-label="${t('priv.thTime')}" class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${timeCell}</td>
+          <td data-label="${t('priv.thTracker')}" class="py-3 px-4"><div>${trackerBadge}${_countBadge(e)}</div>${categoryLine}</td>
+          <td data-label="${t('priv.thType')}" class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${typeLabel}</td>
+          <td data-label="${t('priv.thSource')}" class="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">${srcDisplay}</td>
         </tr>`;
       }).join('');
     }
@@ -3292,12 +3292,12 @@ function renderBlockedDomainsList() {
     const pct = Math.max(5, (d.count / maxCount) * 100);
     const info = resolveTracker(d.domain);
     const displayName = info ? `${info.company}` : _readableDomain(d.domain);
-    const catTag = info ? `<span class="text-[9px] text-slate-400 dark:text-slate-500 ml-1">${info.category}</span>` : '';
+    const catTag = info ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">${info.category}</span>` : '';
     return `<div class="flex items-center gap-3 bg-slate-50 dark:bg-white/[0.03] rounded-lg px-3 py-2 border border-slate-200 dark:border-white/[0.04]">
       <span class="text-[10px] text-slate-400 w-4 text-right tabular-nums">${i + 1}</span>
       <div class="flex-1 min-w-0">
         <p class="text-[11px] font-medium text-slate-700 dark:text-slate-200 truncate" title="${d.domain}">${displayName}${catTag}</p>
-        <p class="text-[9px] font-mono text-slate-400 dark:text-slate-500 truncate">${d.domain}</p>
+        <p class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${d.domain}</p>
         <div class="mt-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700/50 overflow-hidden">
           <div class="h-full rounded-full bg-red-500/70" style="width:${pct}%"></div>
         </div>
@@ -3454,7 +3454,7 @@ function _renderIotFleet(data) {
       <div class="flex items-center justify-between text-[10px] tabular-nums">
         <span class="text-slate-500 dark:text-slate-400">${_fmtBytes(d.bytes_24h)}/day</span>
         <span class="text-slate-400 dark:text-slate-500">${d.destinations} dest.</span>
-        ${d.anomalies > 0 ? `<span class="text-red-500 font-semibold">${d.anomalies} <i class="ph-duotone ph-warning text-[9px]"></i></span>` : ''}
+        ${d.anomalies > 0 ? `<span class="text-red-500 font-semibold">${d.anomalies} <i class="ph-duotone ph-warning text-[10px]"></i></span>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -4238,13 +4238,13 @@ function _heatCell(count, uploads, globalMax, policyAction) {
     if (intensity < 0.3) { bg = 'bg-red-100 dark:bg-red-900/30'; text = 'text-red-700 dark:text-red-300'; }
     else if (intensity < 0.6) { bg = 'bg-red-300 dark:bg-red-700/50'; text = 'text-red-900 dark:text-red-100'; }
     else { bg = 'bg-red-400 dark:bg-red-600/70'; text = 'text-white dark:text-red-100'; }
-    icon = ' <i class="ph-duotone ph-prohibit text-[9px]"></i>';
+    icon = ' <i class="ph-duotone ph-prohibit text-[10px]"></i>';
   } else if (policyAction === 'alert') {
     // Amber — always
     if (intensity < 0.3) { bg = 'bg-amber-100 dark:bg-amber-900/30'; text = 'text-amber-700 dark:text-amber-300'; }
     else if (intensity < 0.6) { bg = 'bg-amber-200 dark:bg-amber-800/50'; text = 'text-amber-800 dark:text-amber-200'; }
     else { bg = 'bg-amber-300 dark:bg-amber-700/60'; text = 'text-amber-900 dark:text-amber-100'; }
-    icon = ' <i class="ph-duotone ph-warning text-[9px]"></i>';
+    icon = ' <i class="ph-duotone ph-warning text-[10px]"></i>';
   } else {
     // Blue — neutral (allow or no policy)
     if (intensity < 0.15) { bg = 'bg-blue-100 dark:bg-blue-900/40'; text = 'text-blue-700 dark:text-blue-300'; }
@@ -4695,7 +4695,7 @@ function _renderDrawerEvents(reset) {
 
   const rows = nextBatch.map(e => {
     const up = e.possible_upload;
-    const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
+    const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
     const typeLabel = e.detection_type === 'sni_hello' ? t('dev.connection') : e.detection_type;
     const bytesStr = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '0 B';
     const timeCell = e._count > 1
@@ -4921,8 +4921,8 @@ function _renderReportHTML(data) {
   if (data.generated_at) {
     const when = fmtTime(data.generated_at);
     const cachedBadge = data.cached
-      ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-white/[0.05] text-slate-500 dark:text-slate-400 text-[9px] uppercase tracking-wider font-medium">${t('dev.cached') || 'Cached'}</span>`
-      : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[9px] uppercase tracking-wider font-medium">${t('dev.freshScan') || 'Fresh'}</span>`;
+      ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-white/[0.05] text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-medium">${t('dev.cached') || 'Cached'}</span>`
+      : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] uppercase tracking-wider font-medium">${t('dev.freshScan') || 'Fresh'}</span>`;
     generatedLine = `<div class="mt-3 flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500">
       ${cachedBadge}
       <span>${t('dev.reportGeneratedAt') || 'Gegenereerd op'} ${when}</span>
@@ -4953,8 +4953,8 @@ function renderSimpleMarkdown(md) {
     // Inline code
     .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/50 text-xs font-mono">$1</code>')
     // Unordered lists
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-[13px] leading-relaxed">$1</li>')
-    .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc text-[13px] leading-relaxed">$1</li>')
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc text-sm leading-relaxed">$1</li>')
+    .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc text-sm leading-relaxed">$1</li>')
     // Horizontal rule
     .replace(/^---$/gm, '<hr class="my-3 border-indigo-200/50 dark:border-indigo-700/30">')
     // Paragraphs (double newline)
@@ -4998,10 +4998,10 @@ function _setDevSort(col) {
 window._setDevSort = _setDevSort;
 
 function _sortArrow(col) {
-  if (_devSortCol !== col) return '<span class="text-[9px] opacity-30 ml-0.5">↕</span>';
+  if (_devSortCol !== col) return '<span class="text-[10px] opacity-30 ml-0.5">↕</span>';
   return _devSortDir === 'asc'
-    ? '<span class="text-[9px] text-indigo-400 ml-0.5">↑</span>'
-    : '<span class="text-[9px] text-indigo-400 ml-0.5">↓</span>';
+    ? '<span class="text-[10px] text-indigo-400 ml-0.5">↑</span>'
+    : '<span class="text-[10px] text-indigo-400 ml-0.5">↓</span>';
 }
 
 function _renderDeviceMatrix() {
@@ -5233,7 +5233,7 @@ function _renderDeviceMatrix() {
       ? `<span class="text-xs text-slate-300 dark:text-slate-600">—</span>`
       : `<span class="cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</span>`;
 
-    const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[9px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
+    const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
 
     // Edit (pencil) button — appears on row hover via CSS .dev-edit-btn
     const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="dev-edit-btn ml-1 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.editName')}"><i class="ph-duotone ph-pencil-simple text-sm"></i></button>`;
@@ -6349,8 +6349,8 @@ function _renderIpsThreats(data) {
         const isThreat = a.severity === 'threat';
         const borderClass = isThreat ? 'border-l-2 border-l-red-500' : '';
         const sevBadge = isThreat
-          ? `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">known threat</span>`
-          : `<span class="px-1.5 py-0.5 text-[9px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">probe</span>`;
+          ? `<span class="px-1.5 py-0.5 text-[10px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">known threat</span>`
+          : `<span class="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">probe</span>`;
         // Country flag using flag-icons CSS (same as geo traffic page)
         const flag = a.country_code ? _flagEmoji(a.country_code) + ' ' : '';
         const asnShort = a.asn_org ? a.asn_org.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International)\.?)+$/i, '').trim() : '';
@@ -6361,18 +6361,18 @@ function _renderIpsThreats(data) {
           : (isThreat ? 'blocklist match' : 'probe / scan');
         const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
         return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}" data-severity="${a.severity}">
-          <td class="py-2.5 px-4">
+          <td data-label="Source" class="py-2.5 px-4">
             <div class="font-mono text-xs">${a.source_ip}</div>
             <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${origin}</div>
           </td>
-          <td class="py-2.5 px-4">
+          <td data-label="Target" class="py-2.5 px-4">
             <div class="text-xs font-medium">${target}</div>
             <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">:${a.target_port}</div>
           </td>
-          <td class="py-2.5 px-4 text-xs">${sevBadge}</td>
-          <td class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400">${reason}</td>
-          <td class="py-2.5 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
-          <td class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
+          <td data-label="Severity" class="py-2.5 px-4 text-xs">${sevBadge}</td>
+          <td data-label="Reason" class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400">${reason}</td>
+          <td data-label="Hits" class="py-2.5 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
+          <td data-label="Last Seen" class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
         </tr>`;
       }).join('');
     }
@@ -6426,8 +6426,8 @@ function switchIpsTab(tab) {
     const isActive = key === tab;
     t.btn.className = isActive ? activeCls : inactiveCls;
     const pillCls = isActive
-      ? 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white'
-      : 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400';
+      ? 'ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 text-white'
+      : 'ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400';
     t.btn.innerHTML = `<span class="inline-flex items-center gap-1.5">${t.label} <span id="${t.countId}" class="${pillCls}">${count}</span></span>`;
     t.panel.classList.toggle('hidden', !isActive);
   }
@@ -6712,7 +6712,7 @@ function renderServiceCard(svc) {
                                  'border-slate-200 dark:border-white/[0.05]';
 
   const inheritedBadge = isInherited
-    ? ` <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-slate-500">${t('rules.inherited') || 'Inherited'}</span>`
+    ? ` <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.06] text-slate-400 dark:text-slate-500">${t('rules.inherited') || 'Inherited'}</span>`
     : '';
   const cardOpacity = isInherited ? 'opacity-60' : '';
   const cardBorder = isInherited ? 'border-dashed' : '';
@@ -6817,7 +6817,7 @@ function _renderCategoryToggle(category) {
   if (exp) {
     const d = new Date(exp);
     const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    timerHtml = `<span class="text-[9px] text-blue-500 tabular-nums"><i class="ph-duotone ph-clock-countdown text-[8px]"></i> ${timeStr}</span>`;
+    timerHtml = `<span class="text-[10px] text-blue-500 tabular-nums"><i class="ph-duotone ph-clock-countdown text-[8px]"></i> ${timeStr}</span>`;
   }
 
   const allowActive = 'flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-colors bg-emerald-500 text-white shadow-sm';
@@ -6903,7 +6903,7 @@ function renderTimerButton(serviceName) {
     const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return `<button onclick="openPolicyTimerModal('${serviceName}')" class="flex flex-col items-center gap-0.5 flex-shrink-0" title="${t('timer.activeUntil') || 'Active until'} ${timeStr}">
       <i class="ph-duotone ph-clock-countdown text-lg text-blue-500"></i>
-      <span class="text-[9px] tabular-nums text-blue-500 font-medium">${timeStr}</span>
+      <span class="text-[10px] tabular-nums text-blue-500 font-medium">${timeStr}</span>
     </button>`;
   }
   return `<button onclick="openPolicyTimerModal('${serviceName}')" class="flex-shrink-0 p-1 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors" title="${t('timer.setTimer') || 'Set timer'}">
@@ -7080,8 +7080,8 @@ function renderLegalComponents() {
   if (!container) return;
 
   container.innerHTML = LEGAL_COMPONENTS.map(c => {
-    const versionBadge = c.version ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-mono">v${c.version}</span>` : '';
-    const licenseBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${c.license}</span>`;
+    const versionBadge = c.version ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-mono">v${c.version}</span>` : '';
+    const licenseBadge = `<span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">${c.license}</span>`;
     const link = c.url ? `<a href="${c.url}" target="_blank" rel="noopener" class="text-[10px] text-indigo-500 hover:underline ml-auto flex-shrink-0">${c.url.replace('https://', '')}</a>` : '';
     // Two icon variants: a short text badge ("AR" for AI-Radar) or
     // a Phosphor icon HTML string. Length heuristic is no longer
@@ -7458,12 +7458,12 @@ async function loadDataSources() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-sm font-medium text-slate-700 dark:text-slate-200">${s.name}</span>
-            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 tabular-nums">${entries} entries${detail}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 tabular-nums">${entries} entries${detail}</span>
           </div>
           <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">${s.description}</p>
           <div class="flex items-center gap-3 mt-1.5 text-[10px]">
-            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-clock text-[9px]"></i> ${t('settings.lastUpdated') || 'Last updated'}: ${lastUp}</span>
-            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-link text-[9px]"></i> ${srcLink}</span>
+            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-clock text-[10px]"></i> ${t('settings.lastUpdated') || 'Last updated'}: ${lastUp}</span>
+            <span class="text-slate-400 dark:text-slate-500"><i class="ph-duotone ph-link text-[10px]"></i> ${srcLink}</span>
           </div>
         </div>
       </div>`;
@@ -7909,3 +7909,12 @@ function _perfSetupAutoRefresh() {
 }
 
 window.refreshPerformance = refreshPerformance;
+
+// ================================================================
+// PWA — Service Worker registration
+// ================================================================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(err =>
+    console.warn('SW registration failed:', err)
+  );
+}

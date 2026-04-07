@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="theme-color" content="#6366f1"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <link rel="manifest" href="/static/manifest.json"/>
+  <link rel="apple-touch-icon" href="/static/icon-192.svg"/>
   <title>AI-Radar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
@@ -39,44 +44,44 @@
   <nav class="flex-1 py-1.5 px-3 overflow-y-auto">
 
     <!-- Group: Monitor -->
-    <p class="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-2 mb-0.5" data-i18n="nav.groupMonitor">Monitor</p>
-    <a href="#/summary" data-page="summary" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <p class="nav-group-label text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-2 mb-0.5" data-i18n="nav.groupMonitor">Monitor</p>
+    <a href="#/summary" data-page="summary" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-tray text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.summary">Overzicht</span>
       <span class="nav-tooltip" data-i18n="nav.summary">Overzicht</span>
       <span id="nav-badge-summary" class="nav-badge hidden absolute top-1 right-2 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">0</span>
     </a>
-    <a href="#/dashboard" data-page="dashboard" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/dashboard" data-page="dashboard" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-squares-four text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.dashboard">Dashboard</span>
       <span class="nav-tooltip" data-i18n="nav.dashboard">Dashboard</span>
     </a>
-    <a href="#/ai" data-page="ai" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/ai" data-page="ai" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-brain text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.ai">AI Radar</span>
       <span class="nav-tooltip" data-i18n="nav.ai">AI Radar</span>
     </a>
-    <a href="#/cloud" data-page="cloud" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/cloud" data-page="cloud" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-cloud text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.cloud">Cloud Storage</span>
       <span class="nav-tooltip" data-i18n="nav.cloud">Cloud Storage</span>
     </a>
-    <a href="#/privacy" data-page="privacy" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/privacy" data-page="privacy" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-shield-check text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.privacy">Privacy</span>
       <span class="nav-tooltip" data-i18n="nav.privacy">Privacy</span>
     </a>
-    <a href="#/iot" data-page="iot" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/iot" data-page="iot" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-cpu text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.iot">IoT Devices</span>
       <span class="nav-tooltip" data-i18n="nav.iot">IoT Devices</span>
     </a>
-    <a href="#/other" data-page="other" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/other" data-page="other" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-dots-nine text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.other">Other Usage</span>
       <span class="nav-tooltip" data-i18n="nav.other">Other Usage</span>
     </a>
-    <a href="#/geo" data-page="geo" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/geo" data-page="geo" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-globe-hemisphere-west text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.geo">Geo Traffic</span>
       <span class="nav-tooltip" data-i18n="nav.geo">Geo Traffic</span>
@@ -86,14 +91,14 @@
     <div class="my-1.5 border-t border-slate-200 dark:border-slate-700/50"></div>
 
     <!-- Group: Protect -->
-    <p class="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5" data-i18n="nav.groupProtect">Protect</p>
-    <a href="#/ips" data-page="ips" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <p class="nav-group-label text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5" data-i18n="nav.groupProtect">Protect</p>
+    <a href="#/ips" data-page="ips" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-warning-octagon text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.attacks">Attacks</span>
       <span class="nav-tooltip" data-i18n="nav.attacks">Attacks</span>
       <span id="nav-badge-ips" class="nav-badge hidden absolute top-1 right-2 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">0</span>
     </a>
-    <a href="#/rules" data-page="rules" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/rules" data-page="rules" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-faders text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.rules">Rules</span>
       <span class="nav-tooltip" data-i18n="nav.rules">Rules</span>
@@ -103,13 +108,13 @@
     <div class="my-1.5 border-t border-slate-200 dark:border-slate-700/50"></div>
 
     <!-- Group: Manage -->
-    <p class="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5" data-i18n="nav.groupManage">Manage</p>
-    <a href="#/devices" data-page="devices" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <p class="nav-group-label text-xs uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5" data-i18n="nav.groupManage">Manage</p>
+    <a href="#/devices" data-page="devices" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-devices text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.devices">Devices</span>
       <span class="nav-tooltip" data-i18n="nav.devices">Devices</span>
     </a>
-    <a href="#/settings" data-page="settings" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+    <a href="#/settings" data-page="settings" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-gear text-lg flex-shrink-0"></i>
       <span class="nav-label" data-i18n="nav.settings">Settings</span>
       <span class="nav-tooltip" data-i18n="nav.settings">Settings</span>
@@ -119,63 +124,43 @@
 
   <!-- Bottom utility row -->
   <div id="sidebar-utils" class="flex items-center justify-center gap-2 py-3 border-t border-slate-200 dark:border-slate-700/50 flex-shrink-0">
-    <button onclick="toggleTheme()" title="Toggle Theme" class="sidebar-util-btn w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+    <button onclick="toggleTheme()" title="Toggle Theme" class="sidebar-util-btn w-11 h-11 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
       <i class="ph-duotone ph-sun text-lg hidden dark:inline-block"></i>
       <i class="ph-duotone ph-moon text-lg block dark:hidden"></i>
     </button>
-    <button onclick="toggleSidebar()" title="Collapse" class="sidebar-util-btn w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+    <button onclick="toggleSidebar()" title="Collapse" class="sidebar-util-btn w-11 h-11 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
       <i id="collapse-icon" class="ph-duotone ph-caret-double-left text-lg transition-transform inline-block"></i>
     </button>
   </div>
 </aside>
+<div id="sidebar-backdrop" class="fixed inset-0 bg-black/50 z-30 hidden" onclick="toggleMobileSidebar()"></div>
 
 <!-- ============================================================= -->
 <!-- MOBILE BOTTOM NAV                                              -->
 <!-- ============================================================= -->
 <nav id="mobile-nav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#0f1117] border-t border-slate-200 dark:border-white/[0.04] z-40 hidden">
-  <!-- Overflow panel (hidden by default) -->
-  <div id="mob-overflow" class="hidden border-b border-slate-200 dark:border-white/[0.04] bg-white dark:bg-[#0f1117] px-4 py-3 grid grid-cols-4 gap-2">
-    <a href="#/ai" data-page="ai" onclick="closeMobOverflow()" class="mob-nav mob-extra flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] py-2 px-1 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04]">
-      <i class="ph-duotone ph-brain text-xl"></i>
-      <span data-i18n="mob.ai">AI</span>
-    </a>
-    <a href="#/cloud" data-page="cloud" onclick="closeMobOverflow()" class="mob-nav mob-extra flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] py-2 px-1 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04]">
-      <i class="ph-duotone ph-cloud text-xl"></i>
-      <span data-i18n="mob.cloud">Cloud</span>
-    </a>
-    <a href="#/ips" data-page="ips" onclick="closeMobOverflow()" class="mob-nav mob-extra relative flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] py-2 px-1 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04]">
-      <i class="ph-duotone ph-warning-octagon text-xl"></i>
-      <span data-i18n="mob.ips">Protect</span>
-      <span id="mob-badge-ips" class="hidden absolute -top-0.5 right-1/4 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5">0</span>
-    </a>
-    <a href="#/settings" data-page="settings" onclick="closeMobOverflow()" class="mob-nav mob-extra relative flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] py-2 px-1 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04]">
-      <i class="ph-duotone ph-gear text-xl"></i>
-      <span data-i18n="mob.settings">Settings</span>
-      <span id="mob-badge-settings" class="hidden absolute -top-0.5 right-1/4 w-2 h-2 rounded-full bg-red-500"></span>
-    </a>
-  </div>
-  <!-- Primary 5-item bar -->
-  <div class="h-14 flex items-center justify-around px-2">
-    <a href="#/dashboard" data-page="dashboard" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
-      <i class="ph-duotone ph-squares-four text-xl"></i>
+  <div class="h-16 flex items-stretch">
+    <a href="#/summary" data-page="summary" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
+      <i class="ph-duotone ph-tray text-xl"></i>
       <span data-i18n="mob.home">Home</span>
     </a>
-    <a href="#/devices" data-page="devices" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
+    <a href="#/devices" data-page="devices" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
       <i class="ph-duotone ph-devices text-xl"></i>
       <span data-i18n="mob.devices">Devices</span>
     </a>
-    <a href="#/rules" data-page="rules" class="mob-nav flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
-      <i class="ph-duotone ph-faders text-xl"></i>
-      <span data-i18n="mob.rules">Rules</span>
+    <a href="#/ips" data-page="ips" class="mob-nav flex-1 relative flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
+      <i class="ph-duotone ph-warning-octagon text-xl"></i>
+      <span data-i18n="mob.attacks">Attacks</span>
+      <span id="mob-badge-ips" class="hidden absolute top-1 right-1/4 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">0</span>
     </a>
-    <a href="#/privacy" data-page="privacy" class="mob-nav relative flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
-      <i class="ph-duotone ph-shield-check text-xl"></i>
-      <span data-i18n="mob.privacy">Privacy</span>
+    <a href="#/settings" data-page="settings" class="mob-nav flex-1 relative flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
+      <i class="ph-duotone ph-gear text-xl"></i>
+      <span data-i18n="mob.settings">Settings</span>
+      <span id="mob-badge-settings" class="hidden absolute top-1 right-1/4 w-2 h-2 rounded-full bg-red-500"></span>
     </a>
-    <button onclick="toggleMobOverflow()" id="mob-more-btn" class="mob-nav relative flex flex-col items-center gap-0.5 text-slate-400 dark:text-slate-500 text-[10px] py-1 px-2">
-      <i class="ph-duotone ph-dots-three-outline text-xl"></i>
-      <span data-i18n="mob.more">More</span>
-      <span id="mob-badge-more" class="hidden absolute -top-0.5 right-0 w-2.5 h-2.5 rounded-full bg-red-500"></span>
+    <button onclick="toggleMobileSidebar()" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
+      <i class="ph-duotone ph-list text-xl"></i>
+      <span data-i18n="mob.menu">Menu</span>
     </button>
   </div>
 </nav>
@@ -188,7 +173,7 @@
   <!-- Top Bar -->
   <header class="sticky top-0 z-30 h-14 bg-white/80 dark:bg-[#0B0C10]/85 backdrop-blur-md border-b border-slate-200 dark:border-white/[0.04] flex items-center justify-between px-6">
     <div class="flex items-center gap-3">
-      <button onclick="toggleMobileSidebar()" class="md:hidden p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+      <button onclick="toggleMobileSidebar()" class="md:hidden w-12 h-12 -ml-2 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800">
         <i class="ph-duotone ph-list text-xl"></i>
       </button>
       <h2 id="page-title" class="text-sm font-semibold text-slate-700 dark:text-slate-200">Dashboard</h2>
@@ -271,7 +256,7 @@
     <section id="page-dashboard" class="page space-y-6">
 
       <!-- Metric cards -->
-      <div class="stat-grid grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover cursor-pointer transition-shadow hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600" onclick="navigate('settings')">
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="dash.system">System</p>
           <div class="flex items-center gap-2 mt-2">
@@ -355,7 +340,7 @@
         <!-- Severity filter chips (shown only when mixed severities) -->
         <div id="dash-alarms-filters" class="hidden flex flex-wrap gap-1.5 mb-3"></div>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left">
+          <table class="w-full text-sm text-left card-table">
             <thead id="dash-alarms-thead">
               <tr class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05]">
                 <th class="py-3 px-4 font-medium" data-i18n="dash.alarmTime">Time</th>
@@ -439,7 +424,7 @@
       </div>
 
       <!-- Doughnut + Table -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="ai.byService">By Service</h3>
           <canvas id="ai-service-chart" height="260"></canvas>
@@ -477,7 +462,7 @@
             <div class="text-center">
               <div id="ai-adopt-rate" class="text-2xl font-bold tabular-nums text-indigo-500 dark:text-indigo-400">—</div>
               <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="adopt.rate">Adoption Rate</p>
-              <p id="ai-adopt-rate-detail" class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">— of — devices</p>
+              <p id="ai-adopt-rate-detail" class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">— of — devices</p>
             </div>
             <div class="text-center">
               <div id="ai-adopt-avg-queries" class="text-2xl font-bold tabular-nums">—</div>
@@ -494,7 +479,7 @@
             <div class="text-center">
               <div id="ai-adopt-power" class="text-2xl font-bold tabular-nums text-amber-500 dark:text-amber-400">—</div>
               <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1" data-i18n="adopt.powerUsers">Power Users</p>
-              <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="adopt.powerHint">&gt;50 queries/day</p>
+              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5" data-i18n="adopt.powerHint">&gt;50 queries/day</p>
             </div>
             <div class="text-center">
               <div id="ai-adopt-top-svc" class="text-lg font-bold">—</div>
@@ -594,7 +579,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover lg:col-span-1">
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="cloud.byService">By Service</h3>
           <canvas id="cloud-service-chart" height="260"></canvas>
@@ -724,7 +709,7 @@
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
         <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4" data-i18n="priv.recentTrackers">Recent Tracker Activity</h3>
         <div class="overflow-x-auto max-h-72 overflow-y-auto">
-          <table class="w-full text-sm text-left">
+          <table class="w-full text-sm text-left card-table">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
               <tr><th class="py-3 px-4 font-medium" data-i18n="priv.thTime">Time</th><th class="py-3 px-4 font-medium" data-i18n="priv.thTracker">Tracker</th><th class="py-3 px-4 font-medium" data-i18n="priv.thType">Type</th><th class="py-3 px-4 font-medium" data-i18n="priv.thSource">Source</th></tr>
             </thead>
@@ -915,7 +900,7 @@
           </button>
         </div>
         <div id="ask-network-response" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
-          <div id="ask-network-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300"></div>
+          <div id="ask-network-content" class="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed text-slate-700 dark:text-slate-300"></div>
         </div>
       </div>
 
@@ -1006,19 +991,19 @@
         <button id="ips-tab-alerts" onclick="switchIpsTab('alerts')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-arrow-down-left text-sm"></i>
-            Inbound <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white">0</span>
+            Inbound <span id="ips-tab-alerts-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 text-white">0</span>
           </span>
         </button>
         <button id="ips-tab-outbound" onclick="switchIpsTab('outbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-arrow-up-right text-sm"></i>
-            Outbound <span id="ips-tab-outbound-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+            Outbound <span id="ips-tab-outbound-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
           </span>
         </button>
         <button id="ips-tab-blocklist" onclick="switchIpsTab('blocklist')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-list-bullets text-sm"></i>
-            Blocklist <span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+            Blocklist <span id="ips-tab-blocklist-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
           </span>
         </button>
       </div>
@@ -1057,7 +1042,7 @@
           </select>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left">
+          <table class="w-full text-sm text-left card-table">
             <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10]">
               <tr>
                 <th class="py-3 px-4 font-medium">Source</th>
@@ -1165,7 +1150,7 @@
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-prohibit text-sm"></i>
             <span data-i18n="rules.activeBlocks">Active Blocks</span>
-            <span id="rules-active-count" class="ml-0.5 px-1.5 py-0.5 text-[9px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hidden">0</span>
+            <span id="rules-active-count" class="ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hidden">0</span>
           </span>
         </button>
       </div>
@@ -1885,7 +1870,7 @@
           <span>&#8635;</span> <span data-i18n="dev.regenerateReport">Regenereer AI recap</span>
         </button>
       </div>
-      <div id="drawer-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed text-slate-700 dark:text-slate-300">
+      <div id="drawer-ai-report-content" class="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed text-slate-700 dark:text-slate-300">
         <div id="drawer-report-empty" class="py-10 text-center">
           <p class="text-xs text-slate-400 dark:text-slate-500 mb-4" data-i18n="dev.reportEmptyHint">No AI recap generated yet for this device.</p>
           <button onclick="generateDeviceReport()" class="px-4 py-2 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 transition-all shadow-sm hover:shadow-md">
