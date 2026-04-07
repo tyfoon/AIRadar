@@ -533,7 +533,8 @@ async def _periodic_beacon_scan():
                         new_count += 1
                         print(
                             f"[beacon] 🚨 THREAT: {f['src']} → {f['dst']}:{f['port']}/{f['proto']} "
-                            f"every {f['mean_interval_s']}s (±{f['stddev_s']}s, n={f['connection_count']})"
+                            f"score={f['score']} every {f['mean_interval_s']}s "
+                            f"(skew={f.get('bowley_skew', '?')}, madm={f.get('madm_s', '?')}s, n={f['connection_count']})"
                         )
                     if new_count:
                         db.commit()
