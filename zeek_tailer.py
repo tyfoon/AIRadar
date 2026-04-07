@@ -137,6 +137,7 @@ VPN_PROVIDER_ASNS: dict[int, str] = {
 VPN_ASN_BYTE_THRESHOLD = 100_000  # 100 KB
 VPN_ASN_DEDUP_SECONDS = 300
 _vpn_asn_seen: dict[tuple[str, int], float] = {}  # (src_ip, asn) → ts
+_vpn_sni_dedup: dict[tuple[str, str], float] = {}  # (src_ip, service) → ts
 
 
 def _vpn_provider_for_ip(ip: str) -> tuple[int, str] | None:
@@ -1546,6 +1547,26 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         orig_bytes = int(ob)
                 except ValueError:
                     pass
+
+                # If this is a VPN service, also fire a vpn_tunnel alert
+                # so it shows in the summary dashboard. SNI-based VPN
+                # detection (e.g. nordvpn.com domain match) is reliable
+                # but the old code only generated sni_hello events which
+                # the alert system ignores. Dedup: 1 alert per 5 min.
+                if service.startswith("vpn_"):
+                    _vpn_sni_key = (src_ip, service)
+                    _vpn_sni_now = time.time()
+                    _vpn_sni_last = _vpn_sni_dedup.get(_vpn_sni_key, 0)
+                    if (_vpn_sni_now - _vpn_sni_last) >= 300:
+                        _vpn_sni_dedup[_vpn_sni_key] = _vpn_sni_now
+                        await send_event(
+                            client,
+                            detection_type="vpn_tunnel",
+                            ai_service=service,
+                            source_ip=src_ip,
+                            bytes_transferred=orig_bytes,
+                            category="security",
+                        )
 
                 await send_event(
                     client,
