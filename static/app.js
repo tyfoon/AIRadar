@@ -6412,9 +6412,9 @@ window._filterIpsTable = _filterIpsTable;
 
 function switchIpsTab(tab) {
   const tabs = {
-    alerts:    { btn: document.getElementById('ips-tab-alerts'),    panel: document.getElementById('ips-panel-alerts'),    label: 'Inbound',    countId: 'ips-tab-alerts-count' },
-    outbound:  { btn: document.getElementById('ips-tab-outbound'),  panel: document.getElementById('ips-panel-outbound'),  label: 'Outbound',   countId: 'ips-tab-outbound-count' },
-    blocklist: { btn: document.getElementById('ips-tab-blocklist'), panel: document.getElementById('ips-panel-blocklist'), label: 'Community Blocklist', countId: 'ips-tab-blocklist-count' },
+    alerts:    { btn: document.getElementById('ips-tab-alerts'),    panel: document.getElementById('ips-panel-alerts'),    label: '<i class="ph-duotone ph-arrow-down-left text-sm"></i> Inbound',    countId: 'ips-tab-alerts-count' },
+    outbound:  { btn: document.getElementById('ips-tab-outbound'),  panel: document.getElementById('ips-panel-outbound'),  label: '<i class="ph-duotone ph-arrow-up-right text-sm"></i> Outbound',   countId: 'ips-tab-outbound-count' },
+    blocklist: { btn: document.getElementById('ips-tab-blocklist'), panel: document.getElementById('ips-panel-blocklist'), label: '<i class="ph-duotone ph-list-bullets text-sm"></i> Blocklist', countId: 'ips-tab-blocklist-count' },
   };
   const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
   const activeCls = `${base} bg-blue-700 text-white shadow-sm`;
@@ -6428,7 +6428,7 @@ function switchIpsTab(tab) {
     const pillCls = isActive
       ? 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 text-white'
       : 'ml-1 px-1.5 py-0.5 text-[9px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400';
-    t.btn.innerHTML = `${t.label} <span id="${t.countId}" class="${pillCls}">${count}</span>`;
+    t.btn.innerHTML = `<span class="inline-flex items-center gap-1.5">${t.label} <span id="${t.countId}" class="${pillCls}">${count}</span></span>`;
     t.panel.classList.toggle('hidden', !isActive);
   }
 }
