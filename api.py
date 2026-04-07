@@ -813,13 +813,12 @@ def _normalize_mac_addresses():
         # Disable FK checks for SQLite so we can freely update PKs
         db.execute(text("PRAGMA foreign_keys = OFF"))
 
-        # Tables that have a mac_address column referencing devices
-        fk_tables = ["device_ips", "tls_fingerprints"]
-        # Tables with mac_address column but no FK constraint
-        ref_tables = ["detection_events", "block_rules", "alert_exceptions",
-                      "device_baselines", "service_policies",
-                      "geo_conversations", "device_group_members"]
-        all_ref_tables = fk_tables + ref_tables
+        # Tables with unique constraints involving mac_address — must
+        # delete old rows to avoid IntegrityError during merge/rename.
+        delete_tables = ["device_baselines", "tls_fingerprints",
+                         "geo_conversations", "device_group_members",
+                         "service_policies"]
+        # device_ips handled specially (drop conflicting IPs, move rest)
 
         # Find all MACs in devices table that need fixing
         all_devices = db.execute(text(
@@ -840,6 +839,30 @@ def _normalize_mac_addresses():
         fixed = 0
         merged = 0
 
+        def _move_mac_refs(old_mac, new_mac):
+            """Move or clean up all references from old_mac to new_mac."""
+            for tbl in delete_tables:
+                db.execute(text(
+                    f"DELETE FROM {tbl} WHERE mac_address = :old"
+                ), {"old": old_mac})
+            # device_ips: drop conflicting, move rest
+            db.execute(text(
+                "DELETE FROM device_ips WHERE mac_address = :old "
+                "AND ip IN (SELECT ip FROM device_ips WHERE mac_address = :new)"
+            ), {"old": old_mac, "new": new_mac})
+            db.execute(text(
+                "UPDATE device_ips SET mac_address = :new WHERE mac_address = :old"
+            ), {"old": old_mac, "new": new_mac})
+            # alert_exceptions
+            db.execute(text(
+                "UPDATE alert_exceptions SET mac_address = :new "
+                "WHERE mac_address = :old"
+            ), {"old": old_mac, "new": new_mac})
+            db.execute(text(
+                "UPDATE alert_exceptions SET destination = :new "
+                "WHERE destination = :old"
+            ), {"old": old_mac, "new": new_mac})
+
         for norm_mac, entries in groups.items():
             if len(entries) == 1 and entries[0][0] == norm_mac:
                 continue  # Already correct, nothing to do
@@ -859,14 +882,7 @@ def _normalize_mac_addresses():
             # Move all references from non-keeper MACs to keeper
             for entry in entries[1:]:
                 old_mac = entry[0]
-                for tbl in all_ref_tables:
-                    db.execute(text(
-                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": old_mac, "new": keeper_mac})
-                db.execute(text(
-                    "UPDATE alert_exceptions SET destination = :new "
-                    "WHERE destination = :old"
-                ), {"old": old_mac, "new": keeper_mac})
+                _move_mac_refs(old_mac, keeper_mac)
                 db.execute(text(
                     "DELETE FROM devices WHERE mac_address = :old"
                 ), {"old": old_mac})
@@ -874,14 +890,7 @@ def _normalize_mac_addresses():
 
             # Rename keeper to normalized MAC if needed
             if keeper_mac != norm_mac:
-                for tbl in all_ref_tables:
-                    db.execute(text(
-                        f"UPDATE {tbl} SET mac_address = :new WHERE mac_address = :old"
-                    ), {"old": keeper_mac, "new": norm_mac})
-                db.execute(text(
-                    "UPDATE alert_exceptions SET destination = :new "
-                    "WHERE destination = :old"
-                ), {"old": keeper_mac, "new": norm_mac})
+                _move_mac_refs(keeper_mac, norm_mac)
                 db.execute(text(
                     "UPDATE devices SET mac_address = :new, "
                     "       first_seen = :fs, last_seen = :ls "
