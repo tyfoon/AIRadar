@@ -531,13 +531,17 @@ async def _periodic_beacon_scan():
                             continue
 
                         # --- Destination novelty check ---
-                        # Use GeoConversation to determine if this device has
-                        # talked to this IP before. If the destination is
-                        # "known" (seen > 7 days), lower the effective score
-                        # so it falls below threshold and doesn't alert.
+                        # Two-tier check:
+                        # 1. Exact IP match in GeoConversation (>7 days = known)
+                        # 2. ASN org match — if device already talks to this
+                        #    org (Google, Amazon, etc.) via other IPs, the new
+                        #    IP is just a CDN rotation, not a real new dest.
                         mac = _ip_to_mac_beacon.get(src_ip)
                         is_new_dest = True  # default: treat as new
+                        dest_meta = db.query(IpMetadata).filter(IpMetadata.ip == dst_ip).first()
+
                         if mac:
+                            # Tier 1: exact IP match
                             geo_row = (
                                 db.query(GeoConversation)
                                 .filter(
@@ -548,15 +552,27 @@ async def _periodic_beacon_scan():
                                 .first()
                             )
                             if geo_row and geo_row.first_seen < _known_dest_cutoff:
-                                # Known destination — this device has been
-                                # talking to this IP for > 7 days. This is
-                                # baseline traffic, not a new threat.
                                 is_new_dest = False
+
+                            # Tier 2: ASN org match — catch CDN/cloud IP rotation
+                            if is_new_dest and dest_meta and dest_meta.asn_org:
+                                # Check if this device has talked to ANY IP
+                                # from the same ASN org in the past 7 days
+                                asn_known = (
+                                    db.query(GeoConversation.id)
+                                    .join(IpMetadata, GeoConversation.resp_ip == IpMetadata.ip)
+                                    .filter(
+                                        GeoConversation.mac_address == mac,
+                                        IpMetadata.asn_org == dest_meta.asn_org,
+                                        GeoConversation.first_seen < _known_dest_cutoff,
+                                    )
+                                    .first()
+                                )
+                                if asn_known:
+                                    is_new_dest = False
 
                         # Adjust score based on novelty
                         if is_new_dest:
-                            # Check destination reputation via IpMetadata
-                            dest_meta = db.query(IpMetadata).filter(IpMetadata.ip == dst_ip).first()
                             if dest_meta and not dest_meta.asn_org:
                                 # Unknown ASN = extra suspicious
                                 effective_score = min(score * 1.2, 100)
