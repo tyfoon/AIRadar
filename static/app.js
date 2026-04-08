@@ -1539,6 +1539,188 @@ function _alertTypeLabel(type) {
   return map[type] || { icon: '<i class="ph-duotone ph-question text-xl"></i>', label: type, color: 'slate' };
 }
 
+// Severity / score badges shown after the alert-type pill (regel 1)
+function _alertExtraBadges(a) {
+  const d = a.details || {};
+  if (a.alert_type === 'beaconing_threat' && d.beacon_score != null) {
+    const sc = d.beacon_score;
+    const bg = sc >= 90 ? 'bg-red-600' : sc >= 80 ? 'bg-orange-600' : 'bg-amber-600';
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold tabular-nums">${sc}</span>`;
+  }
+  if (a.alert_type === 'upload' && d.severity)
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">${d.severity}</span>`;
+  if (a.alert_type === 'service_access' && d.severity)
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-600 text-white font-bold">${d.severity}</span>`;
+  if (a.alert_type === 'inbound_threat' && d.severity === 'threat')
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">known threat</span>`;
+  if (a.alert_type === 'inbound_port_scan')
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-600 text-white font-bold">probe</span>`;
+  return '';
+}
+
+// Type-specific detail line (regel 2) — returns inner HTML
+function _alertDetailLine(a) {
+  const d = a.details || {};
+  const lastSeen = a.timestamp ? fmtTime(a.timestamp) : '';
+  const firstSeen = a.first_seen ? fmtTime(a.first_seen) : '';
+  const sep = '<span class="text-slate-600 dark:text-slate-600">·</span>';
+  const arrow = '<span class="text-slate-600 dark:text-slate-600">→</span>';
+  const colon = '<span class="text-slate-600 dark:text-slate-600">:</span>';
+  const mono = 'font-mono text-slate-300 dark:text-slate-300';
+  const monoMuted = 'font-mono text-slate-400 dark:text-slate-400';
+  const muted = 'tabular-nums text-slate-500 dark:text-slate-500';
+
+  const _portBadge = (label) => label
+    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 font-medium text-[10px] font-mono">${label}</span>`
+    : '';
+
+  switch (a.alert_type) {
+    case 'beaconing_threat': {
+      const destIp = d.dest_ip || a.service_or_dest || '';
+      const geo = [];
+      if (d.dest_country) geo.push(`${_flagEmoji(d.dest_country)} ${d.dest_asn_org || d.dest_country}`);
+      else if (d.dest_asn_org) geo.push(d.dest_asn_org);
+      if (d.dest_sni) geo.push(`<span class="${monoMuted}">${d.dest_sni}</span>`);
+      const stats = [];
+      if (a.hits) stats.push(`${a.hits} conn`);
+      if (a.total_bytes) stats.push(_fmtBytes(a.total_bytes));
+      return `<span class="${mono}">${d.source_ip || ''}</span> ${arrow} <span class="${mono}">${destIp}</span>`
+        + (geo.length ? ` ${sep} ${geo.join(` ${sep} `)}` : '')
+        + (stats.length ? ` ${sep} <span class="tabular-nums">${stats.join(' · ')}</span>` : '')
+        + ` ${sep} <span class="${muted}">${lastSeen}</span>`;
+    }
+    case 'vpn_tunnel': {
+      const vpnName = d.vpn_service || svcDisplayName(a.service_or_dest) || a.service_or_dest;
+      const parts = [`<span class="text-slate-300 dark:text-slate-300 font-medium">🔒 ${vpnName}</span>`];
+      if (d.source_ip) parts.push(`<span class="${monoMuted}">${d.source_ip}</span>`);
+      const stats = [];
+      if (a.total_bytes) stats.push(_fmtBytes(a.total_bytes));
+      if (a.hits) stats.push(`${a.hits} events`);
+      if (stats.length) parts.push(`<span class="tabular-nums">${stats.join(' · ')}</span>`);
+      parts.push(`<span class="${muted}">${lastSeen}</span>`);
+      return parts.join(` ${sep} `);
+    }
+    case 'stealth_vpn_tunnel': {
+      const proto = d.protocol || a.service_or_dest || 'unknown';
+      const parts = [
+        `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 font-medium text-[10px]">${proto}</span>`
+      ];
+      if (d.source_ip) parts.push(`<span class="${monoMuted}">${d.source_ip}</span>`);
+      const stats = [];
+      if (a.total_bytes) stats.push(_fmtBytes(a.total_bytes));
+      if (a.hits) stats.push(`${a.hits} events`);
+      if (stats.length) parts.push(`<span class="tabular-nums">${stats.join(' · ')}</span>`);
+      parts.push(`<span class="${muted}">${lastSeen}</span>`);
+      return parts.join(` ${sep} `);
+    }
+    case 'upload': {
+      const svc = svcDisplayName(a.service_or_dest) || a.service_or_dest;
+      const stats = [];
+      if (a.total_bytes) stats.push(`${_fmtBytes(a.total_bytes)} uploaded`);
+      if (a.hits) stats.push(`${a.hits} hits`);
+      const time = (firstSeen && lastSeen && firstSeen !== lastSeen) ? `${firstSeen} – ${lastSeen}` : lastSeen;
+      return `<span class="text-slate-300 dark:text-slate-300 font-medium">${svc}</span>`
+        + (stats.length ? ` ${sep} <span class="tabular-nums">${stats.join(' · ')}</span>` : '')
+        + ` ${sep} <span class="${muted}">${time}</span>`;
+    }
+    case 'service_access': {
+      const svc = svcDisplayName(a.service_or_dest) || a.service_or_dest;
+      const time = (firstSeen && lastSeen && firstSeen !== lastSeen) ? `${firstSeen} – ${lastSeen}` : lastSeen;
+      return `<span class="text-slate-300 dark:text-slate-300 font-medium">${svc}</span>`
+        + ` ${sep} <span class="tabular-nums">${a.hits} hits</span>`
+        + ` ${sep} <span class="${muted}">${time}</span>`;
+    }
+    case 'new_device': {
+      const info = d.info_summary || a.mac_address;
+      return `<span class="font-medium text-slate-300 dark:text-slate-300">${info}</span>`
+        + ` ${sep} <span class="${muted}">${firstSeen || lastSeen}</span>`;
+    }
+    case 'iot_lateral_movement': {
+      const parts = [];
+      if (d.source_ip) parts.push(`<span class="${mono}">${d.source_ip}</span>`);
+      parts.push(arrow);
+      // target IP: try to find from service_or_dest or details
+      const targetIp = d.target_ip || '';
+      if (targetIp) parts.push(`<span class="${mono}">${targetIp}</span>`);
+      if (d.port_label) { parts.push(colon); parts.push(_portBadge(d.port_label)); }
+      if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
+      parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
+      return parts.join(' ');
+    }
+    case 'iot_suspicious_port': {
+      const parts = [];
+      if (d.source_ip) parts.push(`<span class="${monoMuted}">${d.source_ip}</span>`);
+      parts.push(arrow);
+      parts.push('<span class="text-slate-300 dark:text-slate-300">extern</span>');
+      if (d.port_label) parts.push(_portBadge(d.port_label));
+      if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
+      parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
+      return parts.join(' ');
+    }
+    case 'iot_new_country': {
+      const cc = d.country_code || (a.service_or_dest || '').replace('country_', '').toUpperCase();
+      const parts = [];
+      if (cc) parts.push(`<span class="inline-flex items-center gap-1 text-slate-300 dark:text-slate-300 font-medium">${_flagEmoji(cc)} ${cc}</span>`);
+      const stats = [];
+      if (a.total_bytes) stats.push(_fmtBytes(a.total_bytes));
+      if (a.hits) stats.push(`${a.hits} hits`);
+      if (stats.length) parts.push(`<span class="tabular-nums">${stats.join(' · ')}</span>`);
+      parts.push(`<span class="${muted}">${lastSeen}</span>`);
+      return parts.join(` ${sep} `);
+    }
+    case 'iot_volume_spike': {
+      const detail = d.spike_detail || a.service_or_dest || '';
+      // spike_detail format: "3.2 MB/h (baseline 0.1 MB/h) → youtube"
+      const m = detail.match(/^(.+?)\s*\(baseline\s+(.+?)\)\s*(?:→|->)\s*(.+)$/);
+      if (m) {
+        return `<span class="text-orange-400 dark:text-orange-300 font-medium tabular-nums">${m[1].trim()}</span>`
+          + ` <span class="text-slate-600 dark:text-slate-600">←</span> <span class="${muted}">baseline ${m[2].trim()}</span>`
+          + ` ${arrow} <span class="text-slate-300 dark:text-slate-300">${m[3].trim()}</span>`
+          + ` ${sep} <span class="${muted}">${lastSeen}</span>`;
+      }
+      return `<span class="text-slate-300 dark:text-slate-300 font-medium">${detail}</span> ${sep} <span class="${muted}">${lastSeen}</span>`;
+    }
+    case 'inbound_threat': {
+      const parts = [];
+      // Source: flag + ASN org
+      const geo = [];
+      if (d.country_code) geo.push(_flagEmoji(d.country_code));
+      if (d.asn_org) geo.push(d.asn_org);
+      if (geo.length) parts.push(`<span class="inline-flex items-center gap-1">${geo.join(' ')}</span>`);
+      // Arrow + target
+      parts.push(arrow);
+      if (d.target_ip) parts.push(`<span class="${mono}">${d.target_ip}</span>`);
+      if (d.port_label) { parts.push(colon); parts.push(_portBadge(d.port_label)); }
+      // CrowdSec reason
+      if (d.crowdsec_reason) {
+        const reason = d.crowdsec_reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ');
+        parts.push(`${sep} <span class="text-red-400/70 dark:text-red-400/70 text-[10px]">${reason}</span>`);
+      }
+      if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
+      parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
+      return parts.join(' ');
+    }
+    case 'inbound_port_scan': {
+      const parts = [];
+      const geo = [];
+      if (d.country_code) geo.push(_flagEmoji(d.country_code));
+      if (d.asn_org) geo.push(d.asn_org);
+      if (geo.length) parts.push(`<span class="inline-flex items-center gap-1">${geo.join(' ')}</span>`);
+      parts.push(arrow);
+      if (d.target_ip) parts.push(`<span class="${mono}">${d.target_ip}</span>`);
+      if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
+      parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
+      return parts.join(' ');
+    }
+    default: {
+      const svc = svcDisplayName(a.service_or_dest) || a.service_or_dest || '';
+      return `<span class="font-medium">${svc}</span>`
+        + ` ${sep} <span class="tabular-nums">${a.hits} hits</span>`
+        + ` ${sep} <span class="${muted}">${lastSeen}</span>`;
+    }
+  }
+}
+
 function _updateNavBadge(count) {
   const badge = document.getElementById('nav-badge-summary');
   if (!badge) return;
@@ -1589,11 +1771,6 @@ async function loadSummaryDashboard() {
       const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
                     || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
                     || (a.details?.ips?.[0]) || (_dev ? _latestIp(_dev) : null) || a.mac_address;
-      const macTag = a.mac_address && a.mac_address !== devName
-        ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1.5">${a.mac_address}</span>`
-        : '';
-      const lastSeen = a.timestamp ? fmtTime(a.timestamp) : '';
-      const firstSeen = a.first_seen ? fmtTime(a.first_seen) : '';
       const isAnomaly = _ANOMALY_ALERT_TYPES.has(a.alert_type);
       const borderClass = isAnomaly
         ? 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10'
@@ -1630,14 +1807,9 @@ async function loadSummaryDashboard() {
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
                   <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
+                  ${_alertExtraBadges(a)}
                 </div>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">${
-                  a.alert_type === 'new_device'
-                    ? `<span class="font-medium">${a.details?.info_summary || a.mac_address}</span>
-                       <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${firstSeen || lastSeen}</span>`
-                    : `<span class="font-medium">${svcDisplayName(a.service_or_dest) || a.service_or_dest}</span>
-                       <span class="text-slate-400 dark:text-slate-500 tabular-nums ml-1">· ${a.hits} hits · ${lastSeen}</span>`
-                }</p>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">${_alertDetailLine(a)}</div>
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -1652,11 +1824,19 @@ async function loadSummaryDashboard() {
             </div>
           </div>
           <div id="alert-actions-${idx}" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
-            <div class="flex flex-wrap gap-1.5">
+            <div class="flex flex-wrap items-center gap-1.5">
               <button onclick="_inlineSnooze(${idx}, 1)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">Snooze 1h</button>
               <button onclick="_inlineSnooze(${idx}, 4)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">4h</button>
               <button onclick="_inlineSnooze(${idx}, 8)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">8h</button>
+              <button onclick="_toggleCustomSnooze(${idx})" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph ph-clock text-xs"></i> Custom</button>
+              <span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
               <button onclick="_inlineWhitelist(${idx})" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-[11px] font-medium transition-colors">${t('alertModal.ignoreForever') || 'Permanent ignore'}</button>
+              ${!_ANOMALY_ALERT_TYPES.has(a.alert_type) ? `<span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span><button onclick="_navigateToRule(${idx})" class="px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-700/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph-duotone ph-shield-check text-xs"></i> Set rule</button>` : ''}
+            </div>
+            <div id="custom-snooze-${idx}" class="hidden mt-2 flex items-center gap-2">
+              <span class="text-[11px] text-slate-500 dark:text-slate-500">Snooze tot:</span>
+              <input type="datetime-local" id="custom-snooze-input-${idx}" class="bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:border-amber-400 dark:focus:border-amber-500/50" />
+              <button onclick="_inlineSnoozeCustom(${idx})" class="px-2.5 py-1 rounded-md bg-amber-500 dark:bg-amber-600 hover:bg-amber-400 dark:hover:bg-amber-500 text-white text-[11px] font-medium transition-colors">Set</button>
             </div>
           </div>
         </div>`;
@@ -1937,10 +2117,52 @@ function _inlineWhitelist(idx) {
   });
 }
 
+function _toggleCustomSnooze(idx) {
+  const el = document.getElementById(`custom-snooze-${idx}`);
+  if (el) el.classList.toggle('hidden');
+}
+
+function _inlineSnoozeCustom(idx) {
+  const a = _summaryAlerts[idx]; if (!a) return;
+  const input = document.getElementById(`custom-snooze-input-${idx}`);
+  if (!input || !input.value) {
+    showToast('Please select a date and time', 'warning');
+    return;
+  }
+  const expiresAt = new Date(input.value).toISOString();
+  if (new Date(input.value) <= new Date()) {
+    showToast('Snooze time must be in the future', 'warning');
+    return;
+  }
+  _inlineAlertAction(idx, {
+    mac_address: a.mac_address, alert_type: a.alert_type,
+    destination: a.service_or_dest,
+    expires_at: expiresAt,
+  });
+}
+
+function _navigateToRule(idx) {
+  const a = _summaryAlerts[idx]; if (!a) return;
+  if (a.mac_address) {
+    _rulesScopeMode = 'device';
+    _rulesScopeMac = a.mac_address;
+  }
+  navigate('rules');
+  // Give the Rules page time to render, then highlight the service
+  if (a.service_or_dest) {
+    setTimeout(() => {
+      showToast(`Set a rule for ${svcDisplayName(a.service_or_dest) || a.service_or_dest}`, 'info');
+    }, 300);
+  }
+}
+
 window._toggleInlineActions = _toggleInlineActions;
 window._inlineDismiss = _inlineDismiss;
 window._inlineSnooze = _inlineSnooze;
 window._inlineWhitelist = _inlineWhitelist;
+window._toggleCustomSnooze = _toggleCustomSnooze;
+window._inlineSnoozeCustom = _inlineSnoozeCustom;
+window._navigateToRule = _navigateToRule;
 
 // ---------------------------------------------------------------------------
 // "Clear all alerts" — dismiss every visible alert
