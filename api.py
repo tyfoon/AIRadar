@@ -505,13 +505,24 @@ async def _periodic_beacon_scan():
                 db = SessionLocal()
                 try:
                     cutoff = datetime.utcnow() - timedelta(hours=BEACON_DEDUP_HOURS)
+                    # Build IP → MAC lookup for destination novelty check
+                    _dev_ips = db.query(DeviceIP).all()
+                    _ip_to_mac_beacon = {d.ip: d.mac_address for d in _dev_ips}
+                    # Threshold: destinations seen for > 7 days are "known"
+                    _known_dest_cutoff = datetime.utcnow() - timedelta(days=7)
+
                     for f in findings:
+                        dst_ip = f["dst"]
+                        src_ip = f["src"]
+                        score = f.get("score", 0)
+
+                        # --- Dedup: skip if already alerted in last 24h ---
                         already = (
                             db.query(DetectionEvent.id)
                             .filter(
                                 DetectionEvent.detection_type == "beaconing_threat",
-                                DetectionEvent.source_ip == f["src"],
-                                DetectionEvent.ai_service == f["dst"],
+                                DetectionEvent.source_ip == src_ip,
+                                DetectionEvent.ai_service.in_([dst_ip, f"known_{dst_ip}"]),
                                 DetectionEvent.timestamp >= cutoff,
                             )
                             .first()
@@ -519,21 +530,68 @@ async def _periodic_beacon_scan():
                         if already:
                             continue
 
+                        # --- Destination novelty check ---
+                        # Use GeoConversation to determine if this device has
+                        # talked to this IP before. If the destination is
+                        # "known" (seen > 7 days), lower the effective score
+                        # so it falls below threshold and doesn't alert.
+                        mac = _ip_to_mac_beacon.get(src_ip)
+                        is_new_dest = True  # default: treat as new
+                        if mac:
+                            geo_row = (
+                                db.query(GeoConversation)
+                                .filter(
+                                    GeoConversation.mac_address == mac,
+                                    GeoConversation.resp_ip == dst_ip,
+                                )
+                                .order_by(GeoConversation.first_seen.asc())
+                                .first()
+                            )
+                            if geo_row and geo_row.first_seen < _known_dest_cutoff:
+                                # Known destination — this device has been
+                                # talking to this IP for > 7 days. This is
+                                # baseline traffic, not a new threat.
+                                is_new_dest = False
+
+                        # Adjust score based on novelty
+                        if is_new_dest:
+                            # Check destination reputation via IpMetadata
+                            dest_meta = db.query(IpMetadata).filter(IpMetadata.ip == dst_ip).first()
+                            if dest_meta and not dest_meta.asn_org:
+                                # Unknown ASN = extra suspicious
+                                effective_score = min(score * 1.2, 100)
+                            else:
+                                effective_score = score
+                            svc_label = dst_ip
+                        else:
+                            # Known destination — heavily discount score
+                            effective_score = score * 0.3
+                            svc_label = f"known_{dst_ip}"
+
+                        # Only create alert if effective score meets threshold
+                        if effective_score < 70:
+                            print(
+                                f"[beacon] ℹ️  Known dest: {src_ip} → {dst_ip} "
+                                f"score={score:.1f} → effective={effective_score:.1f} (below threshold, skipped)"
+                            )
+                            continue
+
                         event = DetectionEvent(
                             sensor_id="airadar",
                             timestamp=datetime.utcnow(),
                             detection_type="beaconing_threat",
-                            ai_service=f["dst"],        # destination IP lives here
-                            source_ip=f["src"],
+                            ai_service=svc_label,
+                            source_ip=src_ip,
                             category="security",
-                            bytes_transferred=int(f.get("score", 0) * 10),  # score × 10
+                            bytes_transferred=int(effective_score * 10),
                             possible_upload=False,
                         )
                         db.add(event)
                         new_count += 1
+                        novelty_tag = "🆕 NEW dest" if is_new_dest else "📋 known dest"
                         print(
-                            f"[beacon] 🚨 THREAT: {f['src']} → {f['dst']}:{f['port']}/{f['proto']} "
-                            f"score={f['score']} every {f['mean_interval_s']}s "
+                            f"[beacon] 🚨 THREAT [{novelty_tag}]: {src_ip} → {dst_ip}:{f['port']}/{f['proto']} "
+                            f"score={score:.1f} → effective={effective_score:.1f} "
                             f"(skew={f.get('bowley_skew', '?')}, madm={f.get('madm_s', '?')}s, n={f['connection_count']})"
                         )
                     if new_count:
@@ -3815,6 +3873,11 @@ def get_active_alerts(
         if e.detection_type in _ANOMALY_DETECTION_TYPES:
             alert_type = e.detection_type
             destination = e.ai_service  # VPN service name or beacon dst IP
+            # Skip beacon alerts for known destinations (low-risk baseline traffic).
+            # These are still visible on the IPS>Outbound page but filtered from
+            # the Summary alert inbox to reduce noise for hub devices.
+            if alert_type == "beaconing_threat" and (destination or "").startswith("known_"):
+                continue
             # For beacons, pass current score so dismissed alerts re-surface
             # if the threat escalates (score rises >10 above dismissed level)
             _score = round((e.bytes_transferred or 0) / 10.0, 1) if alert_type == "beaconing_threat" else None

@@ -1661,7 +1661,10 @@ function _alertExtraBadges(a) {
   if (a.alert_type === 'beaconing_threat' && d.beacon_score != null) {
     const sc = d.beacon_score;
     const [label, bg] = sc >= 90 ? ['Critical', 'bg-red-600'] : sc >= 80 ? ['High', 'bg-orange-600'] : ['Moderate', 'bg-amber-600'];
-    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold">${label}</span>`;
+    // Beacon alerts that reach the Summary are always new destinations
+    // (known destinations are filtered by the backend)
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold">${label}</span>`
+      + ` <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-600 text-white font-bold">new dest</span>`;
   }
   if (a.alert_type === 'upload' && d.severity)
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">${d.severity}</span>`;
