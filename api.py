@@ -2942,6 +2942,27 @@ def get_country_detail(
 #     - Anomalies → always alert (exception required to silence)
 # ---------------------------------------------------------------------------
 
+# Well-known port labels for human-readable display in alert cards
+_PORT_LABELS = {
+    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
+    80: "HTTP", 110: "POP3", 139: "NetBIOS", 143: "IMAP", 443: "HTTPS",
+    445: "SMB", 993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 1521: "Oracle",
+    3306: "MySQL", 3389: "RDP", 4444: "Metasploit", 5432: "PostgreSQL",
+    5555: "ADB", 5900: "VNC", 6379: "Redis", 6667: "IRC", 8080: "HTTP-Alt",
+    8443: "HTTPS-Alt", 8888: "HTTP-Proxy", 9200: "Elasticsearch",
+    27017: "MongoDB",
+}
+
+
+def _port_label(port: int | str | None) -> str:
+    """Return 'SSH/22' style label for a port number, or just the number."""
+    if port is None:
+        return ""
+    port = int(port)
+    name = _PORT_LABELS.get(port)
+    return f"{name}/{port}" if name else str(port)
+
+
 # Detection types that are treated as anomalies (policy-bypass, exception-only)
 _ANOMALY_DETECTION_TYPES = {
     "vpn_tunnel",
@@ -3404,6 +3425,112 @@ def _expired_exception_cutoff(
 
 
 # ---------------------------------------------------------------------------
+# Alert detail enrichment — adds type-specific fields to the details dict
+# ---------------------------------------------------------------------------
+
+def _enrich_alert_details(
+    alert_type: str,
+    details: dict,
+    event: "DetectionEvent",
+    ip_metadata: dict[str, "IpMetadata"],
+    inbound_attacks: dict[str, "InboundAttack"],
+) -> None:
+    """Mutate *details* in-place, adding type-specific fields.
+
+    Called once per alert group (when the group is first created) so we
+    capture metadata from the first event. The lookup dicts are pre-fetched
+    outside the event loop to avoid N+1 queries.
+    """
+    if alert_type == "beaconing_threat":
+        dest_ip = event.ai_service  # beacon destination IP
+        meta = ip_metadata.get(dest_ip)
+        details["source_ip"] = event.source_ip
+        details["dest_ip"] = dest_ip
+        details["dest_country"] = meta.country_code if meta else None
+        details["dest_asn_org"] = meta.asn_org if meta else None
+        details["dest_sni"] = meta.ptr if meta else None
+        # Beacon score is stored as bytes_transferred / 10 by beacon_analyzer
+        details["beacon_score"] = round(event.bytes_transferred / 10) if event.bytes_transferred else None
+
+    elif alert_type == "vpn_tunnel":
+        details["source_ip"] = event.source_ip
+        # service_or_dest is e.g. "vpn_nordvpn" — strip prefix for display
+        vpn_key = event.ai_service or ""
+        details["vpn_service"] = vpn_key.replace("vpn_", "").replace("_", " ").title() if vpn_key.startswith("vpn_") else vpn_key
+
+    elif alert_type == "stealth_vpn_tunnel":
+        details["source_ip"] = event.source_ip
+        # ai_service may contain protocol hint
+        details["protocol"] = event.ai_service or "unknown"
+
+    elif alert_type == "upload":
+        details["severity"] = "HIGH"
+
+    elif alert_type == "service_access":
+        details["severity"] = "MED"
+
+    elif alert_type == "iot_lateral_movement":
+        details["source_ip"] = event.source_ip
+        # ai_service = "lateral_{port}"
+        port_str = (event.ai_service or "").replace("lateral_", "")
+        port_num = int(port_str) if port_str.isdigit() else None
+        details["target_port"] = port_num
+        details["port_label"] = _port_label(port_num)
+
+    elif alert_type == "iot_suspicious_port":
+        details["source_ip"] = event.source_ip
+        # ai_service = "port_{port}"
+        port_str = (event.ai_service or "").replace("port_", "")
+        port_num = int(port_str) if port_str.isdigit() else None
+        details["ext_port"] = port_num
+        details["port_label"] = _port_label(port_num)
+
+    elif alert_type == "iot_new_country":
+        # ai_service = "country_{CC}"
+        cc = (event.ai_service or "").replace("country_", "").upper()
+        details["country_code"] = cc if len(cc) == 2 else None
+
+    elif alert_type == "iot_volume_spike":
+        # ai_service already contains the full spike description
+        # e.g. "150.5 MB/h (baseline 50.0 KB/h) → youtube"
+        details["spike_detail"] = event.ai_service
+
+    elif alert_type in ("inbound_threat", "inbound_port_scan"):
+        details["source_ip"] = event.source_ip
+        # Try to find the matching InboundAttack record for richer metadata
+        # ai_service = "inbound_{port}" or "portscan_{dest_ip}"
+        svc = event.ai_service or ""
+        if alert_type == "inbound_threat":
+            port_str = svc.replace("inbound_", "")
+            port_num = int(port_str) if port_str.isdigit() else None
+            details["target_port"] = port_num
+            details["port_label"] = _port_label(port_num)
+        else:
+            # inbound_port_scan: ai_service = "portscan_{dest_ip}"
+            target = svc.replace("portscan_", "")
+            details["target_ip"] = target
+
+        # Enrich from InboundAttack table (keyed by source_ip)
+        ia = inbound_attacks.get(event.source_ip)
+        if ia:
+            details["country_code"] = ia.country_code
+            details["asn_org"] = ia.asn_org
+            details["severity"] = ia.severity  # "threat" or "blocked"
+            details["crowdsec_reason"] = ia.crowdsec_reason
+            if alert_type == "inbound_threat":
+                details["target_ip"] = ia.target_ip
+            elif alert_type == "inbound_port_scan" and ia.target_ip:
+                details["target_ip"] = ia.target_ip
+        else:
+            # Fallback: try IpMetadata for at least country + ASN
+            meta = ip_metadata.get(event.source_ip)
+            if meta:
+                details["country_code"] = meta.country_code
+                details["asn_org"] = meta.asn_org
+            details["severity"] = "probe" if alert_type == "inbound_port_scan" else "blocked"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/alerts/active — the unified alert feed
 # ---------------------------------------------------------------------------
 
@@ -3456,6 +3583,20 @@ def get_active_alerts(
     device_by_mac: dict[str, Device] = {
         d.mac_address: d for d in db.query(Device).all()
     }
+
+    # Pre-fetch enrichment data for alert detail cards
+    _ip_meta_map: dict[str, IpMetadata] = {
+        r.ip: r for r in db.query(IpMetadata).all()
+    }
+    # InboundAttack: index by source_ip (most recent per source_ip wins)
+    _inbound_attack_map: dict[str, InboundAttack] = {}
+    for ia in (
+        db.query(InboundAttack)
+        .filter(InboundAttack.last_seen >= cutoff)
+        .order_by(InboundAttack.last_seen.asc())
+        .all()
+    ):
+        _inbound_attack_map[ia.source_ip] = ia  # last write = most recent
 
     events = (
         db.query(DetectionEvent)
@@ -3551,6 +3692,14 @@ def get_active_alerts(
                     "detection_type": e.detection_type,
                 },
             }
+            # Enrich with type-specific metadata from related tables
+            _enrich_alert_details(
+                alert_type,
+                groups[key]["details"],
+                e,
+                _ip_meta_map,
+                _inbound_attack_map,
+            )
             g = groups[key]
         g["hits"] += 1
         g["total_bytes"] += e.bytes_transferred or 0
