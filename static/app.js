@@ -1681,6 +1681,8 @@ function _alertExtraBadges(a) {
       badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold">blocked</span>`);
     else if (cs)
       badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500 text-white font-bold">rejected</span>`);
+    else
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-600 text-white/70 font-medium">unknown</span>`);
     return badges.join(' ');
   }
   if (a.alert_type === 'inbound_port_scan')
