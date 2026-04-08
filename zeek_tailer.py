@@ -180,6 +180,10 @@ _IOT_DEVICE_TYPES = frozenset({
 # Ports that indicate lateral scan / exploitation when an IoT device
 # connects to another LAN host on them.
 _LATERAL_MOVEMENT_PORTS = frozenset({22, 23, 80, 443, 445, 3389, 8080, 8443})
+# HTTP(S) ports: only flag as lateral movement when connection was
+# actually established (S1/SF). Unestablished probes on these ports
+# are typically harmless discovery (mDNS, SSDP, HEOS, UPnP).
+_LATERAL_ESTABLISHED_ONLY_PORTS = frozenset({80, 443, 8080, 8443})
 
 # Ports an IoT device should never talk to externally — these are
 # strong indicators of compromise (botnet C2, spam relay, etc.)
@@ -2375,10 +2379,17 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if iot_type:
                         now_iot = time.time()
                         # Lateral movement check
+                        # For HTTP(S) ports: only alert on established connections
+                        # to avoid false positives from IoT discovery (HEOS, UPnP, etc.)
+                        _lat_established_ok = (
+                            resp_port not in _LATERAL_ESTABLISHED_ONLY_PORTS
+                            or conn_state in ("S1", "SF")
+                        )
                         if (
                             resp_ip and _is_local_ip(resp_ip)
                             and resp_port in _LATERAL_MOVEMENT_PORTS
                             and src_ip != resp_ip
+                            and _lat_established_ok
                         ):
                             dk = ("lateral", src_ip, resp_ip, resp_port)
                             if (now_iot - _iot_alert_last.get(dk, 0)) >= IOT_ALERT_DEDUP_SECONDS:
