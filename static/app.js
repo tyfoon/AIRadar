@@ -3892,40 +3892,16 @@ function _renderIotAnomalies(data) {
 // Lateral Movement Network Graph (vis.js force-directed)
 // ---------------------------------------------------------------------------
 
-// Device type → Phosphor icon class for graph nodes
-const _GRAPH_DEVICE_ICON_CLASS = {
-  phone: 'ph-device-mobile', tablet: 'ph-device-tablet', laptop: 'ph-laptop',
-  desktop: 'ph-desktop', tv: 'ph-television', speaker: 'ph-speaker-hifi',
-  printer: 'ph-printer', router: 'ph-router', netswitch: 'ph-swap',
-  ap: 'ph-wifi-high', console: 'ph-game-controller', camera: 'ph-video-camera',
-  watch: 'ph-watch', nas: 'ph-hard-drives', server: 'ph-hard-drives',
-  home: 'ph-house-line', doorbell: 'ph-bell-ringing', smoke: 'ph-fire',
-  vacuum: 'ph-broom', washer: 'ph-washing-machine', airco: 'ph-thermometer',
-  light: 'ph-lightbulb', energy: 'ph-lightning', sensor: 'ph-thermometer',
-  iot: 'ph-robot', unknown: 'ph-question', device: 'ph-circuitry',
+// Device type → emoji for graph nodes (emoji's render natively on canvas,
+// unlike Phosphor web font icons which need DOM/CSS context)
+const _GRAPH_EMOJI = {
+  phone: '📱', tablet: '📱', laptop: '💻', desktop: '🖥️', tv: '📺',
+  speaker: '🔊', printer: '🖨️', router: '🌐', netswitch: '🔀', ap: '📡',
+  console: '🎮', camera: '📹', watch: '⌚', nas: '💾', server: '🖥️',
+  home: '🏠', doorbell: '🔔', smoke: '🔥', vacuum: '🧹', washer: '🧺',
+  airco: '🌡️', light: '💡', energy: '⚡', sensor: '🌡️', iot: '🤖',
+  unknown: '❓', device: '⚙️',
 };
-
-// Render a Phosphor icon to a data URL image for vis.js nodes.
-// Uses an offscreen SVG foreignObject to leverage the already-loaded
-// Phosphor web font, then converts to a canvas data URL.
-const _graphIconCache = new Map();
-function _graphIconDataUrl(iconClass, color) {
-  const key = `${iconClass}_${color}`;
-  if (_graphIconCache.has(key)) return _graphIconCache.get(key);
-
-  // Build an SVG with foreignObject containing the Phosphor icon
-  const size = 48;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-    <foreignObject width="${size}" height="${size}">
-      <div xmlns="http://www.w3.org/1999/xhtml" style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:transparent;">
-        <i class="ph-duotone ${iconClass}" style="font-size:32px;color:${color};"></i>
-      </div>
-    </foreignObject>
-  </svg>`;
-  const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  _graphIconCache.set(key, url);
-  return url;
-}
 
 let _networkGraphInstance = null;
 
@@ -3959,30 +3935,28 @@ async function _refreshNetworkGraph() {
       const dt = dev ? _detectDeviceType(dev) : { type: n.device_class || 'Unknown' };
       const online = dev ? _isDeviceOnline(dev) : false;
 
-      // Phosphor icon for this device type
+      // Emoji icon for this device type
       const dtKey = dt.type ? dt.type.toLowerCase().replace(/\s+/g, '') : 'unknown';
-      const iconCls = _GRAPH_DEVICE_ICON_CLASS[dtKey]
-        || Object.entries(_GRAPH_DEVICE_ICON_CLASS).find(([k]) => dtKey.includes(k))?.[1]
-        || _GRAPH_DEVICE_ICON_CLASS.unknown;
+      const emoji = _GRAPH_EMOJI[dtKey]
+        || Object.entries(_GRAPH_EMOJI).find(([k]) => dtKey.includes(k))?.[1]
+        || _GRAPH_EMOJI.unknown;
 
-      const iconColor = online ? '#34d399' : '#94a3b8';
       const borderColor = online ? '#10b981' : '#475569';
       const bgColor = online ? '#0f291f' : '#1e293b';
 
       nodeSet.set(id, {
         id,
-        label: `${name}\n${n.ip}`,
+        label: `${emoji} ${name}\n${n.ip}`,
         title: `${name}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
-        image: _graphIconDataUrl(iconCls, iconColor),
-        shape: 'image',
-        size: 24,
+        shape: 'box',
         color: {
           background: bgColor,
           border: borderColor,
           highlight: { background: online ? '#10b981' : '#334155', border: borderColor },
         },
-        font: { color: '#e2e8f0', size: 11, face: 'Inter, system-ui, sans-serif', multi: 'md', vadjust: 2 },
+        font: { color: '#e2e8f0', size: 12, face: 'Inter, system-ui, sans-serif', multi: 'md' },
         borderWidth: online ? 2 : 1,
+        margin: { top: 8, bottom: 8, left: 10, right: 10 },
         shadow: { enabled: true, color: online ? 'rgba(16,185,129,0.2)' : 'rgba(0,0,0,0.3)', size: 8 },
       });
     });
