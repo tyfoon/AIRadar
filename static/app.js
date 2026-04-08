@@ -3876,6 +3876,17 @@ function _renderIotAnomalies(data) {
 // ---------------------------------------------------------------------------
 // Lateral Movement Network Graph (vis.js force-directed)
 // ---------------------------------------------------------------------------
+
+// Device type → emoji for graph node labels (vis.js doesn't support Phosphor icon fonts)
+const _GRAPH_DEVICE_EMOJI = {
+  phone: '📱', tablet: '📱', laptop: '💻', desktop: '🖥️', tv: '📺',
+  speaker: '🔊', printer: '🖨️', router: '🌐', netswitch: '🔀', ap: '📡',
+  console: '🎮', camera: '📹', watch: '⌚', nas: '💾', server: '💾',
+  home: '🏠', doorbell: '🔔', smoke: '🔥', vacuum: '🧹', washer: '🧺',
+  airco: '🌡️', light: '💡', energy: '⚡', sensor: '🌡️', iot: '🤖',
+  unknown: '❓', device: '📟',
+};
+
 let _networkGraphInstance = null;
 
 async function _refreshNetworkGraph() {
@@ -3903,25 +3914,37 @@ async function _refreshNetworkGraph() {
     data.nodes.forEach(n => {
       const id = n.ip;
       const dev = n.mac ? deviceMap[n.mac] : null;
-      const label = n.display_name || (n.hostname && !_isJunkHostname(n.hostname) ? n.hostname : null)
+      const name = n.display_name || (n.hostname && !_isJunkHostname(n.hostname) ? n.hostname : null)
                   || (n.vendor ? n.vendor : null) || n.ip;
       const dt = dev ? _detectDeviceType(dev) : { type: n.device_class || 'Unknown' };
       const online = dev ? _isDeviceOnline(dev) : false;
 
+      // Device type emoji for visual identification
+      const dtKey = dt.type ? dt.type.toLowerCase().replace(/\s+/g, '') : 'unknown';
+      // Match key to our emoji map (try exact, then partial match)
+      const emoji = _GRAPH_DEVICE_EMOJI[dtKey]
+        || Object.entries(_GRAPH_DEVICE_EMOJI).find(([k]) => dtKey.includes(k))?.[1]
+        || _GRAPH_DEVICE_EMOJI.unknown;
+
       // Node color based on online status
-      const nodeColor = online
-        ? { background: '#10b981', border: '#059669', highlight: { background: '#34d399', border: '#059669' } }
-        : { background: '#64748b', border: '#475569', highlight: { background: '#94a3b8', border: '#475569' } };
+      const borderColor = online ? '#10b981' : '#475569';
+      const bgColor = online ? '#0f291f' : '#1e293b';
 
       nodeSet.set(id, {
         id,
-        label: `${label}\n${n.ip}`,
-        title: `${label}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
-        shape: 'dot',
-        size: 20,
-        color: nodeColor,
-        font: { color: '#e2e8f0', size: 11, face: 'Inter, system-ui, sans-serif', multi: 'md' },
-        borderWidth: 2,
+        label: `${emoji} ${name}\n${n.ip}`,
+        title: `${name}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
+        shape: 'box',
+        color: {
+          background: bgColor,
+          border: borderColor,
+          highlight: { background: online ? '#10b981' : '#334155', border: borderColor },
+        },
+        font: { color: '#e2e8f0', size: 12, face: 'Inter, system-ui, sans-serif', multi: 'md' },
+        borderWidth: online ? 2 : 1,
+        borderWidthSelected: 3,
+        margin: { top: 8, bottom: 8, left: 10, right: 10 },
+        shadow: { enabled: true, color: online ? 'rgba(16,185,129,0.2)' : 'rgba(0,0,0,0.3)', size: 8 },
       });
     });
 
