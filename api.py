@@ -4902,10 +4902,13 @@ def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
             if u.get("severity") == "threat" and row.severity != "threat":
                 row.severity = "threat"
                 row.crowdsec_reason = u.get("crowdsec_reason")
-            # Escalate conn_state: established (S1/SF) overrides probes
+            # Update conn_state: set if not yet known, escalate to S1/SF
             new_cs = u.get("conn_state", "")
-            if new_cs in ("S1", "SF") and row.conn_state not in ("S1", "SF"):
-                row.conn_state = new_cs
+            if new_cs:
+                if not row.conn_state:
+                    row.conn_state = new_cs  # first value — store whatever we got
+                elif new_cs in ("S1", "SF") and row.conn_state not in ("S1", "SF"):
+                    row.conn_state = new_cs  # escalate: established overrides probes
         else:
             db.add(InboundAttack(
                 source_ip=src,
