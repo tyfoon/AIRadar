@@ -1587,7 +1587,7 @@ async function loadSummaryDashboard() {
       const meta = _alertTypeLabel(a.alert_type);
       const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
                     || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
-                    || a.mac_address;
+                    || (a.details?.ips?.[0]) || a.mac_address;
       const macTag = a.mac_address && a.mac_address !== devName
         ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1.5">${a.mac_address}</span>`
         : '';
@@ -1693,7 +1693,7 @@ function openAlertActionModal(idx) {
 
   const devName = alert.display_name || (alert.hostname && !_isJunkHostname(alert.hostname) ? alert.hostname : null)
                 || (alert.vendor ? `${_shortVendor(alert.vendor)} device` : null)
-                || alert.mac_address;
+                || (alert.details?.ips?.[0]) || alert.mac_address;
   const svcName = svcDisplayName(alert.service_or_dest) || alert.service_or_dest;
   const meta = _alertTypeLabel(alert.alert_type);
 
@@ -3150,8 +3150,8 @@ function renderBeaconAlerts(alerts, status) {
       ${alerts.map(a => {
         const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
                       || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
-                      || a.mac_address
-                      || a.source_ip;
+                      || a.source_ip
+                      || a.mac_address;
         const macTag = a.mac_address
           ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.mac_address}</span>`
           : '';
@@ -3531,7 +3531,7 @@ function _renderIotFleet(data) {
   }
 
   el.innerHTML = devices.map(d => {
-    const name = d.display_name || d.hostname || d.mac_address;
+    const name = d.display_name || d.hostname || (d.ips?.[0]?.ip) || d.mac_address;
     const healthColor = d.health === 'red' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/5'
                       : d.health === 'orange' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/5'
                       : 'border-slate-200 dark:border-white/[0.05]';
