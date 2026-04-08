@@ -1516,8 +1516,124 @@ function renderDashHealthServices() {
 
 let _currentAlertContext = null;
 let _summaryAlerts = [];
+let _beaconAlerts = [];
+let _vpnAlerts = [];
+let _iotAnomalyAlerts = [];
+let _ipsInboundAlerts = [];
 
 const _ANOMALY_ALERT_TYPES = new Set(['beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device', 'iot_lateral_movement', 'iot_suspicious_port', 'iot_new_country', 'iot_volume_spike', 'inbound_threat', 'inbound_port_scan']);
+
+// ---------------------------------------------------------------------------
+// Shared alert card builder — used by Summary + all detail pages
+// ---------------------------------------------------------------------------
+function _renderAlertCard(a, idx, opts) {
+  opts = opts || {};
+  const showDelete = opts.showDelete || false;
+  const onDelete = opts.onDelete || '';
+  const isDismissed = opts.isDismissed || false;
+  const cardIdPrefix = opts.cardIdPrefix || 'alert-card-';
+  const alertsArray = opts.alertsArray || '_summaryAlerts';
+  const actionsIdPrefix = opts.actionsIdPrefix || 'alert-actions-';
+  const customSnoozePrefix = opts.customSnoozePrefix || 'custom-snooze-';
+  const customSnoozeInputPrefix = opts.customSnoozeInputPrefix || 'custom-snooze-input-';
+  const refreshFn = opts.refreshFn || '';
+
+  const meta = _alertTypeLabel(a.alert_type);
+  const _dev = a.mac_address ? deviceMap[a.mac_address] : null;
+  const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
+                || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
+                || (a.details?.ips?.[0]) || (_dev ? _latestIp(_dev) : null) || a.mac_address || a.details?.source_ip || 'Unknown';
+  const _dt = _dev ? _detectDeviceType(_dev) : { icon: PH_ICON.unknown, type: 'Unknown' };
+  const _online = _dev ? _isDeviceOnline(_dev) : false;
+  const devTypeIcon = _dev ? _deviceTypeIcon20(_dt, _online) : '';
+  const isAnomaly = _ANOMALY_ALERT_TYPES.has(a.alert_type);
+
+  // Border / background
+  let borderClass;
+  if (isDismissed) {
+    borderClass = 'border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02] opacity-50';
+  } else if (isAnomaly) {
+    borderClass = 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10';
+  } else {
+    borderClass = 'border-slate-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]';
+  }
+
+  // Icon
+  const isAnomalyIcon = isAnomaly || !a.service_or_dest;
+  let iconHtml;
+  if (isAnomalyIcon) {
+    iconHtml = `<div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">${meta.icon}</div>`;
+  } else {
+    const svc = a.service_or_dest;
+    const logoDomain = (SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com');
+    const fallbackColor = svcColor(svc);
+    const fallbackLetter = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
+    iconHtml = `<div class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 overflow-hidden">
+      <img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="${svc}"
+        style="width:28px;height:28px;object-fit:contain;"
+        onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fallbackColor};color:white;font-weight:700;font-size:14px;\\'>${fallbackLetter}</span>'"/>
+    </div>`;
+  }
+
+  // Dismissed badge
+  const dismissedBadge = isDismissed
+    ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium">dismissed</span>'
+    : '';
+
+  // Delete button
+  const deleteBtn = showDelete
+    ? `<button onclick="${onDelete}" title="Permanently remove"
+              class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-700/40 text-red-500 dark:text-red-400 flex items-center justify-center transition-colors">
+        <i class="ph-duotone ph-trash text-sm"></i>
+      </button>`
+    : '';
+
+  return `
+    <div id="${cardIdPrefix}${idx}" class="${borderClass} border rounded-xl p-4 transition-all" data-alert-type="${a.alert_type}">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          ${iconHtml}
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              ${devTypeIcon}
+              <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
+              ${_alertExtraBadges(a)}
+              ${dismissedBadge}
+            </div>
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">${_alertDetailLine(a)}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button onclick="_cardDismiss(${idx}, '${alertsArray}', '${cardIdPrefix}'${refreshFn ? ", " + refreshFn : ''})" title="Dismiss"
+                  class="w-8 h-8 rounded-lg bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 border border-green-200 dark:border-green-700/40 text-green-600 dark:text-green-400 flex items-center justify-center transition-colors">
+            <i class="ph-duotone ph-check text-sm"></i>
+          </button>
+          ${deleteBtn}
+          <button onclick="_toggleCardActions('${actionsIdPrefix}${idx}')" title="${t('summary.review') || 'More actions'}"
+                  class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors">
+            <i class="ph ph-dots-three text-sm"></i>
+          </button>
+        </div>
+      </div>
+      <div id="${actionsIdPrefix}${idx}" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button onclick="_cardSnooze(${idx}, 1, '${alertsArray}', '${cardIdPrefix}'${refreshFn ? ", " + refreshFn : ''})" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">Snooze 1h</button>
+          <button onclick="_cardSnooze(${idx}, 4, '${alertsArray}', '${cardIdPrefix}'${refreshFn ? ", " + refreshFn : ''})" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">4h</button>
+          <button onclick="_cardSnooze(${idx}, 8, '${alertsArray}', '${cardIdPrefix}'${refreshFn ? ", " + refreshFn : ''})" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">8h</button>
+          <button onclick="_toggleCardCustomSnooze('${customSnoozePrefix}${idx}')" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph ph-clock text-xs"></i> Custom</button>
+          <span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
+          <button onclick="_cardWhitelist(${idx}, '${alertsArray}', '${cardIdPrefix}'${refreshFn ? ", " + refreshFn : ''})" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-[11px] font-medium transition-colors">${t('alertModal.ignoreForever') || 'Permanent ignore'}</button>
+          ${!isAnomaly ? `<span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span><button onclick="_cardNavigateToRule(${idx}, '${alertsArray}')" class="px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-700/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph-duotone ph-shield-check text-xs"></i> Set rule</button>` : ''}
+        </div>
+        <div id="${customSnoozePrefix}${idx}" class="hidden mt-2 flex items-center gap-2">
+          <span class="text-[11px] text-slate-500 dark:text-slate-500">Snooze tot:</span>
+          <input type="datetime-local" id="${customSnoozeInputPrefix}${idx}" class="bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:border-amber-400 dark:focus:border-amber-500/50" />
+          <button onclick="_cardSnoozeCustom(${idx}, '${alertsArray}', '${cardIdPrefix}', '${customSnoozeInputPrefix}'${refreshFn ? ", " + refreshFn : ''})" class="px-2.5 py-1 rounded-md bg-amber-500 dark:bg-amber-600 hover:bg-amber-400 dark:hover:bg-amber-500 text-white text-[11px] font-medium transition-colors">Set</button>
+        </div>
+      </div>
+    </div>`;
+}
 
 function _alertTypeLabel(type) {
   // Icons are HTML strings (Phosphor duotone). Callers must inject
@@ -1776,87 +1892,9 @@ async function loadSummaryDashboard() {
       return;
     }
 
-    container.innerHTML = _summaryAlerts.map((a, idx) => {
-      const meta = _alertTypeLabel(a.alert_type);
-      const _dev = a.mac_address ? deviceMap[a.mac_address] : null;
-      const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
-                    || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
-                    || (a.details?.ips?.[0]) || (_dev ? _latestIp(_dev) : null) || a.mac_address;
-      // Device type icon with online/offline indicator (same as device page)
-      const _dt = _dev ? _detectDeviceType(_dev) : { icon: PH_ICON.unknown, type: 'Unknown' };
-      const _online = _dev ? _isDeviceOnline(_dev) : false;
-      const devTypeIcon = _dev ? _deviceTypeIcon20(_dt, _online) : '';
-      const isAnomaly = _ANOMALY_ALERT_TYPES.has(a.alert_type);
-      const borderClass = isAnomaly
-        ? 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10'
-        : 'border-slate-200 dark:border-white/[0.05] bg-white dark:bg-white/[0.03]';
-      // Icon priority: for service-scoped alerts (AI/cloud/tracker/etc.)
-      // show the product's own logo via Google's favicon service — same
-      // brand-icon source used throughout the UI (svcLogo()), but sized
-      // up to fit the 40×40 card slot. Anomaly alerts (beaconing, VPN,
-      // stealth tunnel) aren't tied to a product, so those keep the
-      // alert-type emoji.
-      const isAnomalyIcon = isAnomaly || !a.service_or_dest;
-      let iconHtml;
-      if (isAnomalyIcon) {
-        iconHtml = `<div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">${meta.icon}</div>`;
-      } else {
-        const svc = a.service_or_dest;
-        const logoDomain = (SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com');
-        const fallbackColor = svcColor(svc);
-        const fallbackLetter = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
-        // 28px icon inside a 40px white tile with subtle border, so the
-        // logo reads clearly against both light and dark card backgrounds.
-        iconHtml = `<div class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 overflow-hidden">
-          <img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="${svc}"
-            style="width:28px;height:28px;object-fit:contain;"
-            onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fallbackColor};color:white;font-weight:700;font-size:14px;\\'>${fallbackLetter}</span>'"/>
-        </div>`;
-      }
-      return `
-        <div id="alert-card-${idx}" class="${borderClass} border rounded-xl p-4 transition-all">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-              ${iconHtml}
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 flex-wrap">
-                  ${devTypeIcon}
-                  <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
-                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
-                  ${_alertExtraBadges(a)}
-                </div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">${_alertDetailLine(a)}</div>
-              </div>
-            </div>
-            <div class="flex items-center gap-1.5 flex-shrink-0">
-              <button onclick="_inlineDismiss(${idx})" title="Dismiss"
-                      class="w-8 h-8 rounded-lg bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 border border-green-200 dark:border-green-700/40 text-green-600 dark:text-green-400 flex items-center justify-center transition-colors">
-                <i class="ph-duotone ph-check text-sm"></i>
-              </button>
-              <button onclick="_toggleInlineActions(${idx})" title="${t('summary.review') || 'More actions'}"
-                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors">
-                <i class="ph ph-dots-three text-sm"></i>
-              </button>
-            </div>
-          </div>
-          <div id="alert-actions-${idx}" class="hidden mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.05]">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <button onclick="_inlineSnooze(${idx}, 1)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">Snooze 1h</button>
-              <button onclick="_inlineSnooze(${idx}, 4)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">4h</button>
-              <button onclick="_inlineSnooze(${idx}, 8)" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors">8h</button>
-              <button onclick="_toggleCustomSnooze(${idx})" class="px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph ph-clock text-xs"></i> Custom</button>
-              <span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
-              <button onclick="_inlineWhitelist(${idx})" class="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-[11px] font-medium transition-colors">${t('alertModal.ignoreForever') || 'Permanent ignore'}</button>
-              ${!_ANOMALY_ALERT_TYPES.has(a.alert_type) ? `<span class="text-slate-300 dark:text-slate-700 mx-0.5">|</span><button onclick="_navigateToRule(${idx})" class="px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-700/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium transition-colors inline-flex items-center gap-1"><i class="ph-duotone ph-shield-check text-xs"></i> Set rule</button>` : ''}
-            </div>
-            <div id="custom-snooze-${idx}" class="hidden mt-2 flex items-center gap-2">
-              <span class="text-[11px] text-slate-500 dark:text-slate-500">Snooze tot:</span>
-              <input type="datetime-local" id="custom-snooze-input-${idx}" class="bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-md px-2 py-1 text-[11px] text-slate-700 dark:text-slate-300 focus:outline-none focus:border-amber-400 dark:focus:border-amber-500/50" />
-              <button onclick="_inlineSnoozeCustom(${idx})" class="px-2.5 py-1 rounded-md bg-amber-500 dark:bg-amber-600 hover:bg-amber-400 dark:hover:bg-amber-500 text-white text-[11px] font-medium transition-colors">Set</button>
-            </div>
-          </div>
-        </div>`;
-    }).join('');
+    container.innerHTML = _summaryAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+      alertsArray: '_summaryAlerts',
+    })).join('');
   } catch (err) {
     console.error('loadSummaryDashboard:', err);
     container.innerHTML = `
@@ -2077,16 +2115,33 @@ window.setAlertAction = setAlertAction;
 window.setAlertScope = setAlertScope;
 
 // ---------------------------------------------------------------------------
-// Inline alert actions (no modal needed)
+// Inline alert actions (no modal needed) — generic card helpers
 // ---------------------------------------------------------------------------
 
-function _toggleInlineActions(idx) {
-  const el = document.getElementById(`alert-actions-${idx}`);
+function _toggleCardActions(id) {
+  const el = document.getElementById(id);
   if (el) el.classList.toggle('hidden');
 }
 
-async function _inlineAlertAction(idx, body) {
-  const card = document.getElementById(`alert-card-${idx}`);
+function _toggleCardCustomSnooze(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('hidden');
+}
+
+function _resolveAlertsArray(name) {
+  const map = {
+    '_summaryAlerts': _summaryAlerts,
+    '_beaconAlerts': _beaconAlerts,
+    '_vpnAlerts': _vpnAlerts,
+    '_iotAnomalyAlerts': _iotAnomalyAlerts,
+    '_ipsInboundAlerts': _ipsInboundAlerts,
+  };
+  return map[name] || _summaryAlerts;
+}
+
+async function _cardAlertAction(idx, body, cardIdPrefix, refreshFn) {
+  const prefix = cardIdPrefix || 'alert-card-';
+  const card = document.getElementById(`${prefix}${idx}`);
   try {
     const res = await fetch('/api/exceptions', {
       method: 'POST',
@@ -2101,46 +2156,49 @@ async function _inlineAlertAction(idx, body) {
       setTimeout(() => { card.style.display = 'none'; }, 200);
     }
     showToast(t('alertModal.success') || 'Alert processed', 'success');
+    // After fade, refresh the section if a refresh function is provided
+    if (refreshFn) {
+      setTimeout(() => refreshFn(), 250);
+    }
   } catch (err) {
-    console.error('_inlineAlertAction:', err);
+    console.error('_cardAlertAction:', err);
     showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
   }
 }
 
-function _inlineDismiss(idx) {
-  const a = _summaryAlerts[idx]; if (!a) return;
-  _inlineAlertAction(idx, {
+function _cardDismiss(idx, arrayName, cardIdPrefix, refreshFn) {
+  const arr = _resolveAlertsArray(arrayName);
+  const a = arr[idx]; if (!a) return;
+  _cardAlertAction(idx, {
     mac_address: a.mac_address, alert_type: a.alert_type,
-    destination: a.service_or_dest,
-    expires_at: null,
-  });
+    destination: a.service_or_dest, expires_at: null,
+  }, cardIdPrefix, refreshFn);
 }
 
-function _inlineSnooze(idx, hours) {
-  const a = _summaryAlerts[idx]; if (!a) return;
-  _inlineAlertAction(idx, {
+function _cardSnooze(idx, hours, arrayName, cardIdPrefix, refreshFn) {
+  const arr = _resolveAlertsArray(arrayName);
+  const a = arr[idx]; if (!a) return;
+  _cardAlertAction(idx, {
     mac_address: a.mac_address, alert_type: a.alert_type,
     destination: a.service_or_dest,
     expires_at: new Date(Date.now() + hours * 3600 * 1000).toISOString(),
-  });
+  }, cardIdPrefix, refreshFn);
 }
 
-function _inlineWhitelist(idx) {
-  const a = _summaryAlerts[idx]; if (!a) return;
-  _inlineAlertAction(idx, {
+function _cardWhitelist(idx, arrayName, cardIdPrefix, refreshFn) {
+  const arr = _resolveAlertsArray(arrayName);
+  const a = arr[idx]; if (!a) return;
+  _cardAlertAction(idx, {
     mac_address: a.mac_address, alert_type: a.alert_type,
     destination: a.service_or_dest, expires_at: null,
-  });
+  }, cardIdPrefix, refreshFn);
 }
 
-function _toggleCustomSnooze(idx) {
-  const el = document.getElementById(`custom-snooze-${idx}`);
-  if (el) el.classList.toggle('hidden');
-}
-
-function _inlineSnoozeCustom(idx) {
-  const a = _summaryAlerts[idx]; if (!a) return;
-  const input = document.getElementById(`custom-snooze-input-${idx}`);
+function _cardSnoozeCustom(idx, arrayName, cardIdPrefix, inputPrefix, refreshFn) {
+  const arr = _resolveAlertsArray(arrayName);
+  const a = arr[idx]; if (!a) return;
+  const pfx = inputPrefix || 'custom-snooze-input-';
+  const input = document.getElementById(`${pfx}${idx}`);
   if (!input || !input.value) {
     showToast('Please select a date and time', 'warning');
     return;
@@ -2150,21 +2208,21 @@ function _inlineSnoozeCustom(idx) {
     showToast('Snooze time must be in the future', 'warning');
     return;
   }
-  _inlineAlertAction(idx, {
+  _cardAlertAction(idx, {
     mac_address: a.mac_address, alert_type: a.alert_type,
     destination: a.service_or_dest,
     expires_at: expiresAt,
-  });
+  }, cardIdPrefix, refreshFn);
 }
 
-function _navigateToRule(idx) {
-  const a = _summaryAlerts[idx]; if (!a) return;
+function _cardNavigateToRule(idx, arrayName) {
+  const arr = _resolveAlertsArray(arrayName);
+  const a = arr[idx]; if (!a) return;
   if (a.mac_address) {
     _rulesScopeMode = 'device';
     _rulesScopeMac = a.mac_address;
   }
   navigate('rules');
-  // Give the Rules page time to render, then highlight the service
   if (a.service_or_dest) {
     setTimeout(() => {
       showToast(`Set a rule for ${svcDisplayName(a.service_or_dest) || a.service_or_dest}`, 'info');
@@ -2172,6 +2230,23 @@ function _navigateToRule(idx) {
   }
 }
 
+// Keep backward-compatible aliases for Summary page
+function _toggleInlineActions(idx) { _toggleCardActions(`alert-actions-${idx}`); }
+function _inlineDismiss(idx) { _cardDismiss(idx, '_summaryAlerts', 'alert-card-'); }
+function _inlineSnooze(idx, hours) { _cardSnooze(idx, hours, '_summaryAlerts', 'alert-card-'); }
+function _inlineWhitelist(idx) { _cardWhitelist(idx, '_summaryAlerts', 'alert-card-'); }
+function _toggleCustomSnooze(idx) { _toggleCardCustomSnooze(`custom-snooze-${idx}`); }
+function _inlineSnoozeCustom(idx) { _cardSnoozeCustom(idx, '_summaryAlerts', 'alert-card-', 'custom-snooze-input-'); }
+function _navigateToRule(idx) { _cardNavigateToRule(idx, '_summaryAlerts'); }
+function _inlineAlertAction(idx, body) { _cardAlertAction(idx, body); }
+
+window._toggleCardActions = _toggleCardActions;
+window._toggleCardCustomSnooze = _toggleCardCustomSnooze;
+window._cardDismiss = _cardDismiss;
+window._cardSnooze = _cardSnooze;
+window._cardWhitelist = _cardWhitelist;
+window._cardSnoozeCustom = _cardSnoozeCustom;
+window._cardNavigateToRule = _cardNavigateToRule;
 window._toggleInlineActions = _toggleInlineActions;
 window._inlineDismiss = _inlineDismiss;
 window._inlineSnooze = _inlineSnooze;
@@ -3354,6 +3429,7 @@ function renderBeaconAlerts(alerts, status) {
   if (!body || !badge) return;
 
   if (!alerts || alerts.length === 0) {
+    _beaconAlerts = [];
     badge.textContent = t('beacon.clear') || 'All clear';
     badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium';
     body.innerHTML = `
@@ -3365,21 +3441,49 @@ function renderBeaconAlerts(alerts, status) {
     return;
   }
 
-  // Threats found — show a prominent red alert list
-  const activeCount = alerts.filter(a => !a.dismissed).length;
+  // Normalize beacon alerts to unified format
+  _beaconAlerts = alerts.map(a => ({
+    alert_type: 'beaconing_threat',
+    mac_address: a.mac_address,
+    display_name: a.display_name,
+    hostname: a.hostname,
+    vendor: a.vendor,
+    service_or_dest: a.dest_ip,
+    hits: a.total_hits || a.hits,
+    total_bytes: a.total_bytes,
+    timestamp: a.last_seen,
+    dismissed: a.dismissed,
+    _src_ip: a.source_ip,
+    _dst_ip: a.dest_ip,
+    details: {
+      source_ip: a.source_ip,
+      dest_ip: a.dest_ip,
+      dest_country: a.dest_country,
+      dest_asn_org: a.dest_asn_org,
+      dest_sni: a.dest_sni || a.dest_ptr,
+      beacon_score: a.score,
+      geo_connections: a.total_hits,
+      geo_bytes: a.total_bytes,
+    },
+  }));
+
+  // Sort: active first, then dismissed, each by timestamp desc
+  _beaconAlerts.sort((a, b) => {
+    if (a.dismissed !== b.dismissed) return a.dismissed ? 1 : -1;
+    return (b.timestamp || '').localeCompare(a.timestamp || '');
+  });
+
+  const activeCount = _beaconAlerts.filter(a => !a.dismissed).length;
   if (activeCount > 0) {
     badge.textContent = `${activeCount} ${t('beacon.detected') || 'threats'}`;
     badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse';
   } else {
-    badge.textContent = `${alerts.length} dismissed`;
+    badge.textContent = `${_beaconAlerts.length} dismissed`;
     badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium';
   }
 
-  const activeAlerts = alerts.filter(a => !a.dismissed);
-  const dismissedAlerts = alerts.filter(a => a.dismissed);
-
   body.innerHTML = `
-    ${activeAlerts.length > 0 ? `<div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
+    ${activeCount > 0 ? `<div class="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 flex items-start gap-2">
       <i class="ph-duotone ph-warning text-base mt-0.5 text-red-500 flex-shrink-0"></i>
       <p class="text-xs text-red-700 dark:text-red-300">
         <span class="font-semibold">${t('beacon.warning') || 'Warning'}:</span>
@@ -3387,61 +3491,17 @@ function renderBeaconAlerts(alerts, status) {
       </p>
     </div>` : ''}
     <div class="space-y-2">
-      ${alerts.map(a => {
-        const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
-                      || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
-                      || a.source_ip
-                      || a.mac_address;
-        const macTag = a.mac_address
-          ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.mac_address}</span>`
-          : '';
-        const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
-        const isDismissed = a.dismissed;
-        const cardBg = isDismissed
-          ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06] opacity-50'
-          : 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-700/30 hover:bg-red-100/60 dark:hover:bg-red-900/20';
-        const dismissBadge = isDismissed
-          ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium">dismissed</span>'
-          : '';
-        const srcIpColor = isDismissed ? 'text-slate-400 dark:text-slate-500' : 'text-red-600 dark:text-red-400';
-        const icon = isDismissed ? '<i class="ph-duotone ph-check-circle text-lg text-slate-400"></i>' : '<span class="text-lg">🚨</span>';
-        const scoreVal = a.score || 0;
-        const scoreColor = scoreVal >= 90 ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30'
-          : scoreVal >= 80 ? 'text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/30'
-          : 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30';
-        const scoreBadge = scoreVal > 0
-          ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${scoreColor} font-bold tabular-nums">${scoreVal}</span>`
-          : '';
-        const deleteBtn = `<button onclick="_deleteBeaconAlert('${a.source_ip}','${a.dest_ip}')" class="mt-1 w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Permanently remove"><i class="ph-duotone ph-trash text-sm"></i></button>`;
-        return `<div class="flex items-center justify-between px-3 py-2 rounded-lg border ${cardBg} transition-colors">
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            ${icon}
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${devName}</span>
-                ${macTag}
-                ${scoreBadge}
-                ${dismissBadge}
-              </div>
-              <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                <span class="font-mono ${srcIpColor}">${a.source_ip}</span>
-                <span class="mx-1">→</span>
-                <span class="font-mono ${srcIpColor}">${a.dest_ip}</span>
-              </div>
-              <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
-                ${a.dest_asn_org ? `<span>${a.dest_country ? _flagEmoji(a.dest_country) + ' ' : ''}${a.dest_asn_org}</span>` : ''}
-                ${a.dest_sni ? `<span class="font-mono">${a.dest_sni}</span>` : ''}
-                ${a.total_hits ? `<span>${formatNumber(a.total_hits)} connections · ${a.total_bytes > 1048576 ? (a.total_bytes/1048576).toFixed(1) + ' MB' : Math.round(a.total_bytes/1024) + ' KB'}</span>` : ''}
-              </div>
-            </div>
-          </div>
-          <div class="text-right flex-shrink-0 ml-3">
-            <div class="text-[10px] text-slate-400 dark:text-slate-500">${t('beacon.lastSeen') || 'Last seen'}</div>
-            <div class="text-[11px] tabular-nums text-slate-600 dark:text-slate-300">${lastSeen}</div>
-            ${deleteBtn}
-          </div>
-        </div>`;
-      }).join('')}
+      ${_beaconAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+        showDelete: true,
+        onDelete: `_deleteBeaconAlert('${a._src_ip}','${a._dst_ip}')`,
+        isDismissed: a.dismissed,
+        cardIdPrefix: 'beacon-card-',
+        alertsArray: '_beaconAlerts',
+        actionsIdPrefix: 'beacon-actions-',
+        customSnoozePrefix: 'beacon-custom-snooze-',
+        customSnoozeInputPrefix: 'beacon-custom-snooze-input-',
+        refreshFn: 'loadIpsStatus',
+      })).join('')}
     </div>
     ${_beaconStatusFooter(status)}`;
 }
@@ -3504,6 +3564,7 @@ function renderVpnAlerts(alerts) {
   statCount.textContent = count;
 
   if (count === 0) {
+    _vpnAlerts = [];
     statLabel.textContent = t('priv.noTunnels');
     statLabel.className = 'text-emerald-500 dark:text-emerald-400';
     statCard.className = statCard.className.replace(/border-orange-\S+/g, '').replace(/dark:border-orange-\S+/g, '');
@@ -3529,57 +3590,74 @@ function renderVpnAlerts(alerts) {
     statCard.className += ' border-orange-500/40 dark:border-orange-500/30';
   }
 
+  // Normalize VPN alerts to unified format
+  _vpnAlerts = alerts.map(a => {
+    const isStealth = a.is_stealth;
+    const vpnSvc = a.vpn_service || 'vpn_active';
+    // Parse the display name from vpn_service (e.g. "vpn_nordvpn" → "NordVPN")
+    const parsedName = vpnSvc.startsWith('vpn_') ? svcDisplayName(vpnSvc) || vpnSvc.replace('vpn_', '') : vpnSvc;
+    return {
+      alert_type: isStealth ? 'stealth_vpn_tunnel' : 'vpn_tunnel',
+      mac_address: a.mac_address,
+      display_name: a.display_name,
+      hostname: a.hostname,
+      vendor: a.vendor,
+      service_or_dest: vpnSvc,
+      hits: a.hits,
+      total_bytes: a.total_bytes,
+      timestamp: a.last_seen,
+      dismissed: a.dismissed || false,
+      _source_ip: a.source_ip,
+      _vpn_service: vpnSvc,
+      details: {
+        source_ip: a.source_ip,
+        vpn_service: parsedName,
+        protocol: isStealth ? (a.vpn_service || 'stealth') : undefined,
+      },
+    };
+  });
+
+  // Sort: active first, then dismissed, each by timestamp desc
+  _vpnAlerts.sort((a, b) => {
+    if (a.dismissed !== b.dismissed) return a.dismissed ? 1 : -1;
+    return (b.timestamp || '').localeCompare(a.timestamp || '');
+  });
+
   if (body) body.innerHTML = `
-    <div class="overflow-x-auto max-h-64 overflow-y-auto">
-      <table class="w-full text-sm text-left">
-        <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] sticky top-0 bg-white dark:bg-[#0B0C10]">
-          <tr>
-            <th class="py-3 px-4 font-medium">${t('priv.thDevice')}</th>
-            <th class="py-3 px-4 font-medium">${t('priv.thVpnService')}</th>
-            <th class="py-3 px-4 font-medium">${t('priv.thData')}</th>
-            <th class="py-3 px-4 font-medium">${t('priv.thEvents')}</th>
-            <th class="py-3 px-4 font-medium">${t('priv.thLastSeen')}</th>
-          </tr>
-        </thead>
-        <tbody class="text-slate-600 dark:text-slate-300">
-          ${alerts.map(a => {
-            const name = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null) || a.source_ip;
-            const dtTag = typeof deviceTypeTag === 'function' ? deviceTypeTag(a) : '';
-            const bytes = a.total_bytes >= 1048576
-              ? (a.total_bytes / 1048576).toFixed(1) + ' MB'
-              : (a.total_bytes / 1024).toFixed(0) + ' KB';
-            // Stealth detection: if the aggregator saw stealth_vpn_tunnel events,
-            // show a distinct red badge. Mixed traffic shows both badges.
-            let serviceBadges = '';
-            if (a.is_stealth) {
-              serviceBadges = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/15 text-red-600 dark:bg-red-500/25 dark:text-red-300 border border-red-500/30" title="${t('priv.stealthVpnHint') || 'Tunneling protocol that evades normal VPN detection (AYIYA, Teredo, GRE, DPD heuristic)'}">🥷 ${t('priv.stealthVpn') || 'Stealth tunnel'}</span>`;
-              if (a.regular_hits > 0) {
-                serviceBadges += ` <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`;
-              }
-            } else if (a.vpn_service && a.vpn_service.startsWith('vpn_') && a.vpn_service !== 'vpn_active') {
-              serviceBadges = badge(a.vpn_service);
-            } else {
-              serviceBadges = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">🔒 ${t('priv.encryptedTunnel')}</span>`;
-            }
-            const rowClass = a.is_stealth
-              ? 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-red-50/50 dark:hover:bg-red-900/10 bg-red-50/30 dark:bg-red-900/5'
-              : 'border-b border-slate-100 dark:border-white/[0.04] hover:bg-orange-50/50 dark:hover:bg-orange-900/10';
-            return `<tr class="${rowClass}">
-              <td class="py-3 px-4">
-                <div class="font-medium text-xs">${name}</div>
-                ${dtTag}
-                <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1">${a.source_ip}</span>
-              </td>
-              <td class="py-3 px-4">${serviceBadges}</td>
-              <td class="py-3 px-4 text-xs tabular-nums font-medium text-orange-600 dark:text-orange-400">${bytes}</td>
-              <td class="py-3 px-4 text-xs tabular-nums">${a.hits}</td>
-              <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">${fmtTime(a.last_seen)}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+    <div class="space-y-2">
+      ${_vpnAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+        showDelete: true,
+        onDelete: `_deleteVpnAlert(${idx})`,
+        isDismissed: a.dismissed,
+        cardIdPrefix: 'vpn-card-',
+        alertsArray: '_vpnAlerts',
+        actionsIdPrefix: 'vpn-actions-',
+        customSnoozePrefix: 'vpn-custom-snooze-',
+        customSnoozeInputPrefix: 'vpn-custom-snooze-input-',
+        refreshFn: 'refreshPrivacy',
+      })).join('')}
     </div>`;
 }
+
+async function _deleteVpnAlert(idx) {
+  const a = _vpnAlerts[idx]; if (!a) return;
+  const confirmed = await styledConfirm(
+    t('priv.deleteVpnTitle') || 'Delete VPN alert',
+    t('priv.deleteVpnConfirm') || 'Permanently delete this VPN tunnel alert?'
+  );
+  if (!confirmed) return;
+  try {
+    const params = new URLSearchParams({ source_ip: a._source_ip, service: a._vpn_service });
+    const res = await fetch(`/api/vpn-alert?${params}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast(t('priv.vpnDeleted') || 'VPN alert deleted', 'success');
+    await refreshPrivacy();
+  } catch (err) {
+    console.error('_deleteVpnAlert:', err);
+    showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+window._deleteVpnAlert = _deleteVpnAlert;
 
 // Blocked domains panel
 function toggleBlockedDomains() {
@@ -3701,10 +3779,48 @@ function _renderIotAnomalies(data) {
   if (!el) return;
   const anomalies = data.anomalies || [];
   if (anomalies.length === 0) {
+    _iotAnomalyAlerts = [];
     el.innerHTML = '';
     return;
   }
-  const activeCount = anomalies.filter(a => !a.dismissed).length;
+
+  // Normalize IoT anomalies to unified alert format
+  _iotAnomalyAlerts = anomalies.map(a => {
+    const detail = a.detail || '';
+    const details = { source_ip: a.source_ip };
+    // Parse enrichment from detail string
+    if ((a.detection_type === 'iot_lateral_movement' || a.detection_type === 'iot_suspicious_port') && detail) {
+      const portMatch = detail.match(/(\d+)/);
+      if (portMatch) details.port_label = ':' + portMatch[1];
+    }
+    if (a.detection_type === 'iot_new_country' && detail) {
+      const ccMatch = detail.replace('country_', '').toUpperCase();
+      details.country_code = ccMatch;
+    }
+    return {
+      alert_type: a.detection_type,
+      mac_address: a.mac,
+      display_name: a.display_name,
+      hostname: a.hostname,
+      service_or_dest: detail,
+      hits: a.hits,
+      total_bytes: a.total_bytes,
+      timestamp: a.last_seen,
+      dismissed: a.dismissed,
+      _source_ip: a.source_ip,
+      _detection_type: a.detection_type,
+      _detail: detail,
+      details: details,
+    };
+  });
+
+  // Sort: active first, then dismissed, each by timestamp desc
+  _iotAnomalyAlerts.sort((a, b) => {
+    if (a.dismissed !== b.dismissed) return a.dismissed ? 1 : -1;
+    return (b.timestamp || '').localeCompare(a.timestamp || '');
+  });
+
+  const activeCount = _iotAnomalyAlerts.filter(a => !a.dismissed).length;
   const headerColor = activeCount > 0
     ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-700/30'
     : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]';
@@ -3719,44 +3835,17 @@ function _renderIotAnomalies(data) {
         ${activeCount > 0 ? `<span class="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white font-bold">${activeCount}</span>` : ''}
       </h3>
       <div class="space-y-2">
-        ${anomalies.map(a => {
-          const devName = a.display_name || a.hostname || a.mac || a.source_ip;
-          const _iotTypeLabels = {
-            'iot_lateral_movement': { label: t('iot.lateralMovement') || 'Lateral Movement', cls: 'text-red-600 dark:text-red-400' },
-            'iot_suspicious_port':  { label: t('iot.suspiciousPort') || 'Suspicious Port',   cls: 'text-orange-600 dark:text-orange-400' },
-            'iot_new_country':      { label: 'New Country',      cls: 'text-red-600 dark:text-red-400' },
-            'iot_volume_spike':     { label: 'Volume Spike',     cls: 'text-orange-600 dark:text-orange-400' },
-          };
-          const _tl = _iotTypeLabels[a.detection_type] || { label: a.detection_type, cls: 'text-slate-600' };
-          const isDismissed = a.dismissed;
-          const typeLabel = isDismissed
-            ? `<span class="text-slate-400 dark:text-slate-500 font-semibold">${_tl.label}</span>`
-            : `<span class="${_tl.cls} font-semibold">${_tl.label}</span>`;
-          const cardBorder = isDismissed
-            ? 'border-slate-200 dark:border-white/[0.06] opacity-50'
-            : 'border-red-100 dark:border-red-800/30';
-          const cardIcon = isDismissed
-            ? '<i class="ph-duotone ph-check-circle text-lg text-slate-400 flex-shrink-0"></i>'
-            : '<i class="ph-duotone ph-warning text-lg text-red-500 flex-shrink-0"></i>';
-          const dismissBadge = isDismissed
-            ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 font-medium ml-1">dismissed</span>'
-            : '';
-          const detail = a.detail || '';
-          const deleteBtn = `<button onclick="_deleteIotAnomaly('${a.source_ip}','${a.detection_type}','${detail.replace(/'/g, "\\'")}')" class="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0" title="Permanently remove"><i class="ph-duotone ph-trash text-sm"></i></button>`;
-          return `<div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-white/[0.03] border ${cardBorder} transition-colors">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-              ${cardIcon}
-              <div class="min-w-0">
-                <div class="text-sm font-medium text-slate-800 dark:text-white truncate">${devName}${dismissBadge}</div>
-                <div class="text-xs text-slate-500 dark:text-slate-400">${typeLabel} · ${detail} · ${a.hits} hits</div>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 flex-shrink-0 ml-2">
-              <span class="text-[10px] text-slate-400 tabular-nums">${fmtTime(a.last_seen)}</span>
-              ${deleteBtn}
-            </div>
-          </div>`;
-        }).join('')}
+        ${_iotAnomalyAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+          showDelete: true,
+          onDelete: `_deleteIotAnomaly('${a._source_ip}','${a._detection_type}','${(a._detail || '').replace(/'/g, "\\'")}')`,
+          isDismissed: a.dismissed,
+          cardIdPrefix: 'iot-anomaly-card-',
+          alertsArray: '_iotAnomalyAlerts',
+          actionsIdPrefix: 'iot-anomaly-actions-',
+          customSnoozePrefix: 'iot-anomaly-custom-snooze-',
+          customSnoozeInputPrefix: 'iot-anomaly-custom-snooze-input-',
+          refreshFn: 'refreshIot',
+        })).join('')}
       </div>
     </div>`;
 }
@@ -6673,45 +6762,62 @@ async function loadIpsStatus() {
 }
 
 function _renderIpsThreats(data) {
-  // --- Inbound Activity tab: all inbound connection attempts ---
+  // --- Inbound Activity tab: all inbound connection attempts (cards) ---
   const alertsBody = document.getElementById('ips-alerts-body');
   if (alertsBody) {
+    // Replace the table with a card container on first call
+    const tableEl = alertsBody.closest('table');
+    const containerEl = tableEl ? tableEl.parentElement : alertsBody.parentElement;
     const attacks = data.inbound_attacks || [];
     if (attacks.length === 0) {
-      alertsBody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
-        <div class="flex flex-col items-center gap-2"><i class="ph-duotone ph-shield-check text-2xl"></i><span>No inbound connection attempts detected yet.</span></div>
-      </td></tr>`;
+      _ipsInboundAlerts = [];
+      containerEl.innerHTML = `
+        <div class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+          <div class="flex flex-col items-center gap-2"><i class="ph-duotone ph-shield-check text-2xl"></i><span>No inbound connection attempts detected yet.</span></div>
+        </div>`;
     } else {
-      alertsBody.innerHTML = attacks.slice(0, 100).map(a => {
+      // Common port labels for enrichment
+      const _portLabels = { 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 443: 'HTTPS', 445: 'SMB', 3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL', 6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt', 27017: 'MongoDB' };
+
+      // Normalize inbound attacks to unified alert format
+      _ipsInboundAlerts = attacks.slice(0, 100).map(a => {
         const isThreat = a.severity === 'threat';
-        const borderClass = isThreat ? 'border-l-2 border-l-red-500' : '';
-        const sevBadge = isThreat
-          ? `<span class="px-1.5 py-0.5 text-[10px] rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">known threat</span>`
-          : `<span class="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">probe</span>`;
-        // Country flag using flag-icons CSS (same as geo traffic page)
-        const flag = a.country_code ? _flagEmoji(a.country_code) + ' ' : '';
-        const asnShort = a.asn_org ? a.asn_org.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International)\.?)+$/i, '').trim() : '';
-        const origin = `${flag}${asnShort}${a.country_code ? ' (' + a.country_code + ')' : ''}`;
-        const target = a.target_name || a.target_ip;
-        const reason = a.crowdsec_reason
-          ? a.crowdsec_reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ')
-          : (isThreat ? 'blocklist match' : 'probe / scan');
-        const lastSeen = a.last_seen ? fmtTime(a.last_seen) : '';
-        return `<tr class="border-t border-slate-100 dark:border-white/[0.04] ${borderClass}" data-severity="${a.severity}">
-          <td data-label="Source" class="py-2.5 px-4">
-            <div class="font-mono text-xs">${a.source_ip}</div>
-            <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">${origin}</div>
-          </td>
-          <td data-label="Target" class="py-2.5 px-4">
-            <div class="text-xs font-medium">${target}</div>
-            <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 tabular-nums">:${a.target_port}</div>
-          </td>
-          <td data-label="Severity" class="py-2.5 px-4 text-xs">${sevBadge}</td>
-          <td data-label="Reason" class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400">${reason}</td>
-          <td data-label="Hits" class="py-2.5 px-4 text-xs tabular-nums font-medium">${formatNumber(a.hit_count)}</td>
-          <td data-label="Last Seen" class="py-2.5 px-4 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">${lastSeen}</td>
-        </tr>`;
-      }).join('');
+        const portLabel = _portLabels[a.target_port] || `:${a.target_port}`;
+        return {
+          alert_type: isThreat ? 'inbound_threat' : 'inbound_port_scan',
+          mac_address: null,
+          service_or_dest: `inbound_${a.target_port}`,
+          hits: a.hit_count,
+          timestamp: a.last_seen,
+          dismissed: false,
+          _source_ip: a.source_ip,
+          _target_port: a.target_port,
+          details: {
+            source_ip: a.source_ip,
+            country_code: a.country_code,
+            asn_org: a.asn_org,
+            target_ip: a.target_ip || a.target_name,
+            target_port: a.target_port,
+            port_label: portLabel,
+            severity: a.severity,
+            crowdsec_reason: a.crowdsec_reason,
+          },
+        };
+      });
+
+      containerEl.innerHTML = `<div id="ips-inbound-cards" class="space-y-2 p-2">
+        ${_ipsInboundAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+          showDelete: true,
+          onDelete: `_deleteInboundAttack(${idx})`,
+          isDismissed: false,
+          cardIdPrefix: 'ips-inbound-card-',
+          alertsArray: '_ipsInboundAlerts',
+          actionsIdPrefix: 'ips-inbound-actions-',
+          customSnoozePrefix: 'ips-inbound-custom-snooze-',
+          customSnoozeInputPrefix: 'ips-inbound-custom-snooze-input-',
+          refreshFn: 'loadIpsStatus',
+        })).join('')}
+      </div>`;
     }
   }
 
@@ -6736,16 +6842,42 @@ function _renderIpsThreats(data) {
 
 function _filterIpsTable() {
   const filter = document.getElementById('ips-severity-filter')?.value || 'all';
-  const rows = document.querySelectorAll('#ips-alerts-body tr[data-severity]');
-  rows.forEach(row => {
-    if (filter === 'all' || row.dataset.severity === filter) {
-      row.style.display = '';
+  // Filter cards by data-alert-type attribute
+  const cards = document.querySelectorAll('#ips-inbound-cards > [data-alert-type]');
+  cards.forEach(card => {
+    if (filter === 'all') {
+      card.style.display = '';
+    } else if (filter === 'threat' && card.dataset.alertType === 'inbound_threat') {
+      card.style.display = '';
+    } else if (filter === 'blocked' && card.dataset.alertType === 'inbound_port_scan') {
+      card.style.display = '';
     } else {
-      row.style.display = 'none';
+      card.style.display = 'none';
     }
   });
 }
 window._filterIpsTable = _filterIpsTable;
+
+async function _deleteInboundAttack(idx) {
+  const a = _ipsInboundAlerts[idx]; if (!a) return;
+  const confirmed = await styledConfirm(
+    'Delete inbound attack',
+    'Permanently delete this inbound attack record?'
+  );
+  if (!confirmed) return;
+  try {
+    const params = new URLSearchParams({ source_ip: a._source_ip });
+    if (a._target_port != null) params.set('target_port', a._target_port);
+    const res = await fetch(`/api/inbound-attack?${params}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Inbound attack deleted', 'success');
+    await loadIpsStatus();
+  } catch (err) {
+    console.error('_deleteInboundAttack:', err);
+    showToast(`${t('alertModal.failed') || 'Failed'}: ${err.message}`, 'error');
+  }
+}
+window._deleteInboundAttack = _deleteInboundAttack;
 
 function switchIpsTab(tab) {
   const tabs = {

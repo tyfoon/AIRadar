@@ -3256,6 +3256,61 @@ def delete_iot_anomaly(
     return None
 
 
+@app.delete("/api/vpn-alert", status_code=204)
+def delete_vpn_alert(
+    source_ip: str = Query(...),
+    service: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete VPN tunnel detection events for a source_ip + service combo."""
+    deleted = db.query(DetectionEvent).filter(
+        DetectionEvent.source_ip == source_ip,
+        DetectionEvent.ai_service == service,
+        DetectionEvent.detection_type.in_(["vpn_tunnel", "stealth_vpn_tunnel"]),
+    ).delete(synchronize_session=False)
+    # Create permanent exception so they don't come back
+    dip = db.query(DeviceIP).filter(DeviceIP.ip == source_ip).first()
+    mac = dip.mac_address if dip else source_ip
+    for dtype in ["vpn_tunnel", "stealth_vpn_tunnel"]:
+        existing = db.query(AlertException).filter(
+            AlertException.mac_address == mac,
+            AlertException.alert_type == dtype,
+            AlertException.destination == service,
+            (AlertException.expires_at.is_(None)),
+        ).first()
+        if not existing:
+            db.add(AlertException(
+                mac_address=mac,
+                alert_type=dtype,
+                destination=service,
+                expires_at=None,
+                created_at=datetime.utcnow(),
+            ))
+    db.commit()
+    return None
+
+
+@app.delete("/api/inbound-attack", status_code=204)
+def delete_inbound_attack(
+    source_ip: str = Query(...),
+    target_port: int = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete inbound attack records for a source IP."""
+    q = db.query(InboundAttack).filter(InboundAttack.source_ip == source_ip)
+    if target_port is not None:
+        q = q.filter(InboundAttack.target_port == target_port)
+    q.delete(synchronize_session=False)
+    # Also delete related detection events
+    dq = db.query(DetectionEvent).filter(
+        DetectionEvent.source_ip == source_ip,
+        DetectionEvent.detection_type.in_(["inbound_threat", "inbound_port_scan"]),
+    )
+    dq.delete(synchronize_session=False)
+    db.commit()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Policy resolver + exception matcher (used by /api/alerts/active)
 # ---------------------------------------------------------------------------
