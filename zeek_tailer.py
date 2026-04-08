@@ -2381,7 +2381,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 await send_event(
                                     client,
                                     detection_type="iot_lateral_movement",
-                                    ai_service=f"lateral_{resp_port}",
+                                    ai_service=f"lateral_{resp_port}_{resp_ip}",
                                     source_ip=src_ip,
                                     bytes_transferred=0,
                                     category="security",

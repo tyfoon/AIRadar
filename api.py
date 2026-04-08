@@ -3312,6 +3312,104 @@ def delete_inbound_attack(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/network/graph — lateral movement network graph data
+# ---------------------------------------------------------------------------
+
+@app.get("/api/network/graph")
+def get_network_graph(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return nodes (devices) and edges (lateral movement connections) for
+    a force-directed network graph visualization.
+
+    Edges are derived from iot_lateral_movement DetectionEvents.
+    Nodes include all devices involved in lateral movement, plus the
+    router/gateway as the central hub.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    # Fetch lateral movement events
+    events = (
+        db.query(DetectionEvent)
+        .filter(
+            DetectionEvent.detection_type == "iot_lateral_movement",
+            DetectionEvent.timestamp >= cutoff,
+        )
+        .order_by(DetectionEvent.timestamp.desc())
+        .all()
+    )
+
+    # Build IP → device lookup
+    dev_ip_rows = db.query(DeviceIP).all()
+    ip_to_mac = {d.ip: d.mac_address for d in dev_ip_rows}
+    ip_to_dev = {}
+    for dip in dev_ip_rows:
+        if dip.device:
+            ip_to_dev[dip.ip] = dip.device
+
+    # Aggregate edges by (source_ip, target_ip, port)
+    edge_map: dict[tuple, dict] = {}
+    involved_ips: set[str] = set()
+
+    for e in events:
+        # Parse ai_service: "lateral_{port}_{dest_ip}" or "lateral_{port}"
+        parts = (e.ai_service or "").replace("lateral_", "").split("_", 1)
+        port = int(parts[0]) if parts[0].isdigit() else 0
+        target_ip = parts[1] if len(parts) > 1 and parts[1] else None
+
+        if not target_ip:
+            continue  # Old format without dest_ip, skip
+
+        key = (e.source_ip, target_ip, port)
+        involved_ips.add(e.source_ip)
+        involved_ips.add(target_ip)
+
+        if key not in edge_map:
+            port_name = _PORT_LABELS.get(port, "")
+            edge_map[key] = {
+                "source_ip": e.source_ip,
+                "target_ip": target_ip,
+                "port": port,
+                "port_label": f"{port_name}/{port}" if port_name else str(port),
+                "hits": 0,
+                "first_seen": str(e.timestamp),
+                "last_seen": str(e.timestamp),
+            }
+        edge = edge_map[key]
+        edge["hits"] += 1
+        if str(e.timestamp) > edge["last_seen"]:
+            edge["last_seen"] = str(e.timestamp)
+        if str(e.timestamp) < edge["first_seen"]:
+            edge["first_seen"] = str(e.timestamp)
+
+    # Build nodes for all involved devices
+    nodes = []
+    seen_ips: set[str] = set()
+    for ip in involved_ips:
+        if ip in seen_ips:
+            continue
+        seen_ips.add(ip)
+        dev = ip_to_dev.get(ip)
+        nodes.append({
+            "ip": ip,
+            "mac": ip_to_mac.get(ip),
+            "hostname": dev.hostname if dev else None,
+            "display_name": dev.display_name if dev else None,
+            "vendor": dev.vendor if dev else None,
+            "device_class": dev.device_class if dev else None,
+            "os_name": dev.os_name if dev else None,
+            "last_seen": str(dev.last_seen) if dev and dev.last_seen else None,
+        })
+
+    return {
+        "window_hours": hours,
+        "nodes": nodes,
+        "edges": list(edge_map.values()),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Policy resolver + exception matcher (used by /api/alerts/active)
 # ---------------------------------------------------------------------------
 
@@ -3537,11 +3635,13 @@ def _enrich_alert_details(
 
     elif alert_type == "iot_lateral_movement":
         details["source_ip"] = event.source_ip
-        # ai_service = "lateral_{port}"
-        port_str = (event.ai_service or "").replace("lateral_", "")
-        port_num = int(port_str) if port_str.isdigit() else None
+        # ai_service = "lateral_{port}_{dest_ip}" (new) or "lateral_{port}" (old)
+        parts = (event.ai_service or "").replace("lateral_", "").split("_", 1)
+        port_num = int(parts[0]) if parts[0].isdigit() else None
         details["target_port"] = port_num
         details["port_label"] = _port_label(port_num)
+        if len(parts) > 1 and parts[1]:
+            details["target_ip"] = parts[1]
 
     elif alert_type == "iot_suspicious_port":
         details["source_ip"] = event.source_ip

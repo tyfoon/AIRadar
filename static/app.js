@@ -3742,6 +3742,7 @@ async function refreshIot() {
     ]);
     _renderIotStats(fleet);
     _renderIotAnomalies(anomalies);
+    _refreshNetworkGraph();
     _renderIotFleet(fleet);
   } catch (err) {
     console.error('refreshIot:', err);
@@ -3849,6 +3850,123 @@ function _renderIotAnomalies(data) {
       </div>
     </div>`;
 }
+
+// ---------------------------------------------------------------------------
+// Lateral Movement Network Graph (vis.js force-directed)
+// ---------------------------------------------------------------------------
+let _networkGraphInstance = null;
+
+async function _refreshNetworkGraph() {
+  const section = document.getElementById('iot-network-graph-section');
+  const container = document.getElementById('iot-network-graph');
+  const badge = document.getElementById('iot-graph-badge');
+  const hoursEl = document.getElementById('iot-graph-hours');
+  if (!container || !section) return;
+
+  const hours = hoursEl ? parseInt(hoursEl.value) : 24;
+
+  try {
+    const res = await fetch(`/api/network/graph?hours=${hours}`);
+    const data = await res.json();
+
+    if (!data.edges || data.edges.length === 0) {
+      section.classList.add('hidden');
+      return;
+    }
+    section.classList.remove('hidden');
+    if (badge) badge.textContent = `${data.edges.length} connections`;
+
+    // Build vis.js nodes
+    const nodeSet = new Map();
+    data.nodes.forEach(n => {
+      const id = n.ip;
+      const dev = n.mac ? deviceMap[n.mac] : null;
+      const label = n.display_name || (n.hostname && !_isJunkHostname(n.hostname) ? n.hostname : null)
+                  || (n.vendor ? n.vendor : null) || n.ip;
+      const dt = dev ? _detectDeviceType(dev) : { type: n.device_class || 'Unknown' };
+      const online = dev ? _isDeviceOnline(dev) : false;
+
+      // Node color based on online status
+      const nodeColor = online
+        ? { background: '#10b981', border: '#059669', highlight: { background: '#34d399', border: '#059669' } }
+        : { background: '#64748b', border: '#475569', highlight: { background: '#94a3b8', border: '#475569' } };
+
+      nodeSet.set(id, {
+        id,
+        label: `${label}\n${n.ip}`,
+        title: `${label}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
+        shape: 'dot',
+        size: 20,
+        color: nodeColor,
+        font: { color: '#e2e8f0', size: 11, face: 'Inter, system-ui, sans-serif', multi: 'md' },
+        borderWidth: 2,
+      });
+    });
+
+    // Build vis.js edges
+    const edges = data.edges.map((e, i) => {
+      const width = Math.min(1 + Math.log2(e.hits + 1), 6);
+      return {
+        id: i,
+        from: e.source_ip,
+        to: e.target_ip,
+        label: e.port_label,
+        title: `${e.source_ip} → ${e.target_ip}\nPort: ${e.port_label}\nHits: ${e.hits}\nFirst: ${e.first_seen}\nLast: ${e.last_seen}`,
+        width,
+        color: { color: '#ef4444', highlight: '#f87171', opacity: 0.8 },
+        arrows: { to: { enabled: true, scaleFactor: 0.6 } },
+        font: { color: '#f87171', size: 9, strokeWidth: 2, strokeColor: '#0f172a', face: 'SF Mono, Consolas, monospace' },
+        smooth: { type: 'curvedCW', roundness: 0.15 },
+      };
+    });
+
+    // Destroy previous graph instance
+    if (_networkGraphInstance) {
+      _networkGraphInstance.destroy();
+      _networkGraphInstance = null;
+    }
+
+    const visData = {
+      nodes: new vis.DataSet(Array.from(nodeSet.values())),
+      edges: new vis.DataSet(edges),
+    };
+
+    const options = {
+      physics: {
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -60,
+          centralGravity: 0.008,
+          springLength: 140,
+          springConstant: 0.04,
+          damping: 0.4,
+        },
+        stabilization: { iterations: 100, fit: true },
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 150,
+        zoomView: true,
+        dragView: true,
+      },
+      nodes: {
+        borderWidth: 2,
+        shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 6 },
+      },
+      edges: {
+        shadow: { enabled: true, color: 'rgba(239,68,68,0.2)', size: 4 },
+      },
+      layout: { improvedLayout: true },
+    };
+
+    _networkGraphInstance = new vis.Network(container, visData, options);
+
+  } catch (err) {
+    console.error('_refreshNetworkGraph:', err);
+    section.classList.add('hidden');
+  }
+}
+window._refreshNetworkGraph = _refreshNetworkGraph;
 
 function _renderIotFleet(data) {
   const el = document.getElementById('iot-fleet-grid');
