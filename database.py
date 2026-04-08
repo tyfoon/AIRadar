@@ -8,7 +8,7 @@ Supports both AI-service and Cloud-storage detection categories.
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String,
+    Boolean, Column, DateTime, Float, ForeignKey, Integer, String,
     UniqueConstraint, create_engine, event, inspect, text,
 )
 from sqlalchemy.engine import Engine
