@@ -2422,16 +2422,18 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     and proto == "tcp"
                 ):
                     # Track inbound connection attempts for the attack dashboard.
-                    # Only record SUSPICIOUS states on SERVICE PORTS (<1024).
-                    # High ports (>=1024) are ephemeral — used for callbacks,
-                    # push notifications, QUIC, Cast, media streams. A failed
-                    # connection (S0) from Google to port 48048 is a missed
-                    # callback, not a port scan.
-                    # Real attacks target: SSH(22), Telnet(23), FTP(21),
-                    # SMTP(25), HTTP(80/443), RDP(3389), etc.
-                    if resp_port >= 1024 or resp_port in (80, 443):
-                        pass  # skip: ephemeral callback or open web service
-                    elif conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR", "S1", "SF"):
+                    # Filter logic:
+                    # - High ports (>=1024): always skip (ephemeral callbacks)
+                    # - Port 80/443 with S1/SF: skip (legit web visitors)
+                    # - Port 80/443 with S0/REJ: KEEP (probe/scan on web port)
+                    # - Low ports (<1024, not 80/443): always keep
+                    is_probe = conn_state in ("S0", "REJ", "RSTO", "RSTR", "S2", "S3", "OTH", "ShR")
+                    is_established = conn_state in ("S1", "SF")
+                    if resp_port >= 1024:
+                        pass  # skip: ephemeral callback
+                    elif resp_port in (80, 443) and is_established:
+                        pass  # skip: successful connection to open web service
+                    elif is_probe or (resp_port < 1024 and not resp_port in (80, 443)):
                         target_mac = _ip_to_mac.get(resp_ip)
                         await _record_inbound_attack(
                             src_ip, resp_ip, resp_port, target_mac,
