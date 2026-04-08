@@ -1581,9 +1581,12 @@ function _alertDetailLine(a) {
       if (d.dest_country) geo.push(`${_flagEmoji(d.dest_country)} ${d.dest_asn_org || d.dest_country}`);
       else if (d.dest_asn_org) geo.push(d.dest_asn_org);
       if (d.dest_sni) geo.push(`<span class="${monoMuted}">${d.dest_sni}</span>`);
+      // Prefer GeoConversation stats (real connection counts, same as IPS>Outbound)
+      const connCount = d.geo_connections || a.hits;
+      const connBytes = d.geo_bytes || a.total_bytes;
       const stats = [];
-      if (a.hits) stats.push(`${a.hits} conn`);
-      if (a.total_bytes) stats.push(_fmtBytes(a.total_bytes));
+      if (connCount) stats.push(`${formatNumber(connCount)} connections`);
+      if (connBytes) stats.push(_fmtBytes(connBytes));
       return `<span class="${mono}">${d.source_ip || ''}</span> ${arrow} <span class="${mono}">${destIp}</span>`
         + (geo.length ? ` ${sep} ${geo.join(` ${sep} `)}` : '')
         + (stats.length ? ` ${sep} <span class="tabular-nums">${stats.join(' · ')}</span>` : '')

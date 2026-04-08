@@ -3434,6 +3434,7 @@ def _enrich_alert_details(
     event: "DetectionEvent",
     ip_metadata: dict[str, "IpMetadata"],
     inbound_attacks: dict[str, "InboundAttack"],
+    geo_by_ip: dict[str, "GeoConversation"] | None = None,
 ) -> None:
     """Mutate *details* in-place, adding type-specific fields.
 
@@ -3453,6 +3454,14 @@ def _enrich_alert_details(
         # _max_bytes (= max bytes_transferred across all events in the
         # group, which stores score×10 from beacon_analyzer).
         details["_max_bytes"] = event.bytes_transferred or 0
+        # Real connection stats from GeoConversation (same source as
+        # IPS>Outbound page) — much higher than DetectionEvent count.
+        geo = (geo_by_ip or {}).get(dest_ip)
+        if geo:
+            details["geo_connections"] = geo.hits
+            details["geo_bytes"] = geo.bytes_transferred
+            if not details["dest_sni"] and geo.ai_service and geo.ai_service != "unknown":
+                details["dest_sni"] = geo.ai_service
 
     elif alert_type == "vpn_tunnel":
         details["source_ip"] = event.source_ip
@@ -3600,6 +3609,18 @@ def get_active_alerts(
     ):
         _inbound_attack_map[ia.source_ip] = ia  # last write = most recent
 
+    # GeoConversation: index by resp_ip (remote IP) for beacon enrichment.
+    # Aggregate hits+bytes per resp_ip so we get the real connection counts
+    # (same data source as IPS>Outbound page).
+    _geo_by_resp_ip: dict[str, GeoConversation] = {}
+    for gc in (
+        db.query(GeoConversation)
+        .order_by(GeoConversation.hits.desc())
+        .all()
+    ):
+        if gc.resp_ip not in _geo_by_resp_ip:
+            _geo_by_resp_ip[gc.resp_ip] = gc  # first = highest hits
+
     events = (
         db.query(DetectionEvent)
         .filter(DetectionEvent.timestamp >= cutoff)
@@ -3701,6 +3722,7 @@ def get_active_alerts(
                 e,
                 _ip_meta_map,
                 _inbound_attack_map,
+                _geo_by_resp_ip,
             )
             g = groups[key]
         g["hits"] += 1
