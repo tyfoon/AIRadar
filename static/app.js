@@ -1585,9 +1585,10 @@ async function loadSummaryDashboard() {
 
     container.innerHTML = _summaryAlerts.map((a, idx) => {
       const meta = _alertTypeLabel(a.alert_type);
+      const _dev = a.mac_address ? deviceMap[a.mac_address] : null;
       const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
                     || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
-                    || (a.details?.ips?.[0]) || a.mac_address;
+                    || (a.details?.ips?.[0]) || (_dev ? _latestIp(_dev) : null) || a.mac_address;
       const macTag = a.mac_address && a.mac_address !== devName
         ? `<span class="text-[10px] font-mono text-slate-400 dark:text-slate-500 ml-1.5">${a.mac_address}</span>`
         : '';
@@ -1691,9 +1692,10 @@ function openAlertActionModal(idx) {
   const scopeSection = document.getElementById('alert-modal-scope-section');
   const status = document.getElementById('alert-modal-status');
 
+  const _alertDev = alert.mac_address ? deviceMap[alert.mac_address] : null;
   const devName = alert.display_name || (alert.hostname && !_isJunkHostname(alert.hostname) ? alert.hostname : null)
                 || (alert.vendor ? `${_shortVendor(alert.vendor)} device` : null)
-                || (alert.details?.ips?.[0]) || alert.mac_address;
+                || (alert.details?.ips?.[0]) || (_alertDev ? _latestIp(_alertDev) : null) || alert.mac_address;
   const svcName = svcDisplayName(alert.service_or_dest) || alert.service_or_dest;
   const meta = _alertTypeLabel(alert.alert_type);
 
