@@ -6895,11 +6895,8 @@ async function loadIpsStatus() {
 
 function _renderIpsThreats(data) {
   // --- Inbound Activity tab: all inbound connection attempts (cards) ---
-  const alertsBody = document.getElementById('ips-alerts-body');
-  if (alertsBody) {
-    // Replace the table with a card container on first call
-    const tableEl = alertsBody.closest('table');
-    const containerEl = tableEl ? tableEl.parentElement : alertsBody.parentElement;
+  const containerEl = document.getElementById('ips-inbound-container');
+  if (containerEl) {
     const attacks = data.inbound_attacks || [];
     if (attacks.length === 0) {
       _ipsInboundAlerts = [];
@@ -6938,19 +6935,17 @@ function _renderIpsThreats(data) {
         };
       });
 
-      containerEl.innerHTML = `<div id="ips-inbound-cards" class="space-y-2 p-2">
-        ${_ipsInboundAlerts.map((a, idx) => _renderAlertCard(a, idx, {
-          showDelete: true,
-          onDelete: `_deleteInboundAttack(${idx})`,
-          isDismissed: false,
-          cardIdPrefix: 'ips-inbound-card-',
-          alertsArray: '_ipsInboundAlerts',
-          actionsIdPrefix: 'ips-inbound-actions-',
-          customSnoozePrefix: 'ips-inbound-custom-snooze-',
-          customSnoozeInputPrefix: 'ips-inbound-custom-snooze-input-',
-          refreshFn: 'loadIpsStatus',
-        })).join('')}
-      </div>`;
+      containerEl.innerHTML = _ipsInboundAlerts.map((a, idx) => _renderAlertCard(a, idx, {
+        showDelete: true,
+        onDelete: `_deleteInboundAttack(${idx})`,
+        isDismissed: false,
+        cardIdPrefix: 'ips-inbound-card-',
+        alertsArray: '_ipsInboundAlerts',
+        actionsIdPrefix: 'ips-inbound-actions-',
+        customSnoozePrefix: 'ips-inbound-custom-snooze-',
+        customSnoozeInputPrefix: 'ips-inbound-custom-snooze-input-',
+        refreshFn: 'loadIpsStatus',
+      })).join('');
     }
   }
 
@@ -6976,7 +6971,7 @@ function _renderIpsThreats(data) {
 function _filterIpsTable() {
   const filter = document.getElementById('ips-severity-filter')?.value || 'all';
   // Filter cards by data-alert-type attribute
-  const cards = document.querySelectorAll('#ips-inbound-cards > [data-alert-type]');
+  const cards = document.querySelectorAll('#ips-inbound-container > [data-alert-type]');
   cards.forEach(card => {
     if (filter === 'all') {
       card.style.display = '';

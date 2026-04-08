@@ -1063,27 +1063,13 @@
             <option value="blocked">Probes only</option>
           </select>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left card-table">
-            <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-medium border-b border-slate-200 dark:border-white/[0.05] bg-slate-50 dark:bg-[#0B0C10]">
-              <tr>
-                <th class="py-3 px-4 font-medium">Source</th>
-                <th class="py-3 px-4 font-medium">Target</th>
-                <th class="py-3 px-4 font-medium">Severity</th>
-                <th class="py-3 px-4 font-medium">Reason</th>
-                <th class="py-3 px-4 font-medium">Hits</th>
-                <th class="py-3 px-4 font-medium">Last Seen</th>
-              </tr>
-            </thead>
-            <tbody id="ips-alerts-body" class="text-slate-600 dark:text-slate-300 striped-rows">
-              <tr><td colspan="6" class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
-                <div class="flex flex-col items-center gap-2">
-                  <i class="ph-duotone ph-shield-check text-2xl"></i>
-                  <span>No inbound connection attempts detected yet.</span>
-                </div>
-              </td></tr>
-            </tbody>
-          </table>
+        <div id="ips-inbound-container" class="space-y-2 p-2">
+          <div class="py-8 text-center text-slate-400 dark:text-slate-500 text-sm">
+            <div class="flex flex-col items-center gap-2">
+              <i class="ph-duotone ph-shield-check text-2xl"></i>
+              <span>No inbound connection attempts detected yet.</span>
+            </div>
+          </div>
         </div>
       </div>
       </div><!-- /ips-panel-alerts -->
