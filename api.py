@@ -3922,13 +3922,23 @@ def get_active_alerts(
     # as "new_device" alerts. This is purely informational — the user
     # sees a new device appeared and can assign it to a group / set rules.
     new_device_alerts = []
+    # Only alert on devices that have been around for at least 5 minutes —
+    # gives p0f, DHCP, and mDNS time to enrich with hostname/vendor/OS.
+    new_device_min_age = cutoff + timedelta(minutes=5) if cutoff < now - timedelta(minutes=5) else cutoff
     new_devices = (
         db.query(Device)
-        .filter(Device.first_seen >= cutoff)
+        .filter(
+            Device.first_seen >= cutoff,
+            Device.first_seen <= now - timedelta(minutes=5),
+        )
         .order_by(Device.first_seen.desc())
         .all()
     )
     for d in new_devices:
+        # Skip placeholder devices without a real MAC (IPv6 privacy
+        # addresses, temporary IPs). These are noise, not real new devices.
+        if d.mac_address.startswith("unknown_"):
+            continue
         # Skip if snoozed via AlertException
         if _is_exception_active(exceptions, d.mac_address, "new_device", d.mac_address, now):
             continue
