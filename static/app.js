@@ -1693,7 +1693,10 @@ function _alertExtraBadges(a) {
 // Shorten ASN org names by stripping legal suffixes (same as IPS>Inbound page)
 function _shortAsn(name) {
   if (!name) return '';
-  return name.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International|GmbH|PJSC|AG|S\.?A\.?|B\.?V\.?|N\.?V\.?|Pty|Pvt|Group|Solutions|Services|Networks|Communications|Telecom)\.?)+$/i, '').trim();
+  // Strip legal suffixes and common corporate words
+  let s = name.replace(/\s*\([^)]*\)\s*/g, '').trim();  // remove parenthetical like "(haftungsbeschrankt)"
+  s = s.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International|GmbH|PJSC|AG|UG|S\.?A\.?|B\.?V\.?|N\.?V\.?|Pty|Pvt|Group|Solutions|Services|Networks|Communications|Telecom|Hosting|Online|Digital|Cloud|Enterprises?)\.?)+$/i, '').trim();
+  return s || name;  // fallback to original if everything got stripped
 }
 
 // Type-specific detail line (regel 2) — returns inner HTML
