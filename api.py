@@ -2493,6 +2493,8 @@ def ingest_geo_conversations(
         mac = u.get("mac_address") or None
         svc = u.get("ai_service") or "unknown"
         byts = int(u.get("bytes") or 0)
+        ob = int(u.get("orig_bytes") or 0)
+        rb = int(u.get("resp_bytes") or 0)
         hits = int(u.get("hits") or 0)
         if byts <= 0 and hits <= 0:
             continue
@@ -2509,6 +2511,8 @@ def ingest_geo_conversations(
         )
         if row:
             row.bytes_transferred += byts
+            row.orig_bytes += ob
+            row.resp_bytes += rb
             row.hits += hits
             row.last_seen = now
         else:
@@ -2519,6 +2523,8 @@ def ingest_geo_conversations(
                 ai_service=svc,
                 resp_ip=resp_ip,
                 bytes_transferred=byts,
+                orig_bytes=ob,
+                resp_bytes=rb,
                 hits=hits,
                 first_seen=now,
                 last_seen=now,
@@ -6733,7 +6739,6 @@ async def _check_volume_spikes():
                 if top_dest and top_dest.ai_service and top_dest.ai_service != "unknown":
                     top_svc = top_dest.ai_service
                 elif top_dest and top_dest.resp_ip:
-                    # No service name but we have an IP — try IpMetadata for ASN/PTR
                     ip_meta = db.query(IpMetadata).filter(IpMetadata.ip == top_dest.resp_ip).first()
                     if ip_meta and ip_meta.asn_org:
                         top_svc = ip_meta.asn_org
@@ -6744,16 +6749,37 @@ async def _check_volume_spikes():
                 else:
                     top_svc = "internal traffic"
 
+                # Aggregate upload/download bytes for this device in the spike window
+                from sqlalchemy import func as _fn
+                _byte_sums = db.query(
+                    _fn.coalesce(_fn.sum(GeoConversation.orig_bytes), 0).label("up"),
+                    _fn.coalesce(_fn.sum(GeoConversation.resp_bytes), 0).label("down"),
+                ).filter(
+                    GeoConversation.mac_address == bl.mac_address,
+                    GeoConversation.last_seen >= hour_ago,
+                ).first()
+                up_bytes = _byte_sums.up if _byte_sums else 0
+                down_bytes = _byte_sums.down if _byte_sums else 0
+
                 def _fmt_bytes_short(b):
                     if b >= 1_000_000:
                         return f"{b/1_000_000:.1f} MB"
                     return f"{b/1024:.0f} KB"
 
-                spike_label = (
-                    f"{_fmt_bytes_short(hour_bytes)}/h "
-                    f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
-                    f"→ {top_svc}"
-                )
+                # Include upload/download breakdown when available
+                if up_bytes > 0 or down_bytes > 0:
+                    spike_label = (
+                        f"{_fmt_bytes_short(hour_bytes)}/h "
+                        f"(↑{_fmt_bytes_short(up_bytes)} ↓{_fmt_bytes_short(down_bytes)}) "
+                        f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
+                        f"→ {top_svc}"
+                    )
+                else:
+                    spike_label = (
+                        f"{_fmt_bytes_short(hour_bytes)}/h "
+                        f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
+                        f"→ {top_svc}"
+                    )
 
                 db.add(DetectionEvent(
                     sensor_id="airadar",

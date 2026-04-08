@@ -1825,6 +1825,8 @@ async def _record_geo_conversation(
     service: str,
     resp_ip: str,
     total_bytes: int,
+    ob: int = 0,
+    rb: int = 0,
 ) -> None:
     """Record one conversation row keyed on (cc, dir, mac, svc, resp_ip)."""
     if not country_code or not resp_ip:
@@ -1834,9 +1836,11 @@ async def _record_geo_conversation(
         bucket = _geo_conv_buckets.get(key)
         if bucket:
             bucket["bytes"] += total_bytes
+            bucket["ob"] += ob
+            bucket["rb"] += rb
             bucket["hits"] += 1
         else:
-            _geo_conv_buckets[key] = {"bytes": total_bytes, "hits": 1}
+            _geo_conv_buckets[key] = {"bytes": total_bytes, "ob": ob, "rb": rb, "hits": 1}
 
 
 async def _record_inbound_attack(
@@ -1926,6 +1930,8 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                     "ai_service": svc,
                     "resp_ip": ip,
                     "bytes": v["bytes"],
+                    "orig_bytes": v.get("ob", 0),
+                    "resp_bytes": v.get("rb", 0),
                     "hits": v["hits"],
                 }
                 for (cc, d, mac, svc, ip), v in _geo_conv_buckets.items()
@@ -2273,6 +2279,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 asyncio.create_task(
                                     _record_geo_conversation(
                                         cc, direction, conv_mac, conv_svc, public_ip, total,
+                                        ob=_ob, rb=_rb,
                                     )
                                 )
 

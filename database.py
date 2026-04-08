@@ -253,6 +253,8 @@ class GeoConversation(Base):
     ai_service = Column(String, nullable=False, default="unknown", index=True)
     resp_ip = Column(String, nullable=False, index=True)        # the remote public IP
     bytes_transferred = Column(Integer, nullable=False, default=0)
+    orig_bytes = Column(Integer, nullable=False, default=0)  # device → remote (upload)
+    resp_bytes = Column(Integer, nullable=False, default=0)  # remote → device (download)
     hits = Column(Integer, nullable=False, default=0)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
@@ -682,6 +684,18 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE alert_exceptions ADD COLUMN dismissed_score REAL"
+                ))
+
+    # --- GeoConversation: add orig_bytes + resp_bytes columns ---
+    if "geo_conversations" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("geo_conversations")]
+        if "orig_bytes" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE geo_conversations ADD COLUMN orig_bytes INTEGER NOT NULL DEFAULT 0"
+                ))
+                conn.execute(text(
+                    "ALTER TABLE geo_conversations ADD COLUMN resp_bytes INTEGER NOT NULL DEFAULT 0"
                 ))
 
     # --- Performance indexes for large tables ---
