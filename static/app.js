@@ -3930,9 +3930,11 @@ async function _refreshNetworkGraph() {
     data.nodes.forEach(n => {
       const id = n.ip;
       const dev = n.mac ? deviceMap[n.mac] : null;
+      // Build a pseudo-device for _detectDeviceType if no deviceMap entry
+      const devOrPseudo = dev || { hostname: n.hostname, vendor: n.vendor, display_name: n.display_name, device_class: n.device_class };
       const name = n.display_name || (n.hostname && !_isJunkHostname(n.hostname) ? n.hostname : null)
-                  || (n.vendor ? n.vendor : null) || n.ip;
-      const dt = dev ? _detectDeviceType(dev) : { type: n.device_class || 'Unknown' };
+                  || (n.vendor ? n.vendor : null) || null;
+      const dt = _detectDeviceType(devOrPseudo);
       const online = dev ? _isDeviceOnline(dev) : false;
 
       // Emoji icon for this device type
@@ -3941,13 +3943,17 @@ async function _refreshNetworkGraph() {
         || Object.entries(_GRAPH_EMOJI).find(([k]) => dtKey.includes(k))?.[1]
         || _GRAPH_EMOJI.unknown;
 
+      // Label: show name + IP, but avoid duplicating IP when name is unknown
+      const labelName = name || 'Unknown';
+      const labelText = name ? `${emoji} ${name}\n${n.ip}` : `${emoji} ${n.ip}`;
+
       const borderColor = online ? '#10b981' : '#475569';
       const bgColor = online ? '#0f291f' : '#1e293b';
 
       nodeSet.set(id, {
         id,
-        label: `${emoji} ${name}\n${n.ip}`,
-        title: `${name}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
+        label: labelText,
+        title: `${labelName}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
         shape: 'box',
         color: {
           background: bgColor,
