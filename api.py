@@ -3166,6 +3166,7 @@ def create_exception(payload: AlertExceptionCreate, db: Session = Depends(get_db
         alert_type=payload.alert_type,
         destination=payload.destination,
         expires_at=payload.expires_at,
+        dismissed_score=payload.dismissed_score,
         created_at=datetime.utcnow(),
     )
     db.add(exc)
@@ -3536,8 +3537,14 @@ def _is_exception_active(
     alert_type: str,
     destination: Optional[str],
     now: datetime,
+    current_score: float | None = None,
 ) -> bool:
-    """True if a non-expired AlertException matches this alert."""
+    """True if a non-expired AlertException matches this alert.
+
+    For beaconing_threat: if the exception has a dismissed_score and
+    the current beacon score exceeds it by >10 points, the exception
+    is considered inactive (the threat has escalated beyond baseline).
+    """
     for exc in exceptions:
         if exc.mac_address != mac:
             continue
@@ -3548,6 +3555,14 @@ def _is_exception_active(
             continue
         if exc.expires_at is not None and exc.expires_at <= now:
             continue
+        # Beacon score escalation check: re-alert if score rose >10 points
+        if (
+            alert_type == "beaconing_threat"
+            and exc.dismissed_score is not None
+            and current_score is not None
+            and current_score > exc.dismissed_score + 10
+        ):
+            continue  # exception does NOT suppress — score escalated
         return True
     return False
 
@@ -3794,7 +3809,10 @@ def get_active_alerts(
         if e.detection_type in _ANOMALY_DETECTION_TYPES:
             alert_type = e.detection_type
             destination = e.ai_service  # VPN service name or beacon dst IP
-            if _is_exception_active(exceptions, mac, alert_type, destination, now):
+            # For beacons, pass current score so dismissed alerts re-surface
+            # if the threat escalates (score rises >10 above dismissed level)
+            _score = round((e.bytes_transferred or 0) / 10.0, 1) if alert_type == "beaconing_threat" else None
+            if _is_exception_active(exceptions, mac, alert_type, destination, now, current_score=_score):
                 continue
             # Skip events that occurred before an expired exception —
             # they were already handled (snoozed/dismissed) and should

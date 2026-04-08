@@ -222,6 +222,7 @@ class AlertExceptionCreate(BaseModel):
     alert_type: str
     destination: Optional[str] = None
     expires_at: Optional[datetime] = None   # None = permanent whitelist
+    dismissed_score: Optional[float] = None  # beacon score at dismiss time
 
 
 class AlertExceptionRead(BaseModel):
@@ -232,6 +233,7 @@ class AlertExceptionRead(BaseModel):
     alert_type: str
     destination: Optional[str] = None
     expires_at: Optional[datetime] = None
+    dismissed_score: Optional[float] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

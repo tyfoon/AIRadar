@@ -2185,10 +2185,16 @@ async function _cardAlertAction(idx, body, cardIdPrefix, refreshFn) {
 function _cardDismiss(idx, arrayName, cardIdPrefix, refreshFn) {
   const arr = _resolveAlertsArray(arrayName);
   const a = arr[idx]; if (!a) return;
-  _cardAlertAction(idx, {
+  const body = {
     mac_address: a.mac_address, alert_type: a.alert_type,
     destination: a.service_or_dest, expires_at: null,
-  }, cardIdPrefix, refreshFn);
+  };
+  // For beacon alerts: store the current score so the alert re-surfaces
+  // if the threat escalates (score rises >10 above dismissed level)
+  if (a.alert_type === 'beaconing_threat' && a.details?.beacon_score != null) {
+    body.dismissed_score = a.details.beacon_score;
+  }
+  _cardAlertAction(idx, body, cardIdPrefix, refreshFn);
 }
 
 function _cardSnooze(idx, hours, arrayName, cardIdPrefix, refreshFn) {

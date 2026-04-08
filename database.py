@@ -202,6 +202,7 @@ class AlertException(Base):
     alert_type = Column(String, nullable=False, index=True)  # e.g. "beaconing_threat", "vpn_tunnel"
     destination = Column(String, nullable=True)              # e.g. specific IP, country, service
     expires_at = Column(DateTime, nullable=True)             # NULL = permanent
+    dismissed_score = Column(Float, nullable=True)           # beacon score at time of dismiss (re-alert if score rises >10)
     created_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
 
@@ -672,6 +673,15 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE inbound_attacks ADD COLUMN conn_state TEXT"
+                ))
+
+    # --- AlertException: add dismissed_score column (beacon score at dismiss time) ---
+    if "alert_exceptions" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("alert_exceptions")]
+        if "dismissed_score" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE alert_exceptions ADD COLUMN dismissed_score REAL"
                 ))
 
     # --- Performance indexes for large tables ---
