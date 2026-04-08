@@ -4097,22 +4097,65 @@ function _renderIotFleet(data) {
     const healthColor = d.health === 'red' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/5'
                       : d.health === 'orange' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/5'
                       : 'border-slate-200 dark:border-white/[0.05]';
-    const healthDot = d.health === 'red' ? 'bg-red-500'
-                    : d.health === 'orange' ? 'bg-amber-500'
-                    : 'bg-emerald-500';
     const dt = _detectDeviceType(d);
 
+    // Online dot
+    const online = d.online || _isDeviceOnline(d);
+    const onlineDot = online
+      ? '<span class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></span>'
+      : '<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>';
+    const onlineLabel = online ? 'online' : 'offline';
+
+    // Baseline badge
+    let baselineBadge = '';
+    if (d.baseline_status === 'learning') {
+      baselineBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium"><i class="ph-duotone ph-graduation-cap text-[10px]"></i> Learning (${d.baseline_days || 0}d)</span>`;
+    } else if (d.baseline_status === 'building') {
+      baselineBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium"><i class="ph-duotone ph-chart-bar text-[10px]"></i> Building baseline</span>`;
+    }
+
+    // Throughput bar vs baseline
+    let throughputBar = '';
+    const totalBytes24h = (d.orig_bytes_24h || 0) + (d.resp_bytes_24h || 0);
+    if (d.baseline_avg_bytes_24h && d.baseline_avg_bytes_24h > 0) {
+      const ratio = totalBytes24h / d.baseline_avg_bytes_24h;
+      const pct = Math.min(ratio * 100, 100);
+      const barColor = ratio > 3 ? 'bg-red-500' : ratio > 2 ? 'bg-amber-500' : 'bg-emerald-500';
+      const pctLabel = Math.round(ratio * 100) + '%';
+      throughputBar = `<div class="flex items-center gap-2 mt-2">
+        <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.06] overflow-hidden">
+          <div class="h-full rounded-full ${barColor}" style="width:${pct.toFixed(1)}%"></div>
+        </div>
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500 w-10 text-right">${pctLabel}</span>
+      </div>`;
+    } else {
+      throughputBar = `<div class="flex items-center gap-2 mt-2">
+        <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.06] overflow-hidden">
+          <div class="h-full rounded-full bg-slate-300 dark:bg-slate-600" style="width:0%"></div>
+        </div>
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500 w-10 text-right">--</span>
+      </div>`;
+    }
+
+    // Upload / download split
+    const upDown = `<span class="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">&uarr; ${_fmtBytes(d.orig_bytes_24h || 0)}  &darr; ${_fmtBytes(d.resp_bytes_24h || 0)}  /24h</span>`;
+
+    // Country flags (top 3)
+    const flags = (d.top_countries || []).slice(0, 3).map(c => _flagEmoji(c.cc)).join(' ');
+
     return `<div class="border ${healthColor} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors cursor-pointer hover:shadow-md" onclick="openDeviceDrawer('${d.mac_address}', null, null)">
-      <div class="flex items-center gap-2 mb-2">
+      <div class="flex items-center gap-2 mb-1">
         <span class="flex-shrink-0">${dt.icon}</span>
         <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
-        <span class="w-2 h-2 rounded-full ${healthDot} flex-shrink-0 ml-auto"></span>
+        <span class="ml-auto flex items-center gap-1.5">${onlineDot}<span class="text-[10px] text-slate-400 dark:text-slate-500">${onlineLabel}</span></span>
       </div>
-      <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-2">${d.device_type || dt.type}</p>
-      <div class="flex items-center justify-between text-[10px] tabular-nums">
-        <span class="text-slate-500 dark:text-slate-400">${_fmtBytes(d.bytes_24h)}/day</span>
-        <span class="text-slate-400 dark:text-slate-500">${d.destinations} dest.</span>
-        ${d.anomalies > 0 ? `<span class="text-red-500 font-semibold">${d.anomalies} <i class="ph-duotone ph-warning text-[10px]"></i></span>` : ''}
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-1">${d.device_type || dt.type}</p>
+      ${baselineBadge ? `<div class="mb-1">${baselineBadge}</div>` : ''}
+      ${throughputBar}
+      <div class="mt-1.5">${upDown}</div>
+      <div class="flex items-center justify-between mt-2 text-[10px] tabular-nums">
+        <span class="flex items-center gap-1">${flags}</span>
+        <span class="text-slate-400 dark:text-slate-500">${d.destinations} dest${d.anomalies > 0 ? ` &middot; <span class="text-red-500 font-semibold">${d.anomalies} <i class="ph-duotone ph-warning text-[10px]"></i></span>` : ''}</span>
       </div>
     </div>`;
   }).join('');
@@ -4288,6 +4331,7 @@ function _geoFmtBytes(b) {
 }
 
 async function refreshGeo() {
+  loadGeoBlockRules();  // load blocked countries panel in parallel
   return loadGeoTraffic(_geoDirection);
 }
 
@@ -4548,7 +4592,7 @@ function _renderGeoTable(data) {
   if (!tbody) return;
   const countries = data.countries || [];
   if (countries.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
     return;
   }
   const totalBytes = countries.reduce((s, c) => s + c.bytes, 0) || 1;
@@ -4584,9 +4628,98 @@ function _renderGeoTable(data) {
           <span class="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 w-10 text-right">${pctLabel}%</span>
         </div>
       </td>
+      <td class="py-3 px-2 text-center">
+        <button onclick="event.stopPropagation(); blockCountry('${c.country_code}', 'both')" title="Block ${c.country_code}" class="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 transition-colors">
+          <i class="ph-duotone ph-shield-slash text-sm"></i>
+        </button>
+      </td>
     </tr>`;
   }).join('');
 }
+
+// ---------------------------------------------------------------------------
+// GeoIP Blocking — blocked countries panel + actions
+// ---------------------------------------------------------------------------
+
+let _geoBlockRules = [];
+
+async function loadGeoBlockRules() {
+  try {
+    const res = await fetch('/api/geo/block-rules');
+    _geoBlockRules = await res.json();
+    _renderGeoBlockList();
+  } catch (err) {
+    console.error('loadGeoBlockRules:', err);
+  }
+}
+
+function _renderGeoBlockList() {
+  const el = document.getElementById('geo-block-list');
+  const countEl = document.getElementById('geo-block-count');
+  if (!el) return;
+  if (countEl) countEl.textContent = _geoBlockRules.length > 0 ? `${_geoBlockRules.length} blocked` : '';
+
+  if (_geoBlockRules.length === 0) {
+    el.innerHTML = '<p class="text-sm text-slate-400 dark:text-slate-500 text-center py-4">No countries blocked.</p>';
+    return;
+  }
+
+  el.innerHTML = _geoBlockRules.map(r => {
+    const dirLabel = r.direction === 'both' ? 'all traffic' : r.direction;
+    return `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
+      <span class="flex items-center gap-2">
+        <span class="text-base">${_flagEmoji(r.country_code)}</span>
+        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">${r.country_code}</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">${dirLabel}</span>
+      </span>
+      <button onclick="unblockCountry('${r.country_code}')" class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-400 hover:text-red-600 transition-colors" title="Unblock ${r.country_code}">
+        <i class="ph-duotone ph-x-circle text-lg"></i>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+async function blockCountry(cc, direction) {
+  if (!confirm(`Block all ${direction} traffic from/to ${cc}? This will apply iptables rules on the bridge.`)) return;
+  try {
+    const res = await fetch('/api/geo/block-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country_code: cc, direction }),
+    });
+    if (res.status === 409) {
+      alert(`${cc} is already blocked.`);
+      return;
+    }
+    if (!res.ok) {
+      const err = await res.json();
+      alert(`Failed to block ${cc}: ${err.detail || 'Unknown error'}`);
+      return;
+    }
+    await loadGeoBlockRules();
+  } catch (err) {
+    console.error('blockCountry:', err);
+    alert('Failed to block country: ' + err.message);
+  }
+}
+window.blockCountry = blockCountry;
+
+async function unblockCountry(cc) {
+  if (!confirm(`Unblock all traffic from/to ${cc}? This will remove iptables rules.`)) return;
+  try {
+    const res = await fetch(`/api/geo/block-rules/${cc}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(`Failed to unblock ${cc}: ${err.detail || 'Unknown error'}`);
+      return;
+    }
+    await loadGeoBlockRules();
+  } catch (err) {
+    console.error('unblockCountry:', err);
+    alert('Failed to unblock country: ' + err.message);
+  }
+}
+window.unblockCountry = unblockCountry;
 
 // ---------------------------------------------------------------------------
 // Country Drawer — drilldown for a single country from the Geo page

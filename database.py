@@ -479,6 +479,25 @@ class InboundAttack(Base):
     )
 
 
+class GeoBlockRule(Base):
+    """Country-level traffic blocking via ipset + iptables on the bridge.
+
+    Each row represents one blocked country. The direction field controls
+    whether inbound, outbound, or both directions are blocked. The
+    startup sync task in api.py re-applies all enabled rules on boot so
+    blocking survives container restarts.
+    """
+
+    __tablename__ = "geo_block_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String, nullable=False, unique=True)
+    direction = Column(String, nullable=False, default="both")  # "inbound"|"outbound"|"both"
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
 class BlockRule(Base):
     """Stores active and expired block rules for AI/Cloud services."""
 

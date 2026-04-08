@@ -849,6 +849,20 @@
         <p id="geo-map-empty" class="hidden text-center text-sm text-slate-400 dark:text-slate-500 py-12" data-i18n="geo.noData">No geo traffic data yet. The Zeek tailer needs a few minutes to populate this.</p>
       </div>
 
+      <!-- Blocked Countries panel -->
+      <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300">
+            <i class="ph-duotone ph-shield-warning text-red-500 mr-1"></i>
+            Blocked Countries
+          </h3>
+          <span id="geo-block-count" class="text-xs text-slate-400 dark:text-slate-500"></span>
+        </div>
+        <div id="geo-block-list" class="space-y-2">
+          <p class="text-sm text-slate-400 dark:text-slate-500 text-center py-4">No countries blocked.</p>
+        </div>
+      </div>
+
       <!-- Country table card -->
       <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
         <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="geo.tableTitle">Top countries</h3>
@@ -862,6 +876,7 @@
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thHits">Connections</th>
                 <th class="py-3 px-4 font-medium hidden md:table-cell" data-i18n="geo.thTopDevices">Top devices</th>
                 <th class="py-3 px-4 font-medium" data-i18n="geo.thShare">Share</th>
+                <th class="py-3 px-4 font-medium w-10"></th>
               </tr>
             </thead>
             <tbody id="geo-table-body" class="text-slate-600 dark:text-slate-300 striped-rows">

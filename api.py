@@ -88,6 +88,7 @@ from database import (
     DeviceGroup,
     DeviceGroupMember,
     DeviceIP,
+    GeoBlockRule,
     GeoTraffic,
     GeoConversation,
     IpMetadata,
@@ -1220,6 +1221,9 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             print(f"[adguard] Could not apply DNS filtering preference: {exc}")
     asyncio.create_task(_restore_adguard_pref())
+
+    # Restore GeoIP block rules (ipset + iptables) from database
+    asyncio.create_task(_restore_geo_block_rules())
 
     yield
     cleanup_task.cancel()
@@ -6331,6 +6335,8 @@ def iot_fleet(db: Session = Depends(get_db)):
             func.sum(GeoConversation.bytes_transferred).label("bytes"),
             func.sum(GeoConversation.hits).label("hits"),
             func.count(func.distinct(GeoConversation.resp_ip)).label("destinations"),
+            func.sum(GeoConversation.orig_bytes).label("orig_bytes"),
+            func.sum(GeoConversation.resp_bytes).label("resp_bytes"),
         )
         .filter(GeoConversation.last_seen >= cutoff)
         .group_by(GeoConversation.mac_address)
@@ -6340,7 +6346,33 @@ def iot_fleet(db: Session = Depends(get_db)):
             "bytes_24h": int(row.bytes or 0),
             "hits_24h": int(row.hits or 0),
             "destinations": int(row.destinations or 0),
+            "orig_bytes_24h": int(row.orig_bytes or 0),
+            "resp_bytes_24h": int(row.resp_bytes or 0),
         }
+
+    # Top 3 countries per device — batch query to avoid N+1
+    iot_macs = [d.mac_address for d in iot_devices]
+    _top_countries_raw = (
+        db.query(
+            GeoConversation.mac_address,
+            GeoConversation.country_code,
+            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+        )
+        .filter(
+            GeoConversation.mac_address.in_(iot_macs),
+            GeoConversation.last_seen >= cutoff,
+        )
+        .group_by(GeoConversation.mac_address, GeoConversation.country_code)
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .all()
+    ) if iot_macs else []
+
+    # Index: mac -> list of top 3 {cc, bytes}
+    _top_countries_map = {}
+    for row in _top_countries_raw:
+        lst = _top_countries_map.setdefault(row.mac_address, [])
+        if len(lst) < 3:
+            lst.append({"cc": row.country_code, "bytes": int(row.bytes or 0)})
 
     # Baselines
     baselines = {b.mac_address: b for b in db.query(DeviceBaseline).all()}
@@ -6400,6 +6432,18 @@ def iot_fleet(db: Session = Depends(get_db)):
         bytes_24h = stats.get("bytes_24h", 0)
         total_bytes += bytes_24h
 
+        # Baseline status: learning → building → ready
+        days_since_first = (now - d.first_seen).days if d.first_seen else 0
+        if not baseline or not baseline.computed_at:
+            baseline_status = "learning"
+        elif days_since_first < 7:
+            baseline_status = "building"
+        else:
+            baseline_status = "ready"
+
+        # Online: last_seen within 5 minutes
+        online = bool(d.last_seen and (now - d.last_seen).total_seconds() < 300)
+
         result.append({
             "mac_address": d.mac_address,
             "hostname": d.hostname,
@@ -6413,6 +6457,13 @@ def iot_fleet(db: Session = Depends(get_db)):
             "anomalies": anomalies,
             "last_seen": str(d.last_seen) if d.last_seen else None,
             "ips": device_ips[:3],
+            "baseline_status": baseline_status,
+            "baseline_days": days_since_first,
+            "orig_bytes_24h": stats.get("orig_bytes_24h", 0),
+            "resp_bytes_24h": stats.get("resp_bytes_24h", 0),
+            "top_countries": _top_countries_map.get(d.mac_address, []),
+            "online": online,
+            "baseline_avg_bytes_24h": int(baseline.avg_bytes_hour * 24) if baseline and baseline.avg_bytes_hour else None,
         })
 
     result.sort(key=lambda x: -x["bytes_24h"])
@@ -7402,6 +7453,180 @@ async def restart_tailer():
         pid = check.stdout.decode().strip().split('\n')[0]
         return {"status": "ok", "message": f"Zeek Tailer restarted (PID {pid})"}
     return {"status": "error", "message": "Tailer failed to start"}
+
+
+# ---------------------------------------------------------------------------
+# GeoIP blocking via ipset + iptables
+# ---------------------------------------------------------------------------
+
+GEOBLOCK_IPSET_PREFIX = "geoblock_"
+GEOBLOCK_ZONE_URL = "https://www.ipdeny.com/ipblocks/data/countries/{cc}.zone"
+
+
+async def _download_country_zones(cc: str) -> list[str]:
+    """Download IP ranges for a country from ipdeny.com."""
+    url = GEOBLOCK_ZONE_URL.format(cc=cc.lower())
+    async with httpx.AsyncClient() as client:
+        r = await client.get(url, timeout=30)
+        r.raise_for_status()
+        return [line.strip() for line in r.text.splitlines() if line.strip() and "/" in line]
+
+
+async def _run_cmd(cmd: list[str], check: bool = False) -> "asyncio.subprocess.Process":
+    """Run a subprocess command asynchronously."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.wait()
+    if check and proc.returncode != 0:
+        stderr = (await proc.stderr.read()).decode() if proc.stderr else ""
+        raise RuntimeError(f"Command {cmd} failed ({proc.returncode}): {stderr}")
+    return proc
+
+
+async def _apply_geoblock(cc: str, direction: str = "both"):
+    """Create ipset + iptables FORWARD rules for a country."""
+    set_name = f"{GEOBLOCK_IPSET_PREFIX}{cc.upper()}"
+
+    # Create ipset (hash:net, idempotent)
+    await _run_cmd(["ipset", "create", set_name, "hash:net", "-exist"])
+    # Flush existing entries
+    await _run_cmd(["ipset", "flush", set_name])
+
+    # Download and add IP ranges
+    try:
+        zones = await _download_country_zones(cc)
+    except Exception as exc:
+        print(f"[geoblock] Failed to download zones for {cc}: {exc}")
+        return
+
+    for cidr in zones:
+        await _run_cmd(["ipset", "add", set_name, cidr, "-exist"])
+
+    # Add iptables FORWARD rules (check first, then insert if missing)
+    if direction in ("both", "inbound"):
+        chk = await _run_cmd(["iptables", "-C", "FORWARD", "-m", "set",
+                               "--match-set", set_name, "src", "-j", "DROP"])
+        if chk.returncode != 0:
+            await _run_cmd(["iptables", "-I", "FORWARD", "-m", "set",
+                             "--match-set", set_name, "src", "-j", "DROP"])
+
+    if direction in ("both", "outbound"):
+        chk = await _run_cmd(["iptables", "-C", "FORWARD", "-m", "set",
+                               "--match-set", set_name, "dst", "-j", "DROP"])
+        if chk.returncode != 0:
+            await _run_cmd(["iptables", "-I", "FORWARD", "-m", "set",
+                             "--match-set", set_name, "dst", "-j", "DROP"])
+
+    print(f"[geoblock] Applied block for {cc.upper()} ({direction})")
+
+
+async def _remove_geoblock(cc: str):
+    """Remove ipset + iptables rules for a country."""
+    set_name = f"{GEOBLOCK_IPSET_PREFIX}{cc.upper()}"
+
+    # Remove iptables rules (both directions, ignore errors if not exist)
+    for flag in ("src", "dst"):
+        await _run_cmd(["iptables", "-D", "FORWARD", "-m", "set",
+                         "--match-set", set_name, flag, "-j", "DROP"])
+
+    # Destroy ipset
+    await _run_cmd(["ipset", "destroy", set_name])
+    print(f"[geoblock] Removed block for {cc.upper()}")
+
+
+async def _restore_geo_block_rules():
+    """Re-apply all enabled GeoBlockRule records on startup."""
+    db = SessionLocal()
+    try:
+        rules = db.query(GeoBlockRule).filter(GeoBlockRule.enabled.is_(True)).all()
+        for rule in rules:
+            try:
+                await _apply_geoblock(rule.country_code, rule.direction)
+            except Exception as exc:
+                print(f"[geoblock] Failed to restore {rule.country_code}: {exc}")
+        if rules:
+            print(f"[geoblock] Restored {len(rules)} country block rules")
+    except Exception as exc:
+        print(f"[geoblock] Startup restore failed: {exc}")
+    finally:
+        db.close()
+
+
+@app.get("/api/geo/block-rules")
+def get_geo_block_rules(db: Session = Depends(get_db)):
+    """List all GeoIP block rules."""
+    rules = db.query(GeoBlockRule).order_by(GeoBlockRule.created_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "country_code": r.country_code,
+            "direction": r.direction,
+            "enabled": r.enabled,
+            "created_at": str(r.created_at) if r.created_at else None,
+        }
+        for r in rules
+    ]
+
+
+@app.post("/api/geo/block-rules")
+async def create_geo_block_rule(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Block traffic from/to a country via iptables."""
+    cc = (body.get("country_code") or "").strip().upper()
+    direction = body.get("direction", "both")
+    if not cc or len(cc) != 2:
+        raise HTTPException(400, "country_code must be a 2-letter ISO code")
+    if direction not in ("inbound", "outbound", "both"):
+        raise HTTPException(400, "direction must be inbound, outbound, or both")
+
+    # Check if already exists
+    existing = db.query(GeoBlockRule).filter(GeoBlockRule.country_code == cc).first()
+    if existing:
+        raise HTTPException(409, f"Country {cc} is already blocked")
+
+    rule = GeoBlockRule(country_code=cc, direction=direction)
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    # Apply iptables rules asynchronously
+    try:
+        await _apply_geoblock(cc, direction)
+    except Exception as exc:
+        print(f"[geoblock] iptables apply failed for {cc}: {exc}")
+
+    return {
+        "id": rule.id,
+        "country_code": rule.country_code,
+        "direction": rule.direction,
+        "enabled": rule.enabled,
+        "created_at": str(rule.created_at),
+    }
+
+
+@app.delete("/api/geo/block-rules/{cc}")
+async def delete_geo_block_rule(cc: str, db: Session = Depends(get_db)):
+    """Remove a country block rule and clean up iptables."""
+    cc = cc.upper()
+    rule = db.query(GeoBlockRule).filter(GeoBlockRule.country_code == cc).first()
+    if not rule:
+        raise HTTPException(404, f"No block rule for {cc}")
+
+    db.delete(rule)
+    db.commit()
+
+    # Remove iptables rules asynchronously
+    try:
+        await _remove_geoblock(cc)
+    except Exception as exc:
+        print(f"[geoblock] iptables remove failed for {cc}: {exc}")
+
+    return {"status": "ok", "removed": cc}
 
 
 # ---------------------------------------------------------------------------
