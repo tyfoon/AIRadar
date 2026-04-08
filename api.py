@@ -6722,13 +6722,27 @@ async def _check_volume_spikes():
                 # Find top destination in the spike window for context
                 top_dest = db.query(
                     GeoConversation.ai_service,
+                    GeoConversation.resp_ip,
+                    GeoConversation.country_code,
                 ).filter(
                     GeoConversation.mac_address == bl.mac_address,
                     GeoConversation.last_seen >= hour_ago,
                 ).order_by(
                     GeoConversation.bytes_transferred.desc()
                 ).first()
-                top_svc = top_dest.ai_service if top_dest else "unknown"
+                if top_dest and top_dest.ai_service and top_dest.ai_service != "unknown":
+                    top_svc = top_dest.ai_service
+                elif top_dest and top_dest.resp_ip:
+                    # No service name but we have an IP — try IpMetadata for ASN/PTR
+                    ip_meta = db.query(IpMetadata).filter(IpMetadata.ip == top_dest.resp_ip).first()
+                    if ip_meta and ip_meta.asn_org:
+                        top_svc = ip_meta.asn_org
+                    elif top_dest.country_code:
+                        top_svc = top_dest.country_code
+                    else:
+                        top_svc = top_dest.resp_ip
+                else:
+                    top_svc = "internal traffic"
 
                 def _fmt_bytes_short(b):
                     if b >= 1_000_000:
