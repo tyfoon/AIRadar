@@ -3892,23 +3892,60 @@ function _renderIotAnomalies(data) {
 // Lateral Movement Network Graph (vis.js force-directed)
 // ---------------------------------------------------------------------------
 
-// Device type → emoji for graph nodes (emoji's render natively on canvas,
-// unlike Phosphor web font icons which need DOM/CSS context)
-const _GRAPH_EMOJI = {
-  phone: '📱', tablet: '📱', laptop: '💻', desktop: '🖥️', tv: '📺',
-  speaker: '🔊', printer: '🖨️', router: '🌐', netswitch: '🔀', ap: '📡',
-  console: '🎮', camera: '📹', watch: '⌚', nas: '💾', server: '🖥️',
-  home: '🏠', doorbell: '🔔', smoke: '🔥', vacuum: '🧹', washer: '🧺',
-  airco: '🌡️', light: '💡', energy: '⚡', sensor: '🌡️', iot: '🤖',
-  unknown: '❓', device: '⚙️',
-  // Extended types from _detectDeviceType() that return compound names
-  avr: '🔊', av: '🔊', receiver: '🔊', denon: '🔊', marantz: '🔊',
-  sonos: '🔊', google: '🔊', amazon: '🔊', echo: '🔊', alexa: '🔊',
-  harmony: '🎛️', hue: '💡', ring: '🔔', nest: '🌡️', raspberry: '🖥️',
-  android: '📱', iphone: '📱', ipad: '📱', macbook: '💻', imac: '🖥️',
-  playstation: '🎮', xbox: '🎮', nintendo: '🎮', chromecast: '📺',
-  appletv: '📺', firetv: '📺', roku: '📺', ubiquiti: '🌐',
+// Device type → Phosphor icon class (same as PH_ICON keys in DEVICE_TYPES)
+const _GRAPH_ICON_CLASS = {
+  phone: 'ph-device-mobile', tablet: 'ph-device-tablet', laptop: 'ph-laptop',
+  desktop: 'ph-desktop', tv: 'ph-television', speaker: 'ph-speaker-hifi',
+  printer: 'ph-printer', router: 'ph-router', netswitch: 'ph-swap',
+  ap: 'ph-wifi-high', console: 'ph-game-controller', camera: 'ph-video-camera',
+  watch: 'ph-watch', nas: 'ph-hard-drives', server: 'ph-hard-drives',
+  home: 'ph-house-line', doorbell: 'ph-bell-ringing', smoke: 'ph-fire',
+  vacuum: 'ph-broom', washer: 'ph-washing-machine', airco: 'ph-thermometer',
+  light: 'ph-lightbulb', energy: 'ph-lightning', sensor: 'ph-thermometer',
+  iot: 'ph-robot', unknown: 'ph-question', device: 'ph-circuitry',
+  // Extended: compound type names from _detectDeviceType()
+  avr: 'ph-speaker-simple-high', av: 'ph-speaker-simple-high',
+  receiver: 'ph-speaker-simple-high', denon: 'ph-speaker-simple-high',
+  marantz: 'ph-speaker-simple-high', sonos: 'ph-speaker-hifi',
+  harmony: 'ph-remote', hue: 'ph-lightbulb', ring: 'ph-bell-ringing',
+  nest: 'ph-thermometer', raspberry: 'ph-hard-drives',
+  android: 'ph-device-mobile', iphone: 'ph-device-mobile', ipad: 'ph-device-tablet',
+  macbook: 'ph-laptop', imac: 'ph-desktop',
+  playstation: 'ph-game-controller', xbox: 'ph-game-controller',
+  nintendo: 'ph-game-controller', chromecast: 'ph-television',
+  appletv: 'ph-television', firetv: 'ph-television', roku: 'ph-television',
+  ubiquiti: 'ph-router',
 };
+
+// Extract the unicode code point from a Phosphor icon class by rendering
+// a hidden element and reading the computed ::before content.
+const _graphIconCodeCache = new Map();
+function _getPhosphorIconCode(iconClass) {
+  if (_graphIconCodeCache.has(iconClass)) return _graphIconCodeCache.get(iconClass);
+  const el = document.createElement('i');
+  el.className = `ph-duotone ${iconClass}`;
+  el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden';
+  document.body.appendChild(el);
+  const content = getComputedStyle(el, '::before').content;
+  document.body.removeChild(el);
+  // content is like '"\\e3a8"' or '"\ue3a8"' — extract the character
+  const code = content ? content.replace(/['"]/g, '') : '?';
+  _graphIconCodeCache.set(iconClass, code);
+  return code;
+}
+
+// Detect the Phosphor font-family name (cached on first call)
+let _phosphorFontFace = null;
+function _getPhosphorFontFace() {
+  if (_phosphorFontFace) return _phosphorFontFace;
+  const el = document.createElement('i');
+  el.className = 'ph-duotone ph-question';
+  el.style.cssText = 'position:absolute;left:-9999px;visibility:hidden';
+  document.body.appendChild(el);
+  _phosphorFontFace = getComputedStyle(el, '::before').fontFamily.replace(/['"]/g, '').split(',')[0].trim();
+  document.body.removeChild(el);
+  return _phosphorFontFace || 'Phosphor';
+}
 
 let _networkGraphInstance = null;
 
@@ -3944,15 +3981,17 @@ async function _refreshNetworkGraph() {
       const dt = _detectDeviceType(devOrPseudo);
       const online = dev ? _isDeviceOnline(dev) : false;
 
-      // Emoji icon for this device type
+      // Phosphor icon for this device type
       const dtKey = dt.type ? dt.type.toLowerCase().replace(/\s+/g, '') : 'unknown';
-      const emoji = _GRAPH_EMOJI[dtKey]
-        || Object.entries(_GRAPH_EMOJI).find(([k]) => dtKey.includes(k))?.[1]
-        || _GRAPH_EMOJI.unknown;
+      const iconClass = _GRAPH_ICON_CLASS[dtKey]
+        || Object.entries(_GRAPH_ICON_CLASS).find(([k]) => dtKey.includes(k))?.[1]
+        || _GRAPH_ICON_CLASS.unknown;
+      const iconCode = _getPhosphorIconCode(iconClass);
+      const fontFace = _getPhosphorFontFace();
 
       // Label: show name + IP, but avoid duplicating IP when name is unknown
       const labelName = name || 'Unknown';
-      const labelText = name ? `${emoji} ${name}\n${n.ip}` : `${emoji} ${n.ip}`;
+      const labelText = name ? `${name}\n${n.ip}` : n.ip;
 
       const borderColor = online ? '#10b981' : '#475569';
       const bgColor = online ? '#0f291f' : '#1e293b';
@@ -3961,16 +4000,15 @@ async function _refreshNetworkGraph() {
         id,
         label: labelText,
         title: `${labelName}\n${n.ip}\n${dt.type}${n.vendor ? ' · ' + n.vendor : ''}${online ? ' · online' : ' · offline'}`,
-        shape: 'box',
-        color: {
-          background: bgColor,
-          border: borderColor,
-          highlight: { background: online ? '#10b981' : '#334155', border: borderColor },
+        shape: 'icon',
+        icon: {
+          face: fontFace,
+          code: iconCode,
+          size: 40,
+          color: online ? '#34d399' : '#94a3b8',
         },
-        font: { color: '#e2e8f0', size: 12, face: 'Inter, system-ui, sans-serif', multi: 'md' },
-        borderWidth: online ? 2 : 1,
-        margin: { top: 8, bottom: 8, left: 10, right: 10 },
-        shadow: { enabled: true, color: online ? 'rgba(16,185,129,0.2)' : 'rgba(0,0,0,0.3)', size: 8 },
+        font: { color: '#e2e8f0', size: 11, face: 'Inter, system-ui, sans-serif', multi: 'md', vadjust: 6 },
+        borderWidth: 0,
       });
     });
 
