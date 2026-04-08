@@ -3901,6 +3901,13 @@ const _GRAPH_EMOJI = {
   home: '🏠', doorbell: '🔔', smoke: '🔥', vacuum: '🧹', washer: '🧺',
   airco: '🌡️', light: '💡', energy: '⚡', sensor: '🌡️', iot: '🤖',
   unknown: '❓', device: '⚙️',
+  // Extended types from _detectDeviceType() that return compound names
+  avr: '🔊', av: '🔊', receiver: '🔊', denon: '🔊', marantz: '🔊',
+  sonos: '🔊', google: '🔊', amazon: '🔊', echo: '🔊', alexa: '🔊',
+  harmony: '🎛️', hue: '💡', ring: '🔔', nest: '🌡️', raspberry: '🖥️',
+  android: '📱', iphone: '📱', ipad: '📱', macbook: '💻', imac: '🖥️',
+  playstation: '🎮', xbox: '🎮', nintendo: '🎮', chromecast: '📺',
+  appletv: '📺', firetv: '📺', roku: '📺', ubiquiti: '🌐',
 };
 
 let _networkGraphInstance = null;
