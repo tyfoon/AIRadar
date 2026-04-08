@@ -3449,8 +3449,10 @@ def _enrich_alert_details(
         details["dest_country"] = meta.country_code if meta else None
         details["dest_asn_org"] = meta.asn_org if meta else None
         details["dest_sni"] = meta.ptr if meta else None
-        # Beacon score is stored as bytes_transferred / 10 by beacon_analyzer
-        details["beacon_score"] = round(event.bytes_transferred / 10) if event.bytes_transferred else None
+        # beacon_score is computed after the aggregation loop using
+        # _max_bytes (= max bytes_transferred across all events in the
+        # group, which stores score×10 from beacon_analyzer).
+        details["_max_bytes"] = event.bytes_transferred or 0
 
     elif alert_type == "vpn_tunnel":
         details["source_ip"] = event.source_ip
@@ -3707,6 +3709,17 @@ def get_active_alerts(
             g["timestamp"] = e.timestamp
         if e.timestamp < g["first_seen"]:
             g["first_seen"] = e.timestamp
+        # Track max bytes_transferred for beacon score (score_x10)
+        if alert_type == "beaconing_threat":
+            cur = e.bytes_transferred or 0
+            if cur > g["details"].get("_max_bytes", 0):
+                g["details"]["_max_bytes"] = cur
+
+    # --- Post-aggregation: compute beacon scores from max bytes_transferred ---
+    for g in groups.values():
+        if g["alert_type"] == "beaconing_threat" and "_max_bytes" in g["details"]:
+            score_x10 = g["details"].pop("_max_bytes", 0)
+            g["details"]["beacon_score"] = round(score_x10 / 10.0, 1)
 
     # --- New device alerts ---
     # Devices whose first_seen is within the alert window are surfaced
