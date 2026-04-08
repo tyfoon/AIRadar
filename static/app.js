@@ -473,9 +473,12 @@ function _vendorFallbackName(device) {
     return `${device.ja4_label} (${macTail})`;
   }
   if (vendor) {
-    return `${vendor} device (${macTail})`;
+    return `${vendor} device`;
   }
-  return `Device ${macTail}`;
+  // No vendor, no hostname — show IP instead of raw MAC
+  const ip = _latestIp(device);
+  if (ip) return ip;
+  return device.mac_address || `Device ${macTail}`;
 }
 
 function deviceName(ip) {
