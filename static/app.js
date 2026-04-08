@@ -3808,17 +3808,32 @@ function _renderIotAnomalies(data) {
   }
 
   // Normalize IoT anomalies to unified alert format
+  // Port label lookup (same as backend _PORT_LABELS)
+  const _iotPortLabels = { 22:'SSH',23:'Telnet',25:'SMTP',53:'DNS',80:'HTTP',110:'POP3',139:'NetBIOS',143:'IMAP',443:'HTTPS',445:'SMB',993:'IMAPS',995:'POP3S',1433:'MSSQL',1521:'Oracle',3306:'MySQL',3389:'RDP',4444:'Metasploit',5432:'PostgreSQL',5555:'ADB',5900:'VNC',6379:'Redis',6667:'IRC',8080:'HTTP-Alt',8443:'HTTPS-Alt',8888:'HTTP-Proxy',9200:'Elasticsearch',27017:'MongoDB' };
+  const _iotPortLabel = (p) => { const n = _iotPortLabels[p]; return n ? `${n}/${p}` : String(p); };
+
   _iotAnomalyAlerts = anomalies.map(a => {
     const detail = a.detail || '';
     const details = { source_ip: a.source_ip };
-    // Parse enrichment from detail string
-    if ((a.detection_type === 'iot_lateral_movement' || a.detection_type === 'iot_suspicious_port') && detail) {
-      const portMatch = detail.match(/(\d+)/);
-      if (portMatch) details.port_label = ':' + portMatch[1];
+
+    // Parse enrichment from detail string (ai_service field)
+    if (a.detection_type === 'iot_lateral_movement' && detail) {
+      // Format: "lateral_{port}_{dest_ip}" (new) or "lateral_{port}" (old)
+      const parts = detail.replace('lateral_', '').split('_', 2);
+      const port = parts[0] ? parseInt(parts[0]) : null;
+      if (port) { details.target_port = port; details.port_label = _iotPortLabel(port); }
+      if (parts[1]) details.target_ip = parts[1];
+    }
+    if (a.detection_type === 'iot_suspicious_port' && detail) {
+      // Format: "port_{port}"
+      const port = parseInt(detail.replace('port_', ''));
+      if (port) { details.ext_port = port; details.port_label = _iotPortLabel(port); }
     }
     if (a.detection_type === 'iot_new_country' && detail) {
-      const ccMatch = detail.replace('country_', '').toUpperCase();
-      details.country_code = ccMatch;
+      details.country_code = detail.replace('country_', '').toUpperCase();
+    }
+    if (a.detection_type === 'iot_volume_spike') {
+      details.spike_detail = detail;
     }
     return {
       alert_type: a.detection_type,
