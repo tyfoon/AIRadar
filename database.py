@@ -665,6 +665,15 @@ def init_db() -> None:
                     "ALTER TABLE detection_events ADD COLUMN category TEXT NOT NULL DEFAULT 'ai'"
                 ))
 
+    # --- InboundAttack: add conn_state column (Zeek connection outcome) ---
+    if "inbound_attacks" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("inbound_attacks")]
+        if "conn_state" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE inbound_attacks ADD COLUMN conn_state TEXT"
+                ))
+
     # --- Performance indexes for large tables ---
     # These CREATE INDEX IF NOT EXISTS are idempotent and safe to run on every boot.
     with engine.begin() as conn:
