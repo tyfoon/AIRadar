@@ -1544,8 +1544,8 @@ function _alertExtraBadges(a) {
   const d = a.details || {};
   if (a.alert_type === 'beaconing_threat' && d.beacon_score != null) {
     const sc = d.beacon_score;
-    const bg = sc >= 90 ? 'bg-red-600' : sc >= 80 ? 'bg-orange-600' : 'bg-amber-600';
-    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold tabular-nums">${sc}</span>`;
+    const [label, bg] = sc >= 90 ? ['Critical', 'bg-red-600'] : sc >= 80 ? ['High', 'bg-orange-600'] : ['Moderate', 'bg-amber-600'];
+    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold">${label}</span>`;
   }
   if (a.alert_type === 'upload' && d.severity)
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">${d.severity}</span>`;
@@ -1556,6 +1556,12 @@ function _alertExtraBadges(a) {
   if (a.alert_type === 'inbound_port_scan')
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-600 text-white font-bold">probe</span>`;
   return '';
+}
+
+// Shorten ASN org names by stripping legal suffixes (same as IPS>Inbound page)
+function _shortAsn(name) {
+  if (!name) return '';
+  return name.replace(/(,?\s*(Inc|Ltd|LLC|Co|Corp|Limited|Technology|Holdings|International|GmbH|PJSC|AG|S\.?A\.?|B\.?V\.?|N\.?V\.?|Pty|Pvt|Group|Solutions|Services|Networks|Communications|Telecom)\.?)+$/i, '').trim();
 }
 
 // Type-specific detail line (regel 2) — returns inner HTML
@@ -1578,8 +1584,8 @@ function _alertDetailLine(a) {
     case 'beaconing_threat': {
       const destIp = d.dest_ip || a.service_or_dest || '';
       const geo = [];
-      if (d.dest_country) geo.push(`${_flagEmoji(d.dest_country)} ${d.dest_asn_org || d.dest_country}`);
-      else if (d.dest_asn_org) geo.push(d.dest_asn_org);
+      if (d.dest_country) geo.push(`${_flagEmoji(d.dest_country)} ${_shortAsn(d.dest_asn_org) || d.dest_country}`);
+      else if (d.dest_asn_org) geo.push(_shortAsn(d.dest_asn_org));
       if (d.dest_sni) geo.push(`<span class="${monoMuted}">${d.dest_sni}</span>`);
       // Prefer GeoConversation stats (real connection counts, same as IPS>Outbound)
       const connCount = d.geo_connections || a.hits;
@@ -1685,20 +1691,20 @@ function _alertDetailLine(a) {
     }
     case 'inbound_threat': {
       const parts = [];
-      // Source: flag + ASN org
+      // Source: flag + ASN org (shortened)
       const geo = [];
       if (d.country_code) geo.push(_flagEmoji(d.country_code));
-      if (d.asn_org) geo.push(d.asn_org);
+      if (d.asn_org) geo.push(_shortAsn(d.asn_org));
       if (geo.length) parts.push(`<span class="inline-flex items-center gap-1">${geo.join(' ')}</span>`);
       // Arrow + target
       parts.push(arrow);
       if (d.target_ip) parts.push(`<span class="${mono}">${d.target_ip}</span>`);
       if (d.port_label) { parts.push(colon); parts.push(_portBadge(d.port_label)); }
-      // CrowdSec reason
-      if (d.crowdsec_reason) {
-        const reason = d.crowdsec_reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ');
-        parts.push(`${sep} <span class="text-red-400/70 dark:text-red-400/70 text-[10px]">${reason}</span>`);
-      }
+      // CrowdSec reason or fallback
+      const _reason = d.crowdsec_reason
+        ? d.crowdsec_reason.replace(/^crowdsecurity\//, '').replace(/:/, ' — ')
+        : (d.severity === 'threat' ? 'blocklist match' : '');
+      if (_reason) parts.push(`${sep} <span class="text-red-400/70 dark:text-red-400/70 text-[10px]">${_reason}</span>`);
       if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
       parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
       return parts.join(' ');
@@ -1707,10 +1713,12 @@ function _alertDetailLine(a) {
       const parts = [];
       const geo = [];
       if (d.country_code) geo.push(_flagEmoji(d.country_code));
-      if (d.asn_org) geo.push(d.asn_org);
+      if (d.asn_org) geo.push(_shortAsn(d.asn_org));
       if (geo.length) parts.push(`<span class="inline-flex items-center gap-1">${geo.join(' ')}</span>`);
       parts.push(arrow);
       if (d.target_ip) parts.push(`<span class="${mono}">${d.target_ip}</span>`);
+      // Fallback reason for port scans
+      parts.push(`${sep} <span class="text-orange-400/70 dark:text-orange-400/70 text-[10px]">probe / scan</span>`);
       if (a.hits) parts.push(`${sep} <span class="tabular-nums">${a.hits} hits</span>`);
       parts.push(`${sep} <span class="${muted}">${lastSeen}</span>`);
       return parts.join(' ');
@@ -1774,6 +1782,10 @@ async function loadSummaryDashboard() {
       const devName = a.display_name || (a.hostname && !_isJunkHostname(a.hostname) ? a.hostname : null)
                     || (a.vendor ? `${_shortVendor(a.vendor)} device` : null)
                     || (a.details?.ips?.[0]) || (_dev ? _latestIp(_dev) : null) || a.mac_address;
+      // Device type icon with online/offline indicator (same as device page)
+      const _dt = _dev ? _detectDeviceType(_dev) : { icon: PH_ICON.unknown, type: 'Unknown' };
+      const _online = _dev ? _isDeviceOnline(_dev) : false;
+      const devTypeIcon = _dev ? _deviceTypeIcon20(_dt, _online) : '';
       const isAnomaly = _ANOMALY_ALERT_TYPES.has(a.alert_type);
       const borderClass = isAnomaly
         ? 'border-red-200 dark:border-red-700/40 bg-red-50/40 dark:bg-red-900/10'
@@ -1808,6 +1820,7 @@ async function loadSummaryDashboard() {
               ${iconHtml}
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
+                  ${devTypeIcon}
                   <span class="text-sm font-semibold text-slate-800 dark:text-white truncate">${devName}</span>
                   <span class="text-[10px] px-2 py-0.5 rounded-full bg-${meta.color}-100 dark:bg-${meta.color}-900/30 text-${meta.color}-600 dark:text-${meta.color}-400 font-medium">${meta.label}</span>
                   ${_alertExtraBadges(a)}
