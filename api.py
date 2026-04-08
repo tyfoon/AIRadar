@@ -3682,6 +3682,7 @@ def _enrich_alert_details(
             details["country_code"] = ia.country_code
             details["asn_org"] = ia.asn_org
             details["severity"] = ia.severity  # "threat" or "blocked"
+            details["conn_state"] = ia.conn_state  # S0, REJ, S1, SF, etc.
             details["crowdsec_reason"] = ia.crowdsec_reason
             if alert_type == "inbound_threat":
                 details["target_ip"] = ia.target_ip
@@ -4754,6 +4755,7 @@ async def get_ips_status():
                 "target_name": mac_to_name.get(a.target_mac),
                 "target_port": a.target_port,
                 "severity": a.severity,
+                "conn_state": a.conn_state,
                 "crowdsec_reason": a.crowdsec_reason,
                 "country_code": a.country_code,
                 "asn": a.asn,
@@ -4866,6 +4868,10 @@ def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
             if u.get("severity") == "threat" and row.severity != "threat":
                 row.severity = "threat"
                 row.crowdsec_reason = u.get("crowdsec_reason")
+            # Escalate conn_state: established (S1/SF) overrides probes
+            new_cs = u.get("conn_state", "")
+            if new_cs in ("S1", "SF") and row.conn_state not in ("S1", "SF"):
+                row.conn_state = new_cs
         else:
             db.add(InboundAttack(
                 source_ip=src,
@@ -4874,6 +4880,7 @@ def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
                 target_mac=u.get("target_mac"),
                 protocol=u.get("protocol", "tcp"),
                 severity=u.get("severity", "blocked"),
+                conn_state=u.get("conn_state", ""),
                 crowdsec_reason=u.get("crowdsec_reason"),
                 country_code=u.get("country_code"),
                 asn=u.get("asn"),

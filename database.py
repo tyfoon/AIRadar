@@ -458,6 +458,7 @@ class InboundAttack(Base):
     target_port = Column(Integer, nullable=False)
     protocol = Column(String, nullable=False, default="tcp")
     severity = Column(String, nullable=False, default="blocked")  # "blocked" | "threat"
+    conn_state = Column(String, nullable=True)  # Zeek conn_state: S0, REJ, S1, SF, etc.
     crowdsec_reason = Column(String, nullable=True)
     country_code = Column(String, nullable=True)
     asn = Column(Integer, nullable=True)

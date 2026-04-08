@@ -1838,6 +1838,7 @@ async def _record_geo_conversation(
 async def _record_inbound_attack(
     src_ip: str, target_ip: str, target_port: int,
     target_mac: str | None, total_bytes: int, proto: str = "tcp",
+    conn_state: str = "",
 ) -> None:
     """Buffer an inbound connection attempt for periodic flush."""
     key = (src_ip, target_ip, target_port)
@@ -1850,6 +1851,9 @@ async def _record_inbound_attack(
             if is_threat and bucket["severity"] != "threat":
                 bucket["severity"] = "threat"
                 bucket["crowdsec_reason"] = _crowdsec_ip_reasons.get(src_ip)
+            # Escalate conn_state: if ANY connection was established, record that
+            if conn_state in ("S1", "SF") and bucket.get("conn_state") not in ("S1", "SF"):
+                bucket["conn_state"] = conn_state
         else:
             cc = _resolve_country(src_ip)
             asn_num, asn_org = _resolve_asn(src_ip)
@@ -1858,6 +1862,7 @@ async def _record_inbound_attack(
                 "hits": 1,
                 "severity": "threat" if is_threat else "blocked",
                 "crowdsec_reason": _crowdsec_ip_reasons.get(src_ip) if is_threat else None,
+                "conn_state": conn_state,
                 "target_mac": target_mac,
                 "proto": proto,
                 "country_code": cc,
@@ -1966,6 +1971,7 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                     "target_mac": v["target_mac"],
                     "protocol": v["proto"],
                     "severity": v["severity"],
+                    "conn_state": v.get("conn_state", ""),
                     "crowdsec_reason": v["crowdsec_reason"],
                     "country_code": v["country_code"],
                     "asn": v["asn"],
@@ -2437,7 +2443,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         target_mac = _ip_to_mac.get(resp_ip)
                         await _record_inbound_attack(
                             src_ip, resp_ip, resp_port, target_mac,
-                            orig_bytes + resp_bytes, proto,
+                            orig_bytes + resp_bytes, proto, conn_state,
                         )
 
                     now_ib = time.time()

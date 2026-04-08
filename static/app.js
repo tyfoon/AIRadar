@@ -1667,8 +1667,22 @@ function _alertExtraBadges(a) {
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">${d.severity}</span>`;
   if (a.alert_type === 'service_access' && d.severity)
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-600 text-white font-bold">${d.severity}</span>`;
-  if (a.alert_type === 'inbound_threat' && d.severity === 'threat')
-    return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">known threat</span>`;
+  if (a.alert_type === 'inbound_threat') {
+    const badges = [];
+    if (d.severity === 'threat')
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold">known threat</span>`);
+    // Connection outcome badge
+    const cs = d.conn_state;
+    if (cs === 'SF')
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-700 text-white font-bold animate-pulse">⚠ connected</span>`);
+    else if (cs === 'S1')
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-600 text-white font-bold">connected</span>`);
+    else if (cs === 'S0' || cs === 'REJ')
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold">blocked</span>`);
+    else if (cs)
+      badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500 text-white font-bold">rejected</span>`);
+    return badges.join(' ');
+  }
   if (a.alert_type === 'inbound_port_scan')
     return `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-600 text-white font-bold">probe</span>`;
   return '';
@@ -6918,6 +6932,7 @@ function _renderIpsThreats(data) {
             target_port: a.target_port,
             port_label: portLabel,
             severity: a.severity,
+            conn_state: a.conn_state,
             crowdsec_reason: a.crowdsec_reason,
           },
         };
