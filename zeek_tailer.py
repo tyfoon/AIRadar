@@ -2500,12 +2500,13 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         )
 
                     # --- Suspicious inbound port ---
-                    # Skip whitelisted (ip, port) combos, ephemeral ports,
-                    # and common web ports. Only alert on low service ports
-                    # that are genuinely suspicious.
+                    # Alert on: dangerous ports always, other low ports
+                    # except 80/443 established (legit visitors). For 80/443
+                    # with S0/REJ (blocked probes/DDoS), still create alerts.
                     if (resp_ip, resp_port) not in _INBOUND_WHITELIST and resp_port < 1024:
                         is_dangerous = resp_port in _INBOUND_DANGEROUS_PORTS
-                        if is_dangerous or resp_port not in (80, 443):
+                        is_web_probe = resp_port in (80, 443) and is_probe
+                        if is_dangerous or resp_port not in (80, 443) or is_web_probe:
                             dk = ("inbound", src_ip, resp_ip, resp_port)
                             if (now_ib - _inbound_threat_last.get(dk, 0)) >= INBOUND_THREAT_DEDUP_SECONDS:
                                 _inbound_threat_last[dk] = now_ib
