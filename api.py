@@ -6456,14 +6456,12 @@ def iot_fleet(db: Session = Depends(get_db)):
         bytes_24h = stats.get("bytes_24h", 0)
         total_bytes += bytes_24h
 
-        # Baseline status: learning → building → ready
+        # Baseline status: learning (< 7 days) or ready (≥ 7 days + baseline)
         days_since_first = (now - d.first_seen).days if d.first_seen else 0
-        if not baseline or not baseline.computed_at:
-            baseline_status = "learning"
-        elif days_since_first < 7:
-            baseline_status = "building"
-        else:
+        if days_since_first >= 7 and baseline and baseline.computed_at:
             baseline_status = "ready"
+        else:
+            baseline_status = "learning"
 
         # Online: last_seen within 5 minutes
         online = bool(d.last_seen and (now - d.last_seen).total_seconds() < 300)

@@ -4154,12 +4154,11 @@ function _renderIotFleet(data) {
       : '<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 flex-shrink-0"></span>';
     const onlineLabel = online ? 'online' : 'offline';
 
-    // Baseline badge
+    // Baseline badge — only shown while learning (< 7 days)
     let baselineBadge = '';
     if (d.baseline_status === 'learning') {
-      baselineBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium"><i class="ph-duotone ph-graduation-cap text-[10px]"></i> Learning (${d.baseline_days || 0}d)</span>`;
-    } else if (d.baseline_status === 'building') {
-      baselineBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium"><i class="ph-duotone ph-chart-bar text-[10px]"></i> Building baseline</span>`;
+      const days = d.baseline_days || 0;
+      baselineBadge = `<span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium"><i class="ph-duotone ph-graduation-cap text-[10px]"></i> Learning ${days}/7d</span>`;
     }
 
     // Throughput bar vs baseline
