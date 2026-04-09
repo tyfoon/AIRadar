@@ -7,6 +7,7 @@ managing discovered devices, analytics, and AdGuard Home privacy stats.
 import asyncio
 import csv
 import io
+import ipaddress
 import json
 import os
 import re
@@ -536,6 +537,23 @@ async def _periodic_beacon_scan():
                         )
                         if already:
                             continue
+
+                        # --- Skip local / private destinations ---
+                        # LAN traffic (RFC1918, link-local, same-subnet IPv6)
+                        # is never a C2 beacon.
+                        try:
+                            dst_addr = ipaddress.ip_address(dst_ip)
+                            if dst_addr.is_private or dst_addr.is_link_local or dst_addr.is_loopback:
+                                continue
+                            # Same /64 prefix = same LAN segment (IPv6)
+                            if dst_addr.version == 6:
+                                src_addr = ipaddress.ip_address(src_ip)
+                                if src_addr.version == 6:
+                                    src_net = ipaddress.ip_network(f"{src_ip}/64", strict=False)
+                                    if dst_addr in src_net:
+                                        continue
+                        except ValueError:
+                            pass  # unparseable IP — let it through for analysis
 
                         # --- Destination novelty check ---
                         # Two-tier check:
