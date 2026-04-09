@@ -701,11 +701,11 @@ def match_domain(
             # content-autofill and fonts are clearly not AI
             if hostname in ("content-autofill.googleapis.com", "fonts.googleapis.com"):
                 return "google", "tracking", hostname
-            # www.googleapis.com is the main Google API gateway used by
-            # Gemini API, Drive API, etc. Default to google_api (ai)
-            # because the most interesting signal is API usage.
+            # www.googleapis.com is the main Google API gateway — most
+            # commonly used by Gemini browser sessions when no context
+            # setter was seen yet. Default to Gemini.
             if hostname == "www.googleapis.com":
-                return "google_api", "ai", hostname
+                return "google_gemini", "ai", hostname
             return "google_drive", "cloud", hostname
 
     # 3) Fast lookup via the merged map. Exact match first, then walk
