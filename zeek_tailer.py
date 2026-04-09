@@ -233,6 +233,11 @@ _INBOUND_DANGEROUS_PORTS = frozenset({
 INBOUND_THREAT_DEDUP_SECONDS = 300
 _inbound_threat_last: dict[tuple, float] = {}
 
+# Web probe (80/443 S0) hit counter: only alert when an IP exceeds
+# this threshold to avoid flooding Summary with one-off scanners.
+INBOUND_WEB_PROBE_ALERT_THRESHOLD = 10  # hits before alerting
+_inbound_web_probe_hits: dict[tuple, int] = {}  # (src_ip, resp_ip, port) → hit count
+
 # Port scan detection: track unique ports per (src_ip, dest_ip) in a
 # sliding window.  If an external IP hits >= PORTSCAN_THRESHOLD distinct
 # ports on the same internal host within PORTSCAN_WINDOW_SECONDS, fire.
@@ -2502,11 +2507,23 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     # --- Suspicious inbound port ---
                     # Alert on: dangerous ports always, other low ports
                     # except 80/443 established (legit visitors). For 80/443
-                    # with S0/REJ (blocked probes/DDoS), still create alerts.
+                    # with S0/REJ (blocked probes/DDoS), only alert after
+                    # INBOUND_WEB_PROBE_ALERT_THRESHOLD hits per IP to avoid
+                    # flooding Summary with one-off scanners.
                     if (resp_ip, resp_port) not in _INBOUND_WHITELIST and resp_port < 1024:
                         is_dangerous = resp_port in _INBOUND_DANGEROUS_PORTS
                         is_web_probe = resp_port in (80, 443) and is_probe
-                        if is_dangerous or resp_port not in (80, 443) or is_web_probe:
+                        should_alert = False
+                        if is_dangerous or (resp_port not in (80, 443)):
+                            should_alert = True
+                        elif is_web_probe:
+                            # Count hits per (src, target, port) — only alert
+                            # when threshold reached (filters one-off scanners)
+                            wpk = (src_ip, resp_ip, resp_port)
+                            _inbound_web_probe_hits[wpk] = _inbound_web_probe_hits.get(wpk, 0) + 1
+                            if _inbound_web_probe_hits[wpk] >= INBOUND_WEB_PROBE_ALERT_THRESHOLD:
+                                should_alert = True
+                        if should_alert:
                             dk = ("inbound", src_ip, resp_ip, resp_port)
                             if (now_ib - _inbound_threat_last.get(dk, 0)) >= INBOUND_THREAT_DEDUP_SECONDS:
                                 _inbound_threat_last[dk] = now_ib
