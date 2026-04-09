@@ -57,6 +57,7 @@ const TRANSLATIONS = {
     'page.other':          'Other Usage',
     'page.geo':            'Geo Traffic',
     'page.rules':          'Rules & Access Control',
+    'page.iot':            'IoT Overview',
     'page.settings':       'Settings',
 
     // Performance page (settings tab)
@@ -748,7 +749,7 @@ const TRANSLATIONS = {
     'cat.aiServices':      'AI Services',
     'cat.cloudStorage':    'Cloud Storage',
     'cat.privacyTrackers': 'Privacy / Trackers',
-    'nav.iot':             'IoT Devices',
+    'nav.iot':             'IoT Overview',
     'iot.totalDevices':    'IoT Devices',
     'iot.dataToday':       'Data Today',
     'iot.anomalies':       'Anomalies',
@@ -815,6 +816,7 @@ const TRANSLATIONS = {
     'page.ips':            'Aanvallen',
     'page.other':          'Overig Gebruik',
     'page.geo':            'Geo-verkeer',
+    'page.iot':            'IoT Overzicht',
     'page.rules':          'Regels & Toegangsbeheer',
     'page.settings':       'Instellingen',
 
@@ -1507,7 +1509,7 @@ const TRANSLATIONS = {
     'cat.aiServices':      'AI-services',
     'cat.cloudStorage':    'Cloudopslag',
     'cat.privacyTrackers': 'Privacy / Trackers',
-    'nav.iot':             'IoT-apparaten',
+    'nav.iot':             'IoT Overzicht',
     'iot.totalDevices':    'IoT-apparaten',
     'iot.dataToday':       'Data vandaag',
     'iot.anomalies':       'Anomalieën',
