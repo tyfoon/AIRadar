@@ -7424,21 +7424,24 @@ async function loadReputationSettings() {
   try {
     const res = await fetch('/api/settings/reputation');
     const data = await res.json();
+    const achKey = document.getElementById('rep-abusech-key');
     const abKey = document.getElementById('rep-abuseipdb-key');
     const vtKey = document.getElementById('rep-virustotal-key');
+    if (achKey) achKey.value = data.abusech_key || '';
     if (abKey) abKey.value = data.abuseipdb_key || '';
     if (vtKey) vtKey.value = data.virustotal_key || '';
   } catch (e) { console.error('loadReputationSettings:', e); }
 }
 
 async function saveReputationSettings() {
+  const achKey = document.getElementById('rep-abusech-key')?.value || '';
   const abKey = document.getElementById('rep-abuseipdb-key')?.value || '';
   const vtKey = document.getElementById('rep-virustotal-key')?.value || '';
   try {
     await fetch('/api/settings/reputation', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({abuseipdb_key: abKey, virustotal_key: vtKey}),
+      body: JSON.stringify({abusech_key: achKey, abuseipdb_key: abKey, virustotal_key: vtKey}),
     });
     _showToast('Reputation keys saved', 'success');
   } catch (e) { _showToast('Failed to save keys', 'error'); }

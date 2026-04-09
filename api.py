@@ -5840,6 +5840,7 @@ async def reputation_check(payload: dict = Body(...)):
     keys = _read_reputation_keys()
     data = await rep.check_ondemand(
         target,
+        abusech_key=keys.get("abusech_key"),
         abuseipdb_key=keys.get("abuseipdb_key"),
         virustotal_key=keys.get("virustotal_key"),
     )
@@ -5871,8 +5872,10 @@ def get_reputation_settings():
         return v[:4] + "•" * (len(v) - 8) + v[-4:] if len(v) > 8 else "•" * len(v)
 
     return {
+        "abusech_key": _mask("abusech_key"),
         "abuseipdb_key": _mask("abuseipdb_key"),
         "virustotal_key": _mask("virustotal_key"),
+        "abusech_configured": bool(keys.get("abusech_key")),
         "abuseipdb_configured": bool(keys.get("abuseipdb_key")),
         "virustotal_configured": bool(keys.get("virustotal_key")),
         "rate_limits": rep.get_rate_limit_status(),
@@ -5883,7 +5886,7 @@ def get_reputation_settings():
 def save_reputation_settings(payload: dict = Body(...)):
     """Save API keys for reputation services."""
     keys = _read_reputation_keys()
-    for field in ("abuseipdb_key", "virustotal_key"):
+    for field in ("abusech_key", "abuseipdb_key", "virustotal_key"):
         if field in payload:
             val = (payload[field] or "").strip()
             if val and "•" not in val:  # don't overwrite with masked value
@@ -5901,8 +5904,8 @@ async def test_reputation_keys():
     results = {}
     errors = []
 
-    # Test Layer 1 (always works)
-    l1 = await rep.check_proactive("8.8.8.8")
+    # Test Layer 1
+    l1 = await rep.check_proactive("8.8.8.8", auth_key=keys.get("abusech_key"))
     results["urlhaus"] = l1.get("urlhaus_status", "error")
     results["threatfox"] = l1.get("threatfox_status", "error")
 
@@ -5961,9 +5964,11 @@ async def _periodic_reputation_scan():
                 # Batch: max 50 per cycle
                 batch = to_check[:50]
                 checked = 0
+                _rep_keys = _read_reputation_keys()
+                _abusech_key = _rep_keys.get("abusech_key")
                 for ip in batch:
                     try:
-                        data = await rep.check_proactive(ip)
+                        data = await rep.check_proactive(ip, auth_key=_abusech_key)
                         _upsert_reputation(db, ip, data)
                         checked += 1
                         # Small delay to be nice to abuse.ch

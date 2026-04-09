@@ -1874,18 +1874,20 @@
             </div>
           </div>
           <div class="p-5 space-y-4">
-            <!-- Layer 1: always active -->
-            <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-lg p-4">
-              <h4 class="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1">Layer 1 — Always Active (Free)</h4>
-              <p class="text-xs text-emerald-600 dark:text-emerald-400">URLhaus + ThreatFox (abuse.ch) automatically check every new IP/domain. No API key needed.</p>
-              <div class="flex gap-4 mt-2 text-[10px] text-emerald-600 dark:text-emerald-400">
-                <span>✅ URLhaus (malware URLs)</span>
-                <span>✅ ThreatFox (C2 servers)</span>
+            <!-- Layer 1: abuse.ch -->
+            <div class="space-y-3">
+              <h4 class="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 1 — Proactive (abuse.ch)</h4>
+              <p class="text-xs text-slate-400">URLhaus (malware) + ThreatFox (C2 servers) — checked automatically for every new IP.</p>
+              <div>
+                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">abuse.ch Auth-Key</label>
+                <input type="password" id="rep-abusech-key" placeholder="Enter Auth-Key..." class="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono">
+                <p class="text-[10px] text-slate-400 mt-1">Free registration · <a href="https://auth.abuse.ch/" target="_blank" class="text-indigo-400 hover:underline">Get free key at auth.abuse.ch</a></p>
               </div>
             </div>
+            <hr class="border-slate-200 dark:border-slate-700">
             <!-- Layer 2: on-demand -->
             <div class="space-y-3">
-              <h4 class="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 2 — On-Demand (Optional API Keys)</h4>
+              <h4 class="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 2 — On-Demand (click to check)</h4>
               <div>
                 <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">AbuseIPDB API Key</label>
                 <input type="password" id="rep-abuseipdb-key" placeholder="Enter API key..." class="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono">

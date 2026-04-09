@@ -48,16 +48,19 @@ THREATFOX_API = "https://threatfox-api.abuse.ch/api/v1/"
 _TIMEOUT = 10  # seconds per request
 
 
-async def check_urlhaus(host: str) -> dict:
+async def check_urlhaus(host: str, auth_key: str | None = None) -> dict:
     """Check a host (IP or domain) against URLhaus malware URL database.
 
     Returns dict with urlhaus_status, urlhaus_threat, urlhaus_tags,
     urlhaus_url_count, urlhaus_checked_at.
     """
     now = _now()
+    if not auth_key:
+        return {"urlhaus_checked_at": now, "_error": "URLhaus: no Auth-Key configured"}
     try:
+        headers = {"Auth-Key": auth_key}
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(URLHAUS_API, data={"host": host})
+            resp = await client.post(URLHAUS_API, data={"host": host}, headers=headers)
             resp.raise_for_status()
             data = resp.json()
 
@@ -95,18 +98,22 @@ async def check_urlhaus(host: str) -> dict:
         return {"urlhaus_checked_at": now}
 
 
-async def check_threatfox(host: str) -> dict:
+async def check_threatfox(host: str, auth_key: str | None = None) -> dict:
     """Check a host against ThreatFox IOC database (C2 servers, etc).
 
     Returns dict with threatfox_status, threatfox_malware,
     threatfox_confidence, threatfox_checked_at.
     """
     now = _now()
+    if not auth_key:
+        return {"threatfox_checked_at": now, "_error": "ThreatFox: no Auth-Key configured"}
     try:
+        headers = {"Auth-Key": auth_key}
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.post(
                 THREATFOX_API,
                 json={"query": "search_ioc", "search_term": host},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -137,12 +144,12 @@ async def check_threatfox(host: str) -> dict:
         return {"threatfox_checked_at": now}
 
 
-async def check_proactive(host: str) -> dict:
+async def check_proactive(host: str, auth_key: str | None = None) -> dict:
     """Run both Layer 1 checks in parallel. Returns merged dict."""
     import asyncio
     results = await asyncio.gather(
-        check_urlhaus(host),
-        check_threatfox(host),
+        check_urlhaus(host, auth_key=auth_key),
+        check_threatfox(host, auth_key=auth_key),
         return_exceptions=True,
     )
     merged = {}
@@ -267,6 +274,7 @@ async def check_virustotal(target: str, api_key: str) -> dict:
 
 async def check_ondemand(
     target: str,
+    abusech_key: str | None = None,
     abuseipdb_key: str | None = None,
     virustotal_key: str | None = None,
 ) -> dict:
@@ -275,7 +283,7 @@ async def check_ondemand(
     tasks = []
 
     # Always run Layer 1 as well (refresh)
-    tasks.append(check_proactive(target))
+    tasks.append(check_proactive(target, auth_key=abusech_key))
 
     # AbuseIPDB — IP only
     if abuseipdb_key:
