@@ -4186,7 +4186,7 @@ function _renderIotFleet(data) {
     }
 
     // Upload / download split
-    const upDown = `<span class="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">&uarr; ${_fmtBytes(d.orig_bytes_24h || 0)}  &darr; ${_fmtBytes(d.resp_bytes_24h || 0)}  /24h</span>`;
+    const upDown = `<span class="text-[10px] tabular-nums"><span class="text-amber-500">↑ ${_fmtBytes(d.orig_bytes_24h || 0)}</span>  <span class="text-blue-500">↓ ${_fmtBytes(d.resp_bytes_24h || 0)}</span>  <span class="text-slate-400 dark:text-slate-500">/24h</span></span>`;
 
     // Country flags (top 3)
     const flags = (d.top_countries || []).slice(0, 3).map(c => _flagEmoji(c.cc)).join(' ');
