@@ -7441,11 +7441,22 @@ function _updateIpsBanner(data) {
 }
 
 function _updateIpsStats(data) {
-  // Inbound blocked count (24h)
+  // Inbound attempts total (24h)
   const blockedEl = document.getElementById('ips-stat-blocked');
   if (blockedEl) blockedEl.textContent = formatNumber(data.inbound_attacks_24h || 0);
 
-  // Threats count (24h) — CrowdSec-matched
+  // Blocked vs connected breakdown
+  const blockedCountEl = document.getElementById('ips-stat-blocked-count');
+  if (blockedCountEl) blockedCountEl.textContent = formatNumber(data.inbound_blocked_24h || 0);
+  const connectedCountEl = document.getElementById('ips-stat-connected-count');
+  if (connectedCountEl) {
+    const connected = data.inbound_connected_24h || 0;
+    connectedCountEl.textContent = formatNumber(connected);
+    // Hide connected line if zero — less alarming
+    connectedCountEl.parentElement.style.display = connected > 0 ? '' : 'none';
+  }
+
+  // Known threats count (24h) — CrowdSec-matched
   const threatsEl = document.getElementById('ips-stat-threats');
   if (threatsEl) threatsEl.textContent = formatNumber(data.inbound_threats_24h || 0);
 
@@ -7453,7 +7464,7 @@ function _updateIpsStats(data) {
   const attackersEl = document.getElementById('ips-stat-attackers');
   if (attackersEl) attackersEl.textContent = formatNumber(data.inbound_unique_ips_24h || 0);
 
-  // Community blocklist count
+  // CrowdSec blocklist count
   const decisionsEl = document.getElementById('ips-stat-decisions');
   if (decisionsEl) decisionsEl.textContent = formatNumber(data.blocklist_count || 0);
 

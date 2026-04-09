@@ -4874,6 +4874,20 @@ async def get_ips_status():
             sa_func.count(sa_func.distinct(InboundAttack.source_ip))
         ).filter(InboundAttack.last_seen >= cutoff_24h).scalar()
 
+        # Blocked vs connected breakdown by conn_state
+        inbound_blocked_24h = db.query(
+            sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
+        ).filter(
+            InboundAttack.last_seen >= cutoff_24h,
+            InboundAttack.conn_state.in_(["S0", "REJ", "RSTO", "RSTR", "OTH"]),
+        ).scalar()
+        inbound_connected_24h = db.query(
+            sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
+        ).filter(
+            InboundAttack.last_seen >= cutoff_24h,
+            InboundAttack.conn_state.in_(["S1", "SF", "SH", "SHR"]),
+        ).scalar()
+
         recent_attacks = (
             db.query(InboundAttack)
             .filter(InboundAttack.last_seen >= cutoff_24h)
@@ -4916,6 +4930,8 @@ async def get_ips_status():
         "local_alerts_count": len(alerts) + len(local_decisions) + (threats_24h or 0),
         "blocklist_count": len(blocklist),
         "inbound_attacks_24h": total_blocked_24h or 0,
+        "inbound_blocked_24h": inbound_blocked_24h or 0,
+        "inbound_connected_24h": inbound_connected_24h or 0,
         "inbound_threats_24h": threats_24h or 0,
         "inbound_unique_ips_24h": unique_attackers_24h or 0,
         "alerts": alerts,
