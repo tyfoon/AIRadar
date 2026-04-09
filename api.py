@@ -6784,71 +6784,107 @@ async def _compute_device_baselines():
 # ---------------------------------------------------------------------------
 # Hourly traffic snapshots — per-device TX/RX history for sparkline graphs
 # ---------------------------------------------------------------------------
-TRAFFIC_SNAPSHOT_INTERVAL = 3600  # 1 hour
+TRAFFIC_SNAPSHOT_INTERVAL = 300  # 5 minutes
+
+
+def _take_traffic_snapshot(db, window_start: datetime, window_end: datetime) -> int:
+    """Take a single traffic snapshot for the given time window.
+
+    Aggregates GeoConversation data between window_start and window_end
+    per MAC address. Returns the number of device rows upserted.
+    """
+    rows = (
+        db.query(
+            GeoConversation.mac_address,
+            func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("tx"),
+            func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("rx"),
+            func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
+            func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+        )
+        .filter(
+            GeoConversation.mac_address.isnot(None),
+            GeoConversation.last_seen >= window_start,
+            GeoConversation.last_seen < window_end,
+        )
+        .group_by(GeoConversation.mac_address)
+        .all()
+    )
+    upserted = 0
+    for r in rows:
+        if not r.mac_address:
+            continue
+        existing = db.query(DeviceTrafficHourly).filter(
+            DeviceTrafficHourly.mac_address == r.mac_address,
+            DeviceTrafficHourly.hour == window_start,
+        ).first()
+        if existing:
+            existing.bytes_out = int(r.tx or 0)
+            existing.bytes_in = int(r.rx or 0)
+            existing.connections = int(r.conns or 0)
+            existing.unique_destinations = int(r.dests or 0)
+        else:
+            db.add(DeviceTrafficHourly(
+                mac_address=r.mac_address,
+                hour=window_start,
+                bytes_out=int(r.tx or 0),
+                bytes_in=int(r.rx or 0),
+                connections=int(r.conns or 0),
+                unique_destinations=int(r.dests or 0),
+            ))
+        upserted += 1
+    return upserted
 
 
 async def _snapshot_device_traffic():
-    """Hourly task: snapshot per-device traffic into DeviceTrafficHourly.
+    """Every 5 minutes: snapshot per-device traffic into DeviceTrafficHourly.
 
-    Aggregates the last hour of GeoConversation data per MAC into a
-    single row with bytes_out (TX), bytes_in (RX), connections, and
+    Aggregates the last 5 minutes of GeoConversation data per MAC into
+    a single row with bytes_out (TX), bytes_in (RX), connections, and
     unique destinations. These rows power the sparkline charts on the
     IoT fleet cards.
+
+    On first run, performs a one-time backfill from existing GeoConversation
+    data to populate historical graphs immediately.
     """
-    await asyncio.sleep(180)  # let geo data accumulate first
+    await asyncio.sleep(60)  # let geo data accumulate first
+    backfilled = False
+
     while True:
         try:
             db = SessionLocal()
             try:
                 now = datetime.utcnow()
-                # Truncate to current hour
-                current_hour = now.replace(minute=0, second=0, microsecond=0)
-                hour_ago = current_hour - timedelta(hours=1)
 
-                # Aggregate last hour per device from GeoConversation
-                rows = (
-                    db.query(
-                        GeoConversation.mac_address,
-                        func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("tx"),
-                        func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("rx"),
-                        func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
-                        func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
-                    )
-                    .filter(
-                        GeoConversation.mac_address.isnot(None),
-                        GeoConversation.last_seen >= hour_ago,
-                        GeoConversation.last_seen < current_hour,
-                    )
-                    .group_by(GeoConversation.mac_address)
-                    .all()
-                )
+                # --- One-time backfill on first run ---
+                if not backfilled:
+                    backfilled = True
+                    existing_count = db.query(DeviceTrafficHourly.id).first()
+                    if not existing_count:
+                        print("[traffic-snapshot] Backfilling from GeoConversation history...")
+                        # Create hourly buckets from existing GeoConversation data
+                        # going back 7 days (or as far as data exists)
+                        backfill_start = now - timedelta(days=7)
+                        cursor = backfill_start.replace(minute=0, second=0, microsecond=0)
+                        total_backfilled = 0
+                        while cursor < now:
+                            window_end = cursor + timedelta(hours=1)
+                            n = _take_traffic_snapshot(db, cursor, window_end)
+                            total_backfilled += n
+                            cursor = window_end
+                        db.commit()
+                        if total_backfilled:
+                            print(f"[traffic-snapshot] Backfilled {total_backfilled} hourly records")
 
-                upserted = 0
-                for r in rows:
-                    if not r.mac_address:
-                        continue
-                    existing = db.query(DeviceTrafficHourly).filter(
-                        DeviceTrafficHourly.mac_address == r.mac_address,
-                        DeviceTrafficHourly.hour == hour_ago,
-                    ).first()
-                    if existing:
-                        existing.bytes_out = int(r.tx or 0)
-                        existing.bytes_in = int(r.rx or 0)
-                        existing.connections = int(r.conns or 0)
-                        existing.unique_destinations = int(r.dests or 0)
-                    else:
-                        db.add(DeviceTrafficHourly(
-                            mac_address=r.mac_address,
-                            hour=hour_ago,
-                            bytes_out=int(r.tx or 0),
-                            bytes_in=int(r.rx or 0),
-                            connections=int(r.conns or 0),
-                            unique_destinations=int(r.dests or 0),
-                        ))
-                    upserted += 1
+                # --- Regular 5-minute snapshot ---
+                # Truncate to 5-minute boundary
+                minute_slot = (now.minute // 5) * 5
+                current_slot = now.replace(minute=minute_slot, second=0, microsecond=0)
+                prev_slot = current_slot - timedelta(minutes=5)
+
+                upserted = _take_traffic_snapshot(db, prev_slot, current_slot)
                 db.commit()
                 if upserted:
-                    print(f"[traffic-snapshot] Recorded hourly snapshot for {upserted} devices")
+                    print(f"[traffic-snapshot] Recorded 5-min snapshot for {upserted} devices")
             finally:
                 db.close()
         except Exception as exc:
