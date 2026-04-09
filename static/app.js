@@ -4191,6 +4191,7 @@ function _renderIotFleet(data) {
     // Country flags (top 3)
     const flags = (d.top_countries || []).slice(0, 3).map(c => _flagEmoji(c.cc)).join(' ');
 
+    const macSafe = d.mac_address.replace(/:/g, '-');
     return `<div class="border ${healthColor} rounded-xl p-4 bg-white dark:bg-white/[0.03] transition-colors cursor-pointer hover:shadow-md" onclick="openDeviceDrawer('${d.mac_address}', null, null)">
       <div class="flex items-center gap-2 mb-1">
         <span class="flex-shrink-0">${dt.icon}</span>
@@ -4199,7 +4200,9 @@ function _renderIotFleet(data) {
       </div>
       <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-1">${d.device_type || dt.type}</p>
       ${baselineBadge ? `<div class="mb-1">${baselineBadge}</div>` : ''}
-      ${throughputBar}
+      <div class="mt-2" style="height:48px">
+        <canvas id="spark-${macSafe}" height="48" style="width:100%;height:48px"></canvas>
+      </div>
       <div class="mt-1.5">${upDown}</div>
       <div class="flex items-center justify-between mt-2 text-[10px] tabular-nums">
         <span class="flex items-center gap-1">${flags}</span>
@@ -4207,6 +4210,105 @@ function _renderIotFleet(data) {
       </div>
     </div>`;
   }).join('');
+
+  // Load sparkline charts for each device
+  _loadIotSparklines(devices);
+}
+
+// Chart.js instances for IoT sparklines (destroyed on re-render)
+const _iotSparkCharts = new Map();
+
+async function _loadIotSparklines(devices) {
+  for (const d of devices) {
+    const macSafe = d.mac_address.replace(/:/g, '-');
+    const canvas = document.getElementById(`spark-${macSafe}`);
+    if (!canvas) continue;
+
+    try {
+      const res = await fetch(`/api/iot/device/${encodeURIComponent(d.mac_address)}/traffic-history?days=7`);
+      const hist = await res.json();
+      const points = hist.data || [];
+
+      // Destroy previous chart instance if exists
+      if (_iotSparkCharts.has(macSafe)) {
+        _iotSparkCharts.get(macSafe).destroy();
+      }
+
+      if (points.length < 2) {
+        // Not enough data — show placeholder text
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Collecting data...', canvas.width / 2, 28);
+        continue;
+      }
+
+      const labels = points.map(p => p.hour);
+      const txData = points.map(p => p.tx / 1048576);  // MB
+      const rxData = points.map(p => p.rx / 1048576);  // MB
+
+      const chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'TX (upload)',
+              data: txData,
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245,158,11,0.1)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5,
+            },
+            {
+              label: 'RX (download)',
+              data: rxData,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59,130,246,0.1)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 0,
+              borderWidth: 1.5,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: true,
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                title: (items) => {
+                  const d = new Date(items[0].label);
+                  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                },
+                label: (item) => `${item.dataset.label}: ${item.raw.toFixed(1)} MB`,
+              },
+            },
+          },
+          scales: {
+            x: { display: false },
+            y: {
+              display: false,
+              beginAtZero: true,
+            },
+          },
+          interaction: { mode: 'index', intersect: false },
+        },
+      });
+      _iotSparkCharts.set(macSafe, chart);
+    } catch (err) {
+      // Silently skip — no historical data yet
+    }
+  }
 }
 
 

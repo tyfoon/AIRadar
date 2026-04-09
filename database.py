@@ -379,6 +379,29 @@ class DeviceBaseline(Base):
                          default=lambda: datetime.now(timezone.utc))
 
 
+class DeviceTrafficHourly(Base):
+    """Hourly traffic snapshots per device for historical graphs.
+
+    Populated by a background task that runs every hour, aggregating
+    GeoConversation data into per-device hourly buckets. Retained for
+    30 days (cleaned up by _periodic_cleanup).
+    """
+
+    __tablename__ = "device_traffic_hourly"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mac_address = Column(String, nullable=False, index=True)
+    hour = Column(DateTime, nullable=False, index=True)  # truncated to hour
+    bytes_out = Column(Integer, nullable=False, default=0)    # orig_bytes (TX/upload)
+    bytes_in = Column(Integer, nullable=False, default=0)     # resp_bytes (RX/download)
+    connections = Column(Integer, nullable=False, default=0)
+    unique_destinations = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("mac_address", "hour", name="uq_device_traffic_hour"),
+    )
+
+
 class KnownDomain(Base):
     """Dynamic domain → service mapping, populated by the service updater.
 

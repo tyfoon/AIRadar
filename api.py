@@ -85,6 +85,7 @@ from database import (
     DetectionEvent,
     Device,
     DeviceBaseline,
+    DeviceTrafficHourly,
     DeviceGroup,
     DeviceGroupMember,
     DeviceIP,
@@ -403,7 +404,12 @@ async def _periodic_cleanup():
                 GeoConversation.last_seen < geo_cutoff
             ).delete(synchronize_session=False)
 
-            # 5) Prune stale ip_metadata (not updated in 30 days)
+            # 5) Prune old device_traffic_hourly (keep 30 days)
+            old_traffic = db.query(DeviceTrafficHourly).filter(
+                DeviceTrafficHourly.hour < geo_cutoff
+            ).delete(synchronize_session=False)
+
+            # 6) Prune stale ip_metadata (not updated in 30 days)
             ip_cutoff = datetime.utcnow() - timedelta(days=30)
             old_ip = db.query(IpMetadata).filter(
                 IpMetadata.updated_at < ip_cutoff
@@ -1195,6 +1201,7 @@ async def lifespan(app: FastAPI):
     expiry_task = asyncio.create_task(_expire_block_rules())
     policy_expiry_task = asyncio.create_task(_expire_service_policies())
     baseline_task = asyncio.create_task(_compute_device_baselines())
+    traffic_snapshot_task = asyncio.create_task(_snapshot_device_traffic())
     volume_spike_task = asyncio.create_task(_check_volume_spikes())
     notifier_task = asyncio.create_task(_push_notifier_task())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
@@ -6772,6 +6779,114 @@ async def _compute_device_baselines():
         except Exception as exc:
             print(f"[baseline] Error: {exc}")
         await asyncio.sleep(BASELINE_INTERVAL)
+
+
+# ---------------------------------------------------------------------------
+# Hourly traffic snapshots — per-device TX/RX history for sparkline graphs
+# ---------------------------------------------------------------------------
+TRAFFIC_SNAPSHOT_INTERVAL = 3600  # 1 hour
+
+
+async def _snapshot_device_traffic():
+    """Hourly task: snapshot per-device traffic into DeviceTrafficHourly.
+
+    Aggregates the last hour of GeoConversation data per MAC into a
+    single row with bytes_out (TX), bytes_in (RX), connections, and
+    unique destinations. These rows power the sparkline charts on the
+    IoT fleet cards.
+    """
+    await asyncio.sleep(180)  # let geo data accumulate first
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                # Truncate to current hour
+                current_hour = now.replace(minute=0, second=0, microsecond=0)
+                hour_ago = current_hour - timedelta(hours=1)
+
+                # Aggregate last hour per device from GeoConversation
+                rows = (
+                    db.query(
+                        GeoConversation.mac_address,
+                        func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("tx"),
+                        func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("rx"),
+                        func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
+                        func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+                    )
+                    .filter(
+                        GeoConversation.mac_address.isnot(None),
+                        GeoConversation.last_seen >= hour_ago,
+                        GeoConversation.last_seen < current_hour,
+                    )
+                    .group_by(GeoConversation.mac_address)
+                    .all()
+                )
+
+                upserted = 0
+                for r in rows:
+                    if not r.mac_address:
+                        continue
+                    existing = db.query(DeviceTrafficHourly).filter(
+                        DeviceTrafficHourly.mac_address == r.mac_address,
+                        DeviceTrafficHourly.hour == hour_ago,
+                    ).first()
+                    if existing:
+                        existing.bytes_out = int(r.tx or 0)
+                        existing.bytes_in = int(r.rx or 0)
+                        existing.connections = int(r.conns or 0)
+                        existing.unique_destinations = int(r.dests or 0)
+                    else:
+                        db.add(DeviceTrafficHourly(
+                            mac_address=r.mac_address,
+                            hour=hour_ago,
+                            bytes_out=int(r.tx or 0),
+                            bytes_in=int(r.rx or 0),
+                            connections=int(r.conns or 0),
+                            unique_destinations=int(r.dests or 0),
+                        ))
+                    upserted += 1
+                db.commit()
+                if upserted:
+                    print(f"[traffic-snapshot] Recorded hourly snapshot for {upserted} devices")
+            finally:
+                db.close()
+        except Exception as exc:
+            print(f"[traffic-snapshot] Error: {exc}")
+        await asyncio.sleep(TRAFFIC_SNAPSHOT_INTERVAL)
+
+
+@app.get("/api/iot/device/{mac}/traffic-history")
+def get_device_traffic_history(
+    mac: str,
+    days: int = Query(7, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    """Return hourly TX/RX traffic history for a device (sparkline data)."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(DeviceTrafficHourly)
+        .filter(
+            DeviceTrafficHourly.mac_address == mac,
+            DeviceTrafficHourly.hour >= cutoff,
+        )
+        .order_by(DeviceTrafficHourly.hour.asc())
+        .all()
+    )
+    return {
+        "mac_address": mac,
+        "days": days,
+        "data": [
+            {
+                "hour": r.hour.isoformat(),
+                "tx": r.bytes_out,
+                "rx": r.bytes_in,
+                "connections": r.connections,
+                "destinations": r.unique_destinations,
+            }
+            for r in rows
+        ],
+    }
 
 
 # Volume spike checker — runs every 15 minutes
