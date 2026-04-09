@@ -266,18 +266,20 @@ function _routeFromHash(raw) {
 const ACCENT_COLORS = ['#6366f1','#22d3ee','#f59e0b','#ef4444','#10b981','#ec4899','#8b5cf6','#f97316','#14b8a6','#e11d48'];
 
 const SERVICE_COLORS = {
+  // AI — each a unique, distinguishable color
   google_gemini:'#f59e0b', openai:'#10b981', anthropic_claude:'#6366f1',
-  microsoft_copilot:'#3b82f6', perplexity:'#22d3ee', huggingface:'#f97316',
-  mistral:'#8b5cf6', dropbox:'#3b82f6', wetransfer:'#14b8a6',
-  google_drive:'#22c55e', google_device_sync:'#14b8a6', google_generic_cdn:'#94a3b8',
-  onedrive:'#0ea5e9', icloud:'#6b7280',
-  box:'#60a5fa', mega:'#ef4444',
-  // VPN
+  google_api:'#4285f4', microsoft_copilot:'#0078d4', perplexity:'#22d3ee',
+  huggingface:'#ff6f00', mistral:'#7c3aed',
+  // Cloud storage
+  dropbox:'#0061fe', wetransfer:'#409fff', google_drive:'#22c55e',
+  google_device_sync:'#34a853', google_generic_cdn:'#94a3b8',
+  onedrive:'#0ea5e9', icloud:'#6b7280', box:'#0075c9', mega:'#d0021b',
+  // VPN — each unique
   vpn_active:'#f97316', vpn_nordvpn:'#4687ff', vpn_expressvpn:'#da3940',
   vpn_surfshark:'#1cbdb4', vpn_protonvpn:'#6d4aff', vpn_pia:'#4bb543',
   vpn_cyberghost:'#ffd400', vpn_mullvad:'#294d73', vpn_ipvanish:'#70bb44',
   vpn_tunnelbear:'#ffc600', vpn_windscribe:'#1a5276', vpn_cloudflare_warp:'#f48120',
-  // Social
+  // Social — brand colors
   facebook:'#1877f2', instagram:'#e4405f', tiktok:'#010101', snapchat:'#fffc00',
   twitter:'#1da1f2', pinterest:'#e60023', linkedin:'#0a66c2', reddit:'#ff4500',
   tumblr:'#35465c', whatsapp:'#25d366', signal:'#3a76f0',
@@ -287,7 +289,7 @@ const SERVICE_COLORS = {
   twitch:'#9146ff', discord:'#5865f2',
   // Streaming
   netflix:'#e50914', youtube:'#ff0000', spotify:'#1db954', disney_plus:'#113ccf',
-  hbo_max:'#5822b4', prime_video:'#00a8e1', apple_tv:'#000000',
+  hbo_max:'#5822b4', prime_video:'#00a8e1', apple_tv:'#555555',
 };
 
 const SERVICE_NAMES = {

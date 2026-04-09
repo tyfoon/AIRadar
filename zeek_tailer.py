@@ -303,10 +303,29 @@ def _is_iot_device(mac: str | None) -> str | None:
 
 DOMAIN_MAP: dict[str, tuple[str, str]] = {
     # --- AI services (category="ai") ---
-    # Google Gemini
-    "gemini.google.com":                 ("google_gemini", "ai"),
-    "generativelanguage.googleapis.com": ("google_gemini", "ai"),
-    "aistudio.google.com":               ("google_gemini", "ai"),
+    # Google Gemini — browser sessions use many backend domains
+    "gemini.google.com":                                 ("google_gemini", "ai"),
+    "gemini.google":                                     ("google_gemini", "ai"),
+    "generativelanguage.googleapis.com":                 ("google_gemini", "ai"),
+    "aistudio.google.com":                               ("google_gemini", "ai"),
+    "ai.google.dev":                                     ("google_gemini", "ai"),
+    "bard.google.com":                                   ("google_gemini", "ai"),
+    "makersuite.google.com":                             ("google_gemini", "ai"),
+    "deepmind.google":                                   ("google_gemini", "ai"),
+    "deepmind.com":                                      ("google_gemini", "ai"),
+    "notebooklm.google.com":                             ("google_gemini", "ai"),
+    "notebooklm.google":                                 ("google_gemini", "ai"),
+    "labs.google.com":                                   ("google_gemini", "ai"),
+    # Gemini backend API domains (Chrome browser sessions)
+    "geller-pa.googleapis.com":                          ("google_gemini", "ai"),
+    "proactivebackend-pa.googleapis.com":                ("google_gemini", "ai"),
+    "robinfrontend-pa.googleapis.com":                   ("google_gemini", "ai"),
+    "aisandbox-pa.googleapis.com":                       ("google_gemini", "ai"),
+    "notebooklm-pa.googleapis.com":                      ("google_gemini", "ai"),
+    "cloudcode-pa.googleapis.com":                       ("google_gemini", "ai"),
+    "alkalimakersuite-pa.clients6.google.com":           ("google_gemini", "ai"),
+    "alkalicore-pa.clients6.google.com":                 ("google_gemini", "ai"),
+    "webchannel-alkalimakersuite-pa.clients6.google.com":("google_gemini", "ai"),
     # OpenAI / ChatGPT
     "openai.com":                        ("openai", "ai"),
     "chatgpt.com":                       ("openai", "ai"),
@@ -505,11 +524,17 @@ GOOGLE_CONTEXT_TTL = 3600  # 1 hour — Gemini sessions last longer than 5 min
 
 # Domains that set Google context (but are NOT ambiguous themselves)
 _GOOGLE_CONTEXT_SETTERS = {
-    "gemini.google.com":                 ("google_gemini", "ai"),
-    "generativelanguage.googleapis.com": ("google_gemini", "ai"),
-    "aistudio.google.com":               ("google_gemini", "ai"),
-    "drive.google.com":                  ("google_drive", "cloud"),
-    "docs.google.com":                   ("google_drive", "cloud"),
+    "gemini.google.com":                                 ("google_gemini", "ai"),
+    "gemini.google":                                     ("google_gemini", "ai"),
+    "generativelanguage.googleapis.com":                 ("google_gemini", "ai"),
+    "aistudio.google.com":                               ("google_gemini", "ai"),
+    "geller-pa.googleapis.com":                          ("google_gemini", "ai"),
+    "proactivebackend-pa.googleapis.com":                ("google_gemini", "ai"),
+    "robinfrontend-pa.googleapis.com":                   ("google_gemini", "ai"),
+    "alkalicore-pa.clients6.google.com":                 ("google_gemini", "ai"),
+    "alkalimakersuite-pa.clients6.google.com":           ("google_gemini", "ai"),
+    "drive.google.com":                                  ("google_drive", "cloud"),
+    "docs.google.com":                                   ("google_drive", "cloud"),
 }
 
 # Ambiguous Google domains — classified based on recent context
