@@ -1491,6 +1491,12 @@
             <span data-i18n="settings.tabPerformance">Performance</span>
           </span>
         </button>
+        <button id="settings-tab-btn-reputation" onclick="switchSettingsTab('reputation')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-shield-check text-sm"></i>
+            <span>Reputation</span>
+          </span>
+        </button>
         <button id="settings-tab-btn-about" onclick="switchSettingsTab('about')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
           <span class="inline-flex items-center gap-1.5">
             <i class="ph-duotone ph-info text-sm"></i>
@@ -1853,6 +1859,53 @@
         </div>
       </div>
 
+      <!-- ── REPUTATION TAB ── -->
+      <div id="settings-tab-reputation" class="space-y-6 hidden">
+        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
+          <div class="p-5 border-b border-slate-100 dark:border-white/[0.05]">
+            <div class="flex items-center gap-3">
+              <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                <i class="ph-duotone ph-shield-check text-xl text-indigo-600 dark:text-indigo-400"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">IP &amp; Domain Reputation</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Threat intelligence from URLhaus, ThreatFox, AbuseIPDB &amp; VirusTotal</p>
+              </div>
+            </div>
+          </div>
+          <div class="p-5 space-y-4">
+            <!-- Layer 1: always active -->
+            <div class="bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-700/30 rounded-lg p-4">
+              <h4 class="text-xs font-bold text-emerald-700 dark:text-emerald-300 mb-1">Layer 1 — Always Active (Free)</h4>
+              <p class="text-xs text-emerald-600 dark:text-emerald-400">URLhaus + ThreatFox (abuse.ch) automatically check every new IP/domain. No API key needed.</p>
+              <div class="flex gap-4 mt-2 text-[10px] text-emerald-600 dark:text-emerald-400">
+                <span>✅ URLhaus (malware URLs)</span>
+                <span>✅ ThreatFox (C2 servers)</span>
+              </div>
+            </div>
+            <!-- Layer 2: on-demand -->
+            <div class="space-y-3">
+              <h4 class="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 2 — On-Demand (Optional API Keys)</h4>
+              <div>
+                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">AbuseIPDB API Key</label>
+                <input type="password" id="rep-abuseipdb-key" placeholder="Enter API key..." class="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono">
+                <p class="text-[10px] text-slate-400 mt-1">Free: 1,000 checks/day · <a href="https://www.abuseipdb.com/account/api" target="_blank" class="text-indigo-400 hover:underline">Get free key</a></p>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">VirusTotal API Key</label>
+                <input type="password" id="rep-virustotal-key" placeholder="Enter API key..." class="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono">
+                <p class="text-[10px] text-slate-400 mt-1">Free: 500 checks/day · <a href="https://www.virustotal.com/gui/my-apikey" target="_blank" class="text-indigo-400 hover:underline">Get free key</a></p>
+              </div>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button onclick="saveReputationSettings()" class="px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">Save Keys</button>
+              <button onclick="testReputationKeys()" class="px-4 py-2 text-xs font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Test Connection</button>
+            </div>
+            <div id="rep-test-result" class="hidden text-xs p-3 rounded-lg"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── ABOUT TAB ── -->
       <div id="settings-tab-about" class="space-y-6 hidden">
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
@@ -2191,6 +2244,12 @@
 <!-- Toast notification host                                        -->
 <!-- ============================================================= -->
 <div id="toast-host" class="fixed bottom-6 right-6 z-[110] space-y-2 pointer-events-none"></div>
+
+<!-- Reputation check modal -->
+<div id="reputation-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm" onclick="if(event.target===this)_closeReputationModal()">
+  <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4" id="reputation-modal-body">
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

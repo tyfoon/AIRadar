@@ -295,6 +295,44 @@ class IpMetadata(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
 
+class ReputationCache(Base):
+    """Cached IP/domain reputation results from external threat intel APIs.
+
+    Layer 1 (proactive, free, no key): URLhaus + ThreatFox (abuse.ch)
+    Layer 2 (on-demand, API keys): AbuseIPDB + VirusTotal
+
+    Clean results have status='clean'. Only malware/C2 hits show badges
+    in the UI. Rows are refreshed after 7 days (Layer 1) or on demand.
+    """
+
+    __tablename__ = "reputation_cache"
+
+    ip_or_domain = Column(String, primary_key=True)
+
+    # Layer 1: URLhaus (malware distribution)
+    urlhaus_status = Column(String, nullable=True)       # "clean" | "malware"
+    urlhaus_threat = Column(String, nullable=True)       # malware family
+    urlhaus_tags = Column(String, nullable=True)         # JSON array of tags
+    urlhaus_url_count = Column(Integer, nullable=True)   # number of malware URLs
+    urlhaus_checked_at = Column(DateTime, nullable=True)
+
+    # Layer 1: ThreatFox (C2 / IOC database)
+    threatfox_status = Column(String, nullable=True)     # "clean" | "c2"
+    threatfox_malware = Column(String, nullable=True)    # malware family
+    threatfox_confidence = Column(Integer, nullable=True) # 0-100
+    threatfox_checked_at = Column(DateTime, nullable=True)
+
+    # Layer 2: AbuseIPDB (on-demand)
+    abuseipdb_score = Column(Integer, nullable=True)     # 0-100 abuse confidence
+    abuseipdb_reports = Column(Integer, nullable=True)   # total reports
+    abuseipdb_checked_at = Column(DateTime, nullable=True)
+
+    # Layer 2: VirusTotal (on-demand)
+    vt_malicious = Column(Integer, nullable=True)        # vendors flagging malicious
+    vt_total = Column(Integer, nullable=True)            # total vendors
+    vt_checked_at = Column(DateTime, nullable=True)
+
+
 class DeviceGroup(Base):
     """A named group of devices for policy management.
 

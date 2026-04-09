@@ -98,6 +98,7 @@ from database import (
     KnownDomain,
     NetworkPerformance,
     NotificationConfig,
+    ReputationCache,
     ServicePolicy,
     SessionLocal,
     TlsFingerprint,
@@ -1224,6 +1225,7 @@ async def lifespan(app: FastAPI):
     notifier_task = asyncio.create_task(_push_notifier_task())
     watchdog_task = asyncio.create_task(_adguard_watchdog())
     beacon_task = asyncio.create_task(_periodic_beacon_scan())
+    reputation_task = asyncio.create_task(_periodic_reputation_scan())
     # Dynamic domain list updater — seeds from former DOMAIN_MAP on first
     # boot, then fetches v2fly community domain lists every 24h.
     from service_updater import periodic_update_domains
@@ -5724,6 +5726,260 @@ async def test_notification(db: Session = Depends(get_db)):
                 return {"status": "error", "message": f"HA returned HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as exc:
         return {"status": "error", "message": f"Connection failed: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# IP/Domain Reputation — threat intel integration
+# ---------------------------------------------------------------------------
+import reputation_client as rep
+
+_REPUTATION_KEYS_FILE = os.path.join(os.path.dirname(__file__), "data", "reputation_keys.json")
+
+
+def _read_reputation_keys() -> dict:
+    try:
+        with open(_REPUTATION_KEYS_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _write_reputation_keys(keys: dict):
+    os.makedirs(os.path.dirname(_REPUTATION_KEYS_FILE), exist_ok=True)
+    with open(_REPUTATION_KEYS_FILE, "w") as f:
+        json.dump(keys, f)
+
+
+def _reputation_row_to_dict(row: ReputationCache | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "ip_or_domain": row.ip_or_domain,
+        "urlhaus_status": row.urlhaus_status,
+        "urlhaus_threat": row.urlhaus_threat,
+        "urlhaus_tags": json.loads(row.urlhaus_tags) if row.urlhaus_tags else None,
+        "urlhaus_url_count": row.urlhaus_url_count,
+        "urlhaus_checked_at": row.urlhaus_checked_at.isoformat() if row.urlhaus_checked_at else None,
+        "threatfox_status": row.threatfox_status,
+        "threatfox_malware": row.threatfox_malware,
+        "threatfox_confidence": row.threatfox_confidence,
+        "threatfox_checked_at": row.threatfox_checked_at.isoformat() if row.threatfox_checked_at else None,
+        "abuseipdb_score": row.abuseipdb_score,
+        "abuseipdb_reports": row.abuseipdb_reports,
+        "abuseipdb_checked_at": row.abuseipdb_checked_at.isoformat() if row.abuseipdb_checked_at else None,
+        "vt_malicious": row.vt_malicious,
+        "vt_total": row.vt_total,
+        "vt_checked_at": row.vt_checked_at.isoformat() if row.vt_checked_at else None,
+    }
+
+
+def _upsert_reputation(db, target: str, data: dict):
+    """Insert or update a ReputationCache row with the given data dict."""
+    row = db.query(ReputationCache).filter(ReputationCache.ip_or_domain == target).first()
+    if not row:
+        row = ReputationCache(ip_or_domain=target)
+        db.add(row)
+    for k, v in data.items():
+        if k.startswith("_"):
+            continue  # skip internal keys like _errors
+        if hasattr(row, k) and v is not None:
+            setattr(row, k, v)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.post("/api/reputation/bulk")
+def reputation_bulk(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """Batch lookup cached reputation for multiple IPs/domains.
+
+    Body: {"targets": ["1.2.3.4", "evil.com", ...]}
+    Returns: {"results": {"1.2.3.4": {...}, "evil.com": {...}}}
+    Only returns entries that have cached data.
+    """
+    targets = payload.get("targets", [])
+    if not targets or len(targets) > 200:
+        return {"results": {}}
+
+    rows = db.query(ReputationCache).filter(
+        ReputationCache.ip_or_domain.in_(targets)
+    ).all()
+
+    results = {}
+    for row in rows:
+        d = _reputation_row_to_dict(row)
+        if d:
+            results[row.ip_or_domain] = d
+    return {"results": results}
+
+
+@app.get("/api/reputation/{target:path}")
+def reputation_get(target: str, db: Session = Depends(get_db)):
+    """Get cached reputation for a single IP or domain."""
+    row = db.query(ReputationCache).filter(
+        ReputationCache.ip_or_domain == target
+    ).first()
+    if not row:
+        return {"result": None}
+    return {"result": _reputation_row_to_dict(row)}
+
+
+@app.post("/api/reputation/check")
+async def reputation_check(payload: dict = Body(...)):
+    """On-demand reputation check (Layer 1 + Layer 2 if keys configured).
+
+    Body: {"target": "1.2.3.4"}
+    Runs all available checks, caches results, returns full data.
+    """
+    target = (payload.get("target") or "").strip()
+    if not target:
+        raise HTTPException(400, "target is required")
+    if not rep.is_checkable(target):
+        raise HTTPException(400, "Cannot check private/local addresses")
+
+    keys = _read_reputation_keys()
+    data = await rep.check_ondemand(
+        target,
+        abuseipdb_key=keys.get("abuseipdb_key"),
+        virustotal_key=keys.get("virustotal_key"),
+    )
+
+    errors = data.pop("_errors", [])
+
+    db = SessionLocal()
+    try:
+        row = _upsert_reputation(db, target, data)
+        result = _reputation_row_to_dict(row)
+    finally:
+        db.close()
+
+    return {
+        "result": result,
+        "errors": errors,
+        "rate_limits": rep.get_rate_limit_status(),
+    }
+
+
+@app.get("/api/settings/reputation")
+def get_reputation_settings():
+    """Return reputation feature status and masked API keys."""
+    keys = _read_reputation_keys()
+    def _mask(k):
+        v = keys.get(k, "")
+        if not v:
+            return ""
+        return v[:4] + "•" * (len(v) - 8) + v[-4:] if len(v) > 8 else "•" * len(v)
+
+    return {
+        "abuseipdb_key": _mask("abuseipdb_key"),
+        "virustotal_key": _mask("virustotal_key"),
+        "abuseipdb_configured": bool(keys.get("abuseipdb_key")),
+        "virustotal_configured": bool(keys.get("virustotal_key")),
+        "rate_limits": rep.get_rate_limit_status(),
+    }
+
+
+@app.post("/api/settings/reputation")
+def save_reputation_settings(payload: dict = Body(...)):
+    """Save API keys for reputation services."""
+    keys = _read_reputation_keys()
+    for field in ("abuseipdb_key", "virustotal_key"):
+        if field in payload:
+            val = (payload[field] or "").strip()
+            if val and "•" not in val:  # don't overwrite with masked value
+                keys[field] = val
+            elif not val:
+                keys.pop(field, None)
+    _write_reputation_keys(keys)
+    return {"status": "ok"}
+
+
+@app.post("/api/settings/reputation/test")
+async def test_reputation_keys():
+    """Test API keys by checking 8.8.8.8 (Google DNS)."""
+    keys = _read_reputation_keys()
+    results = {}
+    errors = []
+
+    # Test Layer 1 (always works)
+    l1 = await rep.check_proactive("8.8.8.8")
+    results["urlhaus"] = l1.get("urlhaus_status", "error")
+    results["threatfox"] = l1.get("threatfox_status", "error")
+
+    # Test AbuseIPDB
+    if keys.get("abuseipdb_key"):
+        r = await rep.check_abuseipdb("8.8.8.8", keys["abuseipdb_key"])
+        if "_error" in r:
+            errors.append(r["_error"])
+            results["abuseipdb"] = "error"
+        else:
+            results["abuseipdb"] = f"score={r.get('abuseipdb_score', '?')}"
+    else:
+        results["abuseipdb"] = "no key"
+
+    # Test VirusTotal
+    if keys.get("virustotal_key"):
+        r = await rep.check_virustotal("8.8.8.8", keys["virustotal_key"])
+        if "_error" in r:
+            errors.append(r["_error"])
+            results["virustotal"] = "error"
+        else:
+            results["virustotal"] = f"{r.get('vt_malicious', '?')}/{r.get('vt_total', '?')}"
+    else:
+        results["virustotal"] = "no key"
+
+    return {"results": results, "errors": errors}
+
+
+# Background task: proactive reputation scanning (Layer 1)
+async def _periodic_reputation_scan():
+    """Check new IPs against URLhaus + ThreatFox every 5 minutes."""
+    await asyncio.sleep(120)  # warmup — let Zeek populate some data first
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                # Find IPs in ip_metadata that are NOT yet in reputation_cache
+                # or were checked more than 7 days ago
+                from sqlalchemy import and_, or_
+                cutoff = datetime.utcnow() - timedelta(days=7)
+
+                # Get all known external IPs
+                all_ips = db.query(IpMetadata.ip).all()
+                all_ip_set = {r.ip for r in all_ips}
+
+                # Get already-cached IPs that are still fresh
+                fresh = db.query(ReputationCache.ip_or_domain).filter(
+                    ReputationCache.urlhaus_checked_at >= cutoff
+                ).all()
+                fresh_set = {r.ip_or_domain for r in fresh}
+
+                # IPs to check = all known - already fresh
+                to_check = [ip for ip in (all_ip_set - fresh_set)
+                            if rep.is_checkable(ip)]
+
+                # Batch: max 50 per cycle
+                batch = to_check[:50]
+                checked = 0
+                for ip in batch:
+                    try:
+                        data = await rep.check_proactive(ip)
+                        _upsert_reputation(db, ip, data)
+                        checked += 1
+                        # Small delay to be nice to abuse.ch
+                        await asyncio.sleep(0.5)
+                    except Exception as exc:
+                        print(f"[reputation] Error checking {ip}: {exc}")
+
+                if checked:
+                    print(f"[reputation] Proactive scan: checked {checked}/{len(batch)} IPs "
+                          f"({len(to_check) - len(batch)} remaining)")
+            finally:
+                db.close()
+        except Exception as exc:
+            print(f"[reputation] Scan error: {exc}")
+
+        await asyncio.sleep(300)  # 5 minutes between cycles
 
 
 # Background task: push alerts to Home Assistant

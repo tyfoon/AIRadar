@@ -1695,6 +1695,160 @@ function _alertExtraBadges(a) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// IP/Domain Reputation — badges and on-demand check
+// ---------------------------------------------------------------------------
+let _reputationCache = {};  // keyed by ip_or_domain
+
+async function _fetchReputationBulk(targets) {
+  // Deduplicate and filter out empty/private-looking targets
+  const unique = [...new Set(targets.filter(t => t && !t.startsWith('192.168.') && !t.startsWith('10.') && !t.startsWith('127.')))];
+  if (!unique.length) return;
+  // Only fetch targets we don't already have cached
+  const needed = unique.filter(t => !_reputationCache[t]);
+  if (!needed.length) return;
+  try {
+    const resp = await fetch('/api/reputation/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({targets: needed}),
+    });
+    const data = await resp.json();
+    Object.assign(_reputationCache, data.results || {});
+  } catch (e) {
+    console.warn('[reputation] bulk fetch failed:', e);
+  }
+}
+
+function _reputationBadge(ipOrDomain) {
+  if (!ipOrDomain) return '';
+  const r = _reputationCache[ipOrDomain];
+  if (!r) return '';  // not cached yet — no badge (clean by default)
+
+  const badges = [];
+
+  // URLhaus malware hit
+  if (r.urlhaus_status === 'malware') {
+    const threat = r.urlhaus_threat ? ` (${r.urlhaus_threat})` : '';
+    badges.push(`<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold" title="URLhaus: malware distribution${threat}"><i class="ph-fill ph-virus text-[11px]"></i>Malware${threat}</span>`);
+  }
+
+  // ThreatFox C2 hit
+  if (r.threatfox_status === 'c2') {
+    const malware = r.threatfox_malware ? ` (${r.threatfox_malware})` : '';
+    badges.push(`<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-700 text-white font-bold" title="ThreatFox: C2 server${malware}"><i class="ph-fill ph-skull text-[11px]"></i>C2${malware}</span>`);
+  }
+
+  // AbuseIPDB score (on-demand Layer 2)
+  if (r.abuseipdb_score != null) {
+    const sc = r.abuseipdb_score;
+    const [bg, label] = sc >= 75 ? ['bg-red-600', `Abuse: ${sc}%`]
+      : sc >= 25 ? ['bg-amber-600', `Abuse: ${sc}%`]
+      : ['bg-emerald-600', `Abuse: ${sc}%`];
+    badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold" title="AbuseIPDB: ${r.abuseipdb_reports || 0} reports">${label}</span>`);
+  }
+
+  // VirusTotal (on-demand Layer 2)
+  if (r.vt_malicious != null && r.vt_total != null) {
+    const m = r.vt_malicious;
+    const bg = m >= 5 ? 'bg-red-600' : m >= 1 ? 'bg-amber-600' : 'bg-emerald-600';
+    badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold" title="VirusTotal verdict">VT: ${m}/${r.vt_total}</span>`);
+  }
+
+  return badges.join(' ');
+}
+
+// Clickable IP/domain with reputation popover
+function _reputationIp(ip, extraClass) {
+  if (!ip) return '';
+  const cls = extraClass || 'font-mono text-slate-300 dark:text-slate-300';
+  const badge = _reputationBadge(ip);
+  return `<span class="${cls} cursor-pointer hover:underline decoration-dotted" onclick="_openReputationCheck('${ip.replace(/'/g, "\\'")}')">${ip}</span>${badge ? ' ' + badge : ''}`;
+}
+
+// Open reputation popover / trigger on-demand check
+let _repPopoverTarget = null;
+async function _openReputationCheck(target) {
+  _repPopoverTarget = target;
+  const modal = document.getElementById('reputation-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const body = document.getElementById('reputation-modal-body');
+  body.innerHTML = `<div class="text-center py-6"><div class="animate-spin inline-block w-6 h-6 border-2 border-slate-400 border-t-transparent rounded-full"></div><p class="text-sm text-slate-400 mt-2">Checking ${target}...</p></div>`;
+
+  try {
+    const resp = await fetch('/api/reputation/check', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target}),
+    });
+    const data = await resp.json();
+    const r = data.result || {};
+    _reputationCache[target] = r;
+
+    // Render results
+    const rows = [];
+    // Layer 1
+    rows.push(_repRow('URLhaus', r.urlhaus_status === 'malware'
+      ? `🔴 Malware${r.urlhaus_threat ? ' — ' + r.urlhaus_threat : ''} (${r.urlhaus_url_count || 0} URLs)`
+      : r.urlhaus_status === 'clean' ? '✅ Clean' : '⏳ Not checked',
+      r.urlhaus_checked_at));
+    rows.push(_repRow('ThreatFox', r.threatfox_status === 'c2'
+      ? `🔴 C2 Server${r.threatfox_malware ? ' — ' + r.threatfox_malware : ''}`
+      : r.threatfox_status === 'clean' ? '✅ Clean' : '⏳ Not checked',
+      r.threatfox_checked_at));
+
+    // Layer 2
+    if (r.abuseipdb_score != null) {
+      const sc = r.abuseipdb_score;
+      const icon = sc >= 75 ? '🔴' : sc >= 25 ? '🟠' : '🟢';
+      rows.push(_repRow('AbuseIPDB', `${icon} ${sc}% abuse confidence (${r.abuseipdb_reports || 0} reports)`, r.abuseipdb_checked_at));
+    } else {
+      rows.push(_repRow('AbuseIPDB', data.errors?.find(e => e.includes('AbuseIPDB')) || '<span class="text-slate-500">No API key configured</span>'));
+    }
+    if (r.vt_malicious != null) {
+      const m = r.vt_malicious;
+      const icon = m >= 5 ? '🔴' : m >= 1 ? '🟠' : '🟢';
+      rows.push(_repRow('VirusTotal', `${icon} ${m}/${r.vt_total} vendors flagged malicious`, r.vt_checked_at));
+    } else {
+      rows.push(_repRow('VirusTotal', data.errors?.find(e => e.includes('VirusTotal')) || '<span class="text-slate-500">No API key configured</span>'));
+    }
+
+    // Rate limits
+    const rl = data.rate_limits || {};
+    let rlHtml = '';
+    if (rl.abuseipdb || rl.virustotal) {
+      const parts = [];
+      if (rl.abuseipdb) parts.push(`AbuseIPDB: ${rl.abuseipdb.used}/${rl.abuseipdb.max}`);
+      if (rl.virustotal) parts.push(`VT: ${rl.virustotal.used}/${rl.virustotal.max}`);
+      rlHtml = `<p class="text-[10px] text-slate-500 mt-3">Daily usage: ${parts.join(' · ')}</p>`;
+    }
+
+    body.innerHTML = `
+      <h3 class="text-sm font-bold text-slate-200 mb-3">🔍 ${target}</h3>
+      <div class="space-y-2">${rows.join('')}</div>
+      ${rlHtml}
+      <button onclick="_closeReputationModal()" class="mt-4 w-full text-xs py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition">Close</button>
+    `;
+  } catch (e) {
+    body.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>
+      <button onclick="_closeReputationModal()" class="mt-4 w-full text-xs py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300">Close</button>`;
+  }
+}
+
+function _repRow(service, value, checkedAt) {
+  const timeStr = checkedAt ? `<span class="text-[10px] text-slate-600 ml-2">${new Date(checkedAt).toLocaleTimeString()}</span>` : '';
+  return `<div class="flex items-start gap-2 text-xs">
+    <span class="text-slate-400 w-20 shrink-0 font-medium">${service}</span>
+    <span class="text-slate-200 flex-1">${value}${timeStr}</span>
+  </div>`;
+}
+
+function _closeReputationModal() {
+  const modal = document.getElementById('reputation-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
 // Shorten ASN org names by stripping legal suffixes (same as IPS>Inbound page)
 function _shortAsn(name) {
   if (!name) return '';
@@ -1727,13 +1881,12 @@ function _alertDetailLine(a) {
       if (d.dest_country) geo.push(`${_flagEmoji(d.dest_country)} ${_shortAsn(d.dest_asn_org) || d.dest_country}`);
       else if (d.dest_asn_org) geo.push(_shortAsn(d.dest_asn_org));
       if (d.dest_sni) geo.push(`<span class="${monoMuted}">${d.dest_sni}</span>`);
-      // Prefer GeoConversation stats (real connection counts, same as IPS>Outbound)
       const connCount = d.geo_connections || a.hits;
       const connBytes = d.geo_bytes || a.total_bytes;
       const stats = [];
       if (connCount) stats.push(`${formatNumber(connCount)} connections`);
       if (connBytes) stats.push(_fmtBytes(connBytes));
-      return `<span class="${mono}">${d.source_ip || ''}</span> ${arrow} <span class="${mono}">${destIp}</span>`
+      return `<span class="${mono}">${d.source_ip || ''}</span> ${arrow} ${_reputationIp(destIp, mono)}`
         + (geo.length ? ` ${sep} ${geo.join(` ${sep} `)}` : '')
         + (stats.length ? ` ${sep} <span class="tabular-nums">${stats.join(' · ')}</span>` : '')
         + ` ${sep} <span class="${muted}">${lastSeen}</span>`;
@@ -1831,6 +1984,9 @@ function _alertDetailLine(a) {
     }
     case 'inbound_threat': {
       const parts = [];
+      // Source IP — clickable with reputation
+      const srcIp = d.source_ip || a.service_or_dest || '';
+      if (srcIp) parts.push(_reputationIp(srcIp, mono));
       // Source: flag + ASN org (shortened)
       const geo = [];
       if (d.country_code) geo.push(_flagEmoji(d.country_code));
@@ -1851,6 +2007,8 @@ function _alertDetailLine(a) {
     }
     case 'inbound_port_scan': {
       const parts = [];
+      const scanSrcIp = d.source_ip || a.service_or_dest || '';
+      if (scanSrcIp) parts.push(_reputationIp(scanSrcIp, mono));
       const geo = [];
       if (d.country_code) geo.push(_flagEmoji(d.country_code));
       if (d.asn_org) geo.push(_shortAsn(d.asn_org));
@@ -1915,6 +2073,13 @@ async function loadSummaryDashboard() {
         </div>`;
       return;
     }
+
+    // Pre-fetch reputation data for all IPs in alert cards
+    const repTargets = _summaryAlerts.map(a => {
+      const d = a.details || {};
+      return d.dest_ip || d.source_ip || a.service_or_dest || '';
+    }).filter(Boolean);
+    await _fetchReputationBulk(repTargets);
 
     container.innerHTML = _summaryAlerts.map((a, idx) => _renderAlertCard(a, idx, {
       alertsArray: '_summaryAlerts',
@@ -2272,6 +2437,8 @@ function _inlineAlertAction(idx, body) { _cardAlertAction(idx, body); }
 
 window._toggleCardActions = _toggleCardActions;
 window._toggleCardCustomSnooze = _toggleCardCustomSnooze;
+window._openReputationCheck = _openReputationCheck;
+window._closeReputationModal = _closeReputationModal;
 window._cardDismiss = _cardDismiss;
 window._cardSnooze = _cardSnooze;
 window._cardWhitelist = _cardWhitelist;
@@ -7247,6 +7414,60 @@ window.loadNotificationSettings = loadNotificationSettings;
 window.saveNotificationSettings = saveNotificationSettings;
 window.testHaNotification = testHaNotification;
 
+// --- Reputation Settings ---
+async function loadReputationSettings() {
+  try {
+    const res = await fetch('/api/settings/reputation');
+    const data = await res.json();
+    const abKey = document.getElementById('rep-abuseipdb-key');
+    const vtKey = document.getElementById('rep-virustotal-key');
+    if (abKey) abKey.value = data.abuseipdb_key || '';
+    if (vtKey) vtKey.value = data.virustotal_key || '';
+  } catch (e) { console.error('loadReputationSettings:', e); }
+}
+
+async function saveReputationSettings() {
+  const abKey = document.getElementById('rep-abuseipdb-key')?.value || '';
+  const vtKey = document.getElementById('rep-virustotal-key')?.value || '';
+  try {
+    await fetch('/api/settings/reputation', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({abuseipdb_key: abKey, virustotal_key: vtKey}),
+    });
+    _showToast('Reputation keys saved', 'success');
+  } catch (e) { _showToast('Failed to save keys', 'error'); }
+}
+
+async function testReputationKeys() {
+  const resultEl = document.getElementById('rep-test-result');
+  if (!resultEl) return;
+  resultEl.classList.remove('hidden');
+  resultEl.className = 'text-xs p-3 rounded-lg bg-slate-700 text-slate-300';
+  resultEl.innerHTML = '<span class="animate-pulse">Testing connections...</span>';
+  try {
+    const res = await fetch('/api/settings/reputation/test', {method: 'POST'});
+    const data = await res.json();
+    const r = data.results || {};
+    const lines = [
+      `URLhaus: ${r.urlhaus || 'error'}`,
+      `ThreatFox: ${r.threatfox || 'error'}`,
+      `AbuseIPDB: ${r.abuseipdb || 'error'}`,
+      `VirusTotal: ${r.virustotal || 'error'}`,
+    ];
+    const hasError = data.errors?.length > 0;
+    resultEl.className = `text-xs p-3 rounded-lg ${hasError ? 'bg-amber-900/30 border border-amber-700/50 text-amber-300' : 'bg-emerald-900/30 border border-emerald-700/50 text-emerald-300'}`;
+    resultEl.innerHTML = lines.join('<br>') + (hasError ? `<br><br>⚠️ ${data.errors.join(', ')}` : '');
+  } catch (e) {
+    resultEl.className = 'text-xs p-3 rounded-lg bg-red-900/30 border border-red-700/50 text-red-300';
+    resultEl.innerHTML = `Error: ${e.message}`;
+  }
+}
+
+window.loadReputationSettings = loadReputationSettings;
+window.saveReputationSettings = saveReputationSettings;
+window.testReputationKeys = testReputationKeys;
+
 // --- Active Protect (IPS) ---
 async function refreshIps() {
   await loadIpsStatus();
@@ -7312,6 +7533,7 @@ function _renderIpsThreats(data) {
             asn_org: a.asn_org,
             target_ip: a.target_ip || a.target_name,
             target_port: a.target_port,
+            source_ip: a.source_ip,
             port_label: portLabel,
             severity: a.severity,
             conn_state: a.conn_state,
@@ -7319,6 +7541,10 @@ function _renderIpsThreats(data) {
           },
         };
       });
+
+      // Pre-fetch reputation for attacker IPs
+      const inboundIps = attacks.map(a => a.source_ip).filter(Boolean);
+      _fetchReputationBulk(inboundIps);  // fire-and-forget, badges render from cache
 
       containerEl.innerHTML = _ipsInboundAlerts.map((a, idx) => _renderAlertCard(a, idx, {
         showDelete: true,
@@ -8373,8 +8599,9 @@ async function runHealthCheck() {
 let _currentSettingsTab = 'protection';
 
 function switchSettingsTab(tab) {
-  const tabs = ['protection', 'system', 'performance', 'notifications', 'about'];
+  const tabs = ['protection', 'system', 'performance', 'notifications', 'reputation', 'about'];
   if (tab === 'notifications') loadNotificationSettings();
+  if (tab === 'reputation') loadReputationSettings();
   if (tab === 'performance') { loadSystemPerformance(); refreshPerformance(); }
   if (!tabs.includes(tab)) tab = 'protection';
   _currentSettingsTab = tab;
