@@ -5735,6 +5735,10 @@ async function _loadDrawerConnections() {
       return;
     }
 
+    // Pre-fetch reputation for all connection IPs
+    const connIps = conns.map(c => c.resp_ip).filter(Boolean);
+    await _fetchReputationBulk(connIps);
+
     const totalBytes = conns.reduce((s, c) => s + (c.bytes || 0), 0);
     const totalHits = conns.reduce((s, c) => s + (c.hits || 0), 0);
 
@@ -5762,15 +5766,16 @@ async function _loadDrawerConnections() {
         primary = `<span class="text-xs font-mono text-slate-500 dark:text-slate-400">${c.resp_ip}</span>`;
       }
 
+      const repBadge = _reputationBadge(c.resp_ip);
       const ipLine = c.ptr || c.asn_org
-        ? `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${c.resp_ip}</div>`
+        ? `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate cursor-pointer hover:text-slate-300" onclick="_openReputationCheck('${c.resp_ip}')">${c.resp_ip}${repBadge ? ' ' + repBadge : ''}</div>`
         : '';
 
-      html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+      html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer" onclick="_openReputationCheck('${c.resp_ip}')">
         <span class="flex-shrink-0">${dirIcon}</span>
         <span class="flex-shrink-0 text-sm">${flag}</span>
         <div class="flex-1 min-w-0">
-          ${primary}
+          ${primary}${repBadge && !ipLine ? ' ' + repBadge : ''}
           ${ipLine}
         </div>
         <div class="flex-shrink-0 text-right">
