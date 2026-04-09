@@ -541,6 +541,23 @@ async def _periodic_beacon_scan():
                         is_new_dest = True  # default: treat as new
                         dest_meta = db.query(IpMetadata).filter(IpMetadata.ip == dst_ip).first()
 
+                        # Tier 0: If destination ASN is widely used on this network
+                        # (many devices talk to it), it's almost certainly benign
+                        # (Google, Amazon, Cloudflare, etc.) regardless of device MAC.
+                        if is_new_dest and dest_meta and dest_meta.asn_org:
+                            device_count_for_asn = (
+                                db.query(func.count(func.distinct(GeoConversation.mac_address)))
+                                .join(IpMetadata, GeoConversation.resp_ip == IpMetadata.ip)
+                                .filter(
+                                    IpMetadata.asn_org == dest_meta.asn_org,
+                                    GeoConversation.first_seen < _known_dest_cutoff,
+                                )
+                                .scalar() or 0
+                            )
+                            if device_count_for_asn >= 3:
+                                # 3+ devices on the network talk to this ASN → benign
+                                is_new_dest = False
+
                         if mac:
                             # Tier 1: exact IP match
                             geo_row = (
