@@ -3762,6 +3762,37 @@ function renderTrackerDetailsList() {
 // IoT DEVICES — fleet overview + anomaly alerts
 // ================================================================
 
+// ---------------------------------------------------------------------------
+// IoT page tab switching (same pattern as IPS/Attacks page)
+// ---------------------------------------------------------------------------
+function switchIotTab(tab) {
+  const tabs = {
+    anomalies: { btn: document.getElementById('iot-tab-anomalies'), panel: document.getElementById('iot-panel-anomalies'), label: '<i class="ph-duotone ph-warning text-sm"></i> Anomalies', countId: 'iot-tab-anomalies-count' },
+    fleet:     { btn: document.getElementById('iot-tab-fleet'),     panel: document.getElementById('iot-panel-fleet'),     label: '<i class="ph-duotone ph-robot text-sm"></i> IoT Fleet', countId: 'iot-tab-fleet-count' },
+    network:   { btn: document.getElementById('iot-tab-network'),   panel: document.getElementById('iot-panel-network'),   label: '<i class="ph-duotone ph-graph text-sm"></i> Internal Traffic', countId: 'iot-tab-network-count' },
+  };
+  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
+  const activeCls = `${base} bg-blue-700 text-white shadow-sm`;
+  const inactiveCls = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+
+  for (const [key, t] of Object.entries(tabs)) {
+    if (!t.btn || !t.panel) continue;
+    const count = document.getElementById(t.countId)?.textContent || '0';
+    const isActive = key === tab;
+    t.btn.className = isActive ? activeCls : inactiveCls;
+    const pillCls = isActive
+      ? 'ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 text-white'
+      : 'ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400';
+    t.btn.innerHTML = `<span class="inline-flex items-center gap-1.5">${t.label} <span id="${t.countId}" class="${pillCls}">${count}</span></span>`;
+    t.panel.classList.toggle('hidden', !isActive);
+  }
+  // Trigger graph resize when switching to network tab
+  if (tab === 'network' && _networkGraphInstance) {
+    setTimeout(() => _networkGraphInstance.fit(), 100);
+  }
+}
+window.switchIotTab = switchIotTab;
+
 async function refreshIot() {
   try {
     const [fleet, anomalies] = await Promise.all([
@@ -3772,6 +3803,14 @@ async function refreshIot() {
     _renderIotAnomalies(anomalies);
     _refreshNetworkGraph();
     _renderIotFleet(fleet);
+
+    // Update tab counts
+    const anomalyCount = (anomalies.anomalies || []).filter(a => !a.dismissed).length;
+    const fleetCount = fleet.total_devices || 0;
+    const el1 = document.getElementById('iot-tab-anomalies-count');
+    const el2 = document.getElementById('iot-tab-fleet-count');
+    if (el1) el1.textContent = anomalyCount;
+    if (el2) el2.textContent = fleetCount;
   } catch (err) {
     console.error('refreshIot:', err);
   }
@@ -3969,11 +4008,21 @@ async function _refreshNetworkGraph() {
     const data = await res.json();
 
     if (!data.edges || data.edges.length === 0) {
-      section.classList.add('hidden');
+      if (badge) badge.textContent = '0';
+      if (container) container.innerHTML = `<div class="flex flex-col items-center justify-center py-12 text-center">
+        <i class="ph-duotone ph-shield-check text-3xl text-emerald-500 mb-2"></i>
+        <p class="text-sm text-slate-500 dark:text-slate-400">No lateral movement detected</p>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Internal device-to-device connections on suspicious ports will appear here.</p>
+      </div>`;
+      // Update tab count
+      const tabCount = document.getElementById('iot-tab-network-count');
+      if (tabCount) tabCount.textContent = '0';
       return;
     }
-    section.classList.remove('hidden');
     if (badge) badge.textContent = `${data.edges.length} connections`;
+    // Update tab count
+    const tabCount = document.getElementById('iot-tab-network-count');
+    if (tabCount) tabCount.textContent = data.edges.length;
 
     // Build vis.js nodes
     const nodeSet = new Map();
@@ -4078,7 +4127,6 @@ async function _refreshNetworkGraph() {
 
   } catch (err) {
     console.error('_refreshNetworkGraph:', err);
-    section.classList.add('hidden');
   }
 }
 window._refreshNetworkGraph = _refreshNetworkGraph;

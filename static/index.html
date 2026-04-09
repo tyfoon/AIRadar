@@ -75,8 +75,8 @@
     </a>
     <a href="#/iot" data-page="iot" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-cpu text-lg flex-shrink-0"></i>
-      <span class="nav-label" data-i18n="nav.iot">IoT Devices</span>
-      <span class="nav-tooltip" data-i18n="nav.iot">IoT Devices</span>
+      <span class="nav-label" data-i18n="nav.iot">IoT Overview</span>
+      <span class="nav-tooltip" data-i18n="nav.iot">IoT Overview</span>
     </a>
     <a href="#/other" data-page="other" class="nav-item relative group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
       <i class="ph-duotone ph-dots-nine text-lg flex-shrink-0"></i>
@@ -757,41 +757,66 @@
     </section>
 
     <!-- ============================================================= -->
-    <!-- PAGE: IoT DEVICES                                              -->
+    <!-- PAGE: IoT OVERVIEW                                             -->
     <!-- ============================================================= -->
     <section id="page-iot" class="page space-y-6">
 
       <!-- Stats row -->
       <div id="iot-stats" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
 
-      <!-- Anomaly Alerts -->
-      <div id="iot-anomalies-section"></div>
+      <!-- Tabs (same pattern as IPS/Attacks page) -->
+      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+        <button id="iot-tab-anomalies" onclick="switchIotTab('anomalies')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-warning text-sm"></i>
+            Anomalies <span id="iot-tab-anomalies-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 text-white">0</span>
+          </span>
+        </button>
+        <button id="iot-tab-fleet" onclick="switchIotTab('fleet')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-robot text-sm"></i>
+            IoT Fleet <span id="iot-tab-fleet-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+          </span>
+        </button>
+        <button id="iot-tab-network" onclick="switchIotTab('network')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-duotone ph-graph text-sm"></i>
+            Internal Traffic <span id="iot-tab-network-count" class="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400">0</span>
+          </span>
+        </button>
+      </div>
 
-      <!-- Lateral Movement Network Graph -->
-      <div id="iot-network-graph-section" class="hidden">
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden">
-          <div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/[0.05]">
-            <h3 class="text-base font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-              <i class="ph-duotone ph-graph text-lg"></i> Internal Network Traffic
-              <span id="iot-graph-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 font-medium"></span>
-            </h3>
-            <select id="iot-graph-hours" class="bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-md px-2 py-1 text-xs text-slate-600 dark:text-slate-300" onchange="_refreshNetworkGraph()">
-              <option value="1">Last hour</option>
-              <option value="4">Last 4 hours</option>
-              <option value="24" selected>Last 24 hours</option>
-              <option value="48">Last 48 hours</option>
-              <option value="168">Last 7 days</option>
-            </select>
-          </div>
-          <div id="iot-network-graph" style="height: 400px; width: 100%;"></div>
+      <!-- Panel: Anomalies -->
+      <div id="iot-panel-anomalies" class="space-y-4">
+        <div id="iot-anomalies-section"></div>
+      </div>
+
+      <!-- Panel: IoT Fleet -->
+      <div id="iot-panel-fleet" class="hidden">
+        <div id="iot-fleet-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-8" data-i18n="iot.loading">Loading IoT devices...</p>
         </div>
       </div>
 
-      <!-- Device Fleet Grid -->
-      <div>
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3" data-i18n="iot.fleetTitle">IoT Fleet</h3>
-        <div id="iot-fleet-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          <p class="text-slate-400 dark:text-slate-500 text-sm col-span-full text-center py-8" data-i18n="iot.loading">Loading IoT devices...</p>
+      <!-- Panel: Internal Network Traffic -->
+      <div id="iot-panel-network" class="hidden">
+        <div id="iot-network-graph-section">
+          <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/[0.05]">
+              <h3 class="text-base font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <i class="ph-duotone ph-graph text-lg"></i> Internal Network Traffic
+                <span id="iot-graph-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 font-medium"></span>
+              </h3>
+              <select id="iot-graph-hours" class="bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] rounded-md px-2 py-1 text-xs text-slate-600 dark:text-slate-300" onchange="_refreshNetworkGraph()">
+                <option value="1">Last hour</option>
+                <option value="4">Last 4 hours</option>
+                <option value="24" selected>Last 24 hours</option>
+                <option value="48">Last 48 hours</option>
+                <option value="168">Last 7 days</option>
+              </select>
+            </div>
+            <div id="iot-network-graph" style="height: 400px; width: 100%;"></div>
+          </div>
         </div>
       </div>
 
