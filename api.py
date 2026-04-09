@@ -4892,19 +4892,14 @@ async def get_ips_status():
             sa_func.count(sa_func.distinct(InboundAttack.source_ip))
         ).filter(InboundAttack.last_seen >= cutoff_24h).scalar()
 
-        # Blocked vs connected breakdown by conn_state
-        inbound_blocked_24h = db.query(
-            sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
-        ).filter(
-            InboundAttack.last_seen >= cutoff_24h,
-            InboundAttack.conn_state.in_(["S0", "REJ", "RSTO", "RSTR", "OTH"]),
-        ).scalar()
+        # Connected = established connections (S1/SF); everything else = blocked
         inbound_connected_24h = db.query(
             sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
         ).filter(
             InboundAttack.last_seen >= cutoff_24h,
             InboundAttack.conn_state.in_(["S1", "SF", "SH", "SHR"]),
         ).scalar()
+        inbound_blocked_24h = (total_blocked_24h or 0) - (inbound_connected_24h or 0)
 
         recent_attacks = (
             db.query(InboundAttack)
