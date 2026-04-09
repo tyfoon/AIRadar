@@ -5711,8 +5711,16 @@ async def test_notification(db: Session = Depends(get_db)):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "message": "AI-Radar test notification — connection successful!",
-                    "title": "AI-Radar",
+                    "title": "🛡️ AI-Radar",
+                    "message": "Test notification — connection successful!",
+                    "data": {
+                        "tag": "airadar-test",
+                        "group": "airadar",
+                        "color": "#3B82F6",
+                        "channel": "AI-Radar",
+                        "notification_icon": "mdi:shield-check",
+                        "timeout": 300,
+                    },
                 },
             )
             if resp.status_code in (200, 201):
@@ -5769,6 +5777,92 @@ async def _push_notifier_task():
 
             notifications = []
 
+            # Build IP → device name lookup for readable messages
+            _ip_to_mac_notify = {d.ip: d.mac_address for d in db.query(DeviceIP).all()}
+            _mac_to_name_notify = {}
+            for dev in db.query(Device).all():
+                _mac_to_name_notify[dev.mac_address] = dev.display_name or dev.hostname or dev.vendor or dev.mac_address
+
+            def _device_name(ip: str) -> str:
+                mac = _ip_to_mac_notify.get(ip)
+                return _mac_to_name_notify.get(mac, ip) if mac else ip
+
+            # --- Notification styling per alert type ---
+            _NOTIFY_STYLE = {
+                "beaconing_threat": {
+                    "icon": "mdi:radar",
+                    "color": "#EF4444",       # red
+                    "channel": "Security",
+                    "importance": "high",
+                    "group": "airadar-security",
+                    "label": "Malware Beacon",
+                },
+                "vpn_tunnel": {
+                    "icon": "mdi:shield-lock-outline",
+                    "color": "#F59E0B",       # amber
+                    "channel": "Privacy",
+                    "importance": "default",
+                    "group": "airadar-privacy",
+                    "label": "VPN Detected",
+                },
+                "stealth_vpn_tunnel": {
+                    "icon": "mdi:eye-off-outline",
+                    "color": "#EF4444",
+                    "channel": "Privacy",
+                    "importance": "high",
+                    "group": "airadar-privacy",
+                    "label": "Stealth VPN",
+                },
+                "iot_lateral_movement": {
+                    "icon": "mdi:swap-horizontal",
+                    "color": "#F59E0B",
+                    "channel": "IoT",
+                    "importance": "high",
+                    "group": "airadar-iot",
+                    "label": "Lateral Movement",
+                },
+                "iot_suspicious_port": {
+                    "icon": "mdi:lan-disconnect",
+                    "color": "#F59E0B",
+                    "channel": "IoT",
+                    "importance": "default",
+                    "group": "airadar-iot",
+                    "label": "Suspicious Port",
+                },
+                "iot_new_country": {
+                    "icon": "mdi:earth",
+                    "color": "#3B82F6",       # blue
+                    "channel": "IoT",
+                    "importance": "default",
+                    "group": "airadar-iot",
+                    "label": "New Country",
+                },
+                "iot_volume_spike": {
+                    "icon": "mdi:chart-line-variant",
+                    "color": "#F59E0B",
+                    "channel": "IoT",
+                    "importance": "default",
+                    "group": "airadar-iot",
+                    "label": "Volume Spike",
+                },
+                "inbound_threat": {
+                    "icon": "mdi:shield-alert",
+                    "color": "#EF4444",
+                    "channel": "Security",
+                    "importance": "high",
+                    "group": "airadar-inbound",
+                    "label": "Inbound Threat",
+                },
+                "inbound_port_scan": {
+                    "icon": "mdi:magnify-scan",
+                    "color": "#F59E0B",
+                    "channel": "Security",
+                    "importance": "default",
+                    "group": "airadar-inbound",
+                    "label": "Port Scan",
+                },
+            }
+
             # Anomaly events
             _notify_anomaly_types = _ANOMALY_DETECTION_TYPES
             for e in events:
@@ -5777,18 +5871,67 @@ async def _push_notifier_task():
                 cat = "security" if e.detection_type in _notify_anomaly_types else e.category
                 if cat not in enabled_cats:
                     continue
+
+                style = _NOTIFY_STYLE.get(e.detection_type, {})
+                src_name = _device_name(e.source_ip)
+                dst = e.ai_service or ""
+
+                # Build a clean, short message per type
+                if e.detection_type == "beaconing_threat":
+                    dst_clean = dst.replace("known_", "")
+                    msg = f"{src_name} → {dst_clean}"
+                elif e.detection_type in ("vpn_tunnel", "stealth_vpn_tunnel"):
+                    msg = f"{src_name} using {dst}"
+                elif e.detection_type == "iot_lateral_movement":
+                    # dst format: "lateral_{port}_{ip}"
+                    parts = dst.split("_", 2)
+                    if len(parts) >= 3:
+                        msg = f"{src_name} → {parts[2]}:{parts[1]}"
+                    else:
+                        msg = f"{src_name} → {dst}"
+                elif e.detection_type == "iot_volume_spike":
+                    msg = f"{src_name} — unusual traffic volume"
+                elif e.detection_type == "iot_new_country":
+                    msg = f"{src_name} → new destination country"
+                elif e.detection_type == "iot_suspicious_port":
+                    msg = f"{src_name} — unexpected port activity"
+                elif e.detection_type in ("inbound_threat", "inbound_port_scan"):
+                    msg = f"{e.source_ip} → {src_name}" if src_name != e.source_ip else f"{e.source_ip} → your network"
+                else:
+                    msg = f"{src_name} → {dst}"
+
                 notifications.append({
-                    "title": f"AI-Radar: {e.detection_type.replace('_', ' ').title()}",
-                    "message": f"{e.source_ip} → {e.ai_service} ({e.detection_type})",
+                    "title": f"🛡️ {style.get('label', e.detection_type)}",
+                    "message": msg,
+                    "data": {
+                        "tag": f"airadar-{e.detection_type}-{e.source_ip}",
+                        "group": style.get("group", "airadar"),
+                        "color": style.get("color", "#F59E0B"),
+                        "channel": style.get("channel", "AI-Radar"),
+                        "importance": style.get("importance", "default"),
+                        "notification_icon": style.get("icon", "mdi:shield-outline"),
+                        "sticky": "true" if style.get("importance") == "high" else "false",
+                        "alert_once": True,
+                    },
                 })
 
             # New device notifications
             if "new_device" in enabled_cats:
                 for d in new_devices:
                     name = d.display_name or d.hostname or d.mac_address
+                    vendor = d.vendor or "unknown"
                     notifications.append({
-                        "title": "AI-Radar: New Device",
-                        "message": f"{name} ({d.vendor or 'unknown vendor'}) joined the network",
+                        "title": "📱 New Device",
+                        "message": f"{name} ({vendor})",
+                        "data": {
+                            "tag": f"airadar-newdev-{d.mac_address}",
+                            "group": "airadar-devices",
+                            "color": "#3B82F6",
+                            "channel": "Devices",
+                            "importance": "default",
+                            "notification_icon": "mdi:devices",
+                            "timeout": 3600,
+                        },
                     })
 
             # Send notifications
