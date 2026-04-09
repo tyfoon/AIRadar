@@ -740,6 +740,13 @@ def init_db() -> None:
                     "ALTER TABLE geo_conversations ADD COLUMN resp_bytes INTEGER NOT NULL DEFAULT 0"
                 ))
 
+    # --- One-time migration: rename google_api → google_gemini ---
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE detection_events SET ai_service = 'google_gemini' "
+            "WHERE ai_service = 'google_api'"
+        ))
+
     # --- Performance indexes for large tables ---
     # These CREATE INDEX IF NOT EXISTS are idempotent and safe to run on every boot.
     with engine.begin() as conn:
