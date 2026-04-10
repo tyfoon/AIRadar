@@ -255,8 +255,11 @@ function _routeFromHash(raw) {
     const subTab = parts[1] || 'protection';
     switchSettingsTab(subTab);
     _initThemeSelect();
-  } else if (raw === 'other') {
-    // Legacy alias — page was renamed "Other" → "Family"
+  } else if (raw === 'other' || raw === 'content') {
+    // Legacy aliases — page was renamed "Other" → "Family" → "Content".
+    // The internal id is still "family" (page-family, refreshFamily, …)
+    // because renaming every DOM hook would be a huge diff with typo risk.
+    // Only the user-facing label + primary hash (#/content) changed.
     navigate('family');
   } else {
     navigate(raw);
