@@ -2595,6 +2595,15 @@ def geo_ingest(payload: dict, db: Session = Depends(get_db)):
 _IOT_COUNTRY_DEDUP_SECONDS = 3600
 _iot_country_alert_last: dict[tuple, float] = {}
 
+# Baseline is only considered "ready" after this many days of history.
+# Used by both the IoT fleet card status badge and the volume-spike /
+# new-country detectors so the UI and the alert pipeline agree on when
+# a device is still learning. Alerting on < 7 days of data produces too
+# many false positives: daily rhythms (vacuum cleaning, camera recording,
+# media polling) haven't fully registered yet, and stddev /
+# known_countries are unreliable.
+BASELINE_READY_DAYS = 7
+
 
 @app.post("/api/geo/conversations/ingest")
 def ingest_geo_conversations(
@@ -2679,10 +2688,17 @@ def ingest_geo_conversations(
 
         # --- IoT new-country alert ---
         # If this is an IoT device talking to a country not in its baseline,
-        # create a DetectionEvent.
+        # create a DetectionEvent. Only alert when the baseline is "ready"
+        # (device ≥ BASELINE_READY_DAYS old) so the known_countries list
+        # has had time to fill — during the learning window the card
+        # shows "Learning X/7d" and no alerts should fire.
         if mac and cc and direction == "outbound":
             dev = _all_devices.get(mac)
-            if dev and _is_iot_backend(dev):
+            if (
+                dev and _is_iot_backend(dev)
+                and dev.first_seen
+                and (now - dev.first_seen).days >= BASELINE_READY_DAYS
+            ):
                 bl = _baselines.get(mac)
                 if bl and bl.known_countries:
                     try:
@@ -6048,11 +6064,43 @@ async def _push_notifier_task():
                 .all()
             )
 
+            # New devices — mirror the same filters as /api/alerts/active so
+            # a push always corresponds to something the user can open on
+            # the Summary page. Without these gates, the push fires seconds
+            # after the device appears (no vendor/hostname yet) while the
+            # Summary page hides it for 5 minutes waiting on enrichment.
+            #
+            # Watermark race: the gate (first_seen ≤ now − 5 min) means a
+            # device created just before the watermark advanced would be
+            # skipped here AND in every future cycle. To avoid that we
+            # use a 10-min lookback on the lower bound — HA deduplicates
+            # on the `tag` field so re-sending is safe.
+            _new_dev_min_age = datetime.utcnow() - timedelta(minutes=5)
+            _new_dev_lookback = watermark - timedelta(minutes=10)
             new_devices = (
                 db.query(Device)
-                .filter(Device.first_seen > watermark)
+                .filter(
+                    Device.first_seen > _new_dev_lookback,
+                    Device.first_seen <= _new_dev_min_age,
+                )
                 .all()
             )
+            # Exclude placeholder rows (IPv6 privacy / pre-MAC) — these
+            # are filtered out on the Summary page too.
+            new_devices = [d for d in new_devices if not d.mac_address.startswith("unknown_")]
+            # Exclude devices the user has already snoozed/dismissed.
+            if new_devices:
+                _notify_exceptions = db.query(AlertException).filter(
+                    (AlertException.expires_at.is_(None))
+                    | (AlertException.expires_at > datetime.utcnow())
+                ).all()
+                _now_notify = datetime.utcnow()
+                new_devices = [
+                    d for d in new_devices
+                    if not _is_exception_active(
+                        _notify_exceptions, d.mac_address, "new_device", d.mac_address, _now_notify
+                    )
+                ]
 
             notifications = []
 
@@ -6912,9 +6960,11 @@ def iot_fleet(db: Session = Depends(get_db)):
         bytes_24h = stats.get("bytes_24h", 0)
         total_bytes += bytes_24h
 
-        # Baseline status: learning (< 7 days) or ready (≥ 7 days + baseline)
+        # Baseline status: learning (< BASELINE_READY_DAYS) or ready
+        # (≥ BASELINE_READY_DAYS + baseline computed). Same threshold as
+        # the volume-spike detector so the card and alerts stay in sync.
         days_since_first = (now - d.first_seen).days if d.first_seen else 0
-        if days_since_first >= 7 and baseline and baseline.computed_at:
+        if days_since_first >= BASELINE_READY_DAYS and baseline and baseline.computed_at:
             baseline_status = "ready"
         else:
             baseline_status = "learning"
@@ -7382,6 +7432,9 @@ def get_device_traffic_history(
 # Volume spike checker — runs every 15 minutes
 VOLUME_SPIKE_CHECK_INTERVAL = 900
 VOLUME_SPIKE_DEDUP_SECONDS = 86400  # 24h — one alert per device per day
+# BASELINE_READY_DAYS is defined earlier in the file (near the IoT
+# country detector) — both the fleet card and this spike detector
+# use the same constant so "Learning" on the card means no alerts.
 _volume_spike_last: dict[str, float] = {}
 
 
@@ -7425,9 +7478,12 @@ async def _check_volume_spikes():
             hour_ago = now - timedelta(hours=1)
 
             # Only consider baselines with valid stddev AND enough history.
-            # A device needs at least 3 days of data for a reliable baseline;
-            # alerting on 1-2 days of data produces too many false positives.
-            min_baseline_age = now - timedelta(days=3)
+            # Aligned with the IoT fleet card — a device must have been on
+            # the network for BASELINE_READY_DAYS (7) before we trust its
+            # baseline enough to alert on spikes. The UI shows "Learning
+            # X/7d" until then, and no alerts should fire during that
+            # window.
+            min_baseline_age = now - timedelta(days=BASELINE_READY_DAYS)
             baselines = db.query(DeviceBaseline).filter(
                 DeviceBaseline.stddev_bytes > 0
             ).all()
