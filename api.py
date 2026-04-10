@@ -3945,38 +3945,80 @@ def get_active_alerts(
         d.mac_address: d for d in db.query(Device).all()
     }
 
-    # Pre-fetch enrichment data for alert detail cards
-    _ip_meta_map: dict[str, IpMetadata] = {
-        r.ip: r for r in db.query(IpMetadata).all()
-    }
-    # InboundAttack: index by source_ip (most recent per source_ip wins)
-    _inbound_attack_map: dict[str, InboundAttack] = {}
-    for ia in (
-        db.query(InboundAttack)
-        .filter(InboundAttack.last_seen >= cutoff)
-        .order_by(InboundAttack.last_seen.asc())
-        .all()
-    ):
-        _inbound_attack_map[ia.source_ip] = ia  # last write = most recent
-
-    # GeoConversation: index by resp_ip (remote IP) for beacon enrichment.
-    # Aggregate hits+bytes per resp_ip so we get the real connection counts
-    # (same data source as IPS>Outbound page).
-    _geo_by_resp_ip: dict[str, GeoConversation] = {}
-    for gc in (
-        db.query(GeoConversation)
-        .order_by(GeoConversation.hits.desc())
-        .all()
-    ):
-        if gc.resp_ip not in _geo_by_resp_ip:
-            _geo_by_resp_ip[gc.resp_ip] = gc  # first = highest hits
-
+    # Events for the alert window — load FIRST so the enrichment queries
+    # below can be scoped to the exact IPs we actually need, instead of
+    # scanning the whole ip_metadata / geo_conversations tables on every
+    # request. (That full-scan was the main cause of the Summary page
+    # getting slower over time.)
     events = (
         db.query(DetectionEvent)
         .filter(DetectionEvent.timestamp >= cutoff)
         .order_by(DetectionEvent.timestamp.asc())
         .all()
     )
+
+    # Collect the exact IP sets we may need enrichment for. Only two
+    # alert types actually consume the IpMetadata / GeoConversation maps:
+    #   - beaconing_threat → uses dest_ip (stored in ai_service) for
+    #     country/ASN/rDNS and GeoConversation hit counts.
+    #   - inbound_threat / inbound_port_scan → falls back to IpMetadata
+    #     for source_ip when there's no matching InboundAttack row.
+    beacon_dest_ips: set[str] = set()
+    inbound_src_ips: set[str] = set()
+    for e in events:
+        if e.detection_type == "beaconing_threat":
+            dest = (e.ai_service or "").strip()
+            # Skip the "known_*" sentinels — they're filtered out of the
+            # feed later anyway and don't need enrichment.
+            if dest and not dest.startswith("known_"):
+                beacon_dest_ips.add(dest)
+        elif e.detection_type in ("inbound_threat", "inbound_port_scan"):
+            if e.source_ip:
+                inbound_src_ips.add(e.source_ip)
+    wanted_meta_ips = beacon_dest_ips | inbound_src_ips
+
+    # Targeted IpMetadata fetch (was: full-table scan every request).
+    # Typical case: <20 rows vs. ~14k rows on a running system.
+    _ip_meta_map: dict[str, IpMetadata] = {}
+    if wanted_meta_ips:
+        _ip_meta_map = {
+            r.ip: r for r in (
+                db.query(IpMetadata)
+                .filter(IpMetadata.ip.in_(wanted_meta_ips))
+                .all()
+            )
+        }
+
+    # InboundAttack: index by source_ip (most recent per source_ip wins).
+    # Scoped on source_ip IN (...) on top of the existing cutoff filter,
+    # so we only walk the attacks that actually correspond to an alert.
+    _inbound_attack_map: dict[str, InboundAttack] = {}
+    if inbound_src_ips:
+        for ia in (
+            db.query(InboundAttack)
+            .filter(
+                InboundAttack.last_seen >= cutoff,
+                InboundAttack.source_ip.in_(inbound_src_ips),
+            )
+            .order_by(InboundAttack.last_seen.asc())
+            .all()
+        ):
+            _inbound_attack_map[ia.source_ip] = ia  # last write = most recent
+
+    # GeoConversation: index by resp_ip for beacon enrichment. Same row
+    # semantics as before (first = highest hits per resp_ip), but scoped
+    # to the handful of beacon destinations instead of the full 30d
+    # conversation history (was ~38k rows on a running system).
+    _geo_by_resp_ip: dict[str, GeoConversation] = {}
+    if beacon_dest_ips:
+        for gc in (
+            db.query(GeoConversation)
+            .filter(GeoConversation.resp_ip.in_(beacon_dest_ips))
+            .order_by(GeoConversation.hits.desc())
+            .all()
+        ):
+            if gc.resp_ip not in _geo_by_resp_ip:
+                _geo_by_resp_ip[gc.resp_ip] = gc  # first = highest hits
 
     # Aggregate by (mac, alert_type, service_or_dest)
     groups: dict[tuple, dict] = {}

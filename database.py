@@ -855,3 +855,18 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS ix_tls_fp_last_seen "
             "ON tls_fingerprints (last_seen)"
         ))
+        # detection_events: speed up the `WHERE timestamp >= cutoff` window
+        # used by /api/alerts/active and friends. Without this the Summary
+        # page did a full table scan on every load, which became the main
+        # cause of "Summary loads slower over time".
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_detection_events_timestamp "
+            "ON detection_events (timestamp)"
+        ))
+        # inbound_attacks: enrichment lookup in /api/alerts/active filters
+        # on last_seen >= cutoff. With ~thousands of rows this is still
+        # cheap, but the index keeps it O(log N) as the table grows.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_inbound_attacks_last_seen "
+            "ON inbound_attacks (last_seen)"
+        ))
