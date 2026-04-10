@@ -1189,6 +1189,20 @@ def _detect_local_v4_subnets() -> list[ipaddress.IPv4Network]:
             print(f"[*] Local IPv4 subnets (env): {[str(s) for s in subnets]}")
             return subnets
 
+    # Interfaces that look local but aren't real LAN segments — Docker
+    # bridges, virtual ethernet pairs, tailscale/wireguard tunnels, etc.
+    # We filter by interface name prefix; this is cheap and independent
+    # of the exact CIDR the user might have configured for Docker.
+    _SKIP_IFACE_PREFIXES = (
+        "docker", "br-",   # Docker default bridge + user-defined bridges
+        "veth",            # container veth pairs
+        "cni", "flannel",  # Kubernetes
+        "tailscale", "wg", # VPN tunnels
+        "zt",              # ZeroTier
+        "virbr",           # libvirt
+        "tun", "tap",      # generic tunnels
+    )
+
     try:
         result = subprocess.run(
             ["ip", "-4", "-o", "addr"],
@@ -1197,6 +1211,12 @@ def _detect_local_v4_subnets() -> list[ipaddress.IPv4Network]:
         for line in result.stdout.splitlines():
             # Format: "N: iface    inet 192.168.1.7/24 brd ... scope global iface"
             parts = line.split()
+            if len(parts) < 4:
+                continue
+            # parts[0] = "N:", parts[1] = iface name
+            iface = parts[1]
+            if any(iface.startswith(p) for p in _SKIP_IFACE_PREFIXES):
+                continue
             try:
                 idx = parts.index("inet")
             except ValueError:

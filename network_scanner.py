@@ -70,7 +70,13 @@ def _resolve_scan_subnets() -> list[str]:
             print(f"[scanner] Using SCAN_SUBNET from env: {subnets}")
             return subnets
 
-    # Auto-detect from interface addresses
+    # Auto-detect from interface addresses, skipping virtual interfaces
+    # (Docker bridges, VPN tunnels, container veth pairs) that are not
+    # real LAN segments.
+    _skip_prefixes = (
+        "docker", "br-", "veth", "cni", "flannel",
+        "tailscale", "wg", "zt", "virbr", "tun", "tap",
+    )
     try:
         result = subprocess.run(
             ["ip", "-4", "-o", "addr"],
@@ -78,6 +84,11 @@ def _resolve_scan_subnets() -> list[str]:
         )
         for line in result.stdout.splitlines():
             parts = line.split()
+            if len(parts) < 4:
+                continue
+            iface = parts[1]
+            if any(iface.startswith(p) for p in _skip_prefixes):
+                continue
             try:
                 idx = parts.index("inet")
             except ValueError:
