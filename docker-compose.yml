@@ -86,3 +86,32 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # ── Cloudflare Tunnel — remote access to the dashboard ───
+  # Exposes airadar-app (host:8000) to the internet via a
+  # Cloudflare Tunnel so there's no need to open any port on
+  # the router. The tunnel is remotely managed: all routing
+  # (public hostname → localhost:8000) lives in the Cloudflare
+  # dashboard, this container only runs the connector.
+  #
+  # Host networking is deliberate — it lets cloudflared reach
+  # the airadar-app on localhost:8000 without having to poke
+  # holes across a bridge network. It also matches the rest of
+  # the stack so there's only one networking model to reason
+  # about.
+  #
+  # CLOUDFLARE_TUNNEL_TOKEN lives in .env (never committed);
+  # see .env.example for how to create one.
+  #
+  # ⚠️ Put the public hostname behind Cloudflare Access before
+  # enabling this — AIRadar has no built-in login.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    network_mode: "host"
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_METRICS=127.0.0.1:2000
+    depends_on:
+      - airadar-app
