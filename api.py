@@ -76,7 +76,7 @@ import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import Integer, func, text
+from sqlalchemy import Integer, func, or_, text
 from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
@@ -2673,6 +2673,148 @@ _iot_country_alert_last: dict[tuple, float] = {}
 # media polling) haven't fully registered yet, and stddev /
 # known_countries are unreliable.
 BASELINE_READY_DAYS = 7
+
+
+# ---------------------------------------------------------------------------
+# PyOD multivariate IoT anomaly detector (ECOD)
+# ---------------------------------------------------------------------------
+# We train a per-device ECOD detector on the device's hourly traffic
+# vectors. ECOD is parameter-free, deterministic, fast, and crucially does
+# not assume Gaussian distributions — which matters because network bytes
+# are heavy-tailed log-normal. The trained detector + the 99th-percentile
+# training score are stored on DeviceBaseline; live spike-checks score the
+# current hour against the detector and alert when the score exceeds the
+# stored p99.
+#
+# Why per-device instead of one global model?
+#   IoT devices have wildly different traffic shapes — a smart plug at
+#   ~50 KB/h is "normal", a 4K TV at 8 GB/h is also "normal". A global
+#   model would either swamp the plug in TV traffic (false negatives on
+#   plug compromise) or alert constantly on the TV.
+#
+# Bump FEATURE_VERSION whenever the feature vector below changes —
+# loaders will refuse to score with a stale feature_version and trigger
+# a retrain on the next baseline pass.
+FEATURE_VERSION = 1
+
+# Minimum hourly samples required to fit the detector. 72 hours = 3 days
+# is enough for ECOD to learn the diurnal shape without overfitting.
+FEATURE_MIN_HOURS = 72
+
+# Score threshold safety floor — even if a device's training distribution
+# is degenerate (almost all-zero hours), require the live hour to also
+# exceed this many bytes before we alert. Mirrors the legacy 100 KB/h
+# guard in _check_volume_spikes.
+DETECTOR_MIN_BYTES_HOUR = 100_000
+
+
+def _hour_features(row, *, hour_dt=None):
+    """Convert a DeviceTrafficHourly row (or compatible dict) to a feature vector.
+
+    Returns a list[float] — keep this stable across the codebase. If the
+    feature shape changes, bump FEATURE_VERSION above.
+    """
+    import math
+
+    if isinstance(row, dict):
+        bytes_out = row.get("bytes_out", 0) or 0
+        bytes_in = row.get("bytes_in", 0) or 0
+        connections = row.get("connections", 0) or 0
+        unique_destinations = row.get("unique_destinations", 0) or 0
+        hour_dt = hour_dt or row.get("hour")
+    else:
+        bytes_out = row.bytes_out or 0
+        bytes_in = row.bytes_in or 0
+        connections = row.connections or 0
+        unique_destinations = row.unique_destinations or 0
+        hour_dt = hour_dt or row.hour
+
+    # log1p tames the heavy tail; ECOD/IForest then weight the bytes
+    # axes comparably to the count axes.
+    log_out = math.log1p(bytes_out)
+    log_in = math.log1p(bytes_in)
+    log_conn = math.log1p(connections)
+    log_dest = math.log1p(unique_destinations)
+    upload_ratio = bytes_out / (bytes_out + bytes_in + 1.0)
+
+    # hour_of_week as two cyclic features (sin, cos) so the detector
+    # treats Sunday 23:00 and Monday 00:00 as adjacent. Without this it
+    # would treat hour 167 as far from hour 0 and over-flag the boundary.
+    if hour_dt is not None:
+        how = (hour_dt.weekday() * 24 + hour_dt.hour) % 168
+    else:
+        how = 0
+    angle = (how / 168.0) * 2.0 * math.pi
+    how_sin = math.sin(angle)
+    how_cos = math.cos(angle)
+
+    return [log_out, log_in, log_conn, log_dest, upload_ratio, how_sin, how_cos]
+
+
+def _train_ecod_detector(hourly_rows):
+    """Fit an ECOD detector on a list of DeviceTrafficHourly rows.
+
+    Returns (pickled_blob: bytes, score_p99: float, n_samples: int) or
+    None if there isn't enough data or pyod isn't installed.
+
+    The function is designed to fail closed — any import error, fit
+    error, or numpy version mismatch returns None and the caller falls
+    back to the legacy 3σ path.
+    """
+    if len(hourly_rows) < FEATURE_MIN_HOURS:
+        return None
+    try:
+        import io
+        import joblib
+        import numpy as np
+        from pyod.models.ecod import ECOD
+    except Exception as exc:  # pyod not installed yet, or numpy ABI mismatch
+        print(f"[pyod] import failed, skipping detector training: {exc}")
+        return None
+
+    try:
+        X = np.array([_hour_features(r) for r in hourly_rows], dtype=np.float64)
+        if X.shape[0] < FEATURE_MIN_HOURS:
+            return None
+        det = ECOD()
+        det.fit(X)
+        train_scores = det.decision_function(X)
+        # 99th percentile of training scores = our alert threshold.
+        # Anything strictly above this is "weirder than 99% of normal
+        # behaviour for this device".
+        p99 = float(np.percentile(train_scores, 99))
+        buf = io.BytesIO()
+        joblib.dump(det, buf)
+        return buf.getvalue(), p99, int(X.shape[0])
+    except Exception as exc:
+        print(f"[pyod] ECOD training failed: {exc}")
+        return None
+
+
+def _load_detector(blob):
+    """Unpickle a stored detector blob. Returns None on any failure."""
+    if not blob:
+        return None
+    try:
+        import io
+        import joblib
+        return joblib.load(io.BytesIO(blob))
+    except Exception as exc:
+        print(f"[pyod] detector load failed: {exc}")
+        return None
+
+
+def _score_hour(detector, features):
+    """Score a single hour vector. Returns float score or None on failure."""
+    if detector is None:
+        return None
+    try:
+        import numpy as np
+        X = np.array([features], dtype=np.float64)
+        return float(detector.decision_function(X)[0])
+    except Exception as exc:
+        print(f"[pyod] scoring failed: {exc}")
+        return None
 
 
 @app.post("/api/geo/conversations/ingest")
@@ -8329,6 +8471,23 @@ async def _compute_device_baselines():
                     if r[0]
                 ]
 
+                # --- Train PyOD ECOD detector on hourly history ---
+                # Pulled from DeviceTrafficHourly so the feature shape is
+                # consistent and we don't have to re-bucket on the fly.
+                # Training is bounded by FEATURE_MIN_HOURS — devices with
+                # less than 3 days of hourly snapshots fall back to the
+                # legacy 3σ path until enough history accumulates.
+                hourly_rows = (
+                    db.query(DeviceTrafficHourly)
+                    .filter(
+                        DeviceTrafficHourly.mac_address == mac,
+                        DeviceTrafficHourly.hour >= cutoff,
+                    )
+                    .order_by(DeviceTrafficHourly.hour.asc())
+                    .all()
+                )
+                trained = _train_ecod_detector(hourly_rows)
+
                 existing = db.query(DeviceBaseline).filter(
                     DeviceBaseline.mac_address == mac
                 ).first()
@@ -8340,8 +8499,16 @@ async def _compute_device_baselines():
                     existing.stddev_connections = stddev_connections
                     existing.known_countries = _json.dumps(countries)
                     existing.computed_at = datetime.utcnow()
+                    if trained:
+                        blob, p99, n_samples = trained
+                        existing.model_blob = blob
+                        existing.model_kind = "ECOD"
+                        existing.feature_version = FEATURE_VERSION
+                        existing.model_samples = n_samples
+                        existing.score_p99 = p99
+                        existing.model_trained_at = datetime.utcnow()
                 else:
-                    db.add(DeviceBaseline(
+                    new_bl = DeviceBaseline(
                         mac_address=mac,
                         avg_bytes_hour=total_bytes // hours,
                         avg_connections_hour=total_hits // hours,
@@ -8350,7 +8517,16 @@ async def _compute_device_baselines():
                         stddev_connections=stddev_connections,
                         known_countries=_json.dumps(countries),
                         computed_at=datetime.utcnow(),
-                    ))
+                    )
+                    if trained:
+                        blob, p99, n_samples = trained
+                        new_bl.model_blob = blob
+                        new_bl.model_kind = "ECOD"
+                        new_bl.feature_version = FEATURE_VERSION
+                        new_bl.model_samples = n_samples
+                        new_bl.score_p99 = p99
+                        new_bl.model_trained_at = datetime.utcnow()
+                    db.add(new_bl)
                 updated += 1
 
             db.commit()
@@ -8554,13 +8730,19 @@ async def _check_volume_spikes():
             now_ts = time.time()
             hour_ago = now - timedelta(hours=1)
 
-            # Only consider baselines with valid stddev AND a fully-
-            # populated baseline window. This MUST match the frontend's
-            # "ready" criterion on the IoT fleet card — devices shown as
-            # "Learning" or "Building" should never produce spike alerts.
-            # See iot_fleet() around line 7932 for the matching logic.
+            # Only consider baselines that are usable for alerting.
+            # Two valid paths:
+            #   1. PyOD detector trained (model_blob + score_p99 set)
+            #   2. Legacy 3σ baseline (stddev_bytes > 0)
+            # This MUST match the frontend's "ready" criterion on the IoT
+            # fleet card — devices shown as "Learning" or "Building"
+            # should never produce spike alerts. See iot_fleet() around
+            # line 7932 for the matching logic.
             baselines = db.query(DeviceBaseline).filter(
-                DeviceBaseline.stddev_bytes > 0,
+                or_(
+                    DeviceBaseline.stddev_bytes > 0,
+                    DeviceBaseline.model_blob.is_not(None),
+                ),
                 DeviceBaseline.computed_at.is_not(None),
             ).all()
 
@@ -8597,9 +8779,14 @@ async def _check_volume_spikes():
                 # ↑13 KB ↓7.1 MB". The orig+resp columns are populated
                 # from the Zeek conn.log every flush, so they track the
                 # actual upload/download deltas accurately.
+                #
+                # Also pull connection count + unique destinations so
+                # the PyOD detector has a full feature vector.
                 _hour_row = db.query(
                     func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("up"),
                     func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("down"),
+                    func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
+                    func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
                 ).filter(
                     GeoConversation.mac_address == bl.mac_address,
                     GeoConversation.last_seen >= hour_ago,
@@ -8607,14 +8794,58 @@ async def _check_volume_spikes():
                 up_bytes = int(_hour_row.up if _hour_row else 0)
                 down_bytes = int(_hour_row.down if _hour_row else 0)
                 hour_bytes = up_bytes + down_bytes
+                hour_conns = int(_hour_row.conns if _hour_row else 0)
+                hour_dests = int(_hour_row.dests if _hour_row else 0)
 
                 checked += 1
-                threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
-                # Minimum threshold of 100 KB/h to avoid noise from
-                # devices with very low baselines (e.g. 50 bytes/h)
-                threshold = max(threshold, 100_000)
-                if hour_bytes <= threshold:
-                    continue
+
+                # --- Anomaly decision: PyOD ECOD first, fallback 3σ ---
+                # Path 1 (preferred): the device has a trained ECOD detector
+                # and a feature_version that matches the current code. We
+                # build a feature vector for the current hour and ask the
+                # detector for a score; if it exceeds the device-specific
+                # 99th-percentile training score, this hour is anomalous.
+                #
+                # Path 2 (fallback): no detector yet, or stale feature
+                # version. Fall back to the legacy avg + 3σ check on raw
+                # bytes/h. This keeps alerting working during the rollout
+                # window where models still need to be trained.
+                detector_used = False
+                detector_score = None
+                if (
+                    bl.model_blob
+                    and bl.score_p99 is not None
+                    and bl.feature_version == FEATURE_VERSION
+                ):
+                    detector = _load_detector(bl.model_blob)
+                    if detector is not None:
+                        feats = _hour_features({
+                            "bytes_out": up_bytes,
+                            "bytes_in": down_bytes,
+                            "connections": hour_conns,
+                            "unique_destinations": hour_dests,
+                        }, hour_dt=now)
+                        detector_score = _score_hour(detector, feats)
+                        if detector_score is not None:
+                            detector_used = True
+                            # Safety floor: even if the detector flags
+                            # this hour, ignore tiny absolute volumes.
+                            # Mirrors the 100 KB/h guard from the legacy
+                            # path so we don't alert on a smart-plug
+                            # that "doubled" from 30 KB to 60 KB.
+                            if hour_bytes < DETECTOR_MIN_BYTES_HOUR:
+                                continue
+                            if detector_score <= bl.score_p99:
+                                continue
+
+                if not detector_used:
+                    # Legacy 3σ fallback
+                    threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
+                    # Minimum threshold of 100 KB/h to avoid noise from
+                    # devices with very low baselines (e.g. 50 bytes/h)
+                    threshold = max(threshold, 100_000)
+                    if hour_bytes <= threshold:
+                        continue
 
                 # Dedup: check both in-memory dict AND DB to survive restarts
                 if (now_ts - _volume_spike_last.get(bl.mac_address, 0)) < VOLUME_SPIKE_DEDUP_SECONDS:
@@ -8690,11 +8921,20 @@ async def _check_volume_spikes():
                     category="security",
                 ))
                 alerted += 1
-                print(
-                    f"[volume-spike] {dev_name} ({bl.mac_address}): "
-                    f"{hour_bytes/1024:.0f} KB/h vs baseline "
-                    f"{bl.avg_bytes_hour/1024:.0f} ± {bl.stddev_bytes/1024:.0f} KB/h"
-                )
+                if detector_used:
+                    print(
+                        f"[volume-spike] {dev_name} ({bl.mac_address}): "
+                        f"ECOD score {detector_score:.2f} > p99 {bl.score_p99:.2f} "
+                        f"(hour {hour_bytes/1024:.0f} KB, "
+                        f"{hour_conns} conn, {hour_dests} dst)"
+                    )
+                else:
+                    print(
+                        f"[volume-spike] {dev_name} ({bl.mac_address}): "
+                        f"{hour_bytes/1024:.0f} KB/h vs baseline "
+                        f"{bl.avg_bytes_hour/1024:.0f} ± {bl.stddev_bytes/1024:.0f} KB/h "
+                        f"(legacy 3σ path)"
+                    )
 
             if alerted:
                 db.commit()

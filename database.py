@@ -8,7 +8,7 @@ Supports both AI-service and Cloud-storage detection categories.
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, ForeignKey, Integer, String,
+    Boolean, Column, DateTime, Float, ForeignKey, Integer, LargeBinary, String,
     UniqueConstraint, create_engine, event, inspect, text,
 )
 from sqlalchemy.engine import Engine
@@ -401,6 +401,16 @@ class DeviceBaseline(Base):
     Computed nightly by a background task. The IoT page compares live
     traffic against these baselines to flag volume spikes, fan-out
     spikes, and new country/ASN appearances.
+
+    Two parallel detection paths are stored here:
+
+      1. Legacy 3σ thresholds (avg_*, stddev_*) — kept as a fallback for
+         devices that don't yet have enough history to train a multivariate
+         detector.
+      2. PyOD ECOD detector (model_blob) — multivariate, parameter-free,
+         non-Gaussian. Trained on the device's hourly feature vectors and
+         used as the primary signal once at least FEATURE_MIN_HOURS of
+         history exist.
     """
 
     __tablename__ = "device_baselines"
@@ -415,6 +425,24 @@ class DeviceBaseline(Base):
     known_countries = Column(String, nullable=True)    # JSON array of country codes
     computed_at = Column(DateTime, nullable=False,
                          default=lambda: datetime.now(timezone.utc))
+
+    # --- Multivariate PyOD detector (ECOD) ---
+    # Pickled (joblib) detector instance, or NULL if not yet trained.
+    model_blob = Column(LargeBinary, nullable=True)
+    # Detector class name, e.g. "ECOD". Used so we can swap algorithms
+    # later (IForest, HBOS, ...) without breaking the loader.
+    model_kind = Column(String, nullable=True)
+    # Feature schema version — bump in api.py when the feature vector
+    # changes so old models get retrained instead of mis-scored.
+    feature_version = Column(Integer, nullable=True)
+    # Number of training samples used to fit the detector.
+    model_samples = Column(Integer, nullable=True)
+    # Score of the 99th percentile of the training distribution.
+    # Live hours scoring above this are flagged as anomalies. Storing
+    # the threshold per-device gives us calibrated alerting instead of
+    # the global contamination=0.1 default.
+    score_p99 = Column(Float, nullable=True)
+    model_trained_at = Column(DateTime, nullable=True)
 
 
 class DeviceTrafficHourly(Base):
@@ -794,6 +822,24 @@ def init_db() -> None:
                 conn.execute(text(
                     "ALTER TABLE alert_exceptions ADD COLUMN dismissed_score REAL"
                 ))
+
+    # --- DeviceBaseline: add PyOD detector columns ---
+    if "device_baselines" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("device_baselines")]
+        baseline_extras = {
+            "model_blob": "BLOB",
+            "model_kind": "TEXT",
+            "feature_version": "INTEGER",
+            "model_samples": "INTEGER",
+            "score_p99": "REAL",
+            "model_trained_at": "DATETIME",
+        }
+        for col_name, col_type in baseline_extras.items():
+            if col_name not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE device_baselines ADD COLUMN {col_name} {col_type}"
+                    ))
 
     # --- GeoConversation: add orig_bytes + resp_bytes columns ---
     if "geo_conversations" in inspector.get_table_names():

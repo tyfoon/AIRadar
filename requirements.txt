@@ -11,3 +11,7 @@ google-genai>=1.0.0
 psutil==6.1.0
 geoip2==4.8.0
 mcp[cli]>=1.0.0
+# Anomaly detection for IoT devices (ECOD multivariate detector)
+pyod>=2.0.0
+numpy>=1.26
+joblib>=1.3
