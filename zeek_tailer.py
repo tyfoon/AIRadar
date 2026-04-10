@@ -1978,6 +1978,93 @@ def _resolve_asn(ip: str) -> tuple[int | None, str | None]:
         return None, None
 
 
+# IATA airport code → ISO-3166-1 alpha-2. Used to override the MMDB
+# country result for anycast networks (Google 1e100.net, CloudFront)
+# whose IPs the free DB-IP MMDB tends to misattribute — e.g. Google
+# Frankfurt edges (74.125.163.x with `fra24s19-in-fN.1e100.net` PTR)
+# get tagged as RU. The PTR contains the real PoP location, so we
+# parse the leading airport code and trust that over the MMDB row.
+_AIRPORT_TO_CC: dict[str, str] = {
+    # Europe
+    "fra": "DE", "muc": "DE", "ber": "DE", "ham": "DE", "dus": "DE", "txl": "DE",
+    "ams": "NL", "lhr": "GB", "lcy": "GB", "lgw": "GB", "man": "GB", "edi": "GB",
+    "cdg": "FR", "par": "FR", "ory": "FR", "mrs": "FR", "lyn": "FR",
+    "mad": "ES", "bcn": "ES", "vlc": "ES",
+    "mil": "IT", "mxp": "IT", "lin": "IT", "fco": "IT", "rom": "IT",
+    "waw": "PL", "vie": "AT", "zrh": "CH", "gva": "CH", "bru": "BE",
+    "cph": "DK", "arn": "SE", "sto": "SE", "hel": "FI", "osl": "NO",
+    "dub": "IE", "lis": "PT", "ath": "GR", "buh": "RO", "prg": "CZ",
+    "bud": "HU", "sof": "BG", "kbp": "UA",
+    # North America
+    "iad": "US", "dca": "US", "bwi": "US", "jfk": "US", "lga": "US", "ewr": "US",
+    "bos": "US", "phl": "US", "atl": "US", "mia": "US", "mco": "US", "tpa": "US",
+    "ord": "US", "mdw": "US", "dfw": "US", "iah": "US", "den": "US", "phx": "US",
+    "lax": "US", "sfo": "US", "sjc": "US", "sea": "US", "pdx": "US", "slc": "US",
+    "msp": "US", "stl": "US", "clt": "US", "rdu": "US", "las": "US",
+    "yyz": "CA", "yul": "CA", "yvr": "CA", "yyc": "CA",
+    "mex": "MX", "mty": "MX", "qro": "MX",
+    # APAC
+    "nrt": "JP", "hnd": "JP", "kix": "JP", "itm": "JP",
+    "icn": "KR", "gmp": "KR",
+    "hkg": "HK", "tpe": "TW", "sin": "SG",
+    "syd": "AU", "mel": "AU", "bne": "AU", "per": "AU", "akl": "NZ",
+    "bom": "IN", "del": "IN", "maa": "IN", "blr": "IN", "hyd": "IN",
+    "bkk": "TH", "kul": "MY", "cgk": "ID", "mnl": "PH",
+    # Middle East / Africa
+    "dxb": "AE", "auh": "AE", "doh": "QA", "ruh": "SA", "jed": "SA",
+    "tlv": "IL", "ist": "TR", "saw": "TR",
+    "cai": "EG", "jnb": "ZA", "cpt": "ZA", "lag": "NG", "los": "NG",
+    # South America
+    "gru": "BR", "gig": "BR", "bsb": "BR", "cnf": "BR",
+    "scl": "CL", "eze": "AR", "lim": "PE", "bog": "CO", "ccs": "VE",
+}
+
+# Compiled once. Matches PTRs that start with a 3-letter airport code
+# followed by a digit (Google 1e100.net format) or a dash (CloudFront).
+import re as _re
+_AIRPORT_PTR_RE = _re.compile(r"(?:^|\.)([a-z]{3})\d")
+
+
+def _country_from_ptr(ptr: str | None, asn_org: str | None = None) -> str | None:
+    """Best-effort country code from a reverse-DNS hostname.
+
+    Targets the cases where the free DB-IP MMDB consistently lies:
+      - Google 1e100.net edges (e.g. ``fra24s19-in-f7.1e100.net`` → DE)
+      - CloudFront edges (e.g. ``server-1-2-3-4.fra50.r.cloudfront.net`` → DE)
+    Returns None for everything else, so the caller falls back to the
+    MMDB result.
+    """
+    if not ptr:
+        return None
+    p = ptr.lower().rstrip(".")
+    # Restrict the override to PTRs we know follow the airport-prefix
+    # convention. Anything else stays MMDB-driven.
+    if not (p.endswith(".1e100.net") or ".cloudfront.net" in p):
+        return None
+    # 1e100.net format: leading label like ``fra24s19-in-f7``.
+    head = p.split(".", 1)[0]
+    m = _AIRPORT_PTR_RE.match(head)
+    if not m:
+        # CloudFront has the airport code in the SECOND label
+        # (server-x-x-x-x.fra50.r.cloudfront.net).
+        labels = p.split(".")
+        for lbl in labels[1:3]:
+            m = _AIRPORT_PTR_RE.match(lbl)
+            if m:
+                break
+    if not m:
+        return None
+    code = m.group(1)
+    return _AIRPORT_TO_CC.get(code)
+
+
+# Per-IP country overrides resolved from PTR. Populated by the enrich
+# loop (which has the PTR) and consulted by _resolve_country (which
+# only sees the IP) so future conn.log buckets land in the right
+# country immediately, even before they get re-enriched.
+_ip_country_override: dict[str, str] = {}
+
+
 def _resolve_country(ip: str) -> str | None:
     """Return ISO-3166-1 alpha-2 country code for a public IP, or None.
 
@@ -1985,9 +2072,19 @@ def _resolve_country(ip: str) -> str | None:
       - MaxMind GeoLite2:  {"country": {"iso_code": "US"}, ...}
       - DB-IP Country:     {"country": {"iso_code": "US"}, ...}  (same)
       - iptoasn-country:   {"country_code": "US"}
+
+    PTR-based overrides (populated by ``enrich_ip_metadata_loop``)
+    take precedence over the MMDB row, so once we've seen the
+    reverse-DNS for a Google/CloudFront IP we trust the airport code
+    over DB-IP's frequently-wrong country guess.
     """
     global _geo_lookup_errors
-    if not _geo_reader or not ip or ip == "-":
+    if not ip or ip == "-":
+        return None
+    override = _ip_country_override.get(ip)
+    if override:
+        return override
+    if not _geo_reader:
         return None
     try:
         result = _geo_reader.get(ip)
@@ -2364,6 +2461,16 @@ async def enrich_ip_metadata_loop(client: httpx.AsyncClient) -> None:
                 ptr = await asyncio.to_thread(_reverse_dns_blocking, ip)
             except Exception:
                 ptr = None
+            # If the PTR contains a known airport-code hint, trust it
+            # over the MMDB result. This catches Google/CloudFront
+            # anycast prefixes that DB-IP misattributes (e.g. Frankfurt
+            # 1e100.net edges showing up as RU). Also seed the in-memory
+            # override map so future conn.log buckets for this IP land
+            # in the right country immediately.
+            ptr_cc = _country_from_ptr(ptr, asn_org)
+            if ptr_cc and ptr_cc != cc:
+                _ip_country_override[ip] = ptr_cc
+                cc = ptr_cc
             entries.append({
                 "ip": ip,
                 "ptr": ptr,

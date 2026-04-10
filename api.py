@@ -2782,28 +2782,80 @@ def ingest_ip_metadata(
     if not isinstance(entries, list):
         raise HTTPException(status_code=400, detail="entries must be a list")
     now = datetime.utcnow()
+    backfilled = 0
     for e in entries:
         ip = e.get("ip") or ""
         if not ip:
             continue
+        new_cc = e.get("country_code")
         row = db.query(IpMetadata).filter(IpMetadata.ip == ip).first()
         if row:
+            old_cc = row.country_code
             row.ptr = e.get("ptr") or row.ptr
             row.asn = e.get("asn") if e.get("asn") is not None else row.asn
             row.asn_org = e.get("asn_org") or row.asn_org
-            row.country_code = e.get("country_code") or row.country_code
+            # Only overwrite country_code when the tailer actually
+            # supplied one (so we don't blank out a known value when a
+            # later enrich pass returns None for the MMDB lookup).
+            if new_cc:
+                row.country_code = new_cc
             row.updated_at = now
         else:
+            old_cc = None
             db.add(IpMetadata(
                 ip=ip,
                 ptr=e.get("ptr"),
                 asn=e.get("asn"),
                 asn_org=e.get("asn_org"),
-                country_code=e.get("country_code"),
+                country_code=new_cc,
                 updated_at=now,
             ))
+        # Backfill: when an IP's country changes (typically because the
+        # tailer resolved the PTR and applied an airport-code override
+        # to a DB-IP misattribution), retag any existing
+        # GeoConversation rows for that resp_ip so the Geo page stops
+        # showing them under the wrong country.
+        #
+        # The unique constraint is (cc, dir, mac, svc, resp_ip), so a
+        # naive UPDATE could collide with a pre-existing row already
+        # under new_cc. Walk row by row and merge into the target row
+        # when a collision exists, otherwise rewrite in place.
+        if new_cc and old_cc and new_cc != old_cc:
+            stale_rows = (
+                db.query(GeoConversation)
+                .filter(
+                    GeoConversation.resp_ip == ip,
+                    GeoConversation.country_code == old_cc,
+                )
+                .all()
+            )
+            for stale in stale_rows:
+                target = (
+                    db.query(GeoConversation)
+                    .filter(
+                        GeoConversation.country_code == new_cc,
+                        GeoConversation.direction == stale.direction,
+                        GeoConversation.mac_address == stale.mac_address,
+                        GeoConversation.ai_service == stale.ai_service,
+                        GeoConversation.resp_ip == ip,
+                    )
+                    .first()
+                )
+                if target and target.id != stale.id:
+                    target.bytes_transferred += stale.bytes_transferred or 0
+                    target.orig_bytes += stale.orig_bytes or 0
+                    target.resp_bytes += stale.resp_bytes or 0
+                    target.hits += stale.hits or 0
+                    if stale.last_seen and (not target.last_seen or stale.last_seen > target.last_seen):
+                        target.last_seen = stale.last_seen
+                    if stale.first_seen and (not target.first_seen or stale.first_seen < target.first_seen):
+                        target.first_seen = stale.first_seen
+                    db.delete(stale)
+                else:
+                    stale.country_code = new_cc
+                backfilled += 1
     db.commit()
-    return {"status": "ok", "accepted": len(entries)}
+    return {"status": "ok", "accepted": len(entries), "backfilled_conv_rows": backfilled}
 
 
 @app.get("/api/analytics/geo")
