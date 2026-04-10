@@ -67,7 +67,7 @@ except ImportError:
                     os.environ[_key] = _val
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -8590,7 +8590,6 @@ def network_performance_history(
     db: Session = Depends(get_db),
 ):
     """Return time-series performance data for the last N hours."""
-    from datetime import timezone
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     rows = (
         db.query(NetworkPerformance)
