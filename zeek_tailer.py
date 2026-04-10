@@ -1159,6 +1159,81 @@ def _detect_local_v6_prefixes() -> list[ipaddress.IPv6Network]:
 
 _local_v6_prefixes: list[ipaddress.IPv6Network] = _detect_local_v6_prefixes()
 
+
+def _detect_local_v4_subnets() -> list[ipaddress.IPv4Network]:
+    """Auto-detect IPv4 subnets directly attached to this host.
+
+    Used by the lateral-movement detector to distinguish true in-VLAN
+    lateral movement from cross-VLAN routed traffic (which went through
+    a gateway and is therefore not a compromise indicator).
+
+    Resolution order:
+      1. LOCAL_V4_SUBNETS env var (comma-separated CIDRs) — explicit override
+      2. `ip -4 -o addr` on the host network namespace — auto-detect
+    """
+    subnets: list[ipaddress.IPv4Network] = []
+
+    env_subnets = os.environ.get("LOCAL_V4_SUBNETS", "").strip()
+    if env_subnets:
+        for part in env_subnets.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                net = ipaddress.ip_network(part, strict=False)
+                if isinstance(net, ipaddress.IPv4Network) and net not in subnets:
+                    subnets.append(net)
+            except ValueError:
+                print(f"[!] LOCAL_V4_SUBNETS: invalid CIDR {part!r}, ignoring")
+        if subnets:
+            print(f"[*] Local IPv4 subnets (env): {[str(s) for s in subnets]}")
+            return subnets
+
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "-o", "addr"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            # Format: "N: iface    inet 192.168.1.7/24 brd ... scope global iface"
+            parts = line.split()
+            try:
+                idx = parts.index("inet")
+            except ValueError:
+                continue
+            if idx + 1 >= len(parts):
+                continue
+            cidr = parts[idx + 1]
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                continue
+            if not isinstance(net, ipaddress.IPv4Network):
+                continue
+            if net.is_loopback or net.is_link_local:
+                continue
+            # Only keep private ranges — public addresses on an interface
+            # would indicate a routed public prefix, not a LAN segment.
+            if not net.is_private:
+                continue
+            if net not in subnets:
+                subnets.append(net)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        print(f"[!] Failed to auto-detect IPv4 subnets: {exc}")
+
+    if subnets:
+        print(f"[*] Local IPv4 subnets (auto): {[str(s) for s in subnets]}")
+    else:
+        print(
+            "[!] No local IPv4 subnets detected — lateral-movement detector "
+            "will fall back to 'same /24' heuristic"
+        )
+    return subnets
+
+
+_local_v4_subnets: list[ipaddress.IPv4Network] = _detect_local_v4_subnets()
+
+
 def _is_local_ip(ip: str) -> bool:
     """Check if an IP address is a local/private network address.
 
@@ -1176,6 +1251,55 @@ def _is_local_ip(ip: str) -> bool:
                 if addr in prefix:
                     return True
         return False
+    except ValueError:
+        return False
+
+
+def _same_lan_segment(ip1: str, ip2: str) -> bool:
+    """Return True iff ip1 and ip2 are in the same L2 broadcast domain.
+
+    Used to suppress lateral-movement false positives on cross-VLAN
+    traffic: if two RFC1918 IPs live in different subnets, the traffic
+    between them necessarily traversed a router/firewall and is not
+    true lateral movement.
+
+    Rules:
+      - Different IP versions → False
+      - IPv6: same /64 prefix
+      - IPv4: both IPs must fall inside the same detected local subnet.
+        If no subnets were detected (headless container without host
+        ip access) we fall back to 'same /24' to preserve the legacy
+        behaviour on simple flat LANs.
+    """
+    try:
+        a1 = ipaddress.ip_address(ip1)
+        a2 = ipaddress.ip_address(ip2)
+    except ValueError:
+        return False
+
+    if a1.version != a2.version:
+        return False
+
+    if a1.version == 6:
+        try:
+            n1 = ipaddress.ip_network(f"{ip1}/64", strict=False)
+            n2 = ipaddress.ip_network(f"{ip2}/64", strict=False)
+            return n1.network_address == n2.network_address
+        except ValueError:
+            return False
+
+    # IPv4
+    if _local_v4_subnets:
+        for net in _local_v4_subnets:
+            if a1 in net and a2 in net:
+                return True
+        return False
+
+    # Fallback for environments where auto-detect failed
+    try:
+        n1 = ipaddress.ip_network(f"{ip1}/24", strict=False)
+        n2 = ipaddress.ip_network(f"{ip2}/24", strict=False)
+        return n1.network_address == n2.network_address
     except ValueError:
         return False
 
@@ -2422,8 +2546,13 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             resp_port not in _LATERAL_ESTABLISHED_ONLY_PORTS
                             or conn_state in ("S1", "SF")
                         )
+                        # VLAN-aware: only alert if src and dst are in the
+                        # SAME subnet (same L2 broadcast domain). Cross-VLAN
+                        # traffic goes through a router, so it's not true
+                        # lateral movement and shouldn't trigger the alert.
                         if (
                             resp_ip and _is_local_ip(resp_ip)
+                            and _same_lan_segment(src_ip, resp_ip)
                             and resp_port in _LATERAL_MOVEMENT_PORTS
                             and src_ip != resp_ip
                             and _lat_established_ok

@@ -364,6 +364,32 @@ if [ "$DEPLOY_MODE" = "bridge" ]; then
         apt install -y -qq iptables
     fi
 
+    # ── br_netfilter: required for iptables rules on bridged traffic
+    # Without this kernel module, iptables -t nat PREROUTING on -i br0
+    # never matches L2-bridged packets, so the transparent DNS redirect
+    # (and any future GeoIP/family blocking) silently does nothing.
+    if modprobe br_netfilter 2>/dev/null; then
+        ok "br_netfilter kernel module loaded"
+    else
+        warn "Failed to load br_netfilter — transparent DNS redirect may not work"
+    fi
+    # Persist across reboots
+    if ! grep -q '^br_netfilter' /etc/modules-load.d/br_netfilter.conf 2>/dev/null; then
+        echo "br_netfilter" > /etc/modules-load.d/br_netfilter.conf
+        ok "br_netfilter configured to load at boot"
+    fi
+    # Enable bridge-nf-call-iptables so bridged traffic hits iptables
+    cat > /etc/sysctl.d/99-airadar-bridge.conf <<'EOF'
+# AI-Radar: bridge traffic must traverse iptables for transparent DNS
+# redirect and any future GeoIP/family filtering on bridged VLANs.
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-arptables = 0
+EOF
+    sysctl -p /etc/sysctl.d/99-airadar-bridge.conf >/dev/null 2>&1 && \
+        ok "bridge-nf-call-iptables enabled" || \
+        warn "Could not apply bridge sysctls — reboot may be required"
+
     # Deploy systemd service for persistent iptables rules
     cp "$AIRADAR_DIR/network/airadar-dns-redirect.service" /etc/systemd/system/airadar-dns-redirect.service
     systemctl daemon-reload
