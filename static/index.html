@@ -773,9 +773,13 @@
            the right scope (global / group / device) pre-selected. -->
       <div id="family-tab-overview" class="space-y-6">
 
-        <!-- Category chip strip — auto-opens the most active category -->
-        <div id="content-chip-strip" class="flex flex-wrap items-center gap-2">
-          <span class="text-xs text-slate-400 dark:text-slate-500" data-i18n="content.loading">Loading…</span>
+        <!-- Category tile strip — auto-opens the most active category.
+             Square-ish, transparent tiles on a single horizontal row
+             (7 columns on lg+, collapses to 4/2 on smaller screens)
+             so the Content header visually matches the rest of the
+             app's summary tiles. -->
+        <div id="content-chip-strip" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <span class="text-xs text-slate-400 dark:text-slate-500 col-span-full" data-i18n="content.loading">Loading…</span>
         </div>
 
         <!-- Two panels: services ↔ devices for the active category -->

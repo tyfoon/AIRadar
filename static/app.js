@@ -2169,6 +2169,24 @@ function openAlertActionModal(arg) {
   _alertModalAction = alert.default_action || 'block';
   _alertModalGroupId = null;
 
+  // Content-page re-open: if there's already an active rule matching
+  // this exact (scope, mac, service, category) tuple, pre-select its
+  // action so the user sees the existing setting instead of a fresh
+  // "block" default — and we expose the policy for the status line.
+  let _existingPolicy = null;
+  if (_alertModalMode === 'content') {
+    _existingPolicy = _findContentPolicy({
+      scope: defaultScope,
+      mac: alert.mac_address || null,
+      service: alert.service_or_dest || null,
+      category: alert.category || null,
+      groupId: null,
+    });
+    if (_existingPolicy) {
+      _alertModalAction = _existingPolicy.action;
+    }
+  }
+
   const modal = document.getElementById('alert-action-modal');
   const title = document.getElementById('alert-modal-title');
   const subtitle = document.getElementById('alert-modal-subtitle');
@@ -2203,7 +2221,43 @@ function openAlertActionModal(arg) {
       subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${devName} · ${alert.hits} hits</span>`;
     }
   }
-  if (status) status.textContent = '';
+  if (status) {
+    if (_existingPolicy) {
+      // Human-friendly current-rule readout so the user sees that
+      // their previous Block/Alert is still in effect when they
+      // re-open the same tile. Without this line the pre-selected
+      // segment button is the only hint and that's too subtle.
+      const actLabel = _existingPolicy.action === 'block'
+        ? (t('rules.block') || 'Block')
+        : _existingPolicy.action === 'alert' ? (t('rules.alert') || 'Alert')
+        : (t('rules.allow') || 'Allow');
+      const scopeLabel = _existingPolicy.scope === 'global' ? (t('rules.scopeGlobal') || 'Global')
+                       : _existingPolicy.scope === 'group' ? (t('rules.scopeGroup') || 'Group')
+                       : (t('rules.scopePerDevice') || 'Device');
+      let remain = '';
+      if (_existingPolicy.expires_at) {
+        const end = new Date(_existingPolicy.expires_at).getTime();
+        const diffMs = end - Date.now();
+        if (diffMs > 0) {
+          const mins = Math.round(diffMs / 60000);
+          remain = mins >= 60
+            ? ` · ${Math.floor(mins / 60)}h ${mins % 60}m ${t('alertModal.left') || 'left'}`
+            : ` · ${mins}m ${t('alertModal.left') || 'left'}`;
+        }
+      } else {
+        remain = ` · ${t('alertModal.permanent') || 'permanent'}`;
+      }
+      const colourCls = _existingPolicy.action === 'block'
+        ? 'text-red-500'
+        : 'text-amber-500';
+      status.innerHTML = `<span class="inline-flex items-center gap-1.5 ${colourCls}">
+        <i class="ph-duotone ${_existingPolicy.action === 'block' ? 'ph-prohibit' : 'ph-bell-ringing'}"></i>
+        <span>${t('alertModal.currentRule') || 'Current rule'}: ${actLabel} · ${scopeLabel}${remain}</span>
+      </span>`;
+    } else {
+      status.textContent = '';
+    }
+  }
 
   // Service logo (same 28px style as Action Inbox cards)
   if (logoEl) {
@@ -4810,6 +4864,95 @@ let _contentActiveCategory = null;
 let _contentCategoryCache = null;
 // Last fetched overview payload (for chip totals + blocked state).
 let _contentOverviewCache = null;
+// Which service / device rows currently have their chip list expanded
+// beyond the default 3 entries. Keyed by service_name / mac.
+let _contentExpandedServices = new Set();
+let _contentExpandedDevices = new Set();
+
+// ── Policy lookup helpers ──────────────────────────────────────────
+//
+// The /api/family/category endpoint returns an active-policy list so
+// the UI can (a) stick a coloured icon on rows/chips that already have
+// a rule and (b) pre-fill the rule dialog when the user re-opens an
+// existing rule. All lookups are cheap O(n) scans — the list is tiny
+// (one entry per active rule touching this category view).
+
+// Exact-match lookup: scope + mac + service + category must all match.
+// Nulls are significant (category-wide vs service-specific).
+function _findContentPolicy({ scope, mac, service, category, groupId }) {
+  const pols = _contentCategoryCache?.policies || [];
+  return pols.find(p =>
+    p.scope === scope
+    && (p.mac_address || null) === (mac || null)
+    && (p.group_id || null) === (groupId || null)
+    && (p.service_name || null) === (service || null)
+    && (p.category || null) === (category || null)
+  ) || null;
+}
+
+// Headline policy for a service row: prefer a global rule on this
+// service, fall back to any category-wide global rule. Block outranks
+// alert so the stronger state always wins the icon slot.
+function _findServiceHeadlinePolicy(service, category) {
+  const pols = _contentCategoryCache?.policies || [];
+  const candidates = pols.filter(p =>
+    p.scope === 'global' && (
+      (p.service_name === service)
+      || (p.service_name === null && p.category === category)
+    )
+  );
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => (a.action === 'block' ? 0 : 1) - (b.action === 'block' ? 0 : 1));
+  return candidates[0];
+}
+
+// Headline policy for a device row: prefer a device+category-wide rule,
+// fall back to any device+service rule for this device in this cat.
+function _findDeviceHeadlinePolicy(mac, category) {
+  const pols = _contentCategoryCache?.policies || [];
+  const candidates = pols.filter(p =>
+    p.scope === 'device' && p.mac_address === mac && (
+      (p.service_name === null && p.category === category)
+      || (p.service_name !== null)
+    )
+  );
+  if (!candidates.length) return null;
+  // Category-wide outranks service-specific; block outranks alert.
+  candidates.sort((a, b) => {
+    const catA = a.service_name === null ? 0 : 1;
+    const catB = b.service_name === null ? 0 : 1;
+    if (catA !== catB) return catA - catB;
+    return (a.action === 'block' ? 0 : 1) - (b.action === 'block' ? 0 : 1);
+  });
+  return candidates[0];
+}
+
+// Returns a small coloured icon for a policy, or '' if no policy.
+// Orange bell for alert, red prohibit for block — kept deliberately
+// distinct so a glance at the overview tells you what's going on.
+function _policyIconHtml(policy, extraCls = '') {
+  if (!policy) return '';
+  const exp = policy.expires_at ? ` · until ${new Date(policy.expires_at).toLocaleString()}` : '';
+  if (policy.action === 'block') {
+    return `<i class="ph-duotone ph-prohibit text-red-500 ${extraCls}" title="Blocked (${policy.scope})${exp}"></i>`;
+  }
+  if (policy.action === 'alert') {
+    return `<i class="ph-duotone ph-bell-ringing text-amber-500 ${extraCls}" title="Alerting (${policy.scope})${exp}"></i>`;
+  }
+  return '';
+}
+
+// Toggle expanded state for a row and re-render the current category
+// in place using the cached payload — no refetch.
+function _toggleContentExpand(kind, key) {
+  const set = kind === 'service' ? _contentExpandedServices : _contentExpandedDevices;
+  if (set.has(key)) set.delete(key); else set.add(key);
+  if (_contentCategoryCache && _contentActiveCategory) {
+    _renderContentKaderServices(_contentCategoryCache.services || [], _contentActiveCategory);
+    _renderContentKaderDevices(_contentCategoryCache.devices || [], _contentActiveCategory);
+  }
+}
+window._toggleContentExpand = _toggleContentExpand;
 
 async function refreshFamilyOverview() {
   // Fetch overview (chip totals) + current category in parallel so the
@@ -4847,34 +4990,68 @@ function _familyCategoryLabel(key) {
   return t('family.cat.' + key) || (_familyMeta?.categories || []).find(c => c.key === key)?.label_en || key;
 }
 
-// Category chip strip — 7+ chips, active one highlighted. Sorted by
-// bytes desc so the most active category naturally sits leftmost. Each
-// chip shows an icon, the label, and the 24h byte total.
+// Category tile strip — 7 square-ish transparent tiles laid out on a
+// single row (via the parent grid). Sorted by bytes desc so the most
+// active category sits leftmost. Each tile shows:
+//   • the category icon
+//   • the category label
+//   • "X services · Y devices" counts
+//   • the 24h byte total
+// The active tile gets a coloured border + subtle tint matching the
+// category colour so it reads as "selected" without looking like a
+// different shape from the rest.
 function _renderContentChipStrip(cards, activeKey) {
   const el = document.getElementById('content-chip-strip');
   if (!el) return;
   if (!cards.length) {
-    el.innerHTML = `<span class="text-xs text-slate-400 dark:text-slate-500">${t('family.noData') || 'No family usage yet.'}</span>`;
+    el.innerHTML = `<span class="text-xs text-slate-400 dark:text-slate-500 col-span-full">${t('family.noData') || 'No family usage yet.'}</span>`;
     return;
   }
   const sorted = [...cards].sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
   el.innerHTML = sorted.map(c => {
-    const m = CATEGORY_META[c.key] || { icon: '<i class="ph-duotone ph-squares-four text-base"></i>', color: 'slate' };
+    const m = CATEGORY_META[c.key] || { icon: '<i class="ph-duotone ph-squares-four text-xl"></i>', color: 'slate' };
     const label = _familyCategoryLabel(c.key);
     const isActive = c.key === activeKey;
     const bytes = _fmtBytes(c.bytes || 0);
+    const services = c.services || 0;
+    const devices = c.devices || 0;
     const dim = (c.bytes || 0) < _CONTENT_DIM_BYTES ? 'opacity-60' : '';
-    const base = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border';
-    const activeCls = `${base} bg-${m.color}-500 dark:bg-${m.color}-600 text-white border-${m.color}-500 dark:border-${m.color}-500 shadow-sm`;
-    const inactiveCls = `${base} bg-white dark:bg-white/[0.04] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/[0.06] hover:bg-slate-50 dark:hover:bg-white/[0.08] ${dim}`;
+
+    // Transparent-ish base, coloured border on active so the tile
+    // keeps its rectangular silhouette when selected.
+    const base = 'group relative flex flex-col items-start justify-between gap-2 p-3 rounded-lg border transition-colors text-left min-h-[92px]';
+    const activeCls = `${base} bg-${m.color}-50 dark:bg-${m.color}-500/10 border-${m.color}-400 dark:border-${m.color}-500/60 shadow-sm`;
+    const inactiveCls = `${base} bg-white/60 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06] hover:bg-white dark:hover:bg-white/[0.05] hover:border-slate-300 dark:hover:border-white/[0.12] ${dim}`;
+
+    // Blocked marker — small red dot top-right so the user spots
+    // active blocks at a glance without obscuring the category icon.
     const blockedDot = c.blocked
-      ? '<span class="w-1.5 h-1.5 rounded-full bg-red-500" title="Has active blocks"></span>'
+      ? '<span class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-red-500" title="Has active blocks"></span>'
       : '';
+
+    // Counts line: "9 svc · 8 dev" — abbreviated so it stays on a
+    // single line even in the narrowest viewport breakpoint.
+    const svcLabel = t('content.services') || 'services';
+    const devLabel = t('content.devices') || 'devices';
+    const counts = `${services} ${svcLabel} · ${devices} ${devLabel}`;
+
+    const iconColourCls = isActive
+      ? `text-${m.color}-600 dark:text-${m.color}-300`
+      : 'text-slate-500 dark:text-slate-400';
+    const labelColourCls = isActive
+      ? `text-${m.color}-800 dark:text-${m.color}-100`
+      : 'text-slate-700 dark:text-slate-200';
+
     return `<button type="button" onclick="_selectContentCategory('${c.key}')" class="${isActive ? activeCls : inactiveCls}">
-      <span class="text-base leading-none">${m.icon}</span>
-      <span>${label}</span>
-      <span class="tabular-nums text-[10px] ${isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}">${bytes}</span>
       ${blockedDot}
+      <div class="flex items-center gap-2 w-full min-w-0">
+        <span class="flex-shrink-0 text-xl leading-none ${iconColourCls}">${m.icon}</span>
+        <span class="font-semibold text-xs truncate ${labelColourCls}" title="${label}">${label}</span>
+      </div>
+      <div class="flex flex-col gap-0.5 w-full">
+        <span class="text-[10px] text-slate-500 dark:text-slate-400 truncate" title="${counts}">${counts}</span>
+        <span class="tabular-nums text-[11px] font-semibold text-slate-700 dark:text-slate-200">${bytes}</span>
+      </div>
     </button>`;
   }).join('');
 }
@@ -4922,7 +5099,8 @@ async function _loadContentCategory(category) {
 // Mini device chip used inside a service row. Shows device icon (with
 // online dot) + truncated name. Click opens the modal scoped to THIS
 // device + THIS service so the user can block Instagram for just one
-// phone.
+// phone. If a device-level rule already exists for this (mac, service)
+// pair, a small policy icon appears before the name.
 function _contentDeviceChip(dev, serviceName, category) {
   // Build a minimal "device" object that _detectDeviceType/_isDeviceOnline
   // can chew on — the category payload already provides hostname/vendor
@@ -4940,12 +5118,21 @@ function _contentDeviceChip(dev, serviceName, category) {
   // Use a data- attribute for the onclick so escaping stays safe even
   // when the MAC contains weird characters.
   const macEsc = (dev.mac_address || '').replace(/'/g, "\\'");
+  // Existing-policy icon: exact match on (device scope, mac, service).
+  // Also honour a device+category-wide rule, which would block every
+  // service in this category for this device.
+  const devSvcPol = _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: serviceName, category: null })
+                 || _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: null, category });
+  const polIcon = _policyIconHtml(devSvcPol, 'text-[11px]');
+  // Escape the name once so ampersands/quotes don't break the title attribute.
+  const nameAttr = String(name).replace(/"/g, '&quot;');
   return `<button type="button"
     onclick="event.stopPropagation(); _contentOpenDeviceService('${macEsc}', '${serviceName}', '${category}')"
     class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
-    title="${name} — ${_fmtBytes(dev.bytes || 0)}">
+    title="${nameAttr} — ${_fmtBytes(dev.bytes || 0)}">
     ${icon}
     <span class="truncate text-[11px] text-slate-600 dark:text-slate-300">${name}</span>
+    ${polIcon}
   </button>`;
 }
 
@@ -4955,14 +5142,24 @@ function _contentDeviceChip(dev, serviceName, category) {
 function _contentServiceChip(svc, mac, category) {
   const logo = svcLogo(svc.service_name);
   const name = svcDisplayName(svc.service_name);
+  // Policy icon: device-scoped rule on this (mac, service), or a
+  // global rule on this service that affects this device too.
+  const devSvcPol = _findContentPolicy({ scope: 'device', mac, service: svc.service_name, category: null })
+                 || _findContentPolicy({ scope: 'global', mac: null, service: svc.service_name, category: null });
+  const polIcon = _policyIconHtml(devSvcPol, 'text-[11px]');
+  const nameAttr = String(name).replace(/"/g, '&quot;');
   return `<button type="button"
     onclick="event.stopPropagation(); _contentOpenDeviceService('${mac}', '${svc.service_name}', '${category}')"
     class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
-    title="${name} — ${_fmtBytes(svc.bytes || 0)}">
+    title="${nameAttr} — ${_fmtBytes(svc.bytes || 0)}">
     <span class="inline-flex w-4 h-4 items-center justify-center flex-shrink-0">${logo}</span>
     <span class="truncate text-[11px] text-slate-600 dark:text-slate-300">${name}</span>
+    ${polIcon}
   </button>`;
 }
+
+// Default chip cap — show the top N per row, "+N more" expands.
+const _CONTENT_CHIP_CAP = 3;
 
 // Kader 1: service-first view
 function _renderContentKaderServices(services, category) {
@@ -4976,16 +5173,49 @@ function _renderContentKaderServices(services, category) {
   el.innerHTML = services.map(s => {
     const dim = (s.total_bytes || 0) < _CONTENT_DIM_BYTES && (s.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
     const pct = Math.max(3, Math.round(((s.total_bytes || 0) / maxBytes) * 100));
-    const chips = (s.top_devices || []).map(d => _contentDeviceChip(d, s.service_name, category)).join('');
+
+    // Slice devices — if this row is expanded, show them all.
+    const allDevs = s.top_devices || [];
+    const expanded = _contentExpandedServices.has(s.service_name);
+    const shown = expanded ? allDevs : allDevs.slice(0, _CONTENT_CHIP_CAP);
+    const hidden = Math.max(0, allDevs.length - shown.length);
+    const chips = shown.map(d => _contentDeviceChip(d, s.service_name, category)).join('');
+    // Expand / collapse button — stopPropagation so the outer row
+    // click doesn't also fire and pop the service-scope modal.
+    const svcKeyEsc = (s.service_name || '').replace(/'/g, "\\'");
+    let expandBtn = '';
+    if (hidden > 0) {
+      expandBtn = `<button type="button"
+        onclick="event.stopPropagation(); _toggleContentExpand('service', '${svcKeyEsc}')"
+        class="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.10] text-slate-500 dark:text-slate-400 transition-colors">
+        +${hidden} ${t('content.more') || 'more'}
+      </button>`;
+    } else if (expanded && allDevs.length > _CONTENT_CHIP_CAP) {
+      expandBtn = `<button type="button"
+        onclick="event.stopPropagation(); _toggleContentExpand('service', '${svcKeyEsc}')"
+        class="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.10] text-slate-500 dark:text-slate-400 transition-colors">
+        ${t('content.less') || 'show less'}
+      </button>`;
+    }
+
     const blocked = s.blocked
       ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-semibold">${t('family.blocked') || 'Blocked'}</span>`
       : '';
     const svcEsc = (s.service_name || '').replace(/'/g, "\\'");
+    // Row-header policy icon: global rule on this service, or any
+    // global category-wide rule that would affect it.
+    const headlinePol = _findServiceHeadlinePolicy(s.service_name, category);
+    const polIcon = _policyIconHtml(headlinePol, 'text-sm');
+    const displayName = svcDisplayName(s.service_name);
+    // title= attribute keeps long names readable on hover even when
+    // the flexbox truncates them in the row header.
+    const nameAttr = String(displayName).replace(/"/g, '&quot;');
     return `<div class="p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim}"
       onclick="_contentOpenService('${svcEsc}', '${category}')">
       <div class="flex items-center gap-2 mb-1.5">
         <span class="flex-shrink-0 w-5 h-5 inline-flex items-center justify-center">${svcLogo(s.service_name)}</span>
-        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${svcDisplayName(s.service_name)}</span>
+        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1" title="${nameAttr}">${displayName}</span>
+        ${polIcon}
         ${blocked}
         <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${_fmtBytes(s.total_bytes || 0)}</span>
       </div>
@@ -4994,7 +5224,7 @@ function _renderContentKaderServices(services, category) {
       </div>
       <div class="flex flex-wrap gap-1.5">
         ${chips}
-        ${s.device_count > 3 ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 self-center">+${s.device_count - 3}</span>` : ''}
+        ${expandBtn}
       </div>
     </div>`;
   }).join('');
@@ -5012,17 +5242,44 @@ function _renderContentKaderDevices(devices, category) {
   el.innerHTML = devices.map(d => {
     const dim = (d.total_bytes || 0) < _CONTENT_DIM_BYTES && (d.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
     const pct = Math.max(3, Math.round(((d.total_bytes || 0) / maxBytes) * 100));
-    const chips = (d.top_services || []).map(s => _contentServiceChip(s, d.mac_address, category)).join('');
+
+    const allSvcs = d.top_services || [];
+    const expanded = _contentExpandedDevices.has(d.mac_address);
+    const shown = expanded ? allSvcs : allSvcs.slice(0, _CONTENT_CHIP_CAP);
+    const hidden = Math.max(0, allSvcs.length - shown.length);
+    const chips = shown.map(s => _contentServiceChip(s, d.mac_address, category)).join('');
+    const macKeyEsc = (d.mac_address || '').replace(/'/g, "\\'");
+    let expandBtn = '';
+    if (hidden > 0) {
+      expandBtn = `<button type="button"
+        onclick="event.stopPropagation(); _toggleContentExpand('device', '${macKeyEsc}')"
+        class="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.10] text-slate-500 dark:text-slate-400 transition-colors">
+        +${hidden} ${t('content.more') || 'more'}
+      </button>`;
+    } else if (expanded && allSvcs.length > _CONTENT_CHIP_CAP) {
+      expandBtn = `<button type="button"
+        onclick="event.stopPropagation(); _toggleContentExpand('device', '${macKeyEsc}')"
+        class="text-[10px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.10] text-slate-500 dark:text-slate-400 transition-colors">
+        ${t('content.less') || 'show less'}
+      </button>`;
+    }
+
     const synthetic = { hostname: d.hostname, vendor: d.vendor, device_class: d.device_class, last_seen: null };
     const dt = _detectDeviceType(synthetic);
     const icon = _deviceTypeIcon20(dt, !!d.online);
     const name = d.display_name || d.hostname || d.mac_address || '?';
     const macEsc = (d.mac_address || '').replace(/'/g, "\\'");
+    // Row-header policy icon: device-scoped category-wide rule wins,
+    // falls back to any device-scoped service rule under this device.
+    const headlinePol = _findDeviceHeadlinePolicy(d.mac_address, category);
+    const polIcon = _policyIconHtml(headlinePol, 'text-sm');
+    const nameAttr = String(name).replace(/"/g, '&quot;');
     return `<div class="p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim}"
       onclick="_contentOpenDeviceCategory('${macEsc}', '${category}')">
       <div class="flex items-center gap-2 mb-1.5">
         <span class="flex-shrink-0">${icon}</span>
-        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${name}</span>
+        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1" title="${nameAttr}">${name}</span>
+        ${polIcon}
         <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${_fmtBytes(d.total_bytes || 0)}</span>
       </div>
       <div class="h-1 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden mb-2">
@@ -5030,7 +5287,7 @@ function _renderContentKaderDevices(devices, category) {
       </div>
       <div class="flex flex-wrap gap-1.5">
         ${chips}
-        ${d.service_count > 3 ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 self-center">+${d.service_count - 3}</span>` : ''}
+        ${expandBtn}
       </div>
     </div>`;
   }).join('');

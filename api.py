@@ -4883,11 +4883,12 @@ def family_category_detail(
     services_out: list[dict] = []
     for s in sorted(svc_tot.values(), key=lambda r: -r["total_bytes"]):
         svc_name = s["service_name"]
-        # Find top devices for this service
+        # Find devices for this service (all of them — frontend slices
+        # to 3 by default and can expand to show the rest on click).
         svc_pairs = [p for p in pair_tot.values() if p["service_name"] == svc_name]
         svc_pairs.sort(key=lambda p: -p["bytes"])
         top_devs = []
-        for p in svc_pairs[:3]:
+        for p in svc_pairs:
             entry = _device_entry(p["mac"], p["fallback_ip"])
             entry["bytes"] = p["bytes"]
             entry["hits"] = p["hits"]
@@ -4912,18 +4913,56 @@ def family_category_detail(
         dev_pairs = [p for p in pair_tot.values() if p["mac"] == mac]
         dev_pairs.sort(key=lambda p: -p["bytes"])
         entry["service_count"] = len(dev_pairs)
+        # All services for this device — frontend slices to 3 by default
+        # and can expand to show the full list on click.
         entry["top_services"] = [
             {
                 "service_name": p["service_name"],
                 "bytes": p["bytes"],
                 "hits": p["hits"],
             }
-            for p in dev_pairs[:3]
+            for p in dev_pairs
         ]
         devices_out.append(entry)
 
     total_bytes = sum(s["total_bytes"] for s in services_out)
     total_hits = sum(s["total_hits"] for s in services_out)
+
+    # --- Active, non-allow policies relevant to this category view.
+    # We return a compact list so the UI can render policy icons on
+    # each row/chip AND pre-fill the rule dialog when the user
+    # re-opens an existing rule. "Relevant" means either:
+    #   * a category-wide rule (service_name is NULL and matches cat)
+    #   * a service-scoped rule for a service we actually see here
+    seen_service_names = {s["service_name"] for s in services_out}
+    now_naive = datetime.utcnow()
+    policy_rows = (
+        db.query(ServicePolicy)
+        .filter(ServicePolicy.action != "allow")
+        .filter(
+            (ServicePolicy.expires_at.is_(None))
+            | (ServicePolicy.expires_at > now_naive)
+        )
+        .all()
+    )
+    policies_out: list[dict] = []
+    for pol in policy_rows:
+        # Only keep rules that will actually affect something in this
+        # view: category-wide for this cat, or a service we display.
+        cat_match = (pol.service_name is None and pol.category == category)
+        svc_match = (pol.service_name is not None and pol.service_name in seen_service_names)
+        if not (cat_match or svc_match):
+            continue
+        policies_out.append({
+            "id": pol.id,
+            "scope": pol.scope,
+            "mac_address": pol.mac_address,
+            "group_id": pol.group_id,
+            "service_name": pol.service_name,
+            "category": pol.category,
+            "action": pol.action,
+            "expires_at": pol.expires_at.isoformat() if pol.expires_at else None,
+        })
 
     meta = FAMILY_CATEGORY_META.get(category, {})
     return {
@@ -4935,6 +4974,7 @@ def family_category_detail(
         "total_hits": total_hits,
         "services": services_out,
         "devices": devices_out,
+        "policies": policies_out,
     }
 
 
