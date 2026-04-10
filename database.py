@@ -785,6 +785,24 @@ def init_db() -> None:
             "WHERE ai_service = 'google_api'"
         ))
 
+    # --- Backfill: push Device.first_seen back to the oldest DeviceIP
+    # first_seen, so placeholder→real MAC upgrades (and other late MAC
+    # bindings) don't keep firing spurious "new device" alerts for IPs
+    # that were already known. Idempotent — only affects rows where a
+    # DeviceIP has an older first_seen than the device itself.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE devices SET first_seen = ("
+            "  SELECT MIN(device_ips.first_seen) FROM device_ips "
+            "  WHERE device_ips.mac_address = devices.mac_address"
+            ") "
+            "WHERE EXISTS ("
+            "  SELECT 1 FROM device_ips "
+            "  WHERE device_ips.mac_address = devices.mac_address "
+            "    AND device_ips.first_seen < devices.first_seen"
+            ")"
+        ))
+
     # --- Performance indexes for large tables ---
     # These CREATE INDEX IF NOT EXISTS are idempotent and safe to run on every boot.
     with engine.begin() as conn:

@@ -2286,19 +2286,42 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
     # ── Upgrade placeholder to real MAC ──────────────────────────────
     # When a request for a specific IP now includes a real MAC, migrate
     # the placeholder device's IPs to the real MAC device and delete it.
+    # We also remember the placeholder's first_seen so we can inherit it
+    # below — otherwise upgrading a long-known IP to a real MAC would
+    # fire a spurious "new device" alert, because the brand-new Device
+    # row would get first_seen=now.
+    inherited_first_seen: Optional[datetime] = None
     if not mac.startswith("unknown_"):
         placeholder_key = f"unknown_{payload.ip.replace('.', '_').replace(':', '_')}"
         placeholder_dev = db.query(Device).filter(Device.mac_address == placeholder_key).first()
         if placeholder_dev:
+            inherited_first_seen = placeholder_dev.first_seen
             db.query(DeviceIP).filter(DeviceIP.mac_address == placeholder_key).update(
                 {DeviceIP.mac_address: mac}, synchronize_session="fetch"
             )
             db.delete(placeholder_dev)
             db.flush()
 
+    # Also inherit from any DeviceIP row that already exists for this IP
+    # (it may have been created by an older placeholder that was already
+    # cleaned up, or by a previous MAC binding for the same IP). Whichever
+    # first_seen is oldest wins — the device isn't "new" if we have ANY
+    # earlier trace of that IP on the network.
+    existing_ip_row = db.query(DeviceIP).filter(DeviceIP.ip == payload.ip).first()
+    if existing_ip_row and existing_ip_row.first_seen:
+        if inherited_first_seen is None or existing_ip_row.first_seen < inherited_first_seen:
+            inherited_first_seen = existing_ip_row.first_seen
+
     # Upsert Device by MAC address
     device = db.query(Device).filter(Device.mac_address == mac).first()
     if device:
+        # If we inherited an older first_seen from a placeholder or a
+        # pre-existing DeviceIP row, push the device's first_seen back
+        # too — that keeps the "new device" alert window accurate.
+        if inherited_first_seen and (
+            device.first_seen is None or inherited_first_seen < device.first_seen
+        ):
+            device.first_seen = inherited_first_seen
         # Stronger-wins hostname logic:
         # - fill if currently empty
         # - overwrite if the stored one is junk and the new one is clean
@@ -2336,7 +2359,7 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
             ja4_last_seen=now if payload.ja4 else None,
             dhcp_vendor_class=payload.dhcp_vendor_class,
             dhcp_fingerprint=payload.dhcp_fingerprint,
-            first_seen=now,
+            first_seen=inherited_first_seen or now,
             last_seen=now,
         )
         db.add(device)
