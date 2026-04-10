@@ -2134,15 +2134,40 @@ async function loadSummaryDashboard() {
 // ---------------------------------------------------------------------------
 // Alert action modal
 // ---------------------------------------------------------------------------
-let _alertModalScope = 'device'; // 'device' or 'global'
-let _alertModalAction = 'allow'; // currently selected action in the 3-way toggle
+// The same modal is shared by three entry points:
+//
+//   1. Summary inbox  — openAlertActionModal(idx)       // numeric idx
+//   2. Content page   — openAlertActionModal(ctx)       // context object
+//   3. (future)        openAlertActionModal({...})      // any caller
+//
+// The "mode" state tracks which flow opened it so the snooze/dismiss
+// group (which only makes sense for live alerts) can be hidden for the
+// Content-page flow where the user is just setting a rule.
+let _alertModalScope = 'device';   // 'device' | 'group' | 'global'
+let _alertModalAction = 'allow';   // allow | alert | block
+let _alertModalMode = 'alert';     // 'alert' | 'content'
+let _alertModalGroupId = null;     // selected DeviceGroup id when scope === 'group'
 
-function openAlertActionModal(idx) {
-  const alert = _summaryAlerts[idx];
+function openAlertActionModal(arg) {
+  // Overload: numeric index → Summary inbox alert; object → explicit ctx.
+  let alert;
+  if (typeof arg === 'number') {
+    alert = _summaryAlerts[arg];
+    _alertModalMode = 'alert';
+  } else if (arg && typeof arg === 'object') {
+    alert = arg;
+    _alertModalMode = 'content';
+  }
   if (!alert) return;
   _currentAlertContext = alert;
-  _alertModalScope = 'device'; // default to device-specific
-  _alertModalAction = 'allow';
+
+  // Sensible default: global when no mac, else device. Caller can
+  // override via ctx.default_scope ('global' | 'group' | 'device').
+  const defaultScope = alert.default_scope
+    || (alert.mac_address ? 'device' : 'global');
+  _alertModalScope = defaultScope;
+  _alertModalAction = alert.default_action || 'block';
+  _alertModalGroupId = null;
 
   const modal = document.getElementById('alert-action-modal');
   const title = document.getElementById('alert-modal-title');
@@ -2156,18 +2181,39 @@ function openAlertActionModal(idx) {
   const _alertDev = alert.mac_address ? deviceMap[alert.mac_address] : null;
   const devName = alert.display_name || (alert.hostname && !_isJunkHostname(alert.hostname) ? alert.hostname : null)
                 || (alert.vendor ? `${_shortVendor(alert.vendor)} device` : null)
-                || (alert.details?.ips?.[0]) || (_alertDev ? _latestIp(_alertDev) : null) || alert.mac_address;
-  const svcName = svcDisplayName(alert.service_or_dest) || alert.service_or_dest;
+                || (alert.details?.ips?.[0]) || (_alertDev ? _latestIp(_alertDev) : null) || alert.mac_address
+                || (t('alertModal.noDevice') || 'No specific device');
+  const svcName = alert.service_or_dest
+    ? (svcDisplayName(alert.service_or_dest) || alert.service_or_dest)
+    : (alert.category ? _familyCategoryLabel(alert.category) : '—');
   const meta = _alertTypeLabel(alert.alert_type);
 
   if (title) title.textContent = svcName;
-  if (subtitle) subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${devName} · ${alert.hits} hits</span>`;
+  if (subtitle) {
+    if (_alertModalMode === 'content') {
+      // Content-page subtitle: "Social · 45 MB · 1 234 hits"
+      const parts = [];
+      if (alert.category) parts.push(_familyCategoryLabel(alert.category));
+      if (alert.mac_address) parts.push(devName);
+      else parts.push(t('alertModal.allDevices') || 'All devices');
+      if (alert.bytes != null) parts.push(_fmtBytes(alert.bytes));
+      if (alert.hits != null) parts.push(`${alert.hits} hits`);
+      subtitle.innerHTML = `<i class="ph-duotone ph-shield-check text-base"></i> <span>${parts.join(' · ')}</span>`;
+    } else {
+      subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${devName} · ${alert.hits} hits</span>`;
+    }
+  }
   if (status) status.textContent = '';
 
   // Service logo (same 28px style as Action Inbox cards)
   if (logoEl) {
     const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
-    if (isAnomaly || !alert.service_or_dest) {
+    if (!alert.service_or_dest && _alertModalMode === 'content') {
+      // Category-wide rule (no specific service) — show category icon
+      const catKey = alert.category || 'slate';
+      const catMeta = CATEGORY_META[catKey] || { icon: '<i class="ph-duotone ph-squares-four text-xl"></i>', color: 'slate' };
+      logoEl.innerHTML = `<div class="w-7 h-7 rounded bg-${catMeta.color}-100 dark:bg-${catMeta.color}-900/30 flex items-center justify-center text-${catMeta.color}-600 dark:text-${catMeta.color}-400">${catMeta.icon}</div>`;
+    } else if (isAnomaly || !alert.service_or_dest) {
       logoEl.innerHTML = `<div class="w-7 h-7 rounded bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center">${meta.icon}</div>`;
     } else {
       const svc = alert.service_or_dest;
@@ -2180,14 +2226,24 @@ function openAlertActionModal(idx) {
 
   // Device name in scope button
   const devLabel = document.getElementById('alert-scope-device-label');
-  if (devLabel) devLabel.textContent = devName;
+  if (devLabel) devLabel.textContent = alert.mac_address ? devName : (t('alertModal.thisDevice') || 'This device');
 
-  // Reset scope pills
-  setAlertScope('device');
+  // Populate the group select from the cached group list so both the
+  // Content page and any other caller share the same group catalogue.
+  _populateAlertGroupSelect(alert.group_id || null);
 
+  // Apply the default scope (this also toggles the group-select visibility).
+  // If the default is 'device' but no mac was given, fall back to 'global'.
+  let initialScope = defaultScope;
+  if (initialScope === 'device' && !alert.mac_address) initialScope = 'global';
+  setAlertScope(initialScope);
+
+  // Snooze/dismiss group only makes sense for live alerts. On the
+  // Content page the user is just authoring a rule, so hide it.
   const isAnomaly = _ANOMALY_ALERT_TYPES.has(alert.alert_type);
-  // Always show snooze/dismiss group so any alert can be dismissed
-  if (snoozeGroup) snoozeGroup.classList.remove('hidden');
+  if (snoozeGroup) {
+    snoozeGroup.classList.toggle('hidden', _alertModalMode === 'content');
+  }
   if (isAnomaly) {
     if (policyGroup) policyGroup.classList.add('hidden');
     if (scopeSection) scopeSection.classList.add('hidden');
@@ -2200,6 +2256,45 @@ function openAlertActionModal(idx) {
 
   if (modal) modal.classList.remove('hidden');
 }
+
+// Populate the scope→group <select> from the cached family group list.
+// Falls back to an empty, disabled state when no groups exist so the
+// user gets a clear "create a group first" signal.
+function _populateAlertGroupSelect(preselectId) {
+  const sel = document.getElementById('alert-scope-group-select');
+  const btn = document.getElementById('alert-scope-btn-group');
+  if (!sel) return;
+  const groups = _familyGroupsCache || [];
+  if (!groups.length) {
+    sel.innerHTML = `<option value="">${t('alertModal.noGroups') || 'No groups yet — create one on Devices → Groups'}</option>`;
+    sel.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add('opacity-40', 'cursor-not-allowed');
+    }
+    _alertModalGroupId = null;
+    return;
+  }
+  sel.disabled = false;
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('opacity-40', 'cursor-not-allowed');
+  }
+  const opts = groups.map(g => {
+    const count = g.member_count != null ? ` (${g.member_count})` : '';
+    return `<option value="${g.id}">${g.name}${count}</option>`;
+  });
+  sel.innerHTML = opts.join('');
+  const initialId = preselectId != null ? preselectId : groups[0].id;
+  sel.value = String(initialId);
+  _alertModalGroupId = parseInt(sel.value, 10);
+}
+
+function _onAlertGroupChanged(value) {
+  const parsed = parseInt(value, 10);
+  _alertModalGroupId = Number.isNaN(parsed) ? null : parsed;
+}
+window._onAlertGroupChanged = _onAlertGroupChanged;
 
 function _renderAlertPolicyToggle(serviceName) {
   const container = document.getElementById('alert-modal-policy-segment');
@@ -2226,51 +2321,88 @@ function setAlertAction(action) {
 }
 
 function setAlertScope(scope) {
+  // Guard: if the caller asks for 'group' but no groups exist, silently
+  // downgrade to 'global' so we never commit with a null group_id.
+  if (scope === 'group' && (!_familyGroupsCache || _familyGroupsCache.length === 0)) {
+    scope = 'global';
+  }
   _alertModalScope = scope;
   const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
   const active = `${base} bg-blue-700 text-white shadow-sm`;
   const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
-  const btnD = document.getElementById('alert-scope-btn-device');
   const btnG = document.getElementById('alert-scope-btn-global');
-  if (btnD) btnD.className = scope === 'device' ? active : inactive;
+  const btnGroup = document.getElementById('alert-scope-btn-group');
+  const btnD = document.getElementById('alert-scope-btn-device');
   if (btnG) btnG.className = scope === 'global' ? active : inactive;
+  if (btnGroup) btnGroup.className = scope === 'group' ? active : inactive;
+  if (btnD) btnD.className = scope === 'device' ? active : inactive;
+  // Show the group <select> only while scope === 'group'
+  const sel = document.getElementById('alert-scope-group-select');
+  if (sel) sel.classList.toggle('hidden', scope !== 'group');
 }
 
-// Submit the 3-way policy with optional timer from the alert modal
+// Submit the 3-way policy with optional timer from the alert modal.
+// Works for all three scopes (global / group / device) and for both
+// service-level and category-level rules (service_name may be null,
+// in which case the category-wide rule path is used).
 async function submitAlertPolicy(hours) {
   if (!_currentAlertContext) return;
   const alert = _currentAlertContext;
   const status = document.getElementById('alert-modal-status');
   if (status) status.textContent = t('alertModal.submitting') || 'Submitting...';
 
-  const isGlobal = _alertModalScope === 'global';
+  const scope = _alertModalScope;
   const expires = hours ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+
+  // Guardrails: device scope needs a mac; group scope needs a group_id.
+  if (scope === 'device' && !alert.mac_address) {
+    if (status) status.textContent = t('alertModal.missingDevice') || 'No device on this alert — choose Global or Group.';
+    return;
+  }
+  if (scope === 'group' && _alertModalGroupId == null) {
+    if (status) status.textContent = t('alertModal.missingGroup') || 'Pick a group first.';
+    return;
+  }
+
+  const body = {
+    scope,
+    mac_address: scope === 'device' ? alert.mac_address : null,
+    group_id: scope === 'group' ? _alertModalGroupId : null,
+    service_name: alert.service_or_dest || null,
+    category: alert.category || null,
+    action: _alertModalAction,
+    expires_at: expires,
+  };
 
   try {
     const res = await fetch('/api/policies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scope: isGlobal ? 'global' : 'device',
-        mac_address: isGlobal ? null : alert.mac_address,
-        service_name: alert.service_or_dest,
-        category: alert.category,
-        action: _alertModalAction,
-        expires_at: expires,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
     closeAlertActionModal();
-    const scopeLabel = isGlobal ? (t('rules.scopeGlobal') || 'Global') : (t('rules.scopePerDevice') || 'Device');
+    const scopeLabel = scope === 'global' ? (t('rules.scopeGlobal') || 'Global')
+                     : scope === 'group'  ? (t('rules.scopeGroup') || 'Group')
+                     : (t('rules.scopePerDevice') || 'Device');
     const actionLabel = _alertModalAction === 'allow' ? (t('rules.allow') || 'Allow')
                       : _alertModalAction === 'alert' ? (t('rules.alert') || 'Alert')
                       : (t('rules.block') || 'Block');
     const timerLabel = hours ? ` (${hours}h)` : '';
-    showToast(`${svcDisplayName(alert.service_or_dest)}: ${actionLabel} · ${scopeLabel}${timerLabel}`, 'success');
-    await loadSummaryDashboard();
+    const subject = alert.service_or_dest
+      ? svcDisplayName(alert.service_or_dest)
+      : (alert.category ? _familyCategoryLabel(alert.category) : 'rule');
+    showToast(`${subject}: ${actionLabel} · ${scopeLabel}${timerLabel}`, 'success');
+    // Refresh whichever page opened the modal so the rule is visible
+    // immediately without a manual reload.
+    if (_alertModalMode === 'content') {
+      if (typeof refreshFamilyOverview === 'function') await refreshFamilyOverview();
+    } else {
+      await loadSummaryDashboard();
+    }
   } catch (err) {
     console.error('submitAlertPolicy:', err);
     if (status) status.textContent = `${t('alertModal.failed') || 'Failed'}: ${err.message}`;
@@ -4652,135 +4784,318 @@ function onFamilyGroupChanged(value) {
 }
 window.onFamilyGroupChanged = onFamilyGroupChanged;
 
-// ----- Overview --------------------------------------------------
+// ----- Overview (Content page redesign) --------------------------
+//
+// Layout:
+//   1. Category chip strip — 7 pills sorted by activity, click to switch
+//   2. Kader 1 (services)  — row per service with top-3 device chips
+//   3. Kader 2 (devices)   — row per device with top-3 service chips
+//
+// Every click opens the shared #alert-action-modal (the same one used
+// by the Summary inbox) with a pre-computed scope so "block global" vs
+// "block for this device" vs "block whole category for this device"
+// all land on the same dialog. The modal is the single source of truth
+// for rule creation.
+
+// Dim threshold — rows with less than this are rendered at 50% opacity
+// so the eye naturally skips them. Below the threshold the user is
+// unlikely to want to act on them (false-positive avoidance).
+const _CONTENT_DIM_BYTES = 1 * 1024 * 1024;  // 1 MB
+const _CONTENT_DIM_HITS  = 10;
+
+// Remembered category across tab switches. Set on the first render to
+// the most-active category from /api/family/overview.
+let _contentActiveCategory = null;
+// Last fetched category payload (for re-renders on the same category).
+let _contentCategoryCache = null;
+// Last fetched overview payload (for chip totals + blocked state).
+let _contentOverviewCache = null;
 
 async function refreshFamilyOverview() {
-  let data;
+  // Fetch overview (chip totals) + current category in parallel so the
+  // initial landing isn't a two-step flicker.
   const qs = new URLSearchParams({ hours: '24' });
   if (_familyGroupId != null) qs.set('group_id', String(_familyGroupId));
+  let overview;
   try {
-    data = await fetch('/api/family/overview?' + qs.toString()).then(r => r.json());
+    overview = await fetch('/api/family/overview?' + qs.toString()).then(r => r.json());
   } catch (err) {
     console.error('family overview load failed', err);
-    return;
+    overview = { cards: [], honesty: {} };
+  }
+  _contentOverviewCache = overview;
+
+  const cards = overview.cards || [];
+  // Pick the most active category (or keep the current one if still present).
+  if (!_contentActiveCategory || !cards.some(c => c.key === _contentActiveCategory)) {
+    const sorted = [...cards].sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+    _contentActiveCategory = sorted.length ? sorted[0].key : null;
   }
 
-  _renderFamilyCards(data.cards || []);
-  _renderFamilyTopServices(data.top_services || []);
-  _renderFamilyRecentBlocks(data.recent_blocks || []);
-  _renderFamilyHonesty(data.honesty || {});
+  _renderContentChipStrip(cards, _contentActiveCategory);
+  _renderFamilyHonesty(overview.honesty || {});
+
+  if (_contentActiveCategory) {
+    await _loadContentCategory(_contentActiveCategory);
+  } else {
+    _renderContentKaderServices([]);
+    _renderContentKaderDevices([]);
+  }
 }
 
 function _familyCategoryLabel(key) {
   return t('family.cat.' + key) || (_familyMeta?.categories || []).find(c => c.key === key)?.label_en || key;
 }
 
-function _renderFamilyCards(cards) {
-  const el = document.getElementById('family-overview-cards');
+// Category chip strip — 7+ chips, active one highlighted. Sorted by
+// bytes desc so the most active category naturally sits leftmost. Each
+// chip shows an icon, the label, and the 24h byte total.
+function _renderContentChipStrip(cards, activeKey) {
+  const el = document.getElementById('content-chip-strip');
   if (!el) return;
   if (!cards.length) {
-    el.innerHTML = `<div class="col-span-full text-center text-xs text-slate-400 dark:text-slate-500 py-6">${t('family.noData') || 'No family usage yet.'}</div>`;
+    el.innerHTML = `<span class="text-xs text-slate-400 dark:text-slate-500">${t('family.noData') || 'No family usage yet.'}</span>`;
     return;
   }
-  el.innerHTML = cards.map(c => {
-    const m = CATEGORY_META[c.key] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
+  const sorted = [...cards].sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+  el.innerHTML = sorted.map(c => {
+    const m = CATEGORY_META[c.key] || { icon: '<i class="ph-duotone ph-squares-four text-base"></i>', color: 'slate' };
     const label = _familyCategoryLabel(c.key);
-    const bytes = _fmtBytes(c.bytes);
-    const trend = c.trend_pct;
-    const trendIcon = trend > 5 ? '↑' : (trend < -5 ? '↓' : '·');
-    const trendClass = trend > 5 ? 'text-rose-500' : (trend < -5 ? 'text-emerald-500' : 'text-slate-400');
-    const blockedBadge = c.blocked
-      ? `<span class="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-medium">${t('family.blocked') || 'Blocked'}</span>`
+    const isActive = c.key === activeKey;
+    const bytes = _fmtBytes(c.bytes || 0);
+    const dim = (c.bytes || 0) < _CONTENT_DIM_BYTES ? 'opacity-60' : '';
+    const base = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border';
+    const activeCls = `${base} bg-${m.color}-500 dark:bg-${m.color}-600 text-white border-${m.color}-500 dark:border-${m.color}-500 shadow-sm`;
+    const inactiveCls = `${base} bg-white dark:bg-white/[0.04] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/[0.06] hover:bg-slate-50 dark:hover:bg-white/[0.08] ${dim}`;
+    const blockedDot = c.blocked
+      ? '<span class="w-1.5 h-1.5 rounded-full bg-red-500" title="Has active blocks"></span>'
       : '';
-    return `<div class="relative bg-white dark:bg-${m.color}-900/10 border border-slate-200 dark:border-${m.color}-700/30 rounded-xl p-5 card-hover cursor-pointer"
-                 onclick="_familyDrillCategory('${c.key}')">
-      ${blockedBadge}
-      <p class="text-xs text-${m.color}-500 dark:text-${m.color}-400 font-medium">${m.icon} ${label}</p>
-      <p class="text-2xl font-bold mt-2 tabular-nums text-${m.color}-600 dark:text-${m.color}-400">${bytes}</p>
-      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${c.services} ${t('family.servicesShort') || 'services'} · ${c.devices} ${t('other.devices') || 'devices'} · <span class="${trendClass}">${trendIcon} ${Math.abs(trend)}%</span></p>
-    </div>`;
+    return `<button type="button" onclick="_selectContentCategory('${c.key}')" class="${isActive ? activeCls : inactiveCls}">
+      <span class="text-base leading-none">${m.icon}</span>
+      <span>${label}</span>
+      <span class="tabular-nums text-[10px] ${isActive ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}">${bytes}</span>
+      ${blockedDot}
+    </button>`;
   }).join('');
 }
 
-function _familyDrillCategory(key) {
-  // Switch to the Categories sub-tab and scroll the category into view.
-  switchFamilyTab('categories');
-  // refreshOther() rebuilds the tree; give it a beat then scroll.
-  setTimeout(() => {
-    // The tree uses auto-generated ids; we scroll to the first entry
-    // whose header text matches the category's localised label as a
-    // best-effort until the tree ids get named.
-    const container = document.getElementById('other-usage-tree-container');
-    if (!container) return;
-    const label = _familyCategoryLabel(key).toLowerCase();
-    const nodes = container.querySelectorAll('button');
-    for (const b of nodes) {
-      if ((b.textContent || '').toLowerCase().includes(label)) {
-        b.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        break;
-      }
-    }
-  }, 400);
+async function _selectContentCategory(key) {
+  _contentActiveCategory = key;
+  // Re-render chip strip with the new active
+  if (_contentOverviewCache) {
+    _renderContentChipStrip(_contentOverviewCache.cards || [], key);
+  }
+  await _loadContentCategory(key);
 }
-window._familyDrillCategory = _familyDrillCategory;
+window._selectContentCategory = _selectContentCategory;
 
-function _renderFamilyTopServices(list) {
-  const el = document.getElementById('family-top-services');
-  if (!el) return;
-  if (!list.length) {
-    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('family.noData') || 'No family usage in the last 24 h.'}</p>`;
+// Fetch a single category and render both kaders.
+async function _loadContentCategory(category) {
+  const svcEl = document.getElementById('content-kader-services');
+  const devEl = document.getElementById('content-kader-devices');
+  if (svcEl) svcEl.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('content.loading') || 'Loading…'}</p>`;
+  if (devEl) devEl.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('content.loading') || 'Loading…'}</p>`;
+
+  let data;
+  try {
+    const qs = new URLSearchParams({ hours: '24' });
+    if (_familyGroupId != null) qs.set('group_id', String(_familyGroupId));
+    data = await fetch(`/api/family/category/${encodeURIComponent(category)}?` + qs.toString()).then(r => r.json());
+  } catch (err) {
+    console.error('category load failed', err);
+    if (svcEl) svcEl.innerHTML = `<p class="text-red-500 text-center py-6">${t('content.loadError') || 'Failed to load'}</p>`;
+    if (devEl) devEl.innerHTML = '';
     return;
   }
-  const maxBytes = Math.max(...list.map(s => s.bytes)) || 1;
-  el.innerHTML = list.map(s => {
-    const name = SERVICE_NAMES?.[s.service_name] || s.service_name;
-    const pct = Math.max(3, Math.round((s.bytes / maxBytes) * 100));
-    const m = CATEGORY_META[s.category] || { color: 'slate' };
-    const logo = (typeof svcLogo === 'function') ? svcLogo(s.service_name) : '';
-    return `<div class="flex items-center gap-3">
-      <div class="flex-shrink-0 w-6">${logo}</div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between mb-0.5">
-          <span class="text-slate-600 dark:text-slate-300 truncate">${name}</span>
-          <span class="tabular-nums text-[10px] text-slate-400 dark:text-slate-500 ml-2">${_fmtBytes(s.bytes)}</span>
-        </div>
-        <div class="h-1.5 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden">
-          <div class="h-full bg-${m.color}-500/70 dark:bg-${m.color}-400/70 rounded-full" style="width:${pct}%"></div>
-        </div>
+  _contentCategoryCache = data;
+
+  _renderContentKaderServices(data.services || [], category);
+  _renderContentKaderDevices(data.devices || [], category);
+
+  // Update the small count badges next to each panel title
+  const sc = document.getElementById('content-services-count');
+  const dc = document.getElementById('content-devices-count');
+  if (sc) sc.textContent = (data.services || []).length ? `(${data.services.length})` : '';
+  if (dc) dc.textContent = (data.devices || []).length ? `(${data.devices.length})` : '';
+}
+
+// Mini device chip used inside a service row. Shows device icon (with
+// online dot) + truncated name. Click opens the modal scoped to THIS
+// device + THIS service so the user can block Instagram for just one
+// phone.
+function _contentDeviceChip(dev, serviceName, category) {
+  // Build a minimal "device" object that _detectDeviceType/_isDeviceOnline
+  // can chew on — the category payload already provides hostname/vendor
+  // and an explicit `online` flag.
+  const synthetic = {
+    hostname: dev.hostname,
+    vendor: dev.vendor,
+    device_class: dev.device_class,
+    last_seen: null,
+  };
+  const dt = _detectDeviceType(synthetic);
+  const online = !!dev.online;
+  const icon = _deviceTypeIcon20(dt, online);
+  const name = dev.display_name || dev.hostname || dev.mac_address || '?';
+  // Use a data- attribute for the onclick so escaping stays safe even
+  // when the MAC contains weird characters.
+  const macEsc = (dev.mac_address || '').replace(/'/g, "\\'");
+  return `<button type="button"
+    onclick="event.stopPropagation(); _contentOpenDeviceService('${macEsc}', '${serviceName}', '${category}')"
+    class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
+    title="${name} — ${_fmtBytes(dev.bytes || 0)}">
+    ${icon}
+    <span class="truncate text-[11px] text-slate-600 dark:text-slate-300">${name}</span>
+  </button>`;
+}
+
+// Mini service chip used inside a device row. Click opens the modal
+// scoped to THIS device + THIS service — same as clicking a device
+// chip in Kader 1 from the other side.
+function _contentServiceChip(svc, mac, category) {
+  const logo = svcLogo(svc.service_name);
+  const name = svcDisplayName(svc.service_name);
+  return `<button type="button"
+    onclick="event.stopPropagation(); _contentOpenDeviceService('${mac}', '${svc.service_name}', '${category}')"
+    class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
+    title="${name} — ${_fmtBytes(svc.bytes || 0)}">
+    <span class="inline-flex w-4 h-4 items-center justify-center flex-shrink-0">${logo}</span>
+    <span class="truncate text-[11px] text-slate-600 dark:text-slate-300">${name}</span>
+  </button>`;
+}
+
+// Kader 1: service-first view
+function _renderContentKaderServices(services, category) {
+  const el = document.getElementById('content-kader-services');
+  if (!el) return;
+  if (!services.length) {
+    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('content.noServices') || 'No services seen in this category.'}</p>`;
+    return;
+  }
+  const maxBytes = Math.max(...services.map(s => s.total_bytes || 0)) || 1;
+  el.innerHTML = services.map(s => {
+    const dim = (s.total_bytes || 0) < _CONTENT_DIM_BYTES && (s.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
+    const pct = Math.max(3, Math.round(((s.total_bytes || 0) / maxBytes) * 100));
+    const chips = (s.top_devices || []).map(d => _contentDeviceChip(d, s.service_name, category)).join('');
+    const blocked = s.blocked
+      ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-semibold">${t('family.blocked') || 'Blocked'}</span>`
+      : '';
+    const svcEsc = (s.service_name || '').replace(/'/g, "\\'");
+    return `<div class="p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim}"
+      onclick="_contentOpenService('${svcEsc}', '${category}')">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="flex-shrink-0 w-5 h-5 inline-flex items-center justify-center">${svcLogo(s.service_name)}</span>
+        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${svcDisplayName(s.service_name)}</span>
+        ${blocked}
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${_fmtBytes(s.total_bytes || 0)}</span>
+      </div>
+      <div class="h-1 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden mb-2">
+        <div class="h-full bg-blue-500/70 dark:bg-blue-400/70 rounded-full" style="width:${pct}%"></div>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        ${chips}
+        ${s.device_count > 3 ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 self-center">+${s.device_count - 3}</span>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-function _renderFamilyRecentBlocks(blocks) {
-  const el = document.getElementById('family-recent-blocks');
+// Kader 2: device-first view
+function _renderContentKaderDevices(devices, category) {
+  const el = document.getElementById('content-kader-devices');
   if (!el) return;
-  if (!blocks.length) {
-    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('family.noBlocks') || 'No blocks yet.'}</p>`;
+  if (!devices.length) {
+    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('content.noDevices') || 'No devices seen in this category.'}</p>`;
     return;
   }
-  el.innerHTML = blocks.map(b => {
-    const name = SERVICE_NAMES?.[b.service] || b.service;
-    const catLabel = _familyCategoryLabel(b.category);
-    const when = b.created_at ? new Date(b.created_at).toLocaleString() : '';
-    const activeBadge = b.is_active
-      ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400">${t('family.active') || 'Active'}</span>`
-      : `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-400">${t('family.expired') || 'Expired'}</span>`;
-    return `<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <span class="text-slate-700 dark:text-slate-200 font-medium truncate">${name}</span>
-          <span class="text-[10px] text-slate-400 dark:text-slate-500">${catLabel}</span>
-        </div>
-        <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">${b.domain || ''}</div>
+  const maxBytes = Math.max(...devices.map(d => d.total_bytes || 0)) || 1;
+  el.innerHTML = devices.map(d => {
+    const dim = (d.total_bytes || 0) < _CONTENT_DIM_BYTES && (d.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
+    const pct = Math.max(3, Math.round(((d.total_bytes || 0) / maxBytes) * 100));
+    const chips = (d.top_services || []).map(s => _contentServiceChip(s, d.mac_address, category)).join('');
+    const synthetic = { hostname: d.hostname, vendor: d.vendor, device_class: d.device_class, last_seen: null };
+    const dt = _detectDeviceType(synthetic);
+    const icon = _deviceTypeIcon20(dt, !!d.online);
+    const name = d.display_name || d.hostname || d.mac_address || '?';
+    const macEsc = (d.mac_address || '').replace(/'/g, "\\'");
+    return `<div class="p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim}"
+      onclick="_contentOpenDeviceCategory('${macEsc}', '${category}')">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="flex-shrink-0">${icon}</span>
+        <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${name}</span>
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${_fmtBytes(d.total_bytes || 0)}</span>
       </div>
-      <div class="flex flex-col items-end gap-1">
-        ${activeBadge}
-        <span class="text-[10px] text-slate-400 dark:text-slate-500">${when}</span>
+      <div class="h-1 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden mb-2">
+        <div class="h-full bg-emerald-500/70 dark:bg-emerald-400/70 rounded-full" style="width:${pct}%"></div>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        ${chips}
+        ${d.service_count > 3 ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 self-center">+${d.service_count - 3}</span>` : ''}
       </div>
     </div>`;
   }).join('');
 }
+
+// ── Modal entry points ─────────────────────────────────────────────
+//
+// Three distinct scopes, each mapped to the shared #alert-action-modal
+// with the right default_scope pre-selected. The user can still flip
+// the scope inside the modal — these are just sensible defaults.
+
+// Clicking a service row (its logo/name area) in Kader 1: default to
+// GLOBAL scope because the user is authoring a network-wide rule.
+function _contentOpenService(serviceName, category) {
+  openAlertActionModal({
+    mode: 'content',
+    service_or_dest: serviceName,
+    category,
+    mac_address: null,
+    default_scope: 'global',
+    default_action: 'block',
+    alert_type: 'content_rule',
+  });
+}
+window._contentOpenService = _contentOpenService;
+
+// Clicking a device chip inside Kader 1 or a service chip inside Kader 2:
+// default to DEVICE scope because the user picked a specific device +
+// specific service pair.
+function _contentOpenDeviceService(mac, serviceName, category) {
+  const dev = deviceMap[mac] || {};
+  openAlertActionModal({
+    mode: 'content',
+    service_or_dest: serviceName,
+    category,
+    mac_address: mac,
+    hostname: dev.hostname,
+    vendor: dev.vendor,
+    display_name: dev.display_name,
+    default_scope: 'device',
+    default_action: 'block',
+    alert_type: 'content_rule',
+  });
+}
+window._contentOpenDeviceService = _contentOpenDeviceService;
+
+// Clicking a device row (the body, not a service chip) in Kader 2:
+// default to DEVICE scope + whole CATEGORY (service_name = null) so
+// the user can block all Social for that phone in one click.
+function _contentOpenDeviceCategory(mac, category) {
+  const dev = deviceMap[mac] || {};
+  openAlertActionModal({
+    mode: 'content',
+    service_or_dest: null,  // category-wide rule
+    category,
+    mac_address: mac,
+    hostname: dev.hostname,
+    vendor: dev.vendor,
+    display_name: dev.display_name,
+    default_scope: 'device',
+    default_action: 'block',
+    alert_type: 'content_rule',
+  });
+}
+window._contentOpenDeviceCategory = _contentOpenDeviceCategory;
 
 function _renderFamilyHonesty(h) {
   const el = document.getElementById('family-honesty-body');
