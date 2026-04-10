@@ -2145,6 +2145,7 @@ async function loadSummaryDashboard() {
 // Content-page flow where the user is just setting a rule.
 let _alertModalScope = 'device';   // 'device' | 'group' | 'global'
 let _alertModalAction = 'allow';   // allow | alert | block
+let _alertModalExistingPolicy = null; // policy currently in effect for this (scope, mac, svc, cat)
 let _alertModalMode = 'alert';     // 'alert' | 'content'
 let _alertModalGroupId = null;     // selected DeviceGroup id when scope === 'group'
 
@@ -2194,6 +2195,7 @@ function openAlertActionModal(arg) {
       _alertModalAction = _existingPolicy.action;
     }
   }
+  _alertModalExistingPolicy = _existingPolicy;
 
   const modal = document.getElementById('alert-action-modal');
   const title = document.getElementById('alert-modal-title');
@@ -2229,43 +2231,7 @@ function openAlertActionModal(arg) {
       subtitle.innerHTML = `${meta.icon} <span>${meta.label} · ${devName} · ${alert.hits} hits</span>`;
     }
   }
-  if (status) {
-    if (_existingPolicy) {
-      // Human-friendly current-rule readout so the user sees that
-      // their previous Block/Alert is still in effect when they
-      // re-open the same tile. Without this line the pre-selected
-      // segment button is the only hint and that's too subtle.
-      const actLabel = _existingPolicy.action === 'block'
-        ? (t('rules.block') || 'Block')
-        : _existingPolicy.action === 'alert' ? (t('rules.alert') || 'Alert')
-        : (t('rules.allow') || 'Allow');
-      const scopeLabel = _existingPolicy.scope === 'global' ? (t('rules.scopeGlobal') || 'Global')
-                       : _existingPolicy.scope === 'group' ? (t('rules.scopeGroup') || 'Group')
-                       : (t('rules.scopePerDevice') || 'Device');
-      let remain = '';
-      if (_existingPolicy.expires_at) {
-        const end = new Date(_existingPolicy.expires_at).getTime();
-        const diffMs = end - Date.now();
-        if (diffMs > 0) {
-          const mins = Math.round(diffMs / 60000);
-          remain = mins >= 60
-            ? ` · ${Math.floor(mins / 60)}h ${mins % 60}m ${t('alertModal.left') || 'left'}`
-            : ` · ${mins}m ${t('alertModal.left') || 'left'}`;
-        }
-      } else {
-        remain = ` · ${t('alertModal.permanent') || 'permanent'}`;
-      }
-      const colourCls = _existingPolicy.action === 'block'
-        ? 'text-red-500'
-        : 'text-amber-500';
-      status.innerHTML = `<span class="inline-flex items-center gap-1.5 ${colourCls}">
-        <i class="ph-duotone ${_existingPolicy.action === 'block' ? 'ph-prohibit' : 'ph-bell-ringing'}"></i>
-        <span>${t('alertModal.currentRule') || 'Current rule'}: ${actLabel} · ${scopeLabel}${remain}</span>
-      </span>`;
-    } else {
-      status.textContent = '';
-    }
-  }
+  _renderAlertStatusLine(_existingPolicy);
 
   // Service logo (same 28px style as Action Inbox cards)
   if (logoEl) {
@@ -2316,8 +2282,137 @@ function openAlertActionModal(arg) {
     _renderAlertPolicyToggle(alert.service_or_dest);
   }
 
+  // Render the duration chips — highlights the bucket matching the
+  // existing rule (if any) so re-opening a 1h Ubisoft block shows "1h"
+  // as the active chip instead of everything looking unset.
+  _renderAlertDurationChips(_existingPolicy);
+
   if (modal) modal.classList.remove('hidden');
 }
+
+// Render the footer "Current rule: …" status line. Called both on
+// initial modal open and whenever the scope changes, so the readout
+// always matches the rule in effect for the selected scope.
+function _renderAlertStatusLine(existingPolicy) {
+  const status = document.getElementById('alert-modal-status');
+  if (!status) return;
+  if (!existingPolicy) { status.textContent = ''; return; }
+
+  const actLabel = existingPolicy.action === 'block'
+    ? (t('rules.block') || 'Block')
+    : existingPolicy.action === 'alert' ? (t('rules.alert') || 'Alert')
+    : (t('rules.allow') || 'Allow');
+  const scopeLabel = existingPolicy.scope === 'global' ? (t('rules.scopeGlobal') || 'Global')
+                   : existingPolicy.scope === 'group' ? (t('rules.scopeGroup') || 'Group')
+                   : (t('rules.scopePerDevice') || 'Device');
+  let remain = '';
+  if (existingPolicy.expires_at) {
+    const end = new Date(existingPolicy.expires_at).getTime();
+    const diffMs = end - Date.now();
+    if (diffMs > 0) {
+      const mins = Math.round(diffMs / 60000);
+      remain = mins >= 60
+        ? ` · ${Math.floor(mins / 60)}h ${mins % 60}m ${t('alertModal.left') || 'left'}`
+        : ` · ${mins}m ${t('alertModal.left') || 'left'}`;
+    }
+  } else {
+    remain = ` · ${t('alertModal.permanent') || 'permanent'}`;
+  }
+  const colourCls = existingPolicy.action === 'block'
+    ? 'text-red-500'
+    : 'text-amber-500';
+  status.innerHTML = `<span class="inline-flex items-center gap-1.5 ${colourCls}">
+    <i class="ph-duotone ${existingPolicy.action === 'block' ? 'ph-prohibit' : 'ph-bell-ringing'}"></i>
+    <span>${t('alertModal.currentRule') || 'Current rule'}: ${actLabel} · ${scopeLabel}${remain}</span>
+  </span>`;
+}
+
+// Convert remaining milliseconds to the duration chip it belongs in.
+// We snap to the nearest preset (1/2/4/8/24h) so that a rule created
+// as "1h" still lights up the 1h chip even when the user reopens it
+// 20 minutes later with ~40 minutes remaining.
+function _chipForRemainingMs(ms) {
+  if (ms == null || ms <= 0) return null;
+  const mins = ms / 60000;
+  // Bucket by ceil — 40m → 1h bucket, 90m → 2h bucket, etc.
+  if (mins <= 60) return 1;
+  if (mins <= 120) return 2;
+  if (mins <= 240) return 4;
+  if (mins <= 480) return 8;
+  return 24;
+}
+
+// Render the duration chips. If an existing policy was found, the
+// chip matching its remaining time (or "Permanent" for null expiry)
+// gets an active style so the user can see what's currently in effect.
+// The remove button only shows when there actually is something to
+// remove.
+function _renderAlertDurationChips(existingPolicy) {
+  const container = document.getElementById('alert-modal-duration-chips');
+  if (!container) return;
+
+  let activeHours = undefined;  // undefined = nothing selected
+  if (existingPolicy) {
+    if (!existingPolicy.expires_at) {
+      activeHours = null;  // Permanent
+    } else {
+      const remainingMs = new Date(existingPolicy.expires_at).getTime() - Date.now();
+      activeHours = _chipForRemainingMs(remainingMs);
+    }
+  }
+
+  const base = 'px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors';
+  const inactive = `${base} bg-slate-100 dark:bg-white/[0.06] hover:bg-blue-100 dark:hover:bg-blue-900/30 text-slate-600 dark:text-slate-300`;
+  const active = `${base} bg-blue-600 text-white shadow-sm ring-2 ring-blue-300 dark:ring-blue-500/40`;
+
+  const chips = [
+    { hours: null, label: t('timer.forever') || 'Permanent' },
+    { hours: 1,    label: '1h' },
+    { hours: 2,    label: '2h' },
+    { hours: 4,    label: '4h' },
+    { hours: 8,    label: '8h' },
+    { hours: 24,   label: '24h' },
+  ];
+
+  container.innerHTML = chips.map(c => {
+    const isActive = c.hours === activeHours;
+    const cls = isActive ? active : inactive;
+    const arg = c.hours === null ? 'null' : String(c.hours);
+    return `<button type="button" onclick="submitAlertPolicy(${arg})" class="${cls}">${c.label}</button>`;
+  }).join('');
+
+  // Toggle remove button visibility.
+  const wrap = document.getElementById('alert-modal-remove-wrap');
+  if (wrap) wrap.classList.toggle('hidden', !existingPolicy);
+}
+
+// Delete the currently-matched existing policy (called from the
+// "Remove rule" button in the alert modal). After deletion we refresh
+// the content overview so the icon and phantom row disappear.
+async function removeAlertPolicy() {
+  const pol = _alertModalExistingPolicy;
+  if (!pol || !pol.id) return;
+  const status = document.getElementById('alert-modal-status');
+  if (status) status.textContent = t('alertModal.submitting') || 'Submitting...';
+  try {
+    const res = await fetch(`/api/policies/${pol.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    closeAlertActionModal();
+    showToast(t('alertModal.removed') || 'Rule removed', 'success');
+    if (_alertModalMode === 'content') {
+      if (typeof refreshFamilyOverview === 'function') await refreshFamilyOverview();
+    } else {
+      await loadSummaryDashboard();
+    }
+  } catch (err) {
+    console.error('removeAlertPolicy:', err);
+    if (status) status.textContent = `${t('alertModal.failed') || 'Failed'}: ${err.message}`;
+  }
+}
+window.removeAlertPolicy = removeAlertPolicy;
 
 // Populate the scope→group <select> from the cached family group list.
 // Falls back to an empty, disabled state when no groups exist so the
@@ -2401,6 +2496,28 @@ function setAlertScope(scope) {
   // Show the group <select> only while scope === 'group'
   const sel = document.getElementById('alert-scope-group-select');
   if (sel) sel.classList.toggle('hidden', scope !== 'group');
+
+  // When the user switches scope on the content-page rule dialog we
+  // need to re-lookup the matching existing policy (each scope has
+  // its own rule set) and re-render the duration chips so the
+  // highlighted bucket and the Remove button track the new scope.
+  if (_alertModalMode === 'content' && _currentAlertContext) {
+    const alert = _currentAlertContext;
+    const mac = alert.mac_address || null;
+    const svc = alert.service_or_dest || null;
+    const cat = alert.category || null;
+    const gid = scope === 'group' ? _alertModalGroupId : null;
+    const existing =
+         _findContentPolicy({ scope, mac: scope === 'device' ? mac : null, service: svc, category: cat, groupId: gid })
+      || _findContentPolicy({ scope, mac: scope === 'device' ? mac : null, service: svc, category: null, groupId: gid })
+      || (svc ? _findContentPolicy({ scope, mac: scope === 'device' ? mac : null, service: null, category: cat, groupId: gid }) : null);
+    _alertModalExistingPolicy = existing;
+    if (existing) _alertModalAction = existing.action;
+    _renderAlertPolicyToggle(svc);
+    _renderAlertDurationChips(existing);
+    // Also refresh the footer status line so "Current rule: …" tracks the new scope.
+    _renderAlertStatusLine(existing);
+  }
 }
 
 // Submit the 3-way policy with optional timer from the alert modal.
@@ -4898,14 +5015,13 @@ function _findContentPolicy({ scope, mac, service, category, groupId }) {
   ) || null;
 }
 
-// Headline policy for a service row: we want *any* active rule
-// touching this service to put an icon on the row, because the user
-// set "Block Ubisoft for Luuk desktop" and then expects to see a
-// block indicator on the Ubisoft row. Resolution order:
+// Headline policy for a service row: only *global* rules bubble up
+// to the row header. Device-scoped rules should stay on the device
+// chip itself — otherwise "Block Ubisoft for Luuk desktop" would
+// incorrectly make the Ubisoft row look globally blocked.
+// Resolution order:
 //   1. global rule on this exact service
 //   2. global category-wide rule
-//   3. any device-scoped rule on this service (so per-device rules
-//      still surface at the row level)
 // Within each tier, block outranks alert so the stronger state wins.
 function _findServiceHeadlinePolicy(service, category) {
   const pols = _contentCategoryCache?.policies || [];
@@ -4916,9 +5032,6 @@ function _findServiceHeadlinePolicy(service, category) {
 
   const globalCat = pols.filter(p => p.scope === 'global' && p.service_name === null && p.category === category).sort(byStrength);
   if (globalCat.length) return globalCat[0];
-
-  const deviceSvc = pols.filter(p => p.scope === 'device' && p.service_name === service).sort(byStrength);
-  if (deviceSvc.length) return deviceSvc[0];
 
   return null;
 }
