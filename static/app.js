@@ -7435,10 +7435,6 @@ function _renderDeviceMatrix() {
     });
   }
 
-  // Default-sort fallback: the Total column has been removed, so any
-  // legacy `total` value gets remapped to a name sort.
-  if (_devSortCol === 'total') _devSortCol = 'name';
-
   // Sort devices
   deviceMacs = [...deviceMacs].sort((a, b) => {
     const devA = deviceMap[a] || {};
@@ -7454,6 +7450,11 @@ function _renderDeviceMatrix() {
       const gA = grpSvcs.reduce((s, svc) => s + (rowA[svc]?.count || 0), 0);
       const gB = grpSvcs.reduce((s, svc) => s + (rowB[svc]?.count || 0), 0);
       cmp = gA - gB;
+    } else {
+      // Default: sort by total activity across the row (most active first)
+      const tA = Object.values(rowA).reduce((s, v) => s + (v?.count || 0), 0);
+      const tB = Object.values(rowB).reduce((s, v) => s + (v?.count || 0), 0);
+      cmp = tA - tB;
     }
     return _devSortDir === 'asc' ? cmp : -cmp;
   });
