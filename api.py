@@ -4701,19 +4701,53 @@ def family_overview(
 def family_category_detail(
     category: str,
     hours: int = Query(24, ge=1, le=168),
+    group_id: Optional[int] = Query(None, description="Optional DeviceGroup id"),
     db: Session = Depends(get_db),
 ):
     """Detail view for one family category.
 
-    Returns services inside the category with per-device breakdown —
-    same shape as a single entry from /api/analytics/category-tree but
-    scoped and with the "blocked" flag populated per service.
+    Returns two parallel breakdowns for the same time window:
+      * ``services`` — services sorted by bytes desc, each with a
+        ``top_devices`` list (up to 3) so the UI can render a chip row
+        without extra queries.
+      * ``devices`` — devices sorted by bytes desc, each with a
+        ``top_services`` list (up to 3) so the UI can render the same
+        rows from the device perspective.
+
+    Both lists come from the same underlying (service, mac) aggregate
+    so the two views are guaranteed to sum to the same totals.
+
+    Optional ``group_id`` narrows the view to members of a DeviceGroup,
+    mirroring ``/api/family/overview``.
     """
     if not is_family_category(category):
         raise HTTPException(status_code=404, detail="Unknown family category")
 
     window_start = _family_window_start(hours)
-    rows = (
+
+    # --- Resolve optional group filter → set of source IPs (same as
+    # /api/family/overview so the two endpoints stay in lock-step).
+    group_ip_filter: Optional[set[str]] = None
+    if group_id is not None:
+        if not db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first():
+            raise HTTPException(status_code=404, detail="Unknown group_id")
+        member_macs = [
+            m.mac_address
+            for m in db.query(DeviceGroupMember)
+            .filter(DeviceGroupMember.group_id == group_id)
+            .all()
+        ]
+        if member_macs:
+            group_ip_filter = {
+                row.ip
+                for row in db.query(DeviceIP.ip)
+                .filter(DeviceIP.mac_address.in_(member_macs))
+                .all()
+            }
+        else:
+            group_ip_filter = set()
+
+    q = (
         db.query(
             DetectionEvent.ai_service,
             DetectionEvent.source_ip,
@@ -4722,43 +4756,121 @@ def family_category_detail(
         )
         .filter(DetectionEvent.timestamp >= window_start)
         .filter(DetectionEvent.category == category)
-        .group_by(DetectionEvent.ai_service, DetectionEvent.source_ip)
-        .all()
     )
+    if group_ip_filter is not None:
+        if not group_ip_filter:
+            rows = []
+        else:
+            q = q.filter(DetectionEvent.source_ip.in_(group_ip_filter))
+            rows = q.group_by(
+                DetectionEvent.ai_service, DetectionEvent.source_ip
+            ).all()
+    else:
+        rows = q.group_by(
+            DetectionEvent.ai_service, DetectionEvent.source_ip
+        ).all()
 
-    # IP → MAC resolution so IPv4+IPv6 collapse to one device row
-    ip_to_mac: dict[str, str] = {
-        d.ip: d.mac_address for d in db.query(DeviceIP).all()
-    }
-    mac_to_display_ip: dict[str, str] = {}
-    for ip, mac in ip_to_mac.items():
-        if mac not in mac_to_display_ip or ":" in mac_to_display_ip[mac]:
-            mac_to_display_ip[mac] = ip
+    # --- Device resolution: IP → MAC → Device (display_name, last_seen)
+    # Fetch only the devices we actually see in the window to keep the
+    # query cheap even on busy networks.
+    seen_ips = {ip for _svc, ip, _b, _h in rows if ip}
+    ip_to_mac: dict[str, str] = {}
+    if seen_ips:
+        ip_to_mac = {
+            row.ip: row.mac_address
+            for row in db.query(DeviceIP.ip, DeviceIP.mac_address)
+            .filter(DeviceIP.ip.in_(seen_ips))
+            .all()
+        }
+    seen_macs = set(ip_to_mac.values())
+    dev_by_mac: dict[str, Device] = {}
+    if seen_macs:
+        dev_by_mac = {
+            d.mac_address: d
+            for d in db.query(Device).filter(Device.mac_address.in_(seen_macs)).all()
+        }
 
-    services: dict[str, dict] = {}
+    now_ts = datetime.now(timezone.utc)
+    ONLINE_WINDOW = timedelta(minutes=5)
+
+    def _device_entry(mac: str, fallback_ip: str) -> dict:
+        dev = dev_by_mac.get(mac)
+        if dev:
+            name = (
+                dev.display_name
+                or dev.hostname
+                or (f"{_shortVendor(dev.vendor)} device" if dev.vendor else None)
+                or mac
+            )
+            online = False
+            if dev.last_seen:
+                ls = dev.last_seen
+                if ls.tzinfo is None:
+                    ls = ls.replace(tzinfo=timezone.utc)
+                online = (now_ts - ls) <= ONLINE_WINDOW
+            return {
+                "mac_address": mac,
+                "display_name": name,
+                "hostname": dev.hostname,
+                "vendor": dev.vendor,
+                "device_class": dev.device_class,
+                "online": online,
+            }
+        return {
+            "mac_address": mac,
+            "display_name": fallback_ip,
+            "hostname": None,
+            "vendor": None,
+            "device_class": None,
+            "online": False,
+        }
+
+    # --- Aggregate (service, mac) → bytes, hits
+    # We collapse IPs to MACs so an iPhone with IPv4+IPv6 counts once.
+    # Entries without a known MAC fall back to the raw IP as the key
+    # so they still appear in the device list (as "unknown" rows).
+    svc_tot: dict[str, dict] = {}
+    dev_tot: dict[str, dict] = {}
+    pair_tot: dict[tuple, dict] = {}
+
     for svc, ip, byt, hits in rows:
         if not svc:
             continue
-        if svc not in services:
-            services[svc] = {
-                "service_name": svc,
-                "bytes": 0,
-                "hits": 0,
-                "devices": {},
-            }
-        services[svc]["bytes"] += int(byt or 0)
-        services[svc]["hits"] += int(hits or 0)
+        byt = int(byt or 0)
+        hits = int(hits or 0)
+        mac = ip_to_mac.get(ip) or ip  # fallback to IP when MAC unknown
 
-        mac = ip_to_mac.get(ip)
-        dev_key = mac or ip
-        display_ip = mac_to_display_ip.get(mac, ip) if mac else ip
-        dev_map = services[svc]["devices"]
-        if dev_key not in dev_map:
-            dev_map[dev_key] = {"ip": display_ip, "bytes": 0, "hits": 0}
-        dev_map[dev_key]["bytes"] += int(byt or 0)
-        dev_map[dev_key]["hits"] += int(hits or 0)
+        # Service total
+        s = svc_tot.setdefault(svc, {
+            "service_name": svc,
+            "total_bytes": 0,
+            "total_hits": 0,
+        })
+        s["total_bytes"] += byt
+        s["total_hits"] += hits
 
-    # Active block rules scoped to this category
+        # Device total (keyed by mac-or-ip)
+        d = dev_tot.setdefault(mac, {
+            "_key": mac,
+            "_fallback_ip": ip,
+            "total_bytes": 0,
+            "total_hits": 0,
+        })
+        d["total_bytes"] += byt
+        d["total_hits"] += hits
+
+        # Pair total
+        p = pair_tot.setdefault((svc, mac), {
+            "service_name": svc,
+            "mac": mac,
+            "fallback_ip": ip,
+            "bytes": 0,
+            "hits": 0,
+        })
+        p["bytes"] += byt
+        p["hits"] += hits
+
+    # --- Active rules for current-state badges
     active_rules = (
         db.query(BlockRule)
         .filter(BlockRule.is_active == True)
@@ -4767,43 +4879,70 @@ def family_category_detail(
     )
     blocked_services = {r.service_name for r in active_rules}
 
-    # Flatten + sort
-    svc_list: list[dict] = []
-    for svc in sorted(services.values(), key=lambda s: -s["bytes"]):
-        svc["devices"] = sorted(
-            svc["devices"].values(), key=lambda d: -d["bytes"]
-        )
-        svc["blocked"] = svc["service_name"] in blocked_services
-        svc_list.append(svc)
-
-    # "Known" catalogue services that haven't been seen yet but can still
-    # be pre-emptively blocked — families want to block TikTok before
-    # their kid installs it, not after.
-    seen_names = {s["service_name"] for s in svc_list}
-    available: list[dict] = []
-    for name, info in SERVICE_DOMAINS.items():
-        if info.get("category") != category:
-            continue
-        if name in seen_names:
-            continue
-        available.append({
-            "service_name": name,
-            "blocked": name in blocked_services,
-            "domains": info.get("domains", []),
+    # --- Build services list (service-first, Kader 1)
+    services_out: list[dict] = []
+    for s in sorted(svc_tot.values(), key=lambda r: -r["total_bytes"]):
+        svc_name = s["service_name"]
+        # Find top devices for this service
+        svc_pairs = [p for p in pair_tot.values() if p["service_name"] == svc_name]
+        svc_pairs.sort(key=lambda p: -p["bytes"])
+        top_devs = []
+        for p in svc_pairs[:3]:
+            entry = _device_entry(p["mac"], p["fallback_ip"])
+            entry["bytes"] = p["bytes"]
+            entry["hits"] = p["hits"]
+            top_devs.append(entry)
+        services_out.append({
+            "service_name": svc_name,
+            "total_bytes": s["total_bytes"],
+            "total_hits": s["total_hits"],
+            "device_count": len(svc_pairs),
+            "blocked": svc_name in blocked_services,
+            "top_devices": top_devs,
         })
-    available.sort(key=lambda s: s["service_name"])
+
+    # --- Build devices list (device-first, Kader 2)
+    devices_out: list[dict] = []
+    for d in sorted(dev_tot.values(), key=lambda r: -r["total_bytes"]):
+        mac = d["_key"]
+        entry = _device_entry(mac, d["_fallback_ip"])
+        entry["total_bytes"] = d["total_bytes"]
+        entry["total_hits"] = d["total_hits"]
+        # Top services for this device
+        dev_pairs = [p for p in pair_tot.values() if p["mac"] == mac]
+        dev_pairs.sort(key=lambda p: -p["bytes"])
+        entry["service_count"] = len(dev_pairs)
+        entry["top_services"] = [
+            {
+                "service_name": p["service_name"],
+                "bytes": p["bytes"],
+                "hits": p["hits"],
+            }
+            for p in dev_pairs[:3]
+        ]
+        devices_out.append(entry)
+
+    total_bytes = sum(s["total_bytes"] for s in services_out)
+    total_hits = sum(s["total_hits"] for s in services_out)
 
     meta = FAMILY_CATEGORY_META.get(category, {})
     return {
         "category": category,
         "meta": meta,
         "window_hours": hours,
-        "category_blocked": bool(available) is False and all(
-            s["service_name"] in blocked_services for s in svc_list
-        ) if svc_list else False,
-        "services": svc_list,
-        "available_services": available,
+        "group_id": group_id,
+        "total_bytes": total_bytes,
+        "total_hits": total_hits,
+        "services": services_out,
+        "devices": devices_out,
     }
+
+
+def _shortVendor(v: Optional[str]) -> str:
+    """Mirror of static/app.js _shortVendor() — first token only."""
+    if not v:
+        return "Unknown"
+    return v.split(" ")[0].split(",")[0].strip()
 
 
 # ---------------------------------------------------------------------------
@@ -7692,12 +7831,16 @@ def iot_fleet(db: Session = Depends(get_db)):
         bytes_24h = stats.get("bytes_24h", 0)
         total_bytes += bytes_24h
 
-        # Baseline status: learning (< BASELINE_READY_DAYS) or ready
-        # (≥ BASELINE_READY_DAYS + baseline computed). Same threshold as
-        # the volume-spike detector so the card and alerts stay in sync.
+        # Baseline status: learning (no baseline yet), building (baseline
+        # exists but device is younger than BASELINE_READY_DAYS, so we are
+        # still filling the window), or ready (≥ BASELINE_READY_DAYS +
+        # baseline computed). Same threshold as the volume-spike detector
+        # so the card and alerts stay in sync.
         days_since_first = (now - d.first_seen).days if d.first_seen else 0
         if days_since_first >= BASELINE_READY_DAYS and baseline and baseline.computed_at:
             baseline_status = "ready"
+        elif baseline and baseline.computed_at:
+            baseline_status = "building"
         else:
             baseline_status = "learning"
 
