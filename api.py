@@ -8444,15 +8444,14 @@ async def _check_volume_spikes():
             now_ts = time.time()
             hour_ago = now - timedelta(hours=1)
 
-            # Only consider baselines with valid stddev AND enough history.
-            # Aligned with the IoT fleet card — a device must have been on
-            # the network for BASELINE_READY_DAYS (7) before we trust its
-            # baseline enough to alert on spikes. The UI shows "Learning
-            # X/7d" until then, and no alerts should fire during that
-            # window.
-            min_baseline_age = now - timedelta(days=BASELINE_READY_DAYS)
+            # Only consider baselines with valid stddev AND a fully-
+            # populated baseline window. This MUST match the frontend's
+            # "ready" criterion on the IoT fleet card — devices shown as
+            # "Learning" or "Building" should never produce spike alerts.
+            # See iot_fleet() around line 7932 for the matching logic.
             baselines = db.query(DeviceBaseline).filter(
-                DeviceBaseline.stddev_bytes > 0
+                DeviceBaseline.stddev_bytes > 0,
+                DeviceBaseline.computed_at.is_not(None),
             ).all()
 
             all_devices = {d.mac_address: d for d in db.query(Device).all()}
@@ -8467,17 +8466,37 @@ async def _check_volume_spikes():
                 if not dev or not _is_iot_backend(dev):
                     continue
 
-                # Skip devices without enough baseline history
-                if dev.first_seen and dev.first_seen > min_baseline_age:
+                # Skip devices whose card is still Learning/Building.
+                # Mirrors the iot_fleet() "ready" check exactly:
+                #   days_since_first >= BASELINE_READY_DAYS AND baseline.computed_at
+                # A None first_seen is treated as "not ready" — the old
+                # code short-circuited and alerted in that case.
+                if dev.first_seen is None:
+                    continue
+                days_since_first = (now - dev.first_seen).days
+                if days_since_first < BASELINE_READY_DAYS:
                     continue
 
-                # Sum traffic for this device in the last hour
-                hour_bytes = db.query(
-                    func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
+                # Sum traffic for this device in the last hour.
+                # We use orig_bytes + resp_bytes (not bytes_transferred)
+                # because bytes_transferred on older GeoConversation rows
+                # is the cumulative lifetime counter from before the
+                # orig/resp split — for those rows bytes_transferred can
+                # be orders of magnitude larger than the true last-hour
+                # volume, producing spurious spikes like "318 MB/h vs
+                # ↑13 KB ↓7.1 MB". The orig+resp columns are populated
+                # from the Zeek conn.log every flush, so they track the
+                # actual upload/download deltas accurately.
+                _hour_row = db.query(
+                    func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("up"),
+                    func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("down"),
                 ).filter(
                     GeoConversation.mac_address == bl.mac_address,
                     GeoConversation.last_seen >= hour_ago,
-                ).scalar() or 0
+                ).first()
+                up_bytes = int(_hour_row.up if _hour_row else 0)
+                down_bytes = int(_hour_row.down if _hour_row else 0)
+                hour_bytes = up_bytes + down_bytes
 
                 checked += 1
                 threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
@@ -8527,17 +8546,9 @@ async def _check_volume_spikes():
                 else:
                     top_svc = "internal traffic"
 
-                # Aggregate upload/download bytes for this device in the spike window
-                from sqlalchemy import func as _fn
-                _byte_sums = db.query(
-                    _fn.coalesce(_fn.sum(GeoConversation.orig_bytes), 0).label("up"),
-                    _fn.coalesce(_fn.sum(GeoConversation.resp_bytes), 0).label("down"),
-                ).filter(
-                    GeoConversation.mac_address == bl.mac_address,
-                    GeoConversation.last_seen >= hour_ago,
-                ).first()
-                up_bytes = _byte_sums.up if _byte_sums else 0
-                down_bytes = _byte_sums.down if _byte_sums else 0
+                # up_bytes / down_bytes were already computed above (we
+                # use them as the per-hour volume too, not just for the
+                # label), so no second aggregation query is needed.
 
                 def _fmt_bytes_short(b):
                     if b >= 1_000_000:

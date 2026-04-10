@@ -730,33 +730,15 @@
     <!-- ============================================================= -->
     <section id="page-family" class="page space-y-6">
 
-      <!-- Top bar: sub-tabs on the left, group filter on the right -->
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
-          <button id="family-tab-btn-overview" onclick="switchFamilyTab('overview')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
-            <span class="inline-flex items-center gap-1.5">
-              <i class="ph-duotone ph-house text-sm"></i>
-              <span data-i18n="family.tab.overview">Overview</span>
-            </span>
-          </button>
-          <button id="family-tab-btn-categories" onclick="switchFamilyTab('categories')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-            <span class="inline-flex items-center gap-1.5">
-              <i class="ph-duotone ph-squares-four text-sm"></i>
-              <span data-i18n="family.tab.categories">Categories</span>
-            </span>
-          </button>
-          <button id="family-tab-btn-rules" onclick="switchFamilyTab('rules')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-            <span class="inline-flex items-center gap-1.5">
-              <i class="ph-duotone ph-shield-check text-sm"></i>
-              <span data-i18n="family.tab.rules">Rules</span>
-            </span>
-          </button>
-        </div>
-
+      <!-- Top bar: group filter on the right. Overview is the only
+           view here now — the Categories tree and Rules deeplinks that
+           used to live in sub-tabs were redundant once the Overview
+           kaders picked up policy icons and the chip strip. -->
+      <div class="flex flex-wrap items-center justify-end gap-3">
         <!-- Group filter: limits every block below to members of one
              DeviceGroup. Groups are generic — can be "Kids", "IP Cameras",
              "Piet's devices" — and are managed on Devices → Groups. -->
-        <div class="flex items-center gap-2 ml-auto">
+        <div class="flex items-center gap-2">
           <label for="family-group-select" class="text-xs text-slate-500 dark:text-slate-400" data-i18n="family.group.label">Group</label>
           <select id="family-group-select" onchange="onFamilyGroupChanged(this.value)" class="text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5 max-w-[240px]">
             <option value="" data-i18n="family.group.all">All devices</option>
@@ -764,13 +746,16 @@
         </div>
       </div>
 
-      <!-- ────── Sub-tab: Overview ────── -->
-      <!-- Redesign: horizontal category chip strip (sorted by activity)
-           drives two side-by-side panels below. Kader 1 is a service-first
-           view (row per service with top-3 device chips), Kader 2 is a
-           device-first view (row per device with top-3 service chips).
-           Clicking any element opens the shared #alert-action-modal with
-           the right scope (global / group / device) pre-selected. -->
+      <!-- Content overview — horizontal category chip strip (sorted by
+           activity) drives two side-by-side panels below. Kader 1 is a
+           service-first view (row per service with top-3 device chips),
+           Kader 2 is a device-first view (row per device with top-3
+           service chips). Clicking any element opens the shared
+           #alert-action-modal with the right scope (global / group /
+           device) pre-selected. This used to be one of three sub-tabs
+           (Overview / Categories / Rules) but Categories was a redundant
+           tree accordion and Rules was a deeplink stub, so only this
+           view remains. -->
       <div id="family-tab-overview" class="space-y-6">
 
         <!-- Category tile strip — auto-opens the most active category.
@@ -821,54 +806,6 @@
           <div id="family-honesty-body" class="text-xs text-slate-500 dark:text-slate-400 space-y-1.5">
             <!-- populated by renderer -->
           </div>
-        </div>
-      </div>
-
-      <!-- ────── Sub-tab: Categories (reuses the old "Other" layout) ────── -->
-      <div id="family-tab-categories" class="hidden space-y-6">
-        <!-- Stats row -->
-        <div id="other-stats" class="stat-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"></div>
-
-        <!-- Filter bar -->
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
-          <span class="text-xs text-slate-500 dark:text-slate-400 font-medium" data-i18n="ai.filters">Filters</span>
-          <select id="other-filter-service"><option value="" data-i18n="ai.allServices">All services</option></select>
-          <select id="other-filter-device"><option value="" data-i18n="ai.allDevices">All devices</option></select>
-          <select id="other-filter-period">
-            <option value="" data-i18n="ai.allTime">All time</option>
-            <option value="60" data-i18n="ai.lastHour">Last hour</option>
-            <option value="1440" selected data-i18n="ai.last24h">Last 24 h</option>
-            <option value="10080" data-i18n="ai.last7d">Last 7 days</option>
-          </select>
-          <button onclick="refreshOther()" class="ml-auto px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-medium transition-colors" data-i18n="ai.apply">Apply</button>
-        </div>
-
-        <!-- Tree accordion -->
-        <div id="other-usage-tree-container" class="space-y-3">
-          <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-8 text-center">
-            <p class="text-slate-400 dark:text-slate-500 text-sm" data-i18n="other.noData">No family usage detected yet.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ────── Sub-tab: Rules ────── -->
-      <div id="family-tab-rules" class="hidden space-y-6">
-        <!-- Deeplinks to the real Rules page. The Family page is
-             presentation-only for rules — the single source of truth
-             is the Rules page (global filters, per-device, per-group
-             scopes, schedules). Duplicating that UI here would fork
-             the rule model in the user's head. -->
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-          <div class="flex items-start gap-3 mb-4">
-            <div class="w-10 h-10 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-              <i class="ph-duotone ph-gear text-xl text-blue-500"></i>
-            </div>
-            <div>
-              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1" data-i18n="family.rules.header">Family rules live on the Rules page</h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400" data-i18n="family.rules.headerDesc">One place for every rule — global filters, per-device, per-group, with scheduling. Click a category below to jump straight to its section.</p>
-            </div>
-          </div>
-          <div id="family-rules-deeplinks" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
         </div>
       </div>
 

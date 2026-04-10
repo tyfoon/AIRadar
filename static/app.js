@@ -4837,13 +4837,17 @@ async function _loadIotSparklines(devices) {
 let _otherFiltersPopulated = false;
 
 // ================================================================
-// FAMILY PAGE — overview, categories, rules
+// FAMILY PAGE — overview
 // ================================================================
 //
-// Replaces the old "Other" page. Sub-tab layout:
-//   • Overview   — 4-card summary + top services + recent blocks + honesty
-//   • Categories — the familiar tree accordion (reuses refreshOther DOM)
-//   • Rules      — filter toggles + per-service block/unblock
+// Replaces the old "Other" page. This used to have three sub-tabs
+// (Overview / Categories / Rules) but Categories was a redundant tree
+// accordion and Rules was a deeplink stub — both made obsolete by the
+// Overview kaders picking up inline policy icons, so the page now shows
+// only the overview view. refreshOther() / refreshFamilyRules() /
+// _renderFamilyRulesDeeplinks() below are kept as orphaned helpers to
+// avoid breaking any stale event handlers; their target DOM nodes no
+// longer exist, so they just no-op.
 // ================================================================
 
 // Icon/colour map — kept in sync with family_categories.py
@@ -4858,29 +4862,16 @@ const CATEGORY_META = {
   gambling:  { icon: '<i class="ph-duotone ph-dice-five text-xl"></i>', color: 'rose' },
 };
 
-let _currentFamilyTab = 'overview';
 let _familyMeta = null;
 let _familyRulesCache = null;  // last /api/rules/services payload
 
-function switchFamilyTab(tab) {
-  _currentFamilyTab = tab;
-  ['overview', 'categories', 'rules'].forEach(t => {
-    const pane = document.getElementById(`family-tab-${t}`);
-    const btn = document.getElementById(`family-tab-btn-${t}`);
-    if (pane) pane.classList.toggle('hidden', t !== tab);
-    if (btn) {
-      const active = t === tab;
-      btn.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
-        active
-          ? 'bg-blue-700 text-white shadow-sm'
-          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-      }`;
-    }
-  });
-  // Lazy-load data for the tab being opened
-  if (tab === 'overview') refreshFamilyOverview();
-  else if (tab === 'categories') refreshOther();
-  else if (tab === 'rules') refreshFamilyRules();
+// Legacy shim: the Content page used to have Overview / Categories /
+// Rules sub-tabs. Categories and Rules were removed because the Overview
+// kaders (with inline policy icons + the alert modal) already covered
+// both use cases. We keep this function + the window global so any old
+// event handler, deeplink, or cached frontend still wires up harmlessly.
+function switchFamilyTab(_tab) {
+  refreshFamilyOverview();
 }
 window.switchFamilyTab = switchFamilyTab;
 
@@ -4907,10 +4898,8 @@ async function refreshFamily() {
   // every Family-page load — new groups created on the Devices page
   // should appear here without a full page reload.
   await _loadFamilyGroups();
-  // Default landing = overview
-  if (_currentFamilyTab === 'overview') await refreshFamilyOverview();
-  else if (_currentFamilyTab === 'categories') await refreshOther();
-  else if (_currentFamilyTab === 'rules') await refreshFamilyRules();
+  // Overview is the only view on the Content page now.
+  await refreshFamilyOverview();
 }
 
 async function _loadFamilyGroups() {
@@ -4955,11 +4944,7 @@ function onFamilyGroupChanged(value) {
   } else {
     localStorage.setItem(_FAMILY_GROUP_KEY, String(_familyGroupId));
   }
-  // Only the Overview tab is group-scoped for now. Categories and
-  // Rules reuse existing page-wide endpoints and keep their own
-  // filters — mixing a group filter into the tree accordion would
-  // confuse the existing filter dropdowns there.
-  if (_currentFamilyTab === 'overview') refreshFamilyOverview();
+  refreshFamilyOverview();
 }
 window.onFamilyGroupChanged = onFamilyGroupChanged;
 
@@ -6245,6 +6230,11 @@ function _renderCountryDrawer(data) {
     `${dirLabel} · ${_geoFmtBytes(data.total_bytes)} · ${formatNumber(data.total_hits)} ${t('geo.connectionsShort') || 'conn.'}`;
 
   // --- Top devices ---
+  // Look up each device in the global deviceMap so we can render the
+  // same colour-coded device-type icon + online dot that the Devices
+  // page / IoT fleet / device drawer use. Keeps the visual language
+  // consistent — a user should recognise "green dot = active" without
+  // having to learn a per-page convention.
   const devEl = document.getElementById('country-top-devices');
   const devs = data.top_devices || [];
   if (devs.length === 0) {
@@ -6255,7 +6245,17 @@ function _renderCountryDrawer(data) {
       const w = Math.max(2, (d.bytes / maxB * 100));
       const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">${d.vendor}</span>` : '';
       const onClick = d.mac ? `onclick="closeCountryDrawer();openDeviceDrawer('${d.mac}', null, null)"` : '';
+
+      // Resolve to the live device record so we get the right icon
+      // + online state. Fall back to a generic "device" tag when the
+      // row is for a raw MAC we haven't registered yet.
+      const devRec = d.mac ? deviceMap[d.mac] : null;
+      const dt = devRec ? _detectDeviceType(devRec) : { icon: PH_ICON.device, type: 'Device' };
+      const online = devRec ? _isDeviceOnline(devRec) : false;
+      const iconHtml = _deviceTypeIcon20(dt, online);
+
       return `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] ${d.mac ? 'cursor-pointer' : ''}" ${onClick}>
+        <div class="flex-shrink-0">${iconHtml}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-baseline justify-between gap-2">
             <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${d.name}${vendor}</span>
