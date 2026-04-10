@@ -192,7 +192,7 @@ function updateNavBadges() {
 // ================================================================
 // NAVIGATION / ROUTING
 // ================================================================
-const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','other','geo','devices','ips','rules','settings'];
+const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','family','geo','devices','ips','rules','settings'];
 
 let currentPage = 'summary';
 
@@ -255,6 +255,9 @@ function _routeFromHash(raw) {
     const subTab = parts[1] || 'protection';
     switchSettingsTab(subTab);
     _initThemeSelect();
+  } else if (raw === 'other') {
+    // Legacy alias — page was renamed "Other" → "Family"
+    navigate('family');
   } else {
     navigate(raw);
   }
@@ -1438,7 +1441,8 @@ async function refreshPage(page) {
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
     else if (page === 'iot') await refreshIot();
-    else if (page === 'other') await refreshOther();
+    else if (page === 'family') await refreshFamily();
+    else if (page === 'other') await refreshFamily();  // legacy alias
     else if (page === 'geo') await refreshGeo();
     else if (page === 'settings') { await loadKillswitchState(); _initThemeSelect(); loadSystemPerformance(); }
   } catch(err) { console.error('Page refresh error:', err); }
@@ -4483,16 +4487,361 @@ async function _loadIotSparklines(devices) {
 let _otherFiltersPopulated = false;
 
 // ================================================================
-// OTHER USAGE — category tree accordion
+// FAMILY PAGE — overview, categories, rules
+// ================================================================
+//
+// Replaces the old "Other" page. Sub-tab layout:
+//   • Overview   — 4-card summary + top services + recent blocks + honesty
+//   • Categories — the familiar tree accordion (reuses refreshOther DOM)
+//   • Rules      — filter toggles + per-service block/unblock
 // ================================================================
 
+// Icon/colour map — kept in sync with family_categories.py
 const CATEGORY_META = {
-  gaming:    { icon: '<i class="ph-duotone ph-game-controller text-xl"></i>', color: 'indigo' },
   social:    { icon: '<i class="ph-duotone ph-chat-circle-text text-xl"></i>', color: 'pink' },
+  gaming:    { icon: '<i class="ph-duotone ph-game-controller text-xl"></i>', color: 'indigo' },
   streaming: { icon: '<i class="ph-duotone ph-play-circle text-xl"></i>', color: 'purple' },
   shopping:  { icon: '<i class="ph-duotone ph-shopping-bag text-xl"></i>', color: 'amber' },
+  news:      { icon: '<i class="ph-duotone ph-newspaper text-xl"></i>', color: 'sky' },
+  dating:    { icon: '<i class="ph-duotone ph-heart text-xl"></i>', color: 'rose' },
+  adult:     { icon: '<i class="ph-duotone ph-warning-circle text-xl"></i>', color: 'red' },
   gambling:  { icon: '<i class="ph-duotone ph-dice-five text-xl"></i>', color: 'rose' },
 };
+
+let _currentFamilyTab = 'overview';
+let _familyMeta = null;
+let _familyRulesCache = null;  // last /api/rules/services payload
+
+function switchFamilyTab(tab) {
+  _currentFamilyTab = tab;
+  ['overview', 'categories', 'rules'].forEach(t => {
+    const pane = document.getElementById(`family-tab-${t}`);
+    const btn = document.getElementById(`family-tab-btn-${t}`);
+    if (pane) pane.classList.toggle('hidden', t !== tab);
+    if (btn) {
+      const active = t === tab;
+      btn.className = `px-4 py-1.5 rounded-md text-xs font-medium transition-colors ${
+        active
+          ? 'bg-blue-700 text-white shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+      }`;
+    }
+  });
+  // Lazy-load data for the tab being opened
+  if (tab === 'overview') refreshFamilyOverview();
+  else if (tab === 'categories') refreshOther();
+  else if (tab === 'rules') refreshFamilyRules();
+}
+window.switchFamilyTab = switchFamilyTab;
+
+async function refreshFamily() {
+  // Fetch meta once per session — it's static
+  if (!_familyMeta) {
+    try {
+      _familyMeta = await fetch('/api/family/meta').then(r => r.json());
+    } catch (err) {
+      console.error('family meta load failed', err);
+      _familyMeta = { categories: [] };
+    }
+  }
+  // Default landing = overview
+  if (_currentFamilyTab === 'overview') await refreshFamilyOverview();
+  else if (_currentFamilyTab === 'categories') await refreshOther();
+  else if (_currentFamilyTab === 'rules') await refreshFamilyRules();
+}
+
+// ----- Overview --------------------------------------------------
+
+async function refreshFamilyOverview() {
+  let data;
+  try {
+    data = await fetch('/api/family/overview?hours=24').then(r => r.json());
+  } catch (err) {
+    console.error('family overview load failed', err);
+    return;
+  }
+
+  _renderFamilyCards(data.cards || []);
+  _renderFamilyTopServices(data.top_services || []);
+  _renderFamilyRecentBlocks(data.recent_blocks || []);
+  _renderFamilyHonesty(data.honesty || {});
+}
+
+function _familyCategoryLabel(key) {
+  return t('family.cat.' + key) || (_familyMeta?.categories || []).find(c => c.key === key)?.label_en || key;
+}
+
+function _renderFamilyCards(cards) {
+  const el = document.getElementById('family-overview-cards');
+  if (!el) return;
+  if (!cards.length) {
+    el.innerHTML = `<div class="col-span-full text-center text-xs text-slate-400 dark:text-slate-500 py-6">${t('family.noData') || 'No family usage yet.'}</div>`;
+    return;
+  }
+  el.innerHTML = cards.map(c => {
+    const m = CATEGORY_META[c.key] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
+    const label = _familyCategoryLabel(c.key);
+    const bytes = _fmtBytes(c.bytes);
+    const trend = c.trend_pct;
+    const trendIcon = trend > 5 ? '↑' : (trend < -5 ? '↓' : '·');
+    const trendClass = trend > 5 ? 'text-rose-500' : (trend < -5 ? 'text-emerald-500' : 'text-slate-400');
+    const blockedBadge = c.blocked
+      ? `<span class="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-medium">${t('family.blocked') || 'Blocked'}</span>`
+      : '';
+    return `<div class="relative bg-white dark:bg-${m.color}-900/10 border border-slate-200 dark:border-${m.color}-700/30 rounded-xl p-5 card-hover cursor-pointer"
+                 onclick="_familyDrillCategory('${c.key}')">
+      ${blockedBadge}
+      <p class="text-xs text-${m.color}-500 dark:text-${m.color}-400 font-medium">${m.icon} ${label}</p>
+      <p class="text-2xl font-bold mt-2 tabular-nums text-${m.color}-600 dark:text-${m.color}-400">${bytes}</p>
+      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${c.services} ${t('family.servicesShort') || 'services'} · ${c.devices} ${t('other.devices') || 'devices'} · <span class="${trendClass}">${trendIcon} ${Math.abs(trend)}%</span></p>
+    </div>`;
+  }).join('');
+}
+
+function _familyDrillCategory(key) {
+  // Switch to the Categories sub-tab and scroll the category into view.
+  switchFamilyTab('categories');
+  // refreshOther() rebuilds the tree; give it a beat then scroll.
+  setTimeout(() => {
+    // The tree uses auto-generated ids; we scroll to the first entry
+    // whose header text matches the category's localised label as a
+    // best-effort until the tree ids get named.
+    const container = document.getElementById('other-usage-tree-container');
+    if (!container) return;
+    const label = _familyCategoryLabel(key).toLowerCase();
+    const nodes = container.querySelectorAll('button');
+    for (const b of nodes) {
+      if ((b.textContent || '').toLowerCase().includes(label)) {
+        b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        break;
+      }
+    }
+  }, 400);
+}
+window._familyDrillCategory = _familyDrillCategory;
+
+function _renderFamilyTopServices(list) {
+  const el = document.getElementById('family-top-services');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('family.noData') || 'No family usage in the last 24 h.'}</p>`;
+    return;
+  }
+  const maxBytes = Math.max(...list.map(s => s.bytes)) || 1;
+  el.innerHTML = list.map(s => {
+    const name = SERVICE_NAMES?.[s.service_name] || s.service_name;
+    const pct = Math.max(3, Math.round((s.bytes / maxBytes) * 100));
+    const m = CATEGORY_META[s.category] || { color: 'slate' };
+    const logo = (typeof svcLogo === 'function') ? svcLogo(s.service_name) : '';
+    return `<div class="flex items-center gap-3">
+      <div class="flex-shrink-0 w-6">${logo}</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between mb-0.5">
+          <span class="text-slate-600 dark:text-slate-300 truncate">${name}</span>
+          <span class="tabular-nums text-[10px] text-slate-400 dark:text-slate-500 ml-2">${_fmtBytes(s.bytes)}</span>
+        </div>
+        <div class="h-1.5 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden">
+          <div class="h-full bg-${m.color}-500/70 dark:bg-${m.color}-400/70 rounded-full" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _renderFamilyRecentBlocks(blocks) {
+  const el = document.getElementById('family-recent-blocks');
+  if (!el) return;
+  if (!blocks.length) {
+    el.innerHTML = `<p class="text-slate-400 dark:text-slate-500 text-center py-6">${t('family.noBlocks') || 'No blocks yet.'}</p>`;
+    return;
+  }
+  el.innerHTML = blocks.map(b => {
+    const name = SERVICE_NAMES?.[b.service] || b.service;
+    const catLabel = _familyCategoryLabel(b.category);
+    const when = b.created_at ? new Date(b.created_at).toLocaleString() : '';
+    const activeBadge = b.is_active
+      ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400">${t('family.active') || 'Active'}</span>`
+      : `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-400">${t('family.expired') || 'Expired'}</span>`;
+    return `<div class="flex items-center justify-between gap-3 py-1.5 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-700 dark:text-slate-200 font-medium truncate">${name}</span>
+          <span class="text-[10px] text-slate-400 dark:text-slate-500">${catLabel}</span>
+        </div>
+        <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">${b.domain || ''}</div>
+      </div>
+      <div class="flex flex-col items-end gap-1">
+        ${activeBadge}
+        <span class="text-[10px] text-slate-400 dark:text-slate-500">${when}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _renderFamilyHonesty(h) {
+  const el = document.getElementById('family-honesty-body');
+  if (!el) return;
+  const total = (h.known_bytes || 0) + (h.unknown_bytes || 0);
+  const knownPct = total > 0 ? Math.round((h.known_bytes / total) * 100) : 0;
+  const unknownPct = 100 - knownPct;
+  el.innerHTML = `
+    <div class="flex items-center gap-2">
+      <i class="ph-duotone ph-check-circle text-emerald-500"></i>
+      <span>${t('family.honestyKnown') || 'Classified traffic'}: <strong class="text-slate-700 dark:text-slate-200">${_fmtBytes(h.known_bytes || 0)}</strong> (${knownPct}%)</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <i class="ph-duotone ph-question text-amber-500"></i>
+      <span>${t('family.honestyUnknown') || 'Encrypted / unknown'}: <strong class="text-slate-700 dark:text-slate-200">${_fmtBytes(h.unknown_bytes || 0)}</strong> (${unknownPct}%)</span>
+    </div>
+    <p class="text-[11px] text-slate-400 dark:text-slate-500 pt-1 leading-relaxed">
+      ${t('family.honestyNote') || 'AI-Radar only reports what it can positively identify. Traffic over QUIC/ECH or unknown SNIs is counted but not attributed to a service.'}
+    </p>
+  `;
+}
+
+// ----- Rules sub-tab ---------------------------------------------
+
+async function refreshFamilyRules() {
+  let services;
+  try {
+    services = await fetch('/api/rules/services').then(r => r.json());
+  } catch (err) {
+    console.error('family rules load failed', err);
+    return;
+  }
+  _familyRulesCache = services || [];
+  _renderFamilyRulesFilters();
+  _renderFamilyRulesServices();
+}
+
+function _familyServicesByCategory() {
+  const by = {};
+  (_familyRulesCache || []).forEach(s => {
+    const cat = s.category;
+    if (!cat) return;
+    if (!(cat in CATEGORY_META) || cat === 'gambling') {
+      // gambling is reserved but has no SERVICE_DOMAINS entries yet
+    }
+    if (!by[cat]) by[cat] = [];
+    by[cat].push(s);
+  });
+  return by;
+}
+
+function _renderFamilyRulesFilters() {
+  const el = document.getElementById('family-rules-filters');
+  if (!el) return;
+  const by = _familyServicesByCategory();
+  const familyCats = (_familyMeta?.categories || []).map(c => c.key);
+  if (!familyCats.length) {
+    el.innerHTML = `<p class="col-span-full text-center text-xs text-slate-400 py-4">${t('family.noData') || 'No data.'}</p>`;
+    return;
+  }
+  el.innerHTML = familyCats.map(key => {
+    const m = CATEGORY_META[key] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
+    const label = _familyCategoryLabel(key);
+    const list = by[key] || [];
+    const total = list.length;
+    const blocked = list.filter(s => s.is_blocked).length;
+    const allBlocked = total > 0 && blocked === total;
+    const pct = total > 0 ? Math.round((blocked / total) * 100) : 0;
+    const action = allBlocked ? 'unblock' : 'block';
+    const btnLabel = allBlocked
+      ? (t('family.unblockAll') || 'Unblock all')
+      : (t('family.blockAll') || 'Block all');
+    return `<div class="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] rounded-lg p-4">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-xs font-medium text-${m.color}-600 dark:text-${m.color}-400">${m.icon} ${label}</p>
+        ${allBlocked ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400">${t('family.blocked') || 'Blocked'}</span>` : ''}
+      </div>
+      <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-3">${blocked}/${total} ${t('family.servicesBlocked') || 'services blocked'} (${pct}%)</p>
+      <button onclick="_familyFilterToggle('${key}','${action}')" class="w-full px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+        allBlocked
+          ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400'
+          : 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400'
+      }" ${total === 0 ? 'disabled' : ''}>${btnLabel}</button>
+    </div>`;
+  }).join('');
+}
+
+function _renderFamilyRulesServices() {
+  const el = document.getElementById('family-rules-services');
+  if (!el) return;
+  const by = _familyServicesByCategory();
+  const familyCats = (_familyMeta?.categories || []).map(c => c.key);
+  const parts = [];
+  familyCats.forEach(key => {
+    const list = (by[key] || []).slice().sort((a, b) => a.service_name.localeCompare(b.service_name));
+    if (!list.length) return;
+    const m = CATEGORY_META[key] || { color: 'slate' };
+    const label = _familyCategoryLabel(key);
+    parts.push(`<div>
+      <p class="text-[11px] uppercase tracking-wider text-${m.color}-500 dark:text-${m.color}-400 font-semibold mt-3 mb-1.5">${label}</p>
+      ${list.map(s => {
+        const name = SERVICE_NAMES?.[s.service_name] || s.service_name;
+        const logo = (typeof svcLogo === 'function') ? svcLogo(s.service_name) : '';
+        const seen = s.seen ? `<span class="text-[10px] text-slate-400 dark:text-slate-500">${s.hit_count || 0} ${t('other.hits') || 'hits'}</span>` : `<span class="text-[10px] text-slate-300 dark:text-slate-600">${t('family.preventive') || 'preventive'}</span>`;
+        const action = s.is_blocked ? 'unblock' : 'block';
+        const btnLabel = s.is_blocked ? (t('family.unblock') || 'Unblock') : (t('family.block') || 'Block');
+        const btnClass = s.is_blocked
+          ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400'
+          : 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400';
+        return `<div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            ${logo}
+            <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+            ${seen}
+          </div>
+          <button onclick="_familyServiceToggle('${s.service_name}','${action}')" class="px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${btnClass}">${btnLabel}</button>
+        </div>`;
+      }).join('')}
+    </div>`);
+  });
+  el.innerHTML = parts.join('') || `<p class="text-center text-xs text-slate-400 py-4">${t('family.noData') || 'No data.'}</p>`;
+}
+
+async function _familyServiceToggle(service, action) {
+  const url = action === 'block' ? '/api/rules/block' : '/api/rules/unblock';
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_name: service }),
+    });
+  } catch (err) {
+    console.error('family rule toggle failed', err);
+    return;
+  }
+  await refreshFamilyRules();
+}
+window._familyServiceToggle = _familyServiceToggle;
+
+async function _familyFilterToggle(category, action) {
+  const by = _familyServicesByCategory();
+  const list = by[category] || [];
+  if (!list.length) return;
+  const targets = action === 'block'
+    ? list.filter(s => !s.is_blocked)
+    : list.filter(s => s.is_blocked);
+  const url = action === 'block' ? '/api/rules/block' : '/api/rules/unblock';
+  for (const s of targets) {
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_name: s.service_name }),
+      });
+    } catch (err) {
+      console.error(`family ${action} failed for ${s.service_name}`, err);
+    }
+  }
+  await refreshFamilyRules();
+}
+window._familyFilterToggle = _familyFilterToggle;
+
+// ================================================================
+// OTHER USAGE — category tree accordion (now lives under Family ▸ Categories)
+// ================================================================
 
 function _fmtBytes(b) {
   if (!b || b <= 0) return '0 B';

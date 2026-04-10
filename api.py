@@ -80,6 +80,12 @@ from sqlalchemy.orm import Session
 
 from adguard_client import AdGuardClient
 from beacon_analyzer import run_beacon_analysis
+from family_categories import (
+    FAMILY_CATEGORIES,
+    FAMILY_CATEGORY_META,
+    family_categories_for_display,
+    is_family_category,
+)
 from database import (
     AlertException,
     BlockRule,
@@ -4376,6 +4382,337 @@ def category_tree(
 
 
 # ---------------------------------------------------------------------------
+# Family page endpoints
+# ---------------------------------------------------------------------------
+# The Family page (formerly "Other") focuses on household lifestyle use:
+# social, games, streaming, shopping, news, dating, adult. It reuses the
+# existing DetectionEvent + BlockRule infrastructure; the extra logic lives
+# here so the plumbing stays tidy.
+# ---------------------------------------------------------------------------
+
+
+def _family_window_start(hours: int) -> datetime:
+    return datetime.utcnow() - timedelta(hours=hours)
+
+
+@app.get("/api/family/meta")
+def family_meta():
+    """Static metadata: ordered category list + display metadata.
+
+    The frontend calls this once on page load so it knows which cards
+    to render, in which order, with which icons/colours — keeping the
+    JS free of hardcoded category lists.
+    """
+    return {
+        "categories": family_categories_for_display(),
+    }
+
+
+@app.get("/api/family/overview")
+def family_overview(
+    hours: int = Query(24, ge=1, le=168, description="Window size in hours (default 24)"),
+    db: Session = Depends(get_db),
+):
+    """Return the Family Overview dashboard payload.
+
+    Shape:
+    {
+      "window_hours": 24,
+      "cards": [                     # one per family category, in display order
+        {"key": "social", "bytes": 123, "hits": 45, "services": 3, "devices": 2,
+         "trend_pct": +12, "blocked": false}
+      ],
+      "top_services": [              # top 10 services across all family categories
+        {"service_name": "instagram", "category": "social", "bytes": ..., "hits": ...}
+      ],
+      "recent_blocks": [              # last 10 block events (BlockRule rows)
+        {"service": "tiktok", "category": "social", "domain": "tiktok.com",
+         "created_at": "...", "expires_at": null, "is_active": true}
+      ],
+      "honesty": {                    # "cannot see" honesty block
+        "encrypted_share_pct": 0,    # placeholder; Phase 2 populates from DPD bucket
+        "unknown_bytes": 0,
+        "known_bytes": 0
+      }
+    }
+    """
+    window_start = _family_window_start(hours)
+    prev_start = _family_window_start(hours * 2)
+
+    # --- Cards: bytes + hits per family category (current + previous window)
+    def _query_window(start: datetime, end: Optional[datetime] = None):
+        q = (
+            db.query(
+                DetectionEvent.category,
+                DetectionEvent.ai_service,
+                DetectionEvent.source_ip,
+                func.sum(DetectionEvent.bytes_transferred).label("bytes"),
+                func.count().label("hits"),
+            )
+            .filter(DetectionEvent.timestamp >= start)
+            .filter(DetectionEvent.category.in_(FAMILY_CATEGORIES))
+        )
+        if end is not None:
+            q = q.filter(DetectionEvent.timestamp < end)
+        return q.group_by(
+            DetectionEvent.category,
+            DetectionEvent.ai_service,
+            DetectionEvent.source_ip,
+        ).all()
+
+    current_rows = _query_window(window_start)
+    prev_rows = _query_window(prev_start, window_start)
+
+    # --- Per-category totals (current window)
+    cat_stats: dict[str, dict] = {
+        key: {"bytes": 0, "hits": 0, "services": set(), "devices": set()}
+        for key in FAMILY_CATEGORIES
+    }
+    for cat, svc, ip, byt, hits in current_rows:
+        if cat not in cat_stats:
+            continue
+        s = cat_stats[cat]
+        s["bytes"] += int(byt or 0)
+        s["hits"] += int(hits or 0)
+        if svc:
+            s["services"].add(svc)
+        if ip:
+            s["devices"].add(ip)
+
+    prev_cat_bytes: dict[str, int] = {key: 0 for key in FAMILY_CATEGORIES}
+    for cat, _svc, _ip, byt, _hits in prev_rows:
+        if cat in prev_cat_bytes:
+            prev_cat_bytes[cat] += int(byt or 0)
+
+    # Which categories/services are currently blocked? Used to show the
+    # "blocked" flag on cards so families see at a glance which filter
+    # is active.
+    active_rules = (
+        db.query(BlockRule).filter(BlockRule.is_active == True).all()
+    )
+    blocked_services = {r.service_name for r in active_rules}
+    blocked_categories: set[str] = set()
+    for svc_name in blocked_services:
+        info = SERVICE_DOMAINS.get(svc_name)
+        if info and info.get("category") in FAMILY_CATEGORIES:
+            # A category is only "fully" blocked if every service in that
+            # category with domains is blocked. We compute this below.
+            pass
+    for cat_key in FAMILY_CATEGORIES:
+        cat_services = {
+            svc for svc, info in SERVICE_DOMAINS.items()
+            if info.get("category") == cat_key and info.get("domains")
+        }
+        if cat_services and cat_services.issubset(blocked_services):
+            blocked_categories.add(cat_key)
+
+    cards: list[dict] = []
+    for key in FAMILY_CATEGORIES:
+        s = cat_stats[key]
+        cur = s["bytes"]
+        prev = prev_cat_bytes.get(key, 0)
+        if prev > 0:
+            trend_pct = round(((cur - prev) / prev) * 100)
+        elif cur > 0:
+            trend_pct = 100
+        else:
+            trend_pct = 0
+        meta = FAMILY_CATEGORY_META.get(key, {})
+        cards.append({
+            "key": key,
+            "icon": meta.get("icon"),
+            "color": meta.get("color"),
+            "label_en": meta.get("label_en"),
+            "label_nl": meta.get("label_nl"),
+            "bytes": cur,
+            "hits": s["hits"],
+            "services": len(s["services"]),
+            "devices": len(s["devices"]),
+            "trend_pct": trend_pct,
+            "blocked": key in blocked_categories,
+        })
+
+    # --- Top services across all family categories
+    svc_stats: dict[str, dict] = {}
+    for cat, svc, _ip, byt, hits in current_rows:
+        if not svc:
+            continue
+        if svc not in svc_stats:
+            svc_stats[svc] = {
+                "service_name": svc,
+                "category": cat,
+                "bytes": 0,
+                "hits": 0,
+            }
+        svc_stats[svc]["bytes"] += int(byt or 0)
+        svc_stats[svc]["hits"] += int(hits or 0)
+    top_services = sorted(
+        svc_stats.values(), key=lambda r: -r["bytes"]
+    )[:10]
+
+    # --- Recent blocks (last 10 BlockRule rows, any family category)
+    recent_block_rows = (
+        db.query(BlockRule)
+        .filter(BlockRule.category.in_(FAMILY_CATEGORIES))
+        .order_by(BlockRule.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    recent_blocks = [
+        {
+            "id": r.id,
+            "service": r.service_name,
+            "category": r.category,
+            "domain": r.domain,
+            "is_active": r.is_active,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+        }
+        for r in recent_block_rows
+    ]
+
+    # --- Honesty: "what can we NOT see"
+    # For Phase 1 we report the share of traffic labelled "unknown"
+    # service inside family categories vs total bytes on any category.
+    # Later phases plug in QUIC/ECH share from a dedicated bucket.
+    known_bytes = sum(
+        int(byt or 0) for _cat, svc, _ip, byt, _hits in current_rows if svc and svc != "unknown"
+    )
+    unknown_row = (
+        db.query(func.coalesce(func.sum(DetectionEvent.bytes_transferred), 0))
+        .filter(DetectionEvent.timestamp >= window_start)
+        .filter(DetectionEvent.ai_service == "unknown")
+        .scalar()
+    )
+    unknown_bytes = int(unknown_row or 0)
+    total_bytes = known_bytes + unknown_bytes
+    encrypted_pct = (
+        round((unknown_bytes / total_bytes) * 100) if total_bytes > 0 else 0
+    )
+
+    return {
+        "window_hours": hours,
+        "cards": cards,
+        "top_services": top_services,
+        "recent_blocks": recent_blocks,
+        "honesty": {
+            "encrypted_share_pct": encrypted_pct,
+            "unknown_bytes": unknown_bytes,
+            "known_bytes": known_bytes,
+        },
+    }
+
+
+@app.get("/api/family/category/{category}")
+def family_category_detail(
+    category: str,
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Detail view for one family category.
+
+    Returns services inside the category with per-device breakdown —
+    same shape as a single entry from /api/analytics/category-tree but
+    scoped and with the "blocked" flag populated per service.
+    """
+    if not is_family_category(category):
+        raise HTTPException(status_code=404, detail="Unknown family category")
+
+    window_start = _family_window_start(hours)
+    rows = (
+        db.query(
+            DetectionEvent.ai_service,
+            DetectionEvent.source_ip,
+            func.sum(DetectionEvent.bytes_transferred).label("bytes"),
+            func.count().label("hits"),
+        )
+        .filter(DetectionEvent.timestamp >= window_start)
+        .filter(DetectionEvent.category == category)
+        .group_by(DetectionEvent.ai_service, DetectionEvent.source_ip)
+        .all()
+    )
+
+    # IP → MAC resolution so IPv4+IPv6 collapse to one device row
+    ip_to_mac: dict[str, str] = {
+        d.ip: d.mac_address for d in db.query(DeviceIP).all()
+    }
+    mac_to_display_ip: dict[str, str] = {}
+    for ip, mac in ip_to_mac.items():
+        if mac not in mac_to_display_ip or ":" in mac_to_display_ip[mac]:
+            mac_to_display_ip[mac] = ip
+
+    services: dict[str, dict] = {}
+    for svc, ip, byt, hits in rows:
+        if not svc:
+            continue
+        if svc not in services:
+            services[svc] = {
+                "service_name": svc,
+                "bytes": 0,
+                "hits": 0,
+                "devices": {},
+            }
+        services[svc]["bytes"] += int(byt or 0)
+        services[svc]["hits"] += int(hits or 0)
+
+        mac = ip_to_mac.get(ip)
+        dev_key = mac or ip
+        display_ip = mac_to_display_ip.get(mac, ip) if mac else ip
+        dev_map = services[svc]["devices"]
+        if dev_key not in dev_map:
+            dev_map[dev_key] = {"ip": display_ip, "bytes": 0, "hits": 0}
+        dev_map[dev_key]["bytes"] += int(byt or 0)
+        dev_map[dev_key]["hits"] += int(hits or 0)
+
+    # Active block rules scoped to this category
+    active_rules = (
+        db.query(BlockRule)
+        .filter(BlockRule.is_active == True)
+        .filter(BlockRule.category == category)
+        .all()
+    )
+    blocked_services = {r.service_name for r in active_rules}
+
+    # Flatten + sort
+    svc_list: list[dict] = []
+    for svc in sorted(services.values(), key=lambda s: -s["bytes"]):
+        svc["devices"] = sorted(
+            svc["devices"].values(), key=lambda d: -d["bytes"]
+        )
+        svc["blocked"] = svc["service_name"] in blocked_services
+        svc_list.append(svc)
+
+    # "Known" catalogue services that haven't been seen yet but can still
+    # be pre-emptively blocked — families want to block TikTok before
+    # their kid installs it, not after.
+    seen_names = {s["service_name"] for s in svc_list}
+    available: list[dict] = []
+    for name, info in SERVICE_DOMAINS.items():
+        if info.get("category") != category:
+            continue
+        if name in seen_names:
+            continue
+        available.append({
+            "service_name": name,
+            "blocked": name in blocked_services,
+            "domains": info.get("domains", []),
+        })
+    available.sort(key=lambda s: s["service_name"])
+
+    meta = FAMILY_CATEGORY_META.get(category, {})
+    return {
+        "category": category,
+        "meta": meta,
+        "window_hours": hours,
+        "category_blocked": bool(available) is False and all(
+            s["service_name"] in blocked_services for s in svc_list
+        ) if svc_list else False,
+        "services": svc_list,
+        "available_services": available,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /api/privacy/stats — AdGuard Home + Zeek tracking statistics
 # ---------------------------------------------------------------------------
 @app.get("/api/privacy/stats")
@@ -5223,6 +5560,52 @@ SERVICE_DOMAINS: dict[str, dict] = {
     "hbo_max":          {"domains": ["hbomax.com", "max.com"], "category": "streaming"},
     "prime_video":      {"domains": ["primevideo.com", "aiv-cdn.net", "amazonvideo.com"], "category": "streaming"},
     "apple_tv":         {"domains": ["tv.apple.com"], "category": "streaming"},
+    "videoland":        {"domains": ["videoland.com"], "category": "streaming"},
+    "npo_start":        {"domains": ["npo.nl", "npostart.nl"], "category": "streaming"},
+    # Adult
+    "pornhub":          {"domains": ["pornhub.com", "phncdn.com"], "category": "adult"},
+    "xvideos":          {"domains": ["xvideos.com", "xvideos-cdn.com"], "category": "adult"},
+    "xhamster":         {"domains": ["xhamster.com"], "category": "adult"},
+    "youporn":          {"domains": ["youporn.com"], "category": "adult"},
+    "redtube":          {"domains": ["redtube.com"], "category": "adult"},
+    "onlyfans":         {"domains": ["onlyfans.com"], "category": "adult"},
+    "chaturbate":       {"domains": ["chaturbate.com"], "category": "adult"},
+    "stripchat":        {"domains": ["stripchat.com"], "category": "adult"},
+    "brazzers":         {"domains": ["brazzers.com"], "category": "adult"},
+    # Shopping
+    "amazon":           {"domains": ["amazon.com", "amazon.nl", "amazon.de", "media-amazon.com", "ssl-images-amazon.com"], "category": "shopping"},
+    "bol":              {"domains": ["bol.com"], "category": "shopping"},
+    "coolblue":         {"domains": ["coolblue.nl"], "category": "shopping"},
+    "mediamarkt":       {"domains": ["mediamarkt.nl"], "category": "shopping"},
+    "zalando":          {"domains": ["zalando.nl", "zalando.com"], "category": "shopping"},
+    "shein":            {"domains": ["shein.com"], "category": "shopping"},
+    "temu":             {"domains": ["temu.com"], "category": "shopping"},
+    "aliexpress":       {"domains": ["aliexpress.com"], "category": "shopping"},
+    "marktplaats":      {"domains": ["marktplaats.nl"], "category": "shopping"},
+    "vinted":           {"domains": ["vinted.nl", "vinted.com"], "category": "shopping"},
+    "ikea":             {"domains": ["ikea.com"], "category": "shopping"},
+    "ebay":             {"domains": ["ebay.com", "ebay.nl"], "category": "shopping"},
+    "etsy":             {"domains": ["etsy.com"], "category": "shopping"},
+    # News
+    "nos":              {"domains": ["nos.nl"], "category": "news"},
+    "nu_nl":            {"domains": ["nu.nl"], "category": "news"},
+    "telegraaf":        {"domains": ["telegraaf.nl"], "category": "news"},
+    "ad_nl":            {"domains": ["ad.nl"], "category": "news"},
+    "nrc":              {"domains": ["nrc.nl"], "category": "news"},
+    "volkskrant":       {"domains": ["volkskrant.nl"], "category": "news"},
+    "bbc":              {"domains": ["bbc.com", "bbc.co.uk"], "category": "news"},
+    "nytimes":          {"domains": ["nytimes.com", "nyt.com"], "category": "news"},
+    "reuters":          {"domains": ["reuters.com"], "category": "news"},
+    "guardian":         {"domains": ["theguardian.com"], "category": "news"},
+    # Dating
+    "tinder":           {"domains": ["tinder.com", "gotinder.com"], "category": "dating"},
+    "bumble":           {"domains": ["bumble.com"], "category": "dating"},
+    "hinge":            {"domains": ["hinge.co"], "category": "dating"},
+    "grindr":           {"domains": ["grindr.com"], "category": "dating"},
+    "lexa":             {"domains": ["lexa.nl"], "category": "dating"},
+    "parship":          {"domains": ["parship.nl"], "category": "dating"},
+    "happn":            {"domains": ["happn.com"], "category": "dating"},
+    "okcupid":          {"domains": ["okcupid.com"], "category": "dating"},
 }
 
 
