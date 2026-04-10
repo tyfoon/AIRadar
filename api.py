@@ -2524,6 +2524,64 @@ def rename_device(mac_address: str, payload: DeviceUpdate, db: Session = Depends
     return device
 
 
+@app.post("/api/devices/{mac_address:path}/refresh", response_model=DeviceRead)
+def refresh_device(mac_address: str, db: Session = Depends(get_db)):
+    """Re-run vendor + hostname resolution for a single device.
+
+    The Devices page surfaces a per-row Refresh button that calls this
+    when the displayed type/vendor is obviously wrong (e.g. a MacBook
+    showing as "TPV display" because the device's randomised MAC
+    happens to land in TP Vision's OUI block). We re-do the cheap
+    lookups from scratch:
+
+      1. PTR lookup against the most recently seen IP, in case DHCP
+         finally handed out a hostname that wasn't there at first
+         registration.
+      2. _resolve_vendor() against the (possibly new) hostname AND the
+         MAC, so the hostname-based override (which beats the OUI
+         table) gets a chance to run.
+
+    We do not touch ``display_name`` because users can rename freely
+    via the existing PUT endpoint and overwriting that here would be
+    surprising. The frontend ``_classify_device_type_backend`` /
+    ``_detectDeviceType`` both key off ``hostname`` + ``vendor`` +
+    ``display_name`` so refreshing those two fields is enough to
+    reclassify the row on the next page reload.
+    """
+    device = db.query(Device).filter(Device.mac_address == mac_address).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    changes: dict[str, str | None] = {}
+
+    # 1) Re-resolve PTR for the most recent IP (if any)
+    latest_ip = (
+        db.query(DeviceIP)
+        .filter(DeviceIP.mac_address == mac_address)
+        .order_by(DeviceIP.last_seen.desc())
+        .first()
+    )
+    if latest_ip and latest_ip.ip:
+        try:
+            host, _aliases, _addrs = socket.gethostbyaddr(latest_ip.ip)
+            if host and host != device.hostname:
+                changes["hostname"] = device.hostname
+                device.hostname = host
+        except (socket.herror, socket.gaierror, OSError):
+            pass
+
+    # 2) Re-resolve vendor from MAC + (possibly updated) hostname
+    new_vendor = _resolve_vendor(mac=mac_address, hostname=device.hostname)
+    if new_vendor and new_vendor != device.vendor:
+        changes["vendor"] = device.vendor
+        device.vendor = new_vendor
+
+    if changes:
+        db.commit()
+        db.refresh(device)
+    return device
+
+
 # ---------------------------------------------------------------------------
 # GET/PUT /api/hostname-vendors — user-editable hostname → vendor mapping
 # ---------------------------------------------------------------------------

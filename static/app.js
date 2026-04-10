@@ -6484,6 +6484,85 @@ function _heatCell(count, uploads, globalMax, policyAction) {
   return `<span class="inline-block w-full py-1 rounded text-[11px] font-medium tabular-nums ${bg} ${text}">${count}${icon}${uploadIcon}</span>`;
 }
 
+// Bigger 24x24 logo used inside the devices-page category cells and the
+// drawer event rows. Wrapped in a relative container so we can absolutely
+// position the red "had upload" dot in the top-right corner — same trick
+// the device-type icons use for the green online dot.
+function svcLogoGrid(s, hasUpload) {
+  const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
+  const color = svcColor(s);
+  const letter = svcDisplayName(s).charAt(0);
+  const dot = hasUpload ? '<span class="svc-upload-dot"></span>' : '';
+  const img = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${s}" class="svc-logo-grid"
+    onerror="this.outerHTML='<span class=\\'svc-logo-grid-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
+  return `<span class="svc-logo-grid-wrap">${img}${dot}</span>`;
+}
+
+// Renders the new "top services in this category" tile that replaces the
+// numeric heatmap cell on the Devices page. Shows up to 5 service logos
+// (sorted by event count, highest first), each clickable to open the
+// device drawer pre-filtered to that service. A small "+N" hint appears
+// when more services exist than fit. Empty cells render as a faint dash
+// so the matrix still aligns visually.
+function _categoryIconGrid(mac, services, row, groupKey) {
+  // Materialise (service, count, uploads) tuples and sort highest-first.
+  // We always sort here regardless of which column the table is sorted
+  // by, because inside a single cell users want to see the dominant
+  // services first.
+  const items = services
+    .map(s => ({ s, count: row[s]?.count || 0, uploads: row[s]?.uploads || 0 }))
+    .filter(x => x.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  if (items.length === 0) {
+    return `<span class="inline-block py-1 text-[10px] text-slate-300 dark:text-slate-600">—</span>`;
+  }
+
+  const TOP_N = 5;
+  const top = items.slice(0, TOP_N);
+  const overflow = items.length - top.length;
+
+  const escSvc = (v) => String(v).replace(/'/g, "\\'");
+  const logos = top.map(({ s, uploads }) => {
+    const title = `${svcDisplayName(s)}${uploads > 0 ? ` (${uploads}↑)` : ''}`;
+    return `<span class="cursor-pointer hover:scale-110 transition-transform" title="${title}"
+      onclick="event.stopPropagation();_showCellEvents('${mac}','${escSvc(s)}','${groupKey}')">${svcLogoGrid(s, uploads > 0)}</span>`;
+  }).join('');
+
+  const more = overflow > 0
+    ? `<span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 px-1 cursor-pointer hover:text-blue-500"
+        title="${overflow} ${overflow === 1 ? 'more service' : 'more services'}"
+        onclick="event.stopPropagation();_showCellEvents('${mac}',null,'${groupKey}')">+${overflow}</span>`
+    : '';
+
+  return `<div class="flex items-center justify-center gap-1.5 flex-wrap">${logos}${more}</div>`;
+}
+
+// Per-device "refresh metadata" handler. Calls the backend, swaps the
+// row icon for a tiny spinner while in flight, then re-fetches devices
+// and re-renders the matrix so the new vendor/hostname/type take
+// effect. Used by the Refresh button in the device name cell.
+async function refreshDeviceMetadata(mac) {
+  const btn = document.getElementById(`dev-refresh-btn-${mac.replace(/[^a-zA-Z0-9]/g, '_')}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="ph-duotone ph-circle-notch animate-spin text-sm"></i>`;
+  }
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(mac)}/refresh`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Refresh the in-memory deviceMap so the next render picks up the
+    // new vendor + hostname without a full page reload.
+    await loadDevices();
+    _renderDeviceMatrix();
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="ph-duotone ph-warning text-sm text-red-500" title="${err.message}"></i>`;
+    }
+  }
+}
+
 function _toggleDevGroup(groupKey) {
   if (_devExpandedGroups.has(groupKey)) _devExpandedGroups.delete(groupKey);
   else _devExpandedGroups.add(groupKey);
@@ -6551,27 +6630,30 @@ function openDeviceDrawer(mac, service, category) {
   });
 
   // Determine initial active tab. Clicking a specific service or
-  // category cell still jumps straight to that filtered view;
-  // opening the drawer from the device name lands on Summary.
+  // category cell still jumps straight to that filtered view; opening
+  // the drawer from the device name lands on AI Recap (the most
+  // useful at-a-glance summary).
   if (service) {
     const matchCat = cats.find(c => _drawerEvents.some(e => e.ai_service === service && e._cat === c.key));
-    _drawerActiveTab = matchCat ? matchCat.key : 'summary';
+    _drawerActiveTab = matchCat ? matchCat.key : 'report';
   } else if (category) {
     _drawerActiveTab = category;
   } else {
-    _drawerActiveTab = 'summary';
+    _drawerActiveTab = 'report';
   }
 
-  // Tabs: Summary · Connections · AI Recap · (category tabs).
+  // Tabs (in display order): AI Recap · Summary · Connections · (category tabs).
+  // AI Recap leads because it's the most useful at-a-glance view; the
+  // numeric Summary and per-IP Connections tabs follow for power users.
   const tabBase = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap';
   const tabActive = `${tabBase} bg-blue-700 text-white shadow-sm`;
   const tabInactive = `${tabBase} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
   const tabCls = (key) => (_drawerActiveTab === key ? tabActive : tabInactive);
 
   const tabsHtml = [
+    `<button class="${tabCls('report')}" data-tab="report" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
     `<button class="${tabCls('summary')}" data-tab="summary" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
     `<button class="${tabCls('connections')}" data-tab="connections" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap text-xs"></i> ${t('dev.drawerConnectionsTab') || 'Connections'}</button>`,
-    `<button class="${tabCls('report')}" data-tab="report" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
@@ -6608,7 +6690,6 @@ function _applyDrawerFilter(serviceFilter) {
   const summaryView = document.getElementById('drawer-summary-view');
   const reportView  = document.getElementById('drawer-report-view');
   const eventsView  = document.getElementById('drawer-events-view');
-  const countEl = document.getElementById('drawer-event-count');
 
   const hideAll = () => {
     if (summaryView) summaryView.classList.add('hidden');
@@ -6620,21 +6701,18 @@ function _applyDrawerFilter(serviceFilter) {
     hideAll();
     if (summaryView) summaryView.classList.remove('hidden');
     _renderDrawerSummary();
-    if (countEl) countEl.textContent = '';
     return;
   }
 
   if (_drawerActiveTab === 'report') {
     hideAll();
     if (reportView) reportView.classList.remove('hidden');
-    if (countEl) countEl.textContent = '';
     return;
   }
 
   if (_drawerActiveTab === 'connections') {
     hideAll();
     if (summaryView) summaryView.classList.remove('hidden');
-    if (countEl) countEl.textContent = '';
     _loadDrawerConnections();
     return;
   }
@@ -6915,7 +6993,6 @@ async function _loadDrawerConnections() {
 function _renderDrawerEvents(reset) {
   const tbody = document.getElementById('drawer-event-body');
   const loadMoreWrap = document.getElementById('drawer-load-more');
-  const countEl = document.getElementById('drawer-event-count');
 
   if (reset) {
     tbody.innerHTML = '';
@@ -6926,26 +7003,33 @@ function _renderDrawerEvents(reset) {
   const nextBatch = _drawerFiltered.slice(_drawerVisible, _drawerVisible + DRAWER_PAGE_SIZE);
   _drawerVisible += nextBatch.length;
 
+  // Build a service-cell renderer that puts the same red upload dot on
+  // the logo as the Devices-page icon grid uses, so volumetric uploads
+  // are immediately visible without a separate Type column.
+  const serviceCell = (e) => {
+    const up = !!e.possible_upload;
+    const name = svcDisplayName(e.ai_service);
+    return `<span class="inline-flex items-center gap-2 min-w-0">
+      ${svcLogoGrid(e.ai_service, up)}
+      <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
+      ${_countBadge(e)}
+    </span>`;
+  };
+
   const rows = nextBatch.map(e => {
     const up = e.possible_upload;
-    const upBadge = up ? ' <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 dark:bg-orange-800/50 text-orange-600 dark:text-orange-300">UPLOAD</span>' : '';
-    const typeLabel = e.detection_type === 'sni_hello' ? t('dev.connection') : e.detection_type;
     const bytesStr = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '0 B';
     const timeCell = e._count > 1
       ? `${fmtTime(e._newest_ts)} <span class="text-[10px] text-slate-400 dark:text-slate-500">– ${fmtTime(e._oldest_ts)}</span>`
       : fmtTime(e.timestamp);
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] ${up ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}">
       <td class="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">${timeCell}</td>
-      <td class="py-2.5 px-4">${badge(e.ai_service)}${_countBadge(e)}</td>
-      <td class="py-2.5 px-4 text-xs">${typeLabel}${upBadge}</td>
-      <td class="py-2.5 px-4 text-xs text-right tabular-nums hidden sm:table-cell">${bytesStr}</td>
+      <td class="py-2.5 px-4 truncate">${serviceCell(e)}</td>
+      <td class="py-2.5 px-4 text-xs text-right tabular-nums whitespace-nowrap">${bytesStr}</td>
     </tr>`;
   }).join('');
 
   tbody.insertAdjacentHTML('beforeend', rows);
-
-  // Update count label
-  countEl.textContent = t('dev.showingOfEvents', { visible: _drawerVisible, total: _drawerFiltered.length });
 
   // Show/hide load more
   if (_drawerVisible < _drawerFiltered.length) {
@@ -7351,6 +7435,10 @@ function _renderDeviceMatrix() {
     });
   }
 
+  // Default-sort fallback: the Total column has been removed, so any
+  // legacy `total` value gets remapped to a name sort.
+  if (_devSortCol === 'total') _devSortCol = 'name';
+
   // Sort devices
   deviceMacs = [...deviceMacs].sort((a, b) => {
     const devA = deviceMap[a] || {};
@@ -7360,10 +7448,6 @@ function _renderDeviceMatrix() {
     let cmp = 0;
     if (_devSortCol === 'name') {
       cmp = (_bestDeviceName(a, devA)).localeCompare(_bestDeviceName(b, devB));
-    } else if (_devSortCol === 'total') {
-      const tA = Object.values(rowA).reduce((s, v) => s + v.count, 0);
-      const tB = Object.values(rowB).reduce((s, v) => s + v.count, 0);
-      cmp = tA - tB;
     } else if (_devSortCol.startsWith('grp_')) {
       const grpKey = _devSortCol.slice(4);
       const grpSvcs = [...allServices].filter(s => _categorizeService(s, svcCategoryMap) === grpKey);
@@ -7384,13 +7468,12 @@ function _renderDeviceMatrix() {
   const thead = document.getElementById('devices-matrix-head');
   const expanded = _devExpandedGroups;
 
-  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[220px] cursor-pointer select-none hover:text-indigo-400 transition-colors" onclick="_setDevSort('name')"><span class="inline-flex items-center">${t('dev.device')} ${_sortArrow('name')}</span></th>
-    <th class="py-3 px-3 font-medium text-right min-w-[60px] cursor-pointer select-none hover:text-indigo-400 transition-colors" onclick="_setDevSort('total')"><span class="inline-flex items-center justify-end">${t('dev.total')} ${_sortArrow('total')}</span></th>`;
+  let headerCells = `<th class="py-3 px-4 font-medium sticky left-0 bg-slate-50 dark:bg-[#0B0C10] z-10 min-w-[240px] cursor-pointer select-none hover:text-indigo-400 transition-colors" onclick="_setDevSort('name')"><span class="inline-flex items-center">${t('dev.device')} ${_sortArrow('name')}</span></th>`;
 
   groups.forEach(g => {
     const isExpanded = expanded.has(g.key);
     const chevron = isExpanded ? '▾' : '▸';
-    headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[90px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06] hidden sm:table-cell"
+    headerCells += `<th class="py-3 px-3 font-medium text-center min-w-[180px] cursor-pointer select-none hover:text-indigo-400 transition-colors border-l border-slate-200 dark:border-white/[0.06] hidden sm:table-cell"
       onclick="event.shiftKey ? _toggleDevGroup('${g.key}') : _setDevSort('grp_${g.key}')" title="Click to sort · Shift+click to ${isExpanded ? 'collapse' : 'expand'}">
       <span class="inline-flex items-center gap-1 justify-center">${g.icon} ${g.label} ${_sortArrow('grp_' + g.key)} <span class="text-[10px] opacity-60">${chevron}</span></span>
     </th>`;
@@ -7407,7 +7490,7 @@ function _renderDeviceMatrix() {
 
   // Render body
   const tbody = document.getElementById('devices-matrix-body');
-  const colCount = 2 + groups.reduce((s, g) => s + 1 + (expanded.has(g.key) ? g.services.length : 0), 0);
+  const colCount = 1 + groups.reduce((s, g) => s + 1 + (expanded.has(g.key) ? g.services.length : 0), 0);
 
   if (deviceMacs.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="py-12 text-center text-slate-400 dark:text-slate-500 text-sm">${t('dev.noActivity')}</td></tr>`;
@@ -7417,7 +7500,6 @@ function _renderDeviceMatrix() {
   tbody.innerHTML = deviceMacs.map(mac => {
     const row = matrix[mac] || {};
     const total = Object.values(row).reduce((s, v) => s + v.count, 0);
-    const totalUploads = Object.values(row).reduce((s, v) => s + v.uploads, 0);
     const dev = deviceMap[mac] || null;
     const bestName = _bestDeviceName(mac, dev);
     const origName = _originalDeviceName(dev);
@@ -7431,18 +7513,8 @@ function _renderDeviceMatrix() {
 
     let cells = '';
     groups.forEach(g => {
-      const groupCount = g.services.reduce((s, svc) => s + (row[svc]?.count || 0), 0);
-      const groupUploads = g.services.reduce((s, svc) => s + (row[svc]?.uploads || 0), 0);
-      // Group policy = "worst" among all services in the group:
-      // block > alert > allow. If ANY service is blocked, group is red.
-      let groupPolicy = null;
-      g.services.forEach(svc => {
-        const p = _policyByService[svc];
-        if (p === 'block') groupPolicy = 'block';
-        else if (p === 'alert' && groupPolicy !== 'block') groupPolicy = 'alert';
-      });
-      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] cursor-pointer hidden sm:table-cell" onclick="_showCellEvents('${mac}', null, '${g.key}')">
-        ${_heatCell(groupCount, groupUploads, globalMax, groupPolicy)}
+      cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] hidden sm:table-cell">
+        ${_categoryIconGrid(mac, g.services, row, g.key)}
       </td>`;
 
       if (expanded.has(g.key)) {
@@ -7456,20 +7528,14 @@ function _renderDeviceMatrix() {
       }
     });
 
-    const uploadBadge = totalUploads > 0
-      ? `<span class="ml-1 text-[10px] px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">${totalUploads}▲</span>`
-      : '';
-
     const isQuiet = total === 0;
     const rowOpacity = isQuiet ? 'opacity-50' : '';
-    const totalDisplay = isQuiet
-      ? `<span class="text-xs text-slate-300 dark:text-slate-600">—</span>`
-      : `<span class="cursor-pointer" onclick="_showCellEvents('${mac}', null, null)">${total}${uploadBadge}</span>`;
 
     const reportBtn = dev ? `<button onclick="event.stopPropagation();generateDeviceReport('${mac}')" class="ml-2 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gradient-to-r from-indigo-500/80 to-purple-500/80 text-white hover:from-indigo-500 hover:to-purple-500 transition-all leading-none whitespace-nowrap" title="${t('dev.aiRecap')}">&#10024; AI</button>` : '';
 
-    // Edit (pencil) button — appears on row hover via CSS .dev-edit-btn
+    // Edit / refresh / rules buttons — appear on row hover via CSS .dev-edit-btn
     const editBtn = `<button onclick="event.stopPropagation();_startDeviceRename('${mac}')" class="dev-edit-btn ml-1 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.editName')}"><i class="ph-duotone ph-pencil-simple text-sm"></i></button>`;
+    const refreshBtn = dev ? `<button id="dev-refresh-btn-${mac.replace(/[^a-zA-Z0-9]/g, '_')}" onclick="event.stopPropagation();refreshDeviceMetadata('${mac}')" class="dev-edit-btn ml-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.refreshMetadata') || 'Refresh device info'}"><i class="ph-duotone ph-arrows-clockwise text-sm"></i></button>` : '';
     const rulesBtn = dev ? `<button onclick="event.stopPropagation();navigateToDeviceRules('${mac}')" class="dev-edit-btn ml-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="${t('rules.manageRules')}"><i class="ph-duotone ph-shield-check text-sm"></i></button>` : '';
 
     // Name display: friendly name as primary, original name as secondary
@@ -7484,6 +7550,7 @@ function _renderDeviceMatrix() {
         <div class="flex items-center gap-1" id="dev-name-row-${mac.replace(/[^a-zA-Z0-9]/g, '_')}">
           <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium truncate max-w-[180px]" data-mac="${dev ? dev.mac_address : ''}" title="${nameEscaped}">${bestName}</span>
           ${editBtn}
+          ${refreshBtn}
           ${rulesBtn}
           ${reportBtn}
         </div>
@@ -7491,7 +7558,6 @@ function _renderDeviceMatrix() {
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
-      <td class="py-3 px-4 text-right tabular-nums text-sm font-semibold">${totalDisplay}</td>
       ${cells}
     </tr>`;
   }).join('');

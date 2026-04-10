@@ -596,6 +596,7 @@ const TRANSLATIONS = {
     'dev.filterAll':       'All',
     'dev.hideInactive':    'Hide inactive devices',
     'dev.editName':        'Edit device name',
+    'dev.refreshMetadata': 'Refresh device info',
     'dev.saveName':        'Save',
     'dev.cancelEdit':      'Cancel',
     'dev.originalName':    'Original:',
@@ -840,7 +841,7 @@ const TRANSLATIONS = {
     'iot.volumeSpike':     'Volume Spike',
     'iot.noDevices':       'No IoT devices detected on your network.',
     'iot.loading':         'Loading IoT devices...',
-    'cat.other':           'Other',
+    'cat.other':           'Content',
 
     // Device types (from p0f / detection)
     'dtype.unknown':       'Unknown',
@@ -1407,6 +1408,7 @@ const TRANSLATIONS = {
     'dev.filterAll':       'Alle',
     'dev.hideInactive':    'Inactieve apparaten verbergen',
     'dev.editName':        'Apparaatnaam bewerken',
+    'dev.refreshMetadata': 'Apparaatinfo verversen',
     'dev.saveName':        'Opslaan',
     'dev.cancelEdit':      'Annuleren',
     'dev.originalName':    'Origineel:',
@@ -1677,7 +1679,7 @@ const TRANSLATIONS = {
     'iot.volumeSpike':     'Volume-piek',
     'iot.noDevices':       'Geen IoT-apparaten gedetecteerd op uw netwerk.',
     'iot.loading':         'IoT-apparaten laden...',
-    'cat.other':           'Overig',
+    'cat.other':           'Content',
 
     // Apparaattypen
     'dtype.unknown':       'Onbekend',
