@@ -70,6 +70,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
@@ -96,6 +97,7 @@ from database import (
     DeviceGroup,
     DeviceGroupMember,
     DeviceIP,
+    FilterSchedule,
     GeoBlockRule,
     GeoTraffic,
     GeoConversation,
@@ -348,6 +350,7 @@ from schemas import (
     DeviceUpdate,
     EventCreate,
     EventRead,
+    FilterScheduleUpdate,
     GlobalFilterToggle,
     PrivacyStats,
     ServicePolicyCreate,
@@ -1237,6 +1240,7 @@ async def lifespan(app: FastAPI):
     from service_updater import periodic_update_domains
     domain_updater_task = asyncio.create_task(periodic_update_domains())
     perf_task = asyncio.create_task(_collect_network_performance())
+    filter_schedule_task = asyncio.create_task(_enforce_filter_schedules())
     print(
         f"[cleanup] Auto-cleanup enabled: retain {RETENTION_DAYS} days, "
         f"max {MAX_EVENTS:,} events, check every {CLEANUP_INTERVAL}s"
@@ -1245,6 +1249,7 @@ async def lifespan(app: FastAPI):
     print(f"[watchdog] AdGuard auto-failsafe active (check every 30s, trigger after 3 failures)")
     print(f"[beacon] Malware C2 beacon detector running every {BEACON_SCAN_INTERVAL}s")
     print(f"[service-updater] Domain list updater running (immediate + every 24h)")
+    print(f"[schedule] Filter schedule enforcer running (tick every 60s)")
     # Restore IPS (CrowdSec) toggle state — defaults to ON on first run
     # so the network is protected from the start without manual action.
     ips_pref = _read_ips_pref()
@@ -1281,6 +1286,7 @@ async def lifespan(app: FastAPI):
     watchdog_task.cancel()
     beacon_task.cancel()
     perf_task.cancel()
+    filter_schedule_task.cancel()
 
 
 app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
@@ -4411,13 +4417,22 @@ def family_meta():
 @app.get("/api/family/overview")
 def family_overview(
     hours: int = Query(24, ge=1, le=168, description="Window size in hours (default 24)"),
+    group_id: Optional[int] = Query(None, description="Optional DeviceGroup id — filters all data to that group's members"),
     db: Session = Depends(get_db),
 ):
     """Return the Family Overview dashboard payload.
 
+    Optional ``group_id`` narrows the view to a single DeviceGroup
+    (e.g. "Kids", "IP Cameras", "Piet's devices"). Groups are generic —
+    they can be people, device classes, rooms, anything — and are
+    managed on the Devices → Groups tab. We resolve group → macs →
+    current IPs → DetectionEvent.source_ip so the same query shape
+    keeps working for whole-network and group-scoped views.
+
     Shape:
     {
       "window_hours": 24,
+      "group_id": 3 | null,
       "cards": [                     # one per family category, in display order
         {"key": "social", "bytes": 123, "hits": 45, "services": 3, "devices": 2,
          "trend_pct": +12, "blocked": false}
@@ -4439,6 +4454,31 @@ def family_overview(
     window_start = _family_window_start(hours)
     prev_start = _family_window_start(hours * 2)
 
+    # Resolve the group filter to a concrete set of source_ips. An
+    # empty set means the group exists but has no devices, or its
+    # devices have no recorded IPs — return an empty-but-structurally
+    # correct response in that case.
+    group_ip_filter: Optional[set[str]] = None
+    if group_id is not None:
+        group_exists = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
+        if not group_exists:
+            raise HTTPException(status_code=404, detail="Unknown group_id")
+        member_macs = [
+            m.mac_address
+            for m in db.query(DeviceGroupMember)
+            .filter(DeviceGroupMember.group_id == group_id)
+            .all()
+        ]
+        if member_macs:
+            group_ip_filter = {
+                row.ip
+                for row in db.query(DeviceIP.ip)
+                .filter(DeviceIP.mac_address.in_(member_macs))
+                .all()
+            }
+        else:
+            group_ip_filter = set()
+
     # --- Cards: bytes + hits per family category (current + previous window)
     def _query_window(start: datetime, end: Optional[datetime] = None):
         q = (
@@ -4454,6 +4494,11 @@ def family_overview(
         )
         if end is not None:
             q = q.filter(DetectionEvent.timestamp < end)
+        if group_ip_filter is not None:
+            if not group_ip_filter:
+                # Group has no IPs — skip the query entirely.
+                return []
+            q = q.filter(DetectionEvent.source_ip.in_(group_ip_filter))
         return q.group_by(
             DetectionEvent.category,
             DetectionEvent.ai_service,
@@ -4578,13 +4623,19 @@ def family_overview(
     known_bytes = sum(
         int(byt or 0) for _cat, svc, _ip, byt, _hits in current_rows if svc and svc != "unknown"
     )
-    unknown_row = (
+    unknown_q = (
         db.query(func.coalesce(func.sum(DetectionEvent.bytes_transferred), 0))
         .filter(DetectionEvent.timestamp >= window_start)
         .filter(DetectionEvent.ai_service == "unknown")
-        .scalar()
     )
-    unknown_bytes = int(unknown_row or 0)
+    if group_ip_filter is not None:
+        if not group_ip_filter:
+            unknown_bytes = 0
+        else:
+            unknown_q = unknown_q.filter(DetectionEvent.source_ip.in_(group_ip_filter))
+            unknown_bytes = int(unknown_q.scalar() or 0)
+    else:
+        unknown_bytes = int(unknown_q.scalar() or 0)
     total_bytes = known_bytes + unknown_bytes
     encrypted_pct = (
         round((unknown_bytes / total_bytes) * 100) if total_bytes > 0 else 0
@@ -4592,6 +4643,7 @@ def family_overview(
 
     return {
         "window_hours": hours,
+        "group_id": group_id,
         "cards": cards,
         "top_services": top_services,
         "recent_blocks": recent_blocks,
@@ -5091,6 +5143,261 @@ async def get_filter_status():
         "gaming_blocked": gaming_active,
         "blocked_services": blocked_services,
     }
+
+
+# ---------------------------------------------------------------------------
+# Filter schedules — server-side automation for parental/social/gaming
+# ---------------------------------------------------------------------------
+#
+# A schedule says "filter X should be ON during these times". The enforcer
+# loop (see _enforce_filter_schedules) compares the clock every 60 seconds
+# against each row and toggles the corresponding AdGuard filter if reality
+# drifts from the schedule. This replaces the previous localStorage-only
+# schedule modal that never actually enforced anything.
+
+FILTER_KEYS = ("parental", "social", "gaming")
+WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _schedule_to_dict(row: FilterSchedule) -> dict:
+    return {
+        "filter_key": row.filter_key,
+        "enabled": bool(row.enabled),
+        "mode": row.mode or "custom",
+        "days": [d for d in (row.days or "").split(",") if d],
+        "start_time": row.start_time or "00:00",
+        "end_time": row.end_time or "00:00",
+        "timezone": row.timezone or "Europe/Amsterdam",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _parse_hhmm(s: str) -> Optional[tuple[int, int]]:
+    try:
+        parts = (s or "").split(":")
+        if len(parts) != 2:
+            return None
+        hh, mm = int(parts[0]), int(parts[1])
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return hh, mm
+    except Exception:
+        pass
+    return None
+
+
+def _should_filter_be_on(row: FilterSchedule, now_local: datetime) -> bool:
+    """Evaluate whether a schedule says the filter should be ON right now.
+
+    - row.enabled=False → filter should be OFF (schedule is inactive).
+    - mode="always"     → filter should be ON whenever the row is enabled.
+    - mode="custom"     → filter should be ON when today is in `days` AND
+                          the local clock is inside [start_time, end_time].
+                          end_time < start_time means the window wraps
+                          midnight (e.g. 22:00 → 06:00 the next morning).
+    """
+    if not row.enabled:
+        return False
+    mode = (row.mode or "custom").lower()
+    if mode == "always":
+        return True
+
+    days = {d.strip().lower() for d in (row.days or "").split(",") if d.strip()}
+    if not days:
+        return False
+    weekday_name = WEEKDAY_KEYS[now_local.weekday()]
+    start = _parse_hhmm(row.start_time or "")
+    end = _parse_hhmm(row.end_time or "")
+    if not start or not end:
+        return False
+    cur_min = now_local.hour * 60 + now_local.minute
+    start_min = start[0] * 60 + start[1]
+    end_min = end[0] * 60 + end[1]
+
+    if start_min == end_min:
+        # Zero-length window → never active
+        return False
+
+    if start_min < end_min:
+        # Same-day window. Today must be a selected day.
+        if weekday_name not in days:
+            return False
+        return start_min <= cur_min < end_min
+
+    # Wrapping window (e.g. 22:00-06:00). The window "belongs" to the day
+    # it starts on. We match EITHER:
+    #   - we are past start on that start-day, OR
+    #   - we are before end on the day after a selected day.
+    if cur_min >= start_min and weekday_name in days:
+        return True
+    if cur_min < end_min:
+        prev_weekday = WEEKDAY_KEYS[(now_local.weekday() - 1) % 7]
+        if prev_weekday in days:
+            return True
+    return False
+
+
+@app.get("/api/filters/schedules")
+def list_filter_schedules(db: Session = Depends(get_db)):
+    """Return all three filter schedules (creates defaults on first call)."""
+    out: dict[str, dict] = {}
+    for key in FILTER_KEYS:
+        row = db.query(FilterSchedule).filter(FilterSchedule.filter_key == key).first()
+        if row is None:
+            row = FilterSchedule(
+                filter_key=key,
+                enabled=False,
+                mode="custom",
+                days="",
+                start_time="00:00",
+                end_time="00:00",
+                timezone="Europe/Amsterdam",
+                updated_at=datetime.utcnow(),
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+        out[key] = _schedule_to_dict(row)
+    return {"schedules": out}
+
+
+@app.put("/api/filters/schedules/{filter_key}")
+def update_filter_schedule(
+    filter_key: str,
+    payload: FilterScheduleUpdate,
+    db: Session = Depends(get_db),
+):
+    if filter_key not in FILTER_KEYS:
+        raise HTTPException(status_code=400, detail=f"Unknown filter_key: {filter_key}")
+    mode = (payload.mode or "custom").lower()
+    if mode not in ("always", "custom"):
+        raise HTTPException(status_code=400, detail="mode must be 'always' or 'custom'")
+    if mode == "custom":
+        if _parse_hhmm(payload.start_time) is None:
+            raise HTTPException(status_code=400, detail="Invalid start_time (expected HH:MM)")
+        if _parse_hhmm(payload.end_time) is None:
+            raise HTTPException(status_code=400, detail="Invalid end_time (expected HH:MM)")
+    days_cleaned = [d.lower() for d in (payload.days or []) if d.lower() in WEEKDAY_KEYS]
+
+    row = db.query(FilterSchedule).filter(FilterSchedule.filter_key == filter_key).first()
+    if row is None:
+        row = FilterSchedule(filter_key=filter_key)
+        db.add(row)
+    row.enabled = bool(payload.enabled)
+    row.mode = mode
+    row.days = ",".join(days_cleaned)
+    row.start_time = payload.start_time or "00:00"
+    row.end_time = payload.end_time or "00:00"
+    row.timezone = payload.timezone or "Europe/Amsterdam"
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    # Nudge the enforcer: apply the new schedule immediately so the user sees
+    # the effect without waiting up to 60 seconds for the next tick.
+    asyncio.create_task(_apply_filter_schedule_once(filter_key))
+    return _schedule_to_dict(row)
+
+
+@app.delete("/api/filters/schedules/{filter_key}")
+def delete_filter_schedule(filter_key: str, db: Session = Depends(get_db)):
+    if filter_key not in FILTER_KEYS:
+        raise HTTPException(status_code=400, detail=f"Unknown filter_key: {filter_key}")
+    row = db.query(FilterSchedule).filter(FilterSchedule.filter_key == filter_key).first()
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return {"status": "deleted", "filter_key": filter_key}
+
+
+async def _set_filter_state(filter_key: str, desired_on: bool) -> None:
+    """Apply the desired state for a single filter via AdGuard.
+
+    Mirrors the logic of the POST /api/filters/{parental,social,gaming}
+    endpoints but without the HTTP layer so the enforcer loop can call it.
+    """
+    try:
+        if filter_key == "parental":
+            await adguard.set_parental_control(desired_on)
+            return
+        services = SOCIAL_MEDIA_SERVICES if filter_key == "social" else GAMING_SERVICES
+        current = await adguard.get_blocked_services()
+        if desired_on:
+            merged = list(set(current + services))
+        else:
+            merged = [s for s in current if s not in services]
+        if set(merged) != set(current):
+            await adguard.set_blocked_services(merged)
+    except Exception as exc:
+        print(f"[schedule] _set_filter_state({filter_key}, {desired_on}) failed: {exc}")
+
+
+async def _get_current_filter_state(filter_key: str) -> Optional[bool]:
+    """Read the current state of a filter from AdGuard (None on error)."""
+    try:
+        if filter_key == "parental":
+            return await adguard.get_parental_status()
+        blocked = await adguard.get_blocked_services()
+        services = SOCIAL_MEDIA_SERVICES if filter_key == "social" else GAMING_SERVICES
+        return all(s in blocked for s in services)
+    except Exception:
+        return None
+
+
+async def _apply_filter_schedule_once(filter_key: str) -> None:
+    """Evaluate one schedule right now and apply it (used after PUT)."""
+    db = SessionLocal()
+    try:
+        row = db.query(FilterSchedule).filter(FilterSchedule.filter_key == filter_key).first()
+        if row is None:
+            return
+        tz_name = row.timezone or "Europe/Amsterdam"
+        try:
+            tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            tz = ZoneInfo("Europe/Amsterdam")
+        now_local = datetime.now(tz)
+        desired = _should_filter_be_on(row, now_local)
+    finally:
+        db.close()
+    current = await _get_current_filter_state(filter_key)
+    if current is None or current != desired:
+        await _set_filter_state(filter_key, desired)
+        print(f"[schedule] {filter_key} → {'ON' if desired else 'OFF'} (immediate)")
+
+
+async def _enforce_filter_schedules() -> None:
+    """Background loop: every 60s, align AdGuard with the stored schedules.
+
+    Only acts when a schedule is enabled — a disabled row is treated as "no
+    opinion" so manual toggles from the Rules page are never overwritten.
+    """
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                rows = db.query(FilterSchedule).filter(FilterSchedule.enabled == True).all()  # noqa: E712
+                work: list[tuple[str, bool]] = []
+                for row in rows:
+                    tz_name = row.timezone or "Europe/Amsterdam"
+                    try:
+                        tz = ZoneInfo(tz_name)
+                    except ZoneInfoNotFoundError:
+                        tz = ZoneInfo("Europe/Amsterdam")
+                    now_local = datetime.now(tz)
+                    desired = _should_filter_be_on(row, now_local)
+                    work.append((row.filter_key, desired))
+            finally:
+                db.close()
+
+            for filter_key, desired in work:
+                current = await _get_current_filter_state(filter_key)
+                if current is None:
+                    continue
+                if current != desired:
+                    await _set_filter_state(filter_key, desired)
+                    print(f"[schedule] {filter_key} → {'ON' if desired else 'OFF'} (scheduled)")
+        except Exception as exc:
+            print(f"[schedule] enforcer tick failed: {exc}")
+        await asyncio.sleep(60)
 
 
 # ---------------------------------------------------------------------------

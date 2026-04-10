@@ -154,6 +154,23 @@ class GlobalFilterStatus(BaseModel):
     gaming_blocked: list[str] = []
 
 
+class FilterScheduleUpdate(BaseModel):
+    """Payload for PUT /api/filters/schedules/{filter_key}.
+
+    When mode="always" the time/day fields are ignored — the filter is
+    simply held on as long as `enabled=True`. When mode="custom" the filter
+    is on when the current clock matches `days` × [start_time, end_time].
+    `enabled=False` deactivates the schedule entirely.
+    """
+
+    enabled: bool
+    mode: str = "custom"            # "always" | "custom"
+    days: list[str] = []            # e.g. ["mon","tue","wed","thu","fri"]
+    start_time: str = "00:00"       # "HH:MM"
+    end_time: str = "00:00"         # "HH:MM"
+    timezone: str = "Europe/Amsterdam"
+
+
 class PrivacyStats(BaseModel):
     """Summary of AdGuard Home blocking statistics."""
 

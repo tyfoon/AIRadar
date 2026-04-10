@@ -730,26 +730,38 @@
     <!-- ============================================================= -->
     <section id="page-family" class="page space-y-6">
 
-      <!-- Sub-tabs -->
-      <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
-        <button id="family-tab-btn-overview" onclick="switchFamilyTab('overview')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-house text-sm"></i>
-            <span data-i18n="family.tab.overview">Overview</span>
-          </span>
-        </button>
-        <button id="family-tab-btn-categories" onclick="switchFamilyTab('categories')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-squares-four text-sm"></i>
-            <span data-i18n="family.tab.categories">Categories</span>
-          </span>
-        </button>
-        <button id="family-tab-btn-rules" onclick="switchFamilyTab('rules')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
-          <span class="inline-flex items-center gap-1.5">
-            <i class="ph-duotone ph-shield-check text-sm"></i>
-            <span data-i18n="family.tab.rules">Rules</span>
-          </span>
-        </button>
+      <!-- Top bar: sub-tabs on the left, group filter on the right -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
+          <button id="family-tab-btn-overview" onclick="switchFamilyTab('overview')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">
+            <span class="inline-flex items-center gap-1.5">
+              <i class="ph-duotone ph-house text-sm"></i>
+              <span data-i18n="family.tab.overview">Overview</span>
+            </span>
+          </button>
+          <button id="family-tab-btn-categories" onclick="switchFamilyTab('categories')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+            <span class="inline-flex items-center gap-1.5">
+              <i class="ph-duotone ph-squares-four text-sm"></i>
+              <span data-i18n="family.tab.categories">Categories</span>
+            </span>
+          </button>
+          <button id="family-tab-btn-rules" onclick="switchFamilyTab('rules')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">
+            <span class="inline-flex items-center gap-1.5">
+              <i class="ph-duotone ph-shield-check text-sm"></i>
+              <span data-i18n="family.tab.rules">Rules</span>
+            </span>
+          </button>
+        </div>
+
+        <!-- Group filter: limits every block below to members of one
+             DeviceGroup. Groups are generic — can be "Kids", "IP Cameras",
+             "Piet's devices" — and are managed on Devices → Groups. -->
+        <div class="flex items-center gap-2 ml-auto">
+          <label for="family-group-select" class="text-xs text-slate-500 dark:text-slate-400" data-i18n="family.group.label">Group</label>
+          <select id="family-group-select" onchange="onFamilyGroupChanged(this.value)" class="text-sm rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.06] text-slate-700 dark:text-slate-200 px-3 py-1.5 max-w-[240px]">
+            <option value="" data-i18n="family.group.all">All devices</option>
+          </select>
+        </div>
       </div>
 
       <!-- ────── Sub-tab: Overview ────── -->
@@ -815,16 +827,22 @@
 
       <!-- ────── Sub-tab: Rules ────── -->
       <div id="family-tab-rules" class="hidden space-y-6">
+        <!-- Deeplinks to the real Rules page. The Family page is
+             presentation-only for rules — the single source of truth
+             is the Rules page (global filters, per-device, per-group
+             scopes, schedules). Duplicating that UI here would fork
+             the rule model in the user's head. -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1" data-i18n="family.rules.filtersTitle">Filters</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mb-4" data-i18n="family.rules.filtersDesc">Block an entire category with one click.</p>
-          <div id="family-rules-filters" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-        </div>
-
-        <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-          <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1" data-i18n="family.rules.servicesTitle">Services</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mb-4" data-i18n="family.rules.servicesDesc">Block or unblock individual services — overrides the category filter.</p>
-          <div id="family-rules-services" class="space-y-2"></div>
+          <div class="flex items-start gap-3 mb-4">
+            <div class="w-10 h-10 rounded-lg bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <i class="ph-duotone ph-gear text-xl text-blue-500"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1" data-i18n="family.rules.header">Family rules live on the Rules page</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400" data-i18n="family.rules.headerDesc">One place for every rule — global filters, per-device, per-group, with scheduling. Click a category below to jump straight to its section.</p>
+            </div>
+          </div>
+          <div id="family-rules-deeplinks" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
         </div>
       </div>
 
@@ -1449,6 +1467,30 @@
           <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.streamingServices">Streaming</h3>
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.streamingServicesDesc">Control access to streaming services.</p>
           <div id="access-control-streaming" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.shoppingServices">Shopping</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.shoppingServicesDesc">Control access to online shops and marketplaces.</p>
+          <div id="access-control-shopping" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.newsServices">News</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.newsServicesDesc">Control access to news sites.</p>
+          <div id="access-control-news" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.datingServices">Dating</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.datingServicesDesc">Control access to dating apps and sites.</p>
+          <div id="access-control-dating" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-1" data-i18n="rules.adultServices">Adult</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" data-i18n="rules.adultServicesDesc">Control access to adult content. Keep in mind a household DNS block is easily bypassed on mobile data.</p>
+          <div id="access-control-adult" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
         </div>
 
       </div><!-- /rules-tab-outbound -->

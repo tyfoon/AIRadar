@@ -574,6 +574,35 @@ class BlockRule(Base):
     expires_at = Column(DateTime, nullable=True)                 # NULL = permanent
 
 
+class FilterSchedule(Base):
+    """Server-side schedules for the three AdGuard high-level filters.
+
+    One row per filter_key ("parental" | "social" | "gaming"). The background
+    enforcer loop in api.py periodically compares the current clock against
+    each row and toggles the matching AdGuard filter if needed.
+
+    mode="always"  → filter is permanently ON (ignores days/times)
+    mode="custom"  → filter is ON when now() falls inside the selected
+                     weekdays AND between start_time and end_time
+
+    days is a CSV of lowercase weekday names: "mon,tue,wed,thu,fri".
+    Times are "HH:MM" 24h strings (local time in the configured timezone).
+    """
+
+    __tablename__ = "filter_schedules"
+
+    filter_key = Column(String, primary_key=True)  # "parental"|"social"|"gaming"
+    enabled = Column(Boolean, nullable=False, default=False)
+    mode = Column(String, nullable=False, default="custom")  # "always"|"custom"
+    days = Column(String, nullable=False, default="")  # CSV of weekday names
+    start_time = Column(String, nullable=False, default="00:00")  # "HH:MM"
+    end_time = Column(String, nullable=False, default="00:00")    # "HH:MM"
+    timezone = Column(String, nullable=False, default="Europe/Amsterdam")
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 def init_db() -> None:
     """Create all tables if they don't exist yet, and migrate schema.
 

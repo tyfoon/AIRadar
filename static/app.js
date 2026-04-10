@@ -326,6 +326,21 @@ const SERVICE_NAMES = {
   // Streaming
   netflix:'Netflix', youtube:'YouTube', spotify:'Spotify', disney_plus:'Disney+',
   hbo_max:'HBO Max', prime_video:'Prime Video', apple_tv:'Apple TV+',
+  // Shopping
+  amazon:'Amazon', bol:'bol.com', coolblue:'Coolblue', mediamarkt:'MediaMarkt',
+  zalando:'Zalando', shein:'Shein', temu:'Temu', aliexpress:'AliExpress',
+  marktplaats:'Marktplaats', vinted:'Vinted', ikea:'IKEA', ebay:'eBay', etsy:'Etsy',
+  // News
+  nos:'NOS', nu_nl:'NU.nl', telegraaf:'De Telegraaf', ad_nl:'AD', nrc:'NRC',
+  volkskrant:'Volkskrant', bbc:'BBC', nytimes:'New York Times',
+  reuters:'Reuters', guardian:'The Guardian',
+  // Dating
+  tinder:'Tinder', bumble:'Bumble', hinge:'Hinge', grindr:'Grindr',
+  lexa:'Lexa', parship:'Parship', happn:'Happn', okcupid:'OkCupid',
+  // Adult
+  pornhub:'Pornhub', xvideos:'XVideos', xhamster:'xHamster', youporn:'YouPorn',
+  redtube:'RedTube', onlyfans:'OnlyFans', chaturbate:'Chaturbate',
+  stripchat:'Stripchat', brazzers:'Brazzers',
 };
 
 // Domain mapping for Clearbit logos
@@ -360,6 +375,22 @@ const SERVICE_LOGO_DOMAIN = {
   // Streaming
   netflix:'netflix.com', youtube:'youtube.com', spotify:'spotify.com',
   disney_plus:'disneyplus.com', hbo_max:'max.com', prime_video:'primevideo.com', apple_tv:'apple.com',
+  // Shopping
+  amazon:'amazon.com', bol:'bol.com', coolblue:'coolblue.nl', mediamarkt:'mediamarkt.nl',
+  zalando:'zalando.com', shein:'shein.com', temu:'temu.com', aliexpress:'aliexpress.com',
+  marktplaats:'marktplaats.nl', vinted:'vinted.com', ikea:'ikea.com',
+  ebay:'ebay.com', etsy:'etsy.com',
+  // News
+  nos:'nos.nl', nu_nl:'nu.nl', telegraaf:'telegraaf.nl', ad_nl:'ad.nl',
+  nrc:'nrc.nl', volkskrant:'volkskrant.nl', bbc:'bbc.com',
+  nytimes:'nytimes.com', reuters:'reuters.com', guardian:'theguardian.com',
+  // Dating
+  tinder:'tinder.com', bumble:'bumble.com', hinge:'hinge.co', grindr:'grindr.com',
+  lexa:'lexa.nl', parship:'parship.nl', happn:'happn.com', okcupid:'okcupid.com',
+  // Adult
+  pornhub:'pornhub.com', xvideos:'xvideos.com', xhamster:'xhamster.com',
+  youporn:'youporn.com', redtube:'redtube.com', onlyfans:'onlyfans.com',
+  chaturbate:'chaturbate.com', stripchat:'stripchat.com', brazzers:'brazzers.com',
 };
 
 const SVC_BADGE_CLS = {
@@ -4534,6 +4565,15 @@ function switchFamilyTab(tab) {
 }
 window.switchFamilyTab = switchFamilyTab;
 
+// Active group-filter for the Family page. null = whole network.
+// Persisted in localStorage so the user's choice survives a reload.
+const _FAMILY_GROUP_KEY = 'airadar-family-group-id';
+let _familyGroupId = (() => {
+  const v = localStorage.getItem(_FAMILY_GROUP_KEY);
+  return v && v !== 'null' ? parseInt(v, 10) : null;
+})();
+let _familyGroupsCache = null;  // [{id, name, icon, color, member_count}, ...]
+
 async function refreshFamily() {
   // Fetch meta once per session — it's static
   if (!_familyMeta) {
@@ -4544,18 +4584,74 @@ async function refreshFamily() {
       _familyMeta = { categories: [] };
     }
   }
+  // Keep the group selector in sync with the latest group list on
+  // every Family-page load — new groups created on the Devices page
+  // should appear here without a full page reload.
+  await _loadFamilyGroups();
   // Default landing = overview
   if (_currentFamilyTab === 'overview') await refreshFamilyOverview();
   else if (_currentFamilyTab === 'categories') await refreshOther();
   else if (_currentFamilyTab === 'rules') await refreshFamilyRules();
 }
 
+async function _loadFamilyGroups() {
+  try {
+    const data = await fetch('/api/groups').then(r => r.json());
+    _familyGroupsCache = Array.isArray(data?.groups) ? data.groups : [];
+  } catch (err) {
+    console.error('family groups load failed', err);
+    _familyGroupsCache = [];
+  }
+  _renderFamilyGroupSelect();
+}
+
+function _renderFamilyGroupSelect() {
+  const sel = document.getElementById('family-group-select');
+  if (!sel) return;
+  const all = t('family.group.all') || 'All devices';
+  const groups = _familyGroupsCache || [];
+
+  // If the persisted group no longer exists (deleted on the Devices
+  // page), silently fall back to "all devices" so the UI stays
+  // consistent with reality.
+  if (_familyGroupId != null && !groups.some(g => g.id === _familyGroupId)) {
+    _familyGroupId = null;
+    localStorage.removeItem(_FAMILY_GROUP_KEY);
+  }
+
+  const options = [`<option value="">${all}</option>`];
+  groups.forEach(g => {
+    const count = g.member_count != null ? ` (${g.member_count})` : '';
+    options.push(`<option value="${g.id}">${g.name}${count}</option>`);
+  });
+  sel.innerHTML = options.join('');
+  sel.value = _familyGroupId != null ? String(_familyGroupId) : '';
+}
+
+function onFamilyGroupChanged(value) {
+  const parsed = value === '' || value == null ? null : parseInt(value, 10);
+  _familyGroupId = Number.isNaN(parsed) ? null : parsed;
+  if (_familyGroupId == null) {
+    localStorage.removeItem(_FAMILY_GROUP_KEY);
+  } else {
+    localStorage.setItem(_FAMILY_GROUP_KEY, String(_familyGroupId));
+  }
+  // Only the Overview tab is group-scoped for now. Categories and
+  // Rules reuse existing page-wide endpoints and keep their own
+  // filters — mixing a group filter into the tree accordion would
+  // confuse the existing filter dropdowns there.
+  if (_currentFamilyTab === 'overview') refreshFamilyOverview();
+}
+window.onFamilyGroupChanged = onFamilyGroupChanged;
+
 // ----- Overview --------------------------------------------------
 
 async function refreshFamilyOverview() {
   let data;
+  const qs = new URLSearchParams({ hours: '24' });
+  if (_familyGroupId != null) qs.set('group_id', String(_familyGroupId));
   try {
-    data = await fetch('/api/family/overview?hours=24').then(r => r.json());
+    data = await fetch('/api/family/overview?' + qs.toString()).then(r => r.json());
   } catch (err) {
     console.error('family overview load failed', err);
     return;
@@ -4701,143 +4797,88 @@ function _renderFamilyHonesty(h) {
 
 // ----- Rules sub-tab ---------------------------------------------
 
+// Family ▸ Rules tab is presentation-only. Every rule primitive already
+// lives on the Rules page: global filters, per-device scope, per-group
+// scope, schedules. Rendering a parallel "block TikTok" button here would
+// fork the mental model. Instead we render a grid of shortcut tiles that
+// deep-link to the Rules page — one per family category — and let the
+// Rules page be the single source of truth.
 async function refreshFamilyRules() {
-  let services;
+  let services = [];
   try {
     services = await fetch('/api/rules/services').then(r => r.json());
   } catch (err) {
-    console.error('family rules load failed', err);
-    return;
+    console.error('family rules deeplink count failed', err);
   }
   _familyRulesCache = services || [];
-  _renderFamilyRulesFilters();
-  _renderFamilyRulesServices();
+  _renderFamilyRulesDeeplinks();
 }
 
-function _familyServicesByCategory() {
+function _renderFamilyRulesDeeplinks() {
+  const el = document.getElementById('family-rules-deeplinks');
+  if (!el) return;
+
+  // Count blocked/total per family category so each tile can show
+  // how many services are currently gated. Categories with no known
+  // services still render — they're informative ("nothing to block yet").
   const by = {};
   (_familyRulesCache || []).forEach(s => {
-    const cat = s.category;
-    if (!cat) return;
-    if (!(cat in CATEGORY_META) || cat === 'gambling') {
-      // gambling is reserved but has no SERVICE_DOMAINS entries yet
-    }
-    if (!by[cat]) by[cat] = [];
-    by[cat].push(s);
+    if (!s.category) return;
+    (by[s.category] = by[s.category] || []).push(s);
   });
-  return by;
-}
 
-function _renderFamilyRulesFilters() {
-  const el = document.getElementById('family-rules-filters');
-  if (!el) return;
-  const by = _familyServicesByCategory();
   const familyCats = (_familyMeta?.categories || []).map(c => c.key);
   if (!familyCats.length) {
     el.innerHTML = `<p class="col-span-full text-center text-xs text-slate-400 py-4">${t('family.noData') || 'No data.'}</p>`;
     return;
   }
+
   el.innerHTML = familyCats.map(key => {
     const m = CATEGORY_META[key] || { icon: '<i class="ph-duotone ph-chart-bar text-xl"></i>', color: 'slate' };
     const label = _familyCategoryLabel(key);
     const list = by[key] || [];
     const total = list.length;
     const blocked = list.filter(s => s.is_blocked).length;
-    const allBlocked = total > 0 && blocked === total;
-    const pct = total > 0 ? Math.round((blocked / total) * 100) : 0;
-    const action = allBlocked ? 'unblock' : 'block';
-    const btnLabel = allBlocked
-      ? (t('family.unblockAll') || 'Unblock all')
-      : (t('family.blockAll') || 'Block all');
-    return `<div class="bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] rounded-lg p-4">
+
+    // Pill colour reflects current block pressure — grey for none,
+    // amber for partial, red for all.
+    let pill;
+    if (total === 0) {
+      pill = `<span class="text-[10px] text-slate-400 dark:text-slate-500">${t('family.noServices') || 'No services'}</span>`;
+    } else if (blocked === 0) {
+      pill = `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">${total} ${t('family.servicesShort') || 'services'}</span>`;
+    } else if (blocked === total) {
+      pill = `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400">${t('family.allBlocked') || 'All blocked'}</span>`;
+    } else {
+      pill = `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">${blocked}/${total} ${t('family.blockedShort') || 'blocked'}</span>`;
+    }
+
+    // Hash deeplink: Rules page, outbound tab, then scroll to the
+    // category section. scrollToRulesCategory() lives in the Rules
+    // page boot path and knows how to jump after navigate().
+    return `<button type="button" onclick="goToRulesCategory('${key}')" class="text-left bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-100 dark:hover:bg-white/[0.05] border border-slate-200 dark:border-white/[0.06] rounded-lg p-4 transition-colors group">
       <div class="flex items-center justify-between mb-2">
-        <p class="text-xs font-medium text-${m.color}-600 dark:text-${m.color}-400">${m.icon} ${label}</p>
-        ${allBlocked ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400">${t('family.blocked') || 'Blocked'}</span>` : ''}
+        <span class="text-${m.color}-600 dark:text-${m.color}-400 text-xl">${m.icon}</span>
+        <i class="ph-duotone ph-arrow-up-right text-sm text-slate-300 dark:text-slate-600 group-hover:text-${m.color}-500 transition-colors"></i>
       </div>
-      <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-3">${blocked}/${total} ${t('family.servicesBlocked') || 'services blocked'} (${pct}%)</p>
-      <button onclick="_familyFilterToggle('${key}','${action}')" class="w-full px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-        allBlocked
-          ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400'
-          : 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400'
-      }" ${total === 0 ? 'disabled' : ''}>${btnLabel}</button>
-    </div>`;
+      <p class="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">${label}</p>
+      ${pill}
+    </button>`;
   }).join('');
 }
 
-function _renderFamilyRulesServices() {
-  const el = document.getElementById('family-rules-services');
-  if (!el) return;
-  const by = _familyServicesByCategory();
-  const familyCats = (_familyMeta?.categories || []).map(c => c.key);
-  const parts = [];
-  familyCats.forEach(key => {
-    const list = (by[key] || []).slice().sort((a, b) => a.service_name.localeCompare(b.service_name));
-    if (!list.length) return;
-    const m = CATEGORY_META[key] || { color: 'slate' };
-    const label = _familyCategoryLabel(key);
-    parts.push(`<div>
-      <p class="text-[11px] uppercase tracking-wider text-${m.color}-500 dark:text-${m.color}-400 font-semibold mt-3 mb-1.5">${label}</p>
-      ${list.map(s => {
-        const name = SERVICE_NAMES?.[s.service_name] || s.service_name;
-        const logo = (typeof svcLogo === 'function') ? svcLogo(s.service_name) : '';
-        const seen = s.seen ? `<span class="text-[10px] text-slate-400 dark:text-slate-500">${s.hit_count || 0} ${t('other.hits') || 'hits'}</span>` : `<span class="text-[10px] text-slate-300 dark:text-slate-600">${t('family.preventive') || 'preventive'}</span>`;
-        const action = s.is_blocked ? 'unblock' : 'block';
-        const btnLabel = s.is_blocked ? (t('family.unblock') || 'Unblock') : (t('family.block') || 'Block');
-        const btnClass = s.is_blocked
-          ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400'
-          : 'bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400';
-        return `<div class="flex items-center justify-between gap-3 py-2 px-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            ${logo}
-            <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">${name}</span>
-            ${seen}
-          </div>
-          <button onclick="_familyServiceToggle('${s.service_name}','${action}')" class="px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${btnClass}">${btnLabel}</button>
-        </div>`;
-      }).join('')}
-    </div>`);
-  });
-  el.innerHTML = parts.join('') || `<p class="text-center text-xs text-slate-400 py-4">${t('family.noData') || 'No data.'}</p>`;
+// Deep-link helper: navigate to Rules page and, after it renders,
+// scroll the matching access-control grid into view. Used by the
+// Family ▸ Rules deeplink tiles.
+function goToRulesCategory(category) {
+  navigate('rules');
+  // Give refreshRules() a moment to populate the grids before scrolling.
+  setTimeout(() => {
+    const el = document.getElementById(`access-control-${category}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 350);
 }
-
-async function _familyServiceToggle(service, action) {
-  const url = action === 'block' ? '/api/rules/block' : '/api/rules/unblock';
-  try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ service_name: service }),
-    });
-  } catch (err) {
-    console.error('family rule toggle failed', err);
-    return;
-  }
-  await refreshFamilyRules();
-}
-window._familyServiceToggle = _familyServiceToggle;
-
-async function _familyFilterToggle(category, action) {
-  const by = _familyServicesByCategory();
-  const list = by[category] || [];
-  if (!list.length) return;
-  const targets = action === 'block'
-    ? list.filter(s => !s.is_blocked)
-    : list.filter(s => s.is_blocked);
-  const url = action === 'block' ? '/api/rules/block' : '/api/rules/unblock';
-  for (const s of targets) {
-    try {
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service_name: s.service_name }),
-      });
-    } catch (err) {
-      console.error(`family ${action} failed for ${s.service_name}`, err);
-    }
-  }
-  await refreshFamilyRules();
-}
-window._familyFilterToggle = _familyFilterToggle;
+window.goToRulesCategory = goToRulesCategory;
 
 // ================================================================
 // OTHER USAGE — category tree accordion (now lives under Family ▸ Categories)
@@ -7432,6 +7473,9 @@ async function loadGlobalFilterStatus() {
     styleFilterCard('filter-parental-card', data.parental_enabled);
     styleFilterCard('filter-social-card', data.social_media_blocked);
     styleFilterCard('filter-gaming-card', data.gaming_blocked);
+    // Schedule badges piggyback on the filter-status refresh so they stay
+    // in sync with manual toggles without an extra poll endpoint.
+    await _loadSchedules();
     _renderAllScheduleBadges();
   } catch(e) { console.error('loadGlobalFilterStatus:', e); }
 }
@@ -7477,24 +7521,81 @@ async function toggleGlobalFilter(type, checkbox) {
 }
 
 // ---------------------------------------------------------------------------
-// Scheduling — localStorage-backed schedule for global filters
+// Scheduling — server-backed schedules for global filters
 // ---------------------------------------------------------------------------
-const SCHED_STORAGE_KEY = 'airadar-filter-schedules';
+//
+// Schedules live in the `filter_schedules` table and are enforced by a
+// background loop in api.py. This module is a thin client:
+//
+//   _scheduleCache      → normalized mirror of GET /api/filters/schedules
+//   _loadSchedules()    → fetches the cache (used by openScheduleModal and
+//                         badge rendering); runs a one-time migration from
+//                         the old localStorage key the first time it sees
+//                         `airadar-filter-schedules-migrated` is not set.
+//   saveSchedule()      → PUT /api/filters/schedules/{filter_key}
+//
+// The old localStorage key (`airadar-filter-schedules`) is kept around until
+// the migration has uploaded its contents, then cleared.
+
+const SCHED_STORAGE_KEY = 'airadar-filter-schedules';            // legacy
+const SCHED_MIGRATED_KEY = 'airadar-filter-schedules-migrated';  // one-shot flag
 let _schedFilterKey = null; // which filter we're editing
-
-function _loadSchedules() {
-  try { return JSON.parse(localStorage.getItem(SCHED_STORAGE_KEY)) || {}; }
-  catch { return {}; }
-}
-
-function _saveSchedules(schedules) {
-  localStorage.setItem(SCHED_STORAGE_KEY, JSON.stringify(schedules));
-}
+let _scheduleCache = {};    // { parental: {enabled, mode, days, start_time, end_time, ...}, ... }
+let _schedulesLoaded = false;
 
 const FILTER_NAMES = { parental: 'rules.safeWork', social: 'rules.blockSocial', gaming: 'rules.blockGaming' };
 const DAY_KEYS = ['mon','tue','wed','thu','fri','sat','sun'];
 
-function openScheduleModal(filterKey) {
+async function _migrateLegacySchedules() {
+  // One-time: push any localStorage schedules to the server so users who
+  // previously saved schedules don't lose them during the rewrite.
+  if (localStorage.getItem(SCHED_MIGRATED_KEY)) return;
+  let legacy = {};
+  try {
+    legacy = JSON.parse(localStorage.getItem(SCHED_STORAGE_KEY)) || {};
+  } catch { legacy = {}; }
+  try {
+    for (const [key, sched] of Object.entries(legacy)) {
+      if (!sched || sched.mode !== 'custom') continue;
+      const body = {
+        enabled: true,
+        mode: 'custom',
+        days: sched.days || ['mon','tue','wed','thu','fri'],
+        start_time: sched.start || '15:00',
+        end_time: sched.end || '18:00',
+        timezone: 'Europe/Amsterdam',
+      };
+      await fetch(`/api/filters/schedules/${key}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+    localStorage.removeItem(SCHED_STORAGE_KEY);
+  } catch (err) {
+    console.warn('schedule migration failed:', err);
+  } finally {
+    localStorage.setItem(SCHED_MIGRATED_KEY, '1');
+  }
+}
+
+async function _loadSchedules(force = false) {
+  if (_schedulesLoaded && !force) return _scheduleCache;
+  await _migrateLegacySchedules();
+  try {
+    const res = await fetch('/api/filters/schedules');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    _scheduleCache = data.schedules || {};
+    _schedulesLoaded = true;
+  } catch (err) {
+    console.error('_loadSchedules:', err);
+    _scheduleCache = {};
+  }
+  return _scheduleCache;
+}
+
+async function openScheduleModal(filterKey) {
   _schedFilterKey = filterKey;
   const modal = document.getElementById('schedule-modal-backdrop');
   const title = document.getElementById('schedule-modal-title');
@@ -7524,18 +7625,19 @@ function openScheduleModal(filterKey) {
     ).join('');
   }
 
-  // Load existing schedule
-  const schedules = _loadSchedules();
+  // Load existing schedule from the server
+  const schedules = await _loadSchedules(true);
   const existing = schedules[filterKey];
+  const isCustom = existing && existing.enabled && existing.mode === 'custom';
 
-  if (existing && existing.mode === 'custom') {
+  if (isCustom) {
     document.querySelector('input[name="sched-mode"][value="custom"]').checked = true;
     document.getElementById('schedule-custom-fields').classList.remove('hidden');
-    document.getElementById('sched-start').value = existing.start || '15:00';
-    document.getElementById('sched-end').value = existing.end || '18:00';
-    // Set day checkboxes
+    document.getElementById('sched-start').value = existing.start_time || '15:00';
+    document.getElementById('sched-end').value = existing.end_time || '18:00';
+    const selectedDays = (existing.days && existing.days.length) ? existing.days : DAY_KEYS.slice(0, 5);
     daysContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      cb.checked = (existing.days || DAY_KEYS.slice(0, 5)).includes(cb.value);
+      cb.checked = selectedDays.includes(cb.value);
     });
   } else {
     document.querySelector('input[name="sched-mode"][value="always"]').checked = true;
@@ -7560,50 +7662,77 @@ function onScheduleModeChange() {
   document.getElementById('schedule-custom-fields').classList.toggle('hidden', mode !== 'custom');
 }
 
-function saveSchedule() {
+async function saveSchedule() {
   if (!_schedFilterKey) return;
   const mode = document.querySelector('input[name="sched-mode"]:checked')?.value;
-  const schedules = _loadSchedules();
+  const filterKey = _schedFilterKey;
 
-  if (mode === 'custom') {
-    const start = document.getElementById('sched-start').value;
-    const end = document.getElementById('sched-end').value;
-    const days = [...document.querySelectorAll('#sched-days input[type="checkbox"]:checked')].map(cb => cb.value);
-    schedules[_schedFilterKey] = { mode: 'custom', start, end, days };
-  } else {
-    delete schedules[_schedFilterKey];
+  // "always" here means "no active schedule" — same semantics as before:
+  // when the user picks Always, we clear the schedule so manual toggles on
+  // the Rules page decide whether the filter is on or off.
+  const body = (mode === 'custom')
+    ? {
+        enabled: true,
+        mode: 'custom',
+        days: [...document.querySelectorAll('#sched-days input[type="checkbox"]:checked')].map(cb => cb.value),
+        start_time: document.getElementById('sched-start').value,
+        end_time: document.getElementById('sched-end').value,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Amsterdam',
+      }
+    : {
+        enabled: false,
+        mode: 'custom',
+        days: [],
+        start_time: '00:00',
+        end_time: '00:00',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Amsterdam',
+      };
+
+  try {
+    const res = await fetch(`/api/filters/schedules/${filterKey}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    // Refresh cache, badges, and — since the backend just applied the
+    // schedule — the toggle states too.
+    await _loadSchedules(true);
+    _renderAllScheduleBadges();
+    await loadGlobalFilterStatus();
+  } catch (err) {
+    console.error('saveSchedule:', err);
+    alert(t('rules.filterFailed', { msg: err.message }));
+    return;
   }
-
-  _saveSchedules(schedules);
-  _renderAllScheduleBadges();
   closeScheduleModal();
 }
 
 function _renderAllScheduleBadges() {
-  const schedules = _loadSchedules();
+  const schedules = _scheduleCache || {};
   ['parental', 'social', 'gaming'].forEach(key => {
     const el = document.getElementById(`filter-${key}-schedule`);
     const textEl = document.getElementById(`filter-${key}-schedule-text`);
     if (!el || !textEl) return;
 
     const sched = schedules[key];
-    if (sched && sched.mode === 'custom') {
-      const dayLabels = (sched.days || []).map(d => t('sched.' + d));
-      // Compact day range: if Mon-Fri, show "Mon–Fri"
+    if (sched && sched.enabled && sched.mode === 'custom') {
+      const days = (sched.days || []).slice().sort();
+      const dayLabels = days.map(d => t('sched.' + d));
       let dayStr;
-      const weekdays = DAY_KEYS.slice(0, 5);
-      const weekend = DAY_KEYS.slice(5);
-      if (sched.days.length === 7) dayStr = t('sched.mon') + '–' + t('sched.sun');
-      else if (JSON.stringify(sched.days.sort()) === JSON.stringify(weekdays)) dayStr = t('sched.mon') + '–' + t('sched.fri');
-      else if (JSON.stringify(sched.days.sort()) === JSON.stringify(weekend)) dayStr = t('sched.sat') + '–' + t('sched.sun');
+      const weekdays = DAY_KEYS.slice(0, 5).slice().sort();
+      const weekend = DAY_KEYS.slice(5).slice().sort();
+      if (days.length === 7) dayStr = t('sched.mon') + '–' + t('sched.sun');
+      else if (JSON.stringify(days) === JSON.stringify(weekdays)) dayStr = t('sched.mon') + '–' + t('sched.fri');
+      else if (JSON.stringify(days) === JSON.stringify(weekend)) dayStr = t('sched.sat') + '–' + t('sched.sun');
       else dayStr = dayLabels.join(', ');
 
       // Format times nicely
       const fmtT = (v) => {
-        const [h, m] = v.split(':').map(Number);
+        const [h, m] = (v || '00:00').split(':').map(Number);
         return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       };
-      textEl.textContent = `${dayStr}, ${fmtT(sched.start)} – ${fmtT(sched.end)}`;
+      textEl.textContent = `${dayStr}, ${fmtT(sched.start_time)} – ${fmtT(sched.end_time)}`;
       el.classList.remove('hidden');
     } else {
       el.classList.add('hidden');
@@ -8243,6 +8372,10 @@ async function loadAccessControl() {
       { key: 'social',    containerId: 'access-control-social' },
       { key: 'gaming',    containerId: 'access-control-gaming' },
       { key: 'streaming', containerId: 'access-control-streaming' },
+      { key: 'shopping',  containerId: 'access-control-shopping' },
+      { key: 'news',      containerId: 'access-control-news' },
+      { key: 'dating',    containerId: 'access-control-dating' },
+      { key: 'adult',     containerId: 'access-control-adult' },
     ];
     for (const cat of categories) {
       const el = document.getElementById(cat.containerId);
