@@ -137,6 +137,34 @@ const TRANSLATIONS = {
     'family.cat.news':          'News',
     'family.cat.dating':        'Dating',
     'family.cat.adult':         'Adult',
+    // Content page — extras added for chip counts, row expand, and
+    // the rule-dialog status line. Kept under family.*/content.* so
+    // the rest of the Content page translations sit together.
+    'content.loading':          'Loading…',
+    'content.loadError':        'Failed to load',
+    'content.noServices':       'No services seen in this category.',
+    'content.noDevices':        'No devices seen in this category.',
+    'content.services':         'services',
+    'content.devices':          'devices',
+    'content.more':             'more',
+    'content.less':             'show less',
+    'content.ruleOnly':         'rule only',
+    'content.servicesTitle':    'Services',
+    'content.devicesTitle':     'Devices',
+
+    // Alert / rule dialog — "current rule" status line bits
+    'alertModal.currentRule':   'Current rule',
+    'alertModal.left':          'left',
+    'alertModal.permanent':     'permanent',
+    'alertModal.noDevice':      'No specific device',
+    'alertModal.thisDevice':    'This device',
+    'alertModal.allDevices':    'All devices',
+    'alertModal.noGroups':      'No groups yet — create one on Devices → Groups',
+    'alertModal.missingDevice': 'No device on this alert — choose Global or Group.',
+    'alertModal.missingGroup':  'Pick a group first.',
+    'alertModal.submitting':    'Submitting…',
+    'alertModal.failed':        'Failed',
+    'alertModal.success':       'Alert processed',
 
     // Settings — System Performance
     'settings.tabNotifications':'Notifications',
@@ -945,6 +973,33 @@ const TRANSLATIONS = {
     'family.cat.news':          'Nieuws',
     'family.cat.dating':        'Dating',
     'family.cat.adult':         'Volwassen',
+    // Content pagina — extra strings voor de tegels, uitklap en
+    // de regel-dialoog status.
+    'content.loading':          'Laden…',
+    'content.loadError':        'Laden mislukt',
+    'content.noServices':       'Geen services in deze categorie.',
+    'content.noDevices':        'Geen apparaten in deze categorie.',
+    'content.services':         'services',
+    'content.devices':          'apparaten',
+    'content.more':             'meer',
+    'content.less':             'toon minder',
+    'content.ruleOnly':         'alleen regel',
+    'content.servicesTitle':    'Services',
+    'content.devicesTitle':     'Apparaten',
+
+    // Alert / regel dialoog — "huidige regel" statusregel
+    'alertModal.currentRule':   'Huidige regel',
+    'alertModal.left':          'resterend',
+    'alertModal.permanent':     'permanent',
+    'alertModal.noDevice':      'Geen specifiek apparaat',
+    'alertModal.thisDevice':    'Dit apparaat',
+    'alertModal.allDevices':    'Alle apparaten',
+    'alertModal.noGroups':      'Nog geen groepen — maak er één aan via Apparaten → Groepen',
+    'alertModal.missingDevice': 'Geen apparaat — kies Globaal of Groep.',
+    'alertModal.missingGroup':  'Kies eerst een groep.',
+    'alertModal.submitting':    'Versturen…',
+    'alertModal.failed':        'Mislukt',
+    'alertModal.success':       'Melding verwerkt',
 
     // Instellingen — Systeemprestaties
     'settings.tabNotifications':'Notificaties',

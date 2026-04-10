@@ -4931,25 +4931,40 @@ def family_category_detail(
     # --- Active, non-allow policies relevant to this category view.
     # We return a compact list so the UI can render policy icons on
     # each row/chip AND pre-fill the rule dialog when the user
-    # re-opens an existing rule. "Relevant" means either:
-    #   * a category-wide rule (service_name is NULL and matches cat)
-    #   * a service-scoped rule for a service we actually see here
+    # re-opens an existing rule. A rule is "relevant" here iff:
+    #   * its category matches (covers category-wide rules AND
+    #     service-scoped rules that were tagged with a category), OR
+    #   * its service_name is still visible in this time window.
+    #
+    # The category-based branch is critical: when a service like
+    # Ubisoft is actively blocked, the device generates zero traffic
+    # to it, so Ubisoft disappears from ``seen_service_names`` and the
+    # rule would otherwise become invisible — meaning the user can't
+    # see or edit the rule they just created.
+    #
+    # We also need to tolerate mixed naive/aware ``expires_at`` values.
+    # The Column is naive-DateTime but Pydantic can hand us aware
+    # datetimes via the POST endpoint. On SQLite those are stored
+    # verbatim, so a raw SQL comparison with a naive "now" can silently
+    # drop rows. To avoid that we fetch all non-allow policies and
+    # evaluate expiry in Python, normalising to naive UTC.
     seen_service_names = {s["service_name"] for s in services_out}
-    now_naive = datetime.utcnow()
     policy_rows = (
         db.query(ServicePolicy)
         .filter(ServicePolicy.action != "allow")
-        .filter(
-            (ServicePolicy.expires_at.is_(None))
-            | (ServicePolicy.expires_at > now_naive)
-        )
         .all()
     )
+    now_naive = datetime.utcnow()
     policies_out: list[dict] = []
     for pol in policy_rows:
-        # Only keep rules that will actually affect something in this
-        # view: category-wide for this cat, or a service we display.
-        cat_match = (pol.service_name is None and pol.category == category)
+        # Expiry check — normalise aware → naive UTC before comparing.
+        if pol.expires_at is not None:
+            exp = pol.expires_at
+            if getattr(exp, "tzinfo", None) is not None:
+                exp = exp.astimezone(timezone.utc).replace(tzinfo=None)
+            if exp <= now_naive:
+                continue
+        cat_match = (pol.category == category)
         svc_match = (pol.service_name is not None and pol.service_name in seen_service_names)
         if not (cat_match or svc_match):
             continue
@@ -4962,6 +4977,43 @@ def family_category_detail(
             "category": pol.category,
             "action": pol.action,
             "expires_at": pol.expires_at.isoformat() if pol.expires_at else None,
+        })
+
+    # --- Phantom service rows for blocked/silent services.
+    # A service with an active block won't appear in ``services_out``
+    # because it generates no traffic. We still want the user to see
+    # (and click) the rule they set, so we synthesise a zero-activity
+    # row for every service_name referenced by a returned policy that
+    # isn't already in the services list. The synthetic row carries
+    # only the devices named in the policies themselves, so Kader 1
+    # stays truthful: "this is a rule, no active traffic".
+    phantom_svc_names = {
+        p["service_name"] for p in policies_out
+        if p["service_name"] and p["service_name"] not in seen_service_names
+    }
+    for svc_name in phantom_svc_names:
+        # Collect per-device info from any device-scoped policies on
+        # this service so Kader 1 can show a "Luuk desktop" chip even
+        # though there's no recent traffic.
+        phantom_devs: list[dict] = []
+        for p in policies_out:
+            if p["service_name"] != svc_name or p["scope"] != "device":
+                continue
+            mac = p["mac_address"]
+            if not mac:
+                continue
+            entry = _device_entry(mac, mac)
+            entry["bytes"] = 0
+            entry["hits"] = 0
+            phantom_devs.append(entry)
+        services_out.append({
+            "service_name": svc_name,
+            "total_bytes": 0,
+            "total_hits": 0,
+            "device_count": len(phantom_devs),
+            "blocked": svc_name in blocked_services,
+            "top_devices": phantom_devs,
+            "phantom": True,  # UI hint: "rule exists, no recent traffic"
         })
 
     meta = FAMILY_CATEGORY_META.get(category, {})

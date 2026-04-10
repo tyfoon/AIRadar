@@ -2170,18 +2170,26 @@ function openAlertActionModal(arg) {
   _alertModalGroupId = null;
 
   // Content-page re-open: if there's already an active rule matching
-  // this exact (scope, mac, service, category) tuple, pre-select its
+  // this (scope, mac, service, category) tuple, pre-select its
   // action so the user sees the existing setting instead of a fresh
   // "block" default — and we expose the policy for the status line.
+  //
+  // We intentionally try a few category shapes: /api/policies stores
+  // exactly what the dialog submits, so a device+service rule may
+  // have been saved with or without a category tag. Matching any of
+  // those is equivalent from the user's perspective.
   let _existingPolicy = null;
   if (_alertModalMode === 'content') {
-    _existingPolicy = _findContentPolicy({
-      scope: defaultScope,
-      mac: alert.mac_address || null,
-      service: alert.service_or_dest || null,
-      category: alert.category || null,
-      groupId: null,
-    });
+    const mac = alert.mac_address || null;
+    const svc = alert.service_or_dest || null;
+    const cat = alert.category || null;
+    _existingPolicy =
+         _findContentPolicy({ scope: defaultScope, mac, service: svc, category: cat, groupId: null })
+      || _findContentPolicy({ scope: defaultScope, mac, service: svc, category: null, groupId: null })
+      // Device-wide category rule counts as "there's already a rule"
+      // when the user is now authoring a service-specific rule for
+      // that same device + category.
+      || (svc ? _findContentPolicy({ scope: defaultScope, mac, service: null, category: cat, groupId: null }) : null);
     if (_existingPolicy) {
       _alertModalAction = _existingPolicy.action;
     }
@@ -4890,20 +4898,29 @@ function _findContentPolicy({ scope, mac, service, category, groupId }) {
   ) || null;
 }
 
-// Headline policy for a service row: prefer a global rule on this
-// service, fall back to any category-wide global rule. Block outranks
-// alert so the stronger state always wins the icon slot.
+// Headline policy for a service row: we want *any* active rule
+// touching this service to put an icon on the row, because the user
+// set "Block Ubisoft for Luuk desktop" and then expects to see a
+// block indicator on the Ubisoft row. Resolution order:
+//   1. global rule on this exact service
+//   2. global category-wide rule
+//   3. any device-scoped rule on this service (so per-device rules
+//      still surface at the row level)
+// Within each tier, block outranks alert so the stronger state wins.
 function _findServiceHeadlinePolicy(service, category) {
   const pols = _contentCategoryCache?.policies || [];
-  const candidates = pols.filter(p =>
-    p.scope === 'global' && (
-      (p.service_name === service)
-      || (p.service_name === null && p.category === category)
-    )
-  );
-  if (!candidates.length) return null;
-  candidates.sort((a, b) => (a.action === 'block' ? 0 : 1) - (b.action === 'block' ? 0 : 1));
-  return candidates[0];
+  const byStrength = (a, b) => (a.action === 'block' ? 0 : 1) - (b.action === 'block' ? 0 : 1);
+
+  const globalSvc = pols.filter(p => p.scope === 'global' && p.service_name === service).sort(byStrength);
+  if (globalSvc.length) return globalSvc[0];
+
+  const globalCat = pols.filter(p => p.scope === 'global' && p.service_name === null && p.category === category).sort(byStrength);
+  if (globalCat.length) return globalCat[0];
+
+  const deviceSvc = pols.filter(p => p.scope === 'device' && p.service_name === service).sort(byStrength);
+  if (deviceSvc.length) return deviceSvc[0];
+
+  return null;
 }
 
 // Headline policy for a device row: prefer a device+category-wide rule,
@@ -5118,10 +5135,13 @@ function _contentDeviceChip(dev, serviceName, category) {
   // Use a data- attribute for the onclick so escaping stays safe even
   // when the MAC contains weird characters.
   const macEsc = (dev.mac_address || '').replace(/'/g, "\\'");
-  // Existing-policy icon: exact match on (device scope, mac, service).
-  // Also honour a device+category-wide rule, which would block every
-  // service in this category for this device.
-  const devSvcPol = _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: serviceName, category: null })
+  // Existing-policy icon: prefer a device+service rule (with OR
+  // without a category tag — /api/policies persists whatever the
+  // dialog submitted, so we try both shapes), and fall back to a
+  // device+category-wide rule which would block every service in
+  // this category for this device.
+  const devSvcPol = _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: serviceName, category })
+                 || _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: serviceName, category: null })
                  || _findContentPolicy({ scope: 'device', mac: dev.mac_address, service: null, category });
   const polIcon = _policyIconHtml(devSvcPol, 'text-[11px]');
   // Escape the name once so ampersands/quotes don't break the title attribute.
@@ -5142,9 +5162,12 @@ function _contentDeviceChip(dev, serviceName, category) {
 function _contentServiceChip(svc, mac, category) {
   const logo = svcLogo(svc.service_name);
   const name = svcDisplayName(svc.service_name);
-  // Policy icon: device-scoped rule on this (mac, service), or a
-  // global rule on this service that affects this device too.
-  const devSvcPol = _findContentPolicy({ scope: 'device', mac, service: svc.service_name, category: null })
+  // Policy icon: device-scoped rule on this (mac, service) — try
+  // both the "category set" and "category null" shapes — then fall
+  // back to a global rule on this service.
+  const devSvcPol = _findContentPolicy({ scope: 'device', mac, service: svc.service_name, category })
+                 || _findContentPolicy({ scope: 'device', mac, service: svc.service_name, category: null })
+                 || _findContentPolicy({ scope: 'global', mac: null, service: svc.service_name, category })
                  || _findContentPolicy({ scope: 'global', mac: null, service: svc.service_name, category: null });
   const polIcon = _policyIconHtml(devSvcPol, 'text-[11px]');
   const nameAttr = String(name).replace(/"/g, '&quot;');
@@ -5171,7 +5194,13 @@ function _renderContentKaderServices(services, category) {
   }
   const maxBytes = Math.max(...services.map(s => s.total_bytes || 0)) || 1;
   el.innerHTML = services.map(s => {
-    const dim = (s.total_bytes || 0) < _CONTENT_DIM_BYTES && (s.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
+    // Phantom rows come from the backend for services that have an
+    // active rule but zero traffic (e.g. a blocked service). We
+    // render them with a subtle "no recent traffic" pill instead of
+    // dimming them to 50% — the whole point is to stay visible so
+    // the user can un-block or edit the rule.
+    const isPhantom = !!s.phantom;
+    const dim = !isPhantom && (s.total_bytes || 0) < _CONTENT_DIM_BYTES && (s.total_hits || 0) < _CONTENT_DIM_HITS ? 'opacity-50' : '';
     const pct = Math.max(3, Math.round(((s.total_bytes || 0) / maxBytes) * 100));
 
     // Slice devices — if this row is expanded, show them all.
@@ -5201,6 +5230,12 @@ function _renderContentKaderServices(services, category) {
     const blocked = s.blocked
       ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-semibold">${t('family.blocked') || 'Blocked'}</span>`
       : '';
+    // Phantom pill so the user instantly understands why the row
+    // has zero bytes — it's a rule-only entry, no observed traffic
+    // in the current window.
+    const phantomPill = isPhantom
+      ? `<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 font-medium" title="Rule is active but no recent traffic — traffic is either blocked or the service wasn't used in the last 24h">${t('content.ruleOnly') || 'rule only'}</span>`
+      : '';
     const svcEsc = (s.service_name || '').replace(/'/g, "\\'");
     // Row-header policy icon: global rule on this service, or any
     // global category-wide rule that would affect it.
@@ -5217,7 +5252,8 @@ function _renderContentKaderServices(services, category) {
         <span class="font-medium text-slate-700 dark:text-slate-200 truncate flex-1" title="${nameAttr}">${displayName}</span>
         ${polIcon}
         ${blocked}
-        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${_fmtBytes(s.total_bytes || 0)}</span>
+        ${phantomPill}
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${isPhantom ? '—' : _fmtBytes(s.total_bytes || 0)}</span>
       </div>
       <div class="h-1 w-full bg-slate-100 dark:bg-white/[0.06] rounded-full overflow-hidden mb-2">
         <div class="h-full bg-blue-500/70 dark:bg-blue-400/70 rounded-full" style="width:${pct}%"></div>
