@@ -1578,6 +1578,7 @@ async def device_ai_report(
             "model": device.ai_report_model or "gemini-2.5-flash-lite",
             "cached": True,
             "generated_at": device.ai_report_at.isoformat() if device.ai_report_at else None,
+            "flags": device.ai_report_flags,
         }
 
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -2122,67 +2123,156 @@ async def device_ai_report(
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
     gemini_timeout = int(os.environ.get("GEMINI_TIMEOUT_S", "90"))
 
+    # ----- Primary path: PydanticAI agent with typed DeviceRecap -----
+    # We hand the same system_prompt + data_block to a PydanticAI agent
+    # that returns a structured DeviceRecap (markdown + flags + observations).
+    # The markdown field is the primary product and is persisted as
+    # before; the flags are stored as JSON for future UI filters.
+    #
+    # If pydantic-ai isn't installed (fresh image without rebuild), or
+    # the agent itself errors, we fall back to the legacy direct
+    # google-genai call below so the device report endpoint never
+    # silently breaks during a deploy.
+    import time as _time
+    report_md: str | None = None
+    token_info = {
+        "prompt_tokens": 0,
+        "response_tokens": 0,
+        "thinking_tokens": 0,
+        "total_tokens": 0,
+    }
+    flags_json: str | None = None
+    used_agent = False
+
     try:
-        from google import genai
-        import time as _time
-
-        client = genai.Client(api_key=gemini_key)
-        _t0 = _time.time()
-        print(f"[gemini] Calling {gemini_model} for {mac_address} "
-              f"(prompt {prompt_chars} chars, timeout {gemini_timeout}s)...")
-
-        # Run the blocking Gemini SDK call in a thread pool so it doesn't
-        # freeze the asyncio event loop (which would block all other
-        # requests including healthchecks and crash the container).
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model=gemini_model,
-                contents=f"{system_prompt}\n\n{data_block}",
-            ),
-            timeout=gemini_timeout,
+        from ai_agent import (
+            DeviceRecap,
+            PydanticAIUnavailable,
+            get_device_recap_agent,
         )
-        elapsed = _time.time() - _t0
-        report_md = response.text
+    except ImportError as exc:
+        print(f"[ai_agent] import failed, will use legacy path: {exc}")
+        DeviceRecap = None  # type: ignore
+        PydanticAIUnavailable = Exception  # type: ignore
+        get_device_recap_agent = None  # type: ignore
 
-        # Extract token usage for cost transparency
-        usage = response.usage_metadata
-        token_info = {
-            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
-            "response_tokens": getattr(usage, "candidates_token_count", 0),
-            "thinking_tokens": getattr(usage, "thoughts_token_count", 0),
-            "total_tokens": getattr(usage, "total_token_count", 0),
-        }
-        print(f"[gemini] Report for {mac_address} done in {elapsed:.1f}s: {token_info}")
-    except asyncio.TimeoutError:
-        print(f"[gemini] Device report timed out after {gemini_timeout}s for {mac_address}")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Gemini timed out na {gemini_timeout} seconden (model: {gemini_model}). "
-                   f"Probeer het later opnieuw.",
-        )
-    except Exception as exc:
-        # Surface the actual error type + message so the user can see
-        # whether it's a key issue, rate limit, safety filter, context
-        # window exceeded, etc. — instead of a generic 502.
-        err_type = type(exc).__name__
-        err_msg = str(exc) or repr(exc)
-        print(f"[gemini] Device report failed for {mac_address}: {err_type}: {err_msg}")
-        # Shorten overly long error strings (Gemini errors can contain
-        # the entire input back in the message)
-        if len(err_msg) > 500:
-            err_msg = err_msg[:500] + "..."
-        raise HTTPException(
-            status_code=502,
-            detail=f"Gemini-fout ({err_type}): {err_msg}",
-        )
+    if get_device_recap_agent is not None:
+        try:
+            agent = get_device_recap_agent(system_prompt, model_name=gemini_model)
+            _t0 = _time.time()
+            print(f"[pydantic-ai] Calling {gemini_model} for {mac_address} "
+                  f"(prompt {prompt_chars} chars, timeout {gemini_timeout}s)...")
+            run_result = await asyncio.wait_for(
+                agent.run(data_block),
+                timeout=gemini_timeout,
+            )
+            elapsed = _time.time() - _t0
+            recap: DeviceRecap = run_result.output  # type: ignore[assignment]
+            report_md = recap.markdown
+            # Persist flags as JSON for the frontend to render badges.
+            try:
+                flags_json = recap.flags.model_dump_json()
+            except Exception:
+                flags_json = None
+
+            # Token usage — pydantic-ai exposes usage on the run result.
+            try:
+                usage = run_result.usage()
+                token_info = {
+                    "prompt_tokens": getattr(usage, "request_tokens", 0) or 0,
+                    "response_tokens": getattr(usage, "response_tokens", 0) or 0,
+                    "thinking_tokens": 0,
+                    "total_tokens": getattr(usage, "total_tokens", 0) or 0,
+                }
+            except Exception:
+                pass
+
+            used_agent = True
+            print(f"[pydantic-ai] Report for {mac_address} done in {elapsed:.1f}s: "
+                  f"{token_info}, flags={flags_json}")
+        except asyncio.TimeoutError:
+            print(f"[pydantic-ai] timed out after {gemini_timeout}s for {mac_address}")
+            raise HTTPException(
+                status_code=504,
+                detail=f"AI report timed out na {gemini_timeout} seconden "
+                       f"(model: {gemini_model}). Probeer het later opnieuw.",
+            )
+        except PydanticAIUnavailable as exc:
+            # Expected when API key missing or provider not wired up — drop
+            # through to the legacy path silently.
+            print(f"[pydantic-ai] unavailable, falling back: {exc}")
+        except Exception as exc:
+            # Anything else (validation failure that exceeded retries,
+            # network error after retries) — log and fall back. The legacy
+            # path will still raise its own HTTPException if it also fails.
+            err_type = type(exc).__name__
+            print(f"[pydantic-ai] agent run failed, falling back to legacy: "
+                  f"{err_type}: {exc}")
+
+    # ----- Fallback: legacy direct google-genai call -----
+    if not used_agent:
+        try:
+            from google import genai
+
+            client = genai.Client(api_key=gemini_key)
+            _t0 = _time.time()
+            print(f"[gemini] Calling {gemini_model} for {mac_address} "
+                  f"(prompt {prompt_chars} chars, timeout {gemini_timeout}s)...")
+
+            # Run the blocking Gemini SDK call in a thread pool so it doesn't
+            # freeze the asyncio event loop (which would block all other
+            # requests including healthchecks and crash the container).
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model=gemini_model,
+                    contents=f"{system_prompt}\n\n{data_block}",
+                ),
+                timeout=gemini_timeout,
+            )
+            elapsed = _time.time() - _t0
+            report_md = response.text
+
+            # Extract token usage for cost transparency
+            usage = response.usage_metadata
+            token_info = {
+                "prompt_tokens": getattr(usage, "prompt_token_count", 0),
+                "response_tokens": getattr(usage, "candidates_token_count", 0),
+                "thinking_tokens": getattr(usage, "thoughts_token_count", 0),
+                "total_tokens": getattr(usage, "total_token_count", 0),
+            }
+            print(f"[gemini] Report for {mac_address} done in {elapsed:.1f}s: {token_info}")
+        except asyncio.TimeoutError:
+            print(f"[gemini] Device report timed out after {gemini_timeout}s for {mac_address}")
+            raise HTTPException(
+                status_code=504,
+                detail=f"Gemini timed out na {gemini_timeout} seconden (model: {gemini_model}). "
+                       f"Probeer het later opnieuw.",
+            )
+        except Exception as exc:
+            # Surface the actual error type + message so the user can see
+            # whether it's a key issue, rate limit, safety filter, context
+            # window exceeded, etc. — instead of a generic 502.
+            err_type = type(exc).__name__
+            err_msg = str(exc) or repr(exc)
+            print(f"[gemini] Device report failed for {mac_address}: {err_type}: {err_msg}")
+            # Shorten overly long error strings (Gemini errors can contain
+            # the entire input back in the message)
+            if len(err_msg) > 500:
+                err_msg = err_msg[:500] + "..."
+            raise HTTPException(
+                status_code=502,
+                detail=f"Gemini-fout ({err_type}): {err_msg}",
+            )
 
     # Persist the freshly-generated report on the Device row so future
-    # reads hit the cache instead of Gemini.
+    # reads hit the cache instead of the LLM.
     device.ai_report_md = report_md
     device.ai_report_at = datetime.utcnow()
     device.ai_report_model = gemini_model
     device.ai_report_tokens = token_info.get("total_tokens", 0)
+    if flags_json is not None:
+        device.ai_report_flags = flags_json
     db.commit()
 
     return {
@@ -2193,6 +2283,7 @@ async def device_ai_report(
         "model": gemini_model,
         "cached": False,
         "generated_at": device.ai_report_at.isoformat(),
+        "flags": flags_json,
     }
 
 
@@ -4544,43 +4635,99 @@ async def alerts_ai_summary(
     # endpoint for the rationale. Override via GEMINI_MODEL env var.
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
+    summary = ""
+    tokens = None
+    priority = "medium"
+    devices_to_check: list[str] = []
+    used_agent = False
+    user_prompt = (
+        f"=== ACTIEVE MELDINGEN ({len(alerts)} totaal) ===\n{alert_block}"
+    )
+
+    # ----- Primary path: PydanticAI agent with typed AlertSummary -----
     try:
-        from google import genai
-        import time as _time
-        client = genai.Client(api_key=gemini_key)
-        _t0 = _time.time()
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model=gemini_model,
-                contents=f"{system_prompt}\n\n=== ACTIEVE MELDINGEN ({len(alerts)} totaal) ===\n{alert_block}",
-            ),
-            timeout=45,
+        from ai_agent import (
+            AlertSummary,
+            PydanticAIUnavailable,
+            get_alert_summary_agent,
         )
-        elapsed = _time.time() - _t0
-        summary = (response.text or "").strip()
-        usage = getattr(response, "usage_metadata", None)
-        tokens = None
-        if usage:
-            tokens = {
-                "prompt": getattr(usage, "prompt_token_count", 0),
-                "response": getattr(usage, "candidates_token_count", 0),
-                "total": getattr(usage, "total_token_count", 0),
-            }
-        print(f"[ai-summary] {gemini_model} returned in {elapsed:.1f}s, {tokens}")
-    except Exception as exc:
-        print(f"[ai-summary] Gemini call failed: {type(exc).__name__}: {exc}")
-        summary = (
-            f"Er zijn {len(alerts)} actieve meldingen in je netwerk. "
-            f"Controleer het Actie Inbox-overzicht voor details."
-        )
-        tokens = None
+    except ImportError:
+        AlertSummary = None  # type: ignore
+        PydanticAIUnavailable = Exception  # type: ignore
+        get_alert_summary_agent = None  # type: ignore
+
+    if get_alert_summary_agent is not None:
+        try:
+            import time as _time
+            agent = get_alert_summary_agent(system_prompt, model_name=gemini_model)
+            _t0 = _time.time()
+            run_result = await asyncio.wait_for(
+                agent.run(user_prompt),
+                timeout=45,
+            )
+            elapsed = _time.time() - _t0
+            structured: AlertSummary = run_result.output  # type: ignore[assignment]
+            summary = structured.summary.strip()
+            priority = structured.priority
+            devices_to_check = list(structured.devices_to_check or [])[:5]
+            try:
+                usage = run_result.usage()
+                tokens = {
+                    "prompt": getattr(usage, "request_tokens", 0) or 0,
+                    "response": getattr(usage, "response_tokens", 0) or 0,
+                    "total": getattr(usage, "total_tokens", 0) or 0,
+                }
+            except Exception:
+                tokens = None
+            used_agent = True
+            print(f"[ai-summary] pydantic-ai {gemini_model} in {elapsed:.1f}s, "
+                  f"priority={priority}, devices={devices_to_check}, {tokens}")
+        except PydanticAIUnavailable as exc:
+            print(f"[ai-summary] pydantic-ai unavailable, falling back: {exc}")
+        except Exception as exc:
+            print(f"[ai-summary] pydantic-ai run failed, falling back: "
+                  f"{type(exc).__name__}: {exc}")
+
+    # ----- Fallback: legacy direct google-genai call -----
+    if not used_agent:
+        try:
+            from google import genai
+            import time as _time
+            client = genai.Client(api_key=gemini_key)
+            _t0 = _time.time()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model=gemini_model,
+                    contents=f"{system_prompt}\n\n{user_prompt}",
+                ),
+                timeout=45,
+            )
+            elapsed = _time.time() - _t0
+            summary = (response.text or "").strip()
+            usage = getattr(response, "usage_metadata", None)
+            if usage:
+                tokens = {
+                    "prompt": getattr(usage, "prompt_token_count", 0),
+                    "response": getattr(usage, "candidates_token_count", 0),
+                    "total": getattr(usage, "total_token_count", 0),
+                }
+            print(f"[ai-summary] {gemini_model} returned in {elapsed:.1f}s, {tokens}")
+        except Exception as exc:
+            print(f"[ai-summary] Gemini call failed: {type(exc).__name__}: {exc}")
+            summary = (
+                f"Er zijn {len(alerts)} actieve meldingen in je netwerk. "
+                f"Controleer het Actie Inbox-overzicht voor details."
+            )
+            tokens = None
 
     return {
         "summary": summary,
         "alert_count": len(alerts),
         "model": gemini_model,
         "tokens": tokens,
+        "priority": priority if used_agent else None,
+        "devices_to_check": devices_to_check if used_agent else [],
     }
 
 

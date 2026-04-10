@@ -76,10 +76,11 @@ class Device(Base):
     ja4_last_seen = Column(DateTime, nullable=True) # Last time a JA4 was recorded
     dhcp_vendor_class = Column(String, nullable=True)   # DHCP vendor_class_id (e.g. "MSFT 5.0", "android-dhcp-14")
     dhcp_fingerprint = Column(String, nullable=True)    # JA4D hash from ja4d.log
-    ai_report_md = Column(String, nullable=True)        # Latest Gemini-generated report (markdown)
+    ai_report_md = Column(String, nullable=True)        # Latest LLM-generated report (markdown)
     ai_report_at = Column(DateTime, nullable=True)      # When the report was generated
-    ai_report_model = Column(String, nullable=True)     # Which Gemini model produced it
+    ai_report_model = Column(String, nullable=True)     # Which model produced it (gemini-2.5-flash-lite, claude-haiku-4-5, ...)
     ai_report_tokens = Column(Integer, nullable=True)   # Total tokens used (for cost display)
+    ai_report_flags = Column(String, nullable=True)     # JSON: extracted RecapFlags (vpn_detected, ai_usage_present, ...)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime, nullable=False,
@@ -749,6 +750,7 @@ def init_db() -> None:
             "ai_report_at": "DATETIME",
             "ai_report_model": "TEXT",
             "ai_report_tokens": "INTEGER",
+            "ai_report_flags": "TEXT",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:

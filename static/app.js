@@ -7207,7 +7207,56 @@ async function _loadCachedDeviceReport(mac) {
 
 // Shared renderer — markdown body + pricing footer + generated-at line
 function _renderReportHTML(data) {
-  let html = renderSimpleMarkdown(data.report);
+  // Flags badge row — only present when the PydanticAI agent path was used.
+  // The agent returns a typed RecapFlags object that the API serialises as
+  // a JSON string in `data.flags`. Cached reports get the same string back
+  // from the device row. Render a compact badge row above the markdown so
+  // the user can spot vpn / ai usage / anomaly at a glance without reading
+  // the body. If flags is null/missing/parse-fails we just skip — the
+  // legacy markdown-only path still works.
+  let flagsHtml = '';
+  if (data.flags) {
+    try {
+      const f = typeof data.flags === 'string' ? JSON.parse(data.flags) : data.flags;
+      const badges = [];
+      const badge = (cls, icon, label) =>
+        `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${cls}">
+          <i class="ph-duotone ${icon}"></i>${label}
+        </span>`;
+      if (f.vpn_detected) badges.push(badge(
+        'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+        'ph-shield-check', 'VPN'));
+      if (f.ai_usage_present) badges.push(badge(
+        'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
+        'ph-sparkle', 'AI'));
+      if (f.ad_tracker_heavy) badges.push(badge(
+        'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+        'ph-eye', 'Trackers'));
+      if (f.unexpected_services) badges.push(badge(
+        'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+        'ph-warning', 'Onverwacht'));
+      if (f.upload_anomaly) badges.push(badge(
+        'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+        'ph-arrow-up', 'Upload'));
+      if (f.activity_level) {
+        const levelColors = {
+          idle: 'bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400',
+          light: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+          moderate: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300',
+          active: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
+        };
+        const cls = levelColors[f.activity_level] || levelColors.light;
+        badges.push(badge(cls, 'ph-activity', f.activity_level));
+      }
+      if (badges.length) {
+        flagsHtml = `<div class="flex flex-wrap items-center gap-1.5 mb-3">${badges.join('')}</div>`;
+      }
+    } catch (err) {
+      // bad JSON / unexpected shape → just skip the badges
+    }
+  }
+
+  let html = flagsHtml + renderSimpleMarkdown(data.report);
 
   // Pricing table per model.
   // Source: https://ai.google.dev/gemini-api/docs/pricing (USD per 1M tokens).
