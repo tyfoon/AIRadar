@@ -8411,6 +8411,147 @@ def device_activity(
     }
 
 
+# ---------------------------------------------------------------------------
+# Labeler observability — coverage stats and per-labeler attribution
+# ---------------------------------------------------------------------------
+# Single source of truth for "how much of the traffic do we actually
+# understand". Designed to work from day 0 even before any of the new
+# labelers (DNS snooping / QUIC / JA4 / LLM) are wired in — gives us a
+# baseline measurement so we can prove the coverage curve as each new
+# labeler comes online. "Meten is weten."
+
+@app.get("/api/labeler/stats")
+def labeler_stats(
+    window_hours: int = Query(24, ge=1, le=168, description="Lookback window in hours"),
+    db: Session = Depends(get_db),
+):
+    """Coverage and per-labeler attribution stats over the last N hours.
+
+    Reads from three places:
+      - geo_conversations is the universe (all observed flows). Anything
+        with ai_service in {NULL, '', 'unknown', '-'} is counted as
+        unlabeled. This is the denominator for the coverage percentage.
+      - label_attributions provides per-labeler counts for the new
+        multi-source pipeline. On day 0 it's empty; rows appear as the
+        DNS / QUIC / JA4 / LLM labelers come online.
+      - detection_events labeled by the legacy SNI-only path (i.e. with
+        no attribution row) get bucketed under 'sni_direct_legacy' so
+        the dashboard shows a complete picture, not "0% labeled" on day 0.
+
+    The endpoint is also the place where the operator can spot the
+    largest remaining gaps via top_unknowns — these are the bytes that
+    the next iteration of the labeler stack should focus on.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+
+    # --- Universe: total flows + bytes from geo_conversations ---
+    total = db.execute(text("""
+        SELECT COUNT(*) AS rows, COALESCE(SUM(bytes_transferred), 0) AS bytes,
+               COALESCE(SUM(hits), 0) AS hits
+        FROM geo_conversations
+        WHERE last_seen >= :cutoff
+    """), {"cutoff": cutoff}).fetchone()
+    total_rows = int(total.rows or 0)
+    total_bytes = int(total.bytes or 0)
+    total_hits = int(total.hits or 0)
+
+    # --- Labeled subset: anything with a non-trivial ai_service ---
+    labeled = db.execute(text("""
+        SELECT COUNT(*) AS rows, COALESCE(SUM(bytes_transferred), 0) AS bytes,
+               COALESCE(SUM(hits), 0) AS hits
+        FROM geo_conversations
+        WHERE last_seen >= :cutoff
+          AND ai_service IS NOT NULL
+          AND ai_service NOT IN ('unknown', '-', '')
+    """), {"cutoff": cutoff}).fetchone()
+    labeled_rows = int(labeled.rows or 0)
+    labeled_bytes = int(labeled.bytes or 0)
+    labeled_hits = int(labeled.hits or 0)
+
+    coverage_pct_bytes = round(labeled_bytes / total_bytes * 100, 1) if total_bytes else 0.0
+    coverage_pct_hits = round(labeled_hits / total_hits * 100, 1) if total_hits else 0.0
+
+    # --- By labeler: from LabelAttribution joined to detection_events ---
+    # Each detection_event has at most one winning attribution; we count
+    # only winners so each event is attributed to exactly one labeler.
+    by_labeler: dict[str, int] = {}
+    for row in db.execute(text("""
+        SELECT la.labeler, COUNT(*) AS n
+        FROM label_attributions la
+        JOIN detection_events de ON de.id = la.detection_event_id
+        WHERE de.timestamp >= :cutoff
+          AND la.is_winner = 1
+        GROUP BY la.labeler
+        ORDER BY n DESC
+    """), {"cutoff": cutoff}).fetchall():
+        by_labeler[row.labeler] = int(row.n)
+
+    # --- Legacy events: labeled by the old SNI-only path with no attribution row.
+    # On day 0, this is essentially everything in detection_events. As we
+    # roll out the multi-source pipeline this number drops as new
+    # labelers start writing attribution rows for fresh events.
+    legacy_count = db.execute(text("""
+        SELECT COUNT(*) FROM detection_events de
+        WHERE de.timestamp >= :cutoff
+          AND NOT EXISTS (
+            SELECT 1 FROM label_attributions la WHERE la.detection_event_id = de.id
+          )
+    """), {"cutoff": cutoff}).fetchone()[0]
+    if legacy_count:
+        by_labeler["sni_direct_legacy"] = int(legacy_count)
+
+    # --- Top unknowns: where the bytes are hiding ---
+    # Sorted by bytes desc so the operator can see "fixing this one IP
+    # would unlock X GB of coverage". Joined with ip_metadata for ASN /
+    # PTR context — that's what makes the gap actionable.
+    top_unknowns = []
+    for row in db.execute(text("""
+        SELECT
+          COALESCE(m.asn_org, '?') AS asn_org,
+          COALESCE(m.ptr, gc.resp_ip) AS label,
+          gc.resp_ip AS ip,
+          COALESCE(SUM(gc.bytes_transferred), 0) AS bytes,
+          COALESCE(SUM(gc.hits), 0) AS hits,
+          COUNT(DISTINCT gc.mac_address) AS device_count
+        FROM geo_conversations gc
+        LEFT JOIN ip_metadata m ON m.ip = gc.resp_ip
+        WHERE gc.last_seen >= :cutoff
+          AND (gc.ai_service IS NULL OR gc.ai_service IN ('unknown', '-', ''))
+        GROUP BY gc.resp_ip
+        ORDER BY bytes DESC
+        LIMIT 20
+    """), {"cutoff": cutoff}).fetchall():
+        top_unknowns.append({
+            "asn_org": row.asn_org,
+            "label": row.label,
+            "ip": row.ip,
+            "bytes": int(row.bytes or 0),
+            "hits": int(row.hits or 0),
+            "device_count": int(row.device_count or 0),
+        })
+
+    return {
+        "window_hours": window_hours,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "totals": {
+            "flows": total_rows,
+            "bytes": total_bytes,
+            "hits": total_hits,
+        },
+        "labeled": {
+            "flows": labeled_rows,
+            "bytes": labeled_bytes,
+            "hits": labeled_hits,
+        },
+        "coverage": {
+            "bytes_pct": coverage_pct_bytes,
+            "hits_pct": coverage_pct_hits,
+        },
+        "by_labeler": by_labeler,
+        "top_unknowns": top_unknowns,
+    }
+
+
 @app.get("/api/iot/fleet")
 def iot_fleet(db: Session = Depends(get_db)):
     """Return all IoT devices with traffic stats and health scores."""

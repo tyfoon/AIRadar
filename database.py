@@ -8,8 +8,8 @@ Supports both AI-service and Cloud-storage detection categories.
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, ForeignKey, Integer, LargeBinary, String,
-    UniqueConstraint, create_engine, event, inspect, text,
+    Boolean, Column, DateTime, Float, ForeignKey, Index, Integer,
+    LargeBinary, String, UniqueConstraint, create_engine, event, inspect, text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
@@ -486,10 +486,156 @@ class KnownDomain(Base):
     domain = Column(String, nullable=False, unique=True, index=True)
     service_name = Column(String, nullable=False, index=True)
     category = Column(String, nullable=False, index=True)
-    source = Column(String, nullable=False, default="seed")  # "seed", "v2fly", "manual"
+    # Where this entry came from. Each source has a baseline trust level
+    # in labeler.SOURCE_WEIGHTS — manual_seed and curated_v2fly are the
+    # most trusted (deterministic), llm is the lowest (probabilistic).
+    source = Column(String, nullable=False, default="seed")
+    # Per-row confidence in [0,1]. Multiplied by source weight to get the
+    # effective score in conflict resolution. Seeds default to 1.0,
+    # v2fly to 0.95, AdGuard to 0.85, LLM gets the model's self-rated
+    # confidence (typically 0.6-0.95).
+    confidence = Column(Float, nullable=False, default=1.0)
     updated_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
+# Labeler infrastructure (stap 1-4 van het coverage-uitbreidingsplan)
+# ---------------------------------------------------------------------------
+# Four tables that together form the audit-trail and learning surface for
+# the multi-source service-identification pipeline. See labeler.py for
+# the priority/conflict-resolution logic that operates over these.
+
+
+class DnsObservation(Base):
+    """Persisted snapshot of DNS resolutions seen on the wire.
+
+    Populated by the dns.log tailer (and as a fallback by AdGuard's
+    /control/querylog API). The live DNS-correlation lookup uses an
+    in-memory cache for sub-millisecond latency; this table is the
+    durable backing store for backfill, debugging, and the periodic
+    "what hostname did this client resolve to this IP" historical
+    queries.
+
+    The composite index on (client_mac, server_ip, observed_at) is the
+    hot path: "give me the most recent lookup for this (client, ip)
+    pair within the last N minutes".
+    """
+
+    __tablename__ = "dns_observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_mac = Column(String, ForeignKey("devices.mac_address"),
+                        nullable=False, index=True)
+    server_ip = Column(String, nullable=False, index=True)
+    query = Column(String, nullable=False)              # the resolved hostname
+    answer_ips = Column(String)                          # JSON list of all returned IPs
+    ttl = Column(Integer)                                # for cache invalidation
+    observed_at = Column(DateTime, nullable=False, index=True,
+                         default=lambda: datetime.now(timezone.utc))
+    source_log = Column(String, nullable=False, default="zeek_dns")
+    # source_log: "zeek_dns" | "adguard_querylog"
+
+    __table_args__ = (
+        Index("ix_dns_obs_lookup", "client_mac", "server_ip", "observed_at"),
+    )
+
+
+class LabelAttribution(Base):
+    """One row per labeler proposal for a detection_event.
+
+    A single detection_event may have multiple attributions if more than
+    one labeler proposed a service for the same flow. This is the audit
+    trail: months later we can ask "why did this flow get labeled as
+    youtube" and see exactly which labeler said so, with what
+    confidence and what reasoning.
+
+    The winning attribution (highest effective_score) is what gets
+    written into detection_events.ai_service. Losing attributions are
+    still kept here for diagnostic purposes.
+    """
+
+    __tablename__ = "label_attributions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    detection_event_id = Column(Integer,
+                                ForeignKey("detection_events.id"),
+                                nullable=False, index=True)
+    labeler = Column(String, nullable=False, index=True)
+    # labeler: "sni_direct" | "quic_sni_direct" | "dns_correlation" |
+    #          "ja4_community_db" | "llm_inference" | "adguard_services" | ...
+    proposed_service = Column(String, nullable=False)
+    proposed_category = Column(String, nullable=False)
+    effective_score = Column(Float, nullable=False)
+    rationale = Column(String)
+    is_winner = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
+class JA4Signature(Base):
+    """Community-maintained JA4 fingerprint → application mapping.
+
+    Populated by ja4_db_sync.py (stap 3) which weekly pulls FoxIO's
+    public JA4 database. JA4 is a TLS client fingerprint that uniquely
+    identifies the TLS library + version + cipher preferences of the
+    client — letting us identify "which app made this connection" even
+    when the SNI is hidden by ECH or QUIC encryption.
+
+    Generic library fingerprints (Cronet, OkHttp, plain Chrome) get
+    confidence-dampened in labeler.py because they don't tell us the
+    specific app — only that it's "an Android HTTPS client".
+    """
+
+    __tablename__ = "ja4_signatures"
+
+    ja4 = Column(String, primary_key=True)
+    application = Column(String, nullable=False)   # "Hay Day", "YouTube", "Chrome"
+    library = Column(String)                        # "Cronet/116", "Unity TLS"
+    category = Column(String)                       # gaming/streaming/social/...
+    confidence = Column(Float, nullable=False, default=0.8)
+    source = Column(String, nullable=False, default="foxio")
+    # source: "foxio" | "manual" | "observed" (self-learned from co-occurrence with SNI)
+    notes = Column(String)
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class UnknownObservation(Base):
+    """Staging table for things we couldn't label yet.
+
+    Populated whenever stap 1-3 (sni_direct / dns_correlation / quic /
+    ja4) fail to identify a flow. The LLM classifier (stap 4) drains
+    this table in batches, runs PydanticAI to assign service+category,
+    and writes the result back to known_domains. Items below the LLM
+    confidence floor are kept here with classified_at set so we don't
+    re-classify them.
+
+    Sample MACs and destinations are kept (capped at 5 each via JSON)
+    so the LLM has minimal context for the classification call without
+    blowing up the prompt size.
+    """
+
+    __tablename__ = "unknown_observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String, nullable=False)        # "sni" | "domain" | "ja4"
+    value = Column(String, nullable=False, index=True)
+    first_seen = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, nullable=False,
+                       default=lambda: datetime.now(timezone.utc))
+    hit_count = Column(Integer, nullable=False, default=1)
+    sample_macs = Column(String)                  # JSON: up to 5 example MACs
+    sample_destinations = Column(String)          # JSON: up to 5 example IPs/ASNs
+    classified_at = Column(DateTime)              # set when LLM has processed it
+    classification_result = Column(String)        # JSON of LLM output (kept even if rejected)
+
+    __table_args__ = (
+        UniqueConstraint("kind", "value", name="uq_unknown_obs_kind_value"),
+    )
 
 
 class NetworkPerformance(Base):
@@ -814,6 +960,19 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE inbound_attacks ADD COLUMN conn_state TEXT"
+                ))
+
+    # --- KnownDomain: add confidence column (labeler trust hierarchy) ---
+    # Existing rows are seeds or v2fly entries — they keep their full
+    # weight via the source field, so we backfill confidence=1.0 for them
+    # and let new sources (adguard / llm) write lower values explicitly.
+    inspector = inspect(engine)
+    if "known_domains" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("known_domains")]
+        if "confidence" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE known_domains ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0"
                 ))
 
     # --- AlertException: add dismissed_score column (beacon score at dismiss time) ---
