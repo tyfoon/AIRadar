@@ -346,19 +346,35 @@ const SERVICE_NAMES = {
   stripchat:'Stripchat', brazzers:'Brazzers',
 };
 
-// Domain mapping for Clearbit logos
+// Domain mapping for favicon logos.
+//
+// Why subdomains: the favicon service returns whatever the given host
+// serves at /favicon.ico, so handing it `gemini.google.com` yields the
+// Gemini sparkle, not the generic Google "G". Without this, every
+// Google product (Gemini, Drive, Ads, Analytics, ...) collapsed onto
+// the same logo and became visually impossible to tell apart. Same
+// trick for Microsoft (Copilot vs OneDrive) and Apple (TV vs iCloud).
 const SERVICE_LOGO_DOMAIN = {
   // AI services
-  openai:'openai.com', anthropic_claude:'anthropic.com', google_gemini:'google.com',
-  microsoft_copilot:'microsoft.com', perplexity:'perplexity.ai', huggingface:'huggingface.co',
+  openai:'openai.com', anthropic_claude:'anthropic.com',
+  google_gemini:'gemini.google.com',
+  microsoft_copilot:'copilot.microsoft.com',
+  perplexity:'perplexity.ai', huggingface:'huggingface.co',
   mistral:'mistral.ai',
-  // Cloud services
-  dropbox:'dropbox.com', wetransfer:'wetransfer.com', google_drive:'google.com',
-  google_device_sync:'google.com', google_generic_cdn:'google.com',
-  onedrive:'microsoft.com', icloud:'apple.com', box:'box.com', mega:'mega.nz',
+  // Cloud services — each Google/Microsoft product gets its own product logo
+  dropbox:'dropbox.com', wetransfer:'wetransfer.com',
+  google_drive:'drive.google.com',
+  google_device_sync:'android.com',
+  google_generic_cdn:'cloud.google.com',
+  google_api:'developers.google.com',
+  onedrive:'onedrive.live.com',
+  icloud:'icloud.com', box:'box.com', mega:'mega.nz',
   // Trackers
-  google_ads:'google.com', google_analytics:'google.com', google_telemetry:'google.com',
-  meta_tracking:'meta.com', apple_ads:'apple.com', microsoft_ads:'microsoft.com',
+  google_ads:'ads.google.com',
+  google_analytics:'analytics.google.com',
+  google_telemetry:'firebase.google.com',
+  meta_tracking:'meta.com', apple_ads:'searchads.apple.com',
+  microsoft_ads:'ads.microsoft.com',
   hotjar:'hotjar.com', datadog:'datadoghq.com', facebook:'facebook.com',
   instagram:'instagram.com', tiktok:'tiktok.com', twitter:'x.com',
   snapchat:'snapchat.com', pinterest:'pinterest.com', linkedin:'linkedin.com',
@@ -377,7 +393,8 @@ const SERVICE_LOGO_DOMAIN = {
   ea_games:'ea.com',
   // Streaming
   netflix:'netflix.com', youtube:'youtube.com', spotify:'spotify.com',
-  disney_plus:'disneyplus.com', hbo_max:'max.com', prime_video:'primevideo.com', apple_tv:'apple.com',
+  disney_plus:'disneyplus.com', hbo_max:'max.com', prime_video:'primevideo.com',
+  apple_tv:'tv.apple.com',
   // Shopping
   amazon:'amazon.com', bol:'bol.com', coolblue:'coolblue.nl', mediamarkt:'mediamarkt.nl',
   zalando:'zalando.com', shein:'shein.com', temu:'temu.com', aliexpress:'aliexpress.com',
