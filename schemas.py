@@ -13,6 +13,28 @@ from pydantic import BaseModel
 # Detection Event schemas
 # ---------------------------------------------------------------------------
 
+class LabelAttributionCreate(BaseModel):
+    """Optional payload attached to an EventCreate when the labeler has
+    something to say about WHY this event got the service it got.
+
+    Sent by paths that route through labeler.resolve() — e.g. DNS-correlation
+    fallback in the SSL/conn pipeline. The legacy direct-SNI path leaves
+    this empty and is bucketed under 'sni_direct_legacy' in stats.
+
+    The api.py /api/ingest handler writes a row into label_attributions
+    when this is present, including the full proposals list so the audit
+    trail captures losing labelers as well as the winner.
+    """
+
+    labeler: str                        # "dns_correlation" | "quic_sni_direct" | ...
+    confidence: float                    # effective_score from labeler.resolve()
+    rationale: Optional[str] = None
+    proposed_service: str
+    proposed_category: str
+    is_low_confidence: bool = False
+    is_disputed: bool = False
+
+
 class EventCreate(BaseModel):
     """Payload accepted by POST /api/ingest."""
 
@@ -24,6 +46,10 @@ class EventCreate(BaseModel):
     bytes_transferred: int
     possible_upload: bool = False
     category: str = "ai"  # "ai", "cloud", or "tracking"
+    # Optional: which labeler produced this label and at what confidence.
+    # Legacy paths (direct SNI match against the service map) omit this
+    # and get bucketed under 'sni_direct_legacy' by /api/labeler/stats.
+    attribution: Optional[LabelAttributionCreate] = None
 
 
 class EventRead(EventCreate):

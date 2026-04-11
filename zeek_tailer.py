@@ -24,6 +24,10 @@ from pathlib import Path
 
 import httpx
 
+# Local modules — keep imports near the top so dependency cycles surface fast.
+from dns_cache import GLOBAL_CACHE as _DNS_CACHE
+from labeler import LabelProposal, SOURCE_WEIGHTS
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -1552,8 +1556,17 @@ async def send_event(
     bytes_transferred: int,
     category: str = "ai",
     possible_upload: bool = False,
+    attribution: dict | None = None,
 ) -> None:
-    """POST a detection event to the API."""
+    """POST a detection event to the API.
+
+    The optional `attribution` payload is used by labeler-aware paths
+    (DNS correlation, JA4 matching, LLM classification, ...) to record
+    WHY this event got the service it got. The /api/ingest endpoint
+    persists it as a LabelAttribution row for the audit trail. Legacy
+    paths that match SNI directly against the service map omit it and
+    are bucketed under 'sni_direct_legacy' in /api/labeler/stats.
+    """
     event = {
         "sensor_id": SENSOR_ID,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1564,13 +1577,16 @@ async def send_event(
         "category": category,
         "possible_upload": possible_upload,
     }
+    if attribution is not None:
+        event["attribution"] = attribution
     try:
         resp = await client.post(API_URL, json=event, timeout=5)
         resp.raise_for_status()
         tag = " [UPLOAD]" if possible_upload else ""
+        labeler_tag = f" via {attribution['labeler']}" if attribution else ""
         print(
             f"[+] Event: {ai_service.upper()} ({category}) "
-            f"{detection_type} from {source_ip}{tag}"
+            f"{detection_type} from {source_ip}{tag}{labeler_tag}"
         )
     except httpx.HTTPError as exc:
         print(f"[!] Failed to send event: {exc}")
@@ -2969,7 +2985,75 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # Check if destination IP is a known AI/Cloud service
                 # (stale mappings were already evicted above)
                 if resp_ip not in _known_ips:
-                    continue
+                    # ── DNS correlation fallback ──
+                    # The flow has no SNI hello attached (typical for
+                    # QUIC, ECH, or 0-RTT resumption). Last chance: ask
+                    # the DNS-IP cache whether this client recently
+                    # resolved a hostname to this destination.
+                    #
+                    # The lookup is scoped per (client_mac, resp_ip)
+                    # so CDN multi-tenancy can't cross-pollute labels.
+                    # Per-flow lookup, no shared state — see the design
+                    # notes in dns_cache.py and _label_flow_via_dns().
+                    dns_label = _label_flow_via_dns(src_ip, resp_ip)
+                    if dns_label is None:
+                        continue
+
+                    dns_service, dns_category, dns_hostname, dns_score, dns_rationale = dns_label
+
+                    # Per-(service, src_ip) dedup using the same window
+                    # as direct SNI hellos. The first hit fires; the
+                    # rest within SNI_DEDUP_SECONDS are silently
+                    # absorbed. This prevents one streaming session
+                    # from generating thousands of duplicate events.
+                    _dns_dedup_now = time.time()
+                    _dns_dedup_key = (dns_service, src_ip)
+                    _dns_dedup_last = _sni_last_seen.get(_dns_dedup_key, 0)
+                    if (_dns_dedup_now - _dns_dedup_last) < SNI_DEDUP_SECONDS:
+                        # Update the byte counter on the existing
+                        # _known_ips entry so the volumetric path can
+                        # still attribute upload bytes to this service.
+                        _known_ips[resp_ip] = (dns_service, dns_category, time.time())
+                        continue
+                    _sni_last_seen[_dns_dedup_key] = _dns_dedup_now
+
+                    # Promote the DNS-correlated label into _known_ips
+                    # so subsequent volumetric flows for this IP get
+                    # the same attribution. Acceptable cross-client
+                    # leakage at this layer (one IP, one label) is the
+                    # same trade-off the existing SSL-hello path makes;
+                    # the dns_cache itself stays per-client-scoped.
+                    _known_ips[resp_ip] = (dns_service, dns_category, time.time())
+
+                    try:
+                        flow_orig = int(record.get("orig_bytes", "0") or 0)
+                    except ValueError:
+                        flow_orig = 0
+                    try:
+                        flow_resp = int(record.get("resp_bytes", "0") or 0)
+                    except ValueError:
+                        flow_resp = 0
+
+                    await send_event(
+                        client,
+                        detection_type="dns_correlated",
+                        ai_service=dns_service,
+                        source_ip=src_ip,
+                        bytes_transferred=flow_orig + flow_resp,
+                        category=dns_category,
+                        attribution={
+                            "labeler": "dns_correlation",
+                            "confidence": dns_score,
+                            "rationale": dns_rationale,
+                            "proposed_service": dns_service,
+                            "proposed_category": dns_category,
+                            "is_low_confidence": False,
+                            "is_disputed": False,
+                        },
+                    )
+                    # Fall through to the volumetric upload path below —
+                    # the (service, category) we just learned will be
+                    # used by the existing record_upload accumulator.
 
                 service, category, _ts = _known_ips[resp_ip]
 
@@ -3375,6 +3459,181 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# DNS-IP correlation — tail dns.log to populate the labeler fallback cache
+# ---------------------------------------------------------------------------
+# This is the heart of the Day-1 coverage uplift. Zeek's dns.log records
+# every DNS A/AAAA response on the bridge in plaintext. By recording the
+# (client_mac, resolved_ip) → query mapping into dns_cache.GLOBAL_CACHE,
+# we give every other labeler in the pipeline a way to recover the
+# hostname for an encrypted flow that has no visible SNI (QUIC, ECH).
+#
+# The cache itself lives in the dns_cache module — pure stdlib, fully
+# tested in isolation. This function is just the Zeek-format adapter.
+
+async def tail_dns_log(log_path: Path) -> None:
+    """Tail Zeek's dns.log and feed every successful A/AAAA response
+    into the global DNS correlation cache.
+
+    Filters: NOERROR responses, A or AAAA qtype, query and answers
+    fields populated, originating client is on the local network and
+    we know its MAC. Anything else is dropped — better to miss a
+    record than to poison the cache with garbage.
+
+    The CNAME-correctness rule (every IP in the chain maps to the
+    ORIGINAL query, never to an intermediate CNAME) is enforced inside
+    dns_cache.parse_zeek_answers() and verified by tests/test_dns_cache.py.
+    """
+    print(f"[*] Tailing dns.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break  # rotated
+                        except OSError:
+                            break
+                        await asyncio.sleep(0.5)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    record = dict(zip(fields, parts))
+
+                    # Only successful resolutions. NXDOMAIN, REFUSED,
+                    # SERVFAIL, etc. add no signal.
+                    if record.get("rcode_name", "-") != "NOERROR":
+                        continue
+
+                    # Only IP-resolving queries. MX, TXT, SRV etc. give
+                    # us hostnames-pointing-to-hostnames which is not
+                    # what we want for IP correlation.
+                    qtype = record.get("qtype_name", "-")
+                    if qtype not in ("A", "AAAA"):
+                        continue
+
+                    query = record.get("query", "-")
+                    if not query or query == "-":
+                        continue
+
+                    answers = record.get("answers", "-")
+                    if not answers or answers == "-":
+                        continue
+
+                    # The client that asked the question is the orig_h
+                    # of the DNS query. It must be local — we don't
+                    # care about anyone else's lookups.
+                    client_ip = record.get("id.orig_h", "-")
+                    if client_ip == "-" or not _is_local_ip(client_ip):
+                        continue
+
+                    client_mac = _ip_to_mac.get(client_ip)
+                    if not client_mac:
+                        # No MAC means we can't scope per-client, which
+                        # would re-introduce the CDN multi-tenancy bug
+                        # the cache is designed to prevent. Drop.
+                        continue
+
+                    ttls = record.get("TTLs")
+                    inserted = _DNS_CACHE.ingest_zeek_response(
+                        client_mac=client_mac,
+                        query=query,
+                        answers_field=answers,
+                        ttls_field=ttls,
+                    )
+                    # Telemetry: only print on novel queries to avoid
+                    # log spam from chatty resolvers.
+                    if inserted > 0 and _DNS_CACHE.stats()["puts"] % 500 == 0:
+                        s = _DNS_CACHE.stats()
+                        print(
+                            f"[dns] cache: {s['size']} entries, "
+                            f"hit_rate {s['hit_rate']*100:.1f}%, "
+                            f"replacements {s['replacements']}"
+                        )
+        except (OSError, IOError) as exc:
+            print(f"[!] dns.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
+# DNS correlation labeler — fallback for flows with no visible SNI
+# ---------------------------------------------------------------------------
+# Hookpoint helper used by tail_conn_log when a flow's destination IP is
+# not in the SNI-populated _known_ips cache. We try the DNS cache: maybe
+# this client recently resolved a hostname to this IP, and that hostname
+# matches a known service. If so, we have a label.
+#
+# The lookup is per-flow (not cached at the IP level) because per-IP
+# caching across clients is exactly the CDN multi-tenancy bug we're
+# trying to avoid. dns_cache.get() is O(1) and lock-protected, so this
+# is fine to call on every conn.log line.
+
+def _label_flow_via_dns(
+    src_ip: str, resp_ip: str
+) -> tuple[str, str, str, float, str] | None:
+    """Try to label a flow via the DNS-IP correlation cache.
+
+    Returns (service, category, hostname, effective_score, rationale)
+    on hit, or None when:
+      - we don't know the source MAC (can't scope the lookup)
+      - the cache has no entry for (mac, resp_ip)
+      - the cached hostname doesn't match anything in known_domains
+
+    The effective_score is computed via labeler.LabelProposal so it
+    respects the SOURCE_WEIGHTS hierarchy. Falls below CONFIDENCE_FLOOR
+    only when the labeler weight changes — for dns_correlation at 0.75
+    weight × 1.0 nominal confidence we sit at 0.75, comfortably above.
+    """
+    client_mac = _ip_to_mac.get(src_ip)
+    if not client_mac:
+        return None
+    hostname = _DNS_CACHE.get(client_mac, resp_ip)
+    if not hostname:
+        return None
+    match = match_domain(hostname, source_ip=src_ip)
+    if not match:
+        return None
+    service, category, matched_domain = match
+    proposal = LabelProposal(
+        labeler="dns_correlation",
+        service=service,
+        category=category,
+        confidence=1.0,  # the DNS lookup itself is deterministic; the
+                         # uncertainty is captured by the source weight
+        rationale=f"DNS resolved {hostname} → {resp_ip} via {client_mac[-8:]}",
+    )
+    return service, category, hostname, proposal.effective_score, proposal.rationale
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
@@ -3385,6 +3644,7 @@ async def main(zeek_log_dir: str) -> None:
     dhcp_log = log_dir / "dhcp.log"
     ja4d_log = log_dir / "ja4d.log"
     mdns_log = log_dir / "mdns.log"
+    dns_log = log_dir / "dns.log"
 
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
     print(f"[*] Reporting to API at {API_URL}")
@@ -3394,6 +3654,7 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] DHCP passive device recognition: enabled")
     print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
     print(f"[*] mDNS device name discovery: enabled (tailing mdns.log)")
+    print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
@@ -3436,6 +3697,7 @@ async def main(zeek_log_dir: str) -> None:
         tail_dhcp_log(dhcp_log, client),
         tail_ja4d_log(ja4d_log, client),
         tail_mdns_log(mdns_log, client),
+        tail_dns_log(dns_log),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs

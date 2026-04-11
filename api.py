@@ -1337,8 +1337,39 @@ def get_db():
 # ---------------------------------------------------------------------------
 @app.post("/api/ingest", response_model=EventRead, status_code=201)
 def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
-    db_event = DetectionEvent(**event.model_dump())
+    """Ingest a single detection event, optionally with labeler attribution.
+
+    Backwards compatible: legacy paths in zeek_tailer that don't know
+    about the labeler pipeline send the same flat payload they always
+    have. Newer paths (DNS correlation, QUIC tailer, JA4 matching, LLM
+    classifier) include an `attribution` block which we persist into
+    label_attributions for the audit trail.
+    """
+    payload = event.model_dump()
+    attribution = payload.pop("attribution", None)
+
+    db_event = DetectionEvent(**payload)
     db.add(db_event)
+    db.flush()  # populate db_event.id without committing yet
+
+    if attribution:
+        # Persist a single LabelAttribution row marked as the winner.
+        # The full proposals-list audit trail is the responsibility of
+        # the caller (zeek_tailer / api background task) to flush via
+        # labeler.persist_attributions when it has multiple proposals;
+        # for the common single-source case this is enough.
+        from database import LabelAttribution
+        db.add(LabelAttribution(
+            detection_event_id=db_event.id,
+            labeler=attribution.get("labeler", "unknown"),
+            proposed_service=attribution.get("proposed_service", db_event.ai_service),
+            proposed_category=attribution.get("proposed_category", db_event.category),
+            effective_score=float(attribution.get("confidence", 0.0)),
+            rationale=attribution.get("rationale"),
+            is_winner=True,
+            created_at=datetime.utcnow(),
+        ))
+
     db.commit()
     db.refresh(db_event)
     return db_event
