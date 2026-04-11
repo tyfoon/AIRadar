@@ -1864,6 +1864,224 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Day 2 — QUIC SNI tailer
+# ---------------------------------------------------------------------------
+# Zeek's quic.log records the unencrypted Initial-packet SNI for every QUIC
+# (HTTP/3) connection on the bridge. ECH adoption is still nascent, so the
+# server_name field is populated for ~50-70% of QUIC handshakes today —
+# YouTube, Spotify, WhatsApp, mobile apps. Without this tailer those
+# flows show up as anonymous UDP/443 in conn.log and have to fall through
+# to the dns_correlation pad (Day 1) — which works, but loses the bytes
+# attribution and the per-flow precision that direct on-wire SNI gives us.
+#
+# This tailer is a near-clone of tail_ssl_log: same field shape (server_name
+# is the SNI), same _known_ips population, same dedup window. Three things
+# are different:
+#
+#   1. detection_type = "quic_hello" so /api/labeler/stats can split QUIC
+#      from TCP TLS in coverage reports.
+#
+#   2. The send_event call carries an attribution payload from the start —
+#      labeler="quic_sni_direct", confidence=1.0 → effective 0.90 (vs
+#      sni_direct's 0.95). The slightly-lower weight reflects that QUIC
+#      Initial packets allow a bit more parser ambiguity than TCP TLS
+#      ClientHello, but it still sits firmly above adguard_services and
+#      every probabilistic source.
+#
+#   3. No JA4 / JA4S extraction. JA4 for QUIC is JA4Q which is structurally
+#      different and lives in tls_fingerprints already from the existing
+#      ja4d pipeline. Day 3 (JA4 community DB matching) will close that
+#      loop separately.
+#
+# bytes_transferred is set to 0 here — quic.log has no orig_bytes / resp_bytes
+# fields, so byte attribution comes from the existing volumetric path in
+# tail_conn_log via _known_ips, exactly like the SNI hello path does.
+
+async def tail_quic_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Continuously tail Zeek's quic.log for QUIC connections with a
+    visible (un-ECH'd) server_name in their Initial packet.
+
+    Same dedup, same _known_ips contract, same VPN handling as ssl.log;
+    different detection_type and labeler so the audit trail can tell
+    them apart.
+    """
+    print(f"[*] Tailing quic.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            # Zeek may not have the QUIC analyzer enabled yet (older
+            # builds, or @load policy/protocols/quic missing from
+            # local.zeek). The tailer is harmless when the file is
+            # missing — we just keep checking. The setup.sh notes
+            # this requirement for fresh installs.
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break  # rotated, re-open
+                        except OSError:
+                            break
+                        await asyncio.sleep(0.5)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    record = dict(zip(fields, parts))
+
+                    # Most QUIC handshakes start with an Initial packet
+                    # that has no server_name yet, then the analyzer
+                    # updates the same row when the second Initial
+                    # arrives. We only act when server_name is present;
+                    # the half-row (no SNI) is irrelevant for labelling.
+                    sni = record.get("server_name", "-")
+                    if not sni or sni == "-" or sni == "(empty)":
+                        continue
+
+                    src_ip = record.get("id.orig_h", "unknown")
+                    resp_ip = record.get("id.resp_h", "")
+
+                    # Domain match — same path as ssl.log so a domain
+                    # in known_domains gets the same service identity
+                    # whether it arrived via TCP TLS or QUIC.
+                    match = match_domain(sni, source_ip=src_ip)
+                    if not match:
+                        continue
+                    service, category, _domain = match
+
+                    # Phase-2 context-aware refinement: ambiguous SNIs
+                    # (storage.googleapis.com and friends) get a more
+                    # specific label based on the source device kind.
+                    cached_mac_for_kind = _ip_to_mac.get(src_ip)
+                    device_kind = "unknown"
+                    if cached_mac_for_kind:
+                        device_kind = _classify_device_kind(
+                            _device_meta.get(cached_mac_for_kind)
+                        )
+                    service, category = _refine_classification(
+                        sni, service, category, device_kind
+                    )
+
+                    # Promote into _known_ips so subsequent volumetric
+                    # flows in conn.log to this destination get the
+                    # same attribution. TTL is bumped on every hit
+                    # because we just observed fresh activity.
+                    if resp_ip and resp_ip != "-":
+                        _known_ips[resp_ip] = (service, category, time.time())
+
+                    # Dedup against the SHARED _sni_last_seen dict, not
+                    # a separate quic dict. Rationale: from the
+                    # operator's perspective, "youtube on iPad-A" is
+                    # one logical event regardless of whether it
+                    # arrived via TCP TLS or QUIC. Whichever tailer
+                    # sees it first reports it; the other respects
+                    # the dedup window and stays silent. The downside
+                    # is that the QUIC tailer's hit count looks
+                    # smaller in /api/labeler/stats than reality
+                    # (Day 6 can break this out into "seen vs
+                    # deduped" if it matters).
+                    now = time.time()
+                    dedup_key = (service, src_ip)
+                    last = _sni_last_seen.get(dedup_key, 0)
+                    if (now - last) < SNI_DEDUP_SECONDS:
+                        continue
+                    _sni_last_seen[dedup_key] = now
+
+                    # Build the attribution payload. Effective score
+                    # is computed by labeler.LabelProposal so a future
+                    # change to SOURCE_WEIGHTS or DETERMINISTIC_LABELERS
+                    # propagates here without a code change.
+                    quic_version = record.get("version", "?")
+                    proposal = LabelProposal(
+                        labeler="quic_sni_direct",
+                        service=service,
+                        category=category,
+                        confidence=1.0,
+                        rationale=(
+                            f"QUIC Initial server_name={sni} "
+                            f"(version={quic_version})"
+                        ),
+                    )
+
+                    # VPN-tunnel side event: same handling as the SSL
+                    # path so the alert dashboard sees vpn_ services
+                    # arriving via QUIC too (NordVPN's QUIC mode and
+                    # any other vpn over h3).
+                    if service.startswith("vpn_"):
+                        _vpn_key = (src_ip, service)
+                        _vpn_now = time.time()
+                        _vpn_last = _vpn_sni_dedup.get(_vpn_key, 0)
+                        if (_vpn_now - _vpn_last) >= 300:
+                            _vpn_sni_dedup[_vpn_key] = _vpn_now
+                            await send_event(
+                                client,
+                                detection_type="vpn_tunnel",
+                                ai_service=service,
+                                source_ip=src_ip,
+                                bytes_transferred=0,
+                                category="security",
+                                attribution={
+                                    "labeler": proposal.labeler,
+                                    "confidence": proposal.effective_score,
+                                    "rationale": proposal.rationale,
+                                    "proposed_service": service,
+                                    "proposed_category": "security",
+                                    "is_low_confidence": False,
+                                    "is_disputed": False,
+                                },
+                            )
+
+                    await send_event(
+                        client,
+                        detection_type="quic_hello",
+                        ai_service=service,
+                        source_ip=src_ip,
+                        bytes_transferred=0,  # quic.log has no byte counts;
+                                              # tail_conn_log accumulates
+                                              # via _known_ips
+                        category=category,
+                        attribution={
+                            "labeler": proposal.labeler,
+                            "confidence": proposal.effective_score,
+                            "rationale": proposal.rationale,
+                            "proposed_service": service,
+                            "proposed_category": category,
+                            "is_low_confidence": False,
+                            "is_disputed": False,
+                        },
+                    )
+        except (OSError, IOError) as exc:
+            print(f"[!] quic.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
 # GeoIP country lookups + traffic accumulation
 # ---------------------------------------------------------------------------
 # Resolves public IPs to country codes via a local MMDB (DB-IP Country Lite,
@@ -3829,13 +4047,18 @@ async def main(zeek_log_dir: str) -> None:
     ja4d_log = log_dir / "ja4d.log"
     mdns_log = log_dir / "mdns.log"
     dns_log = log_dir / "dns.log"
+    quic_log = log_dir / "quic.log"
 
     # Per-labeler rollback flags. Each labeler can be turned off via
     # an env var so we can isolate it in production without a code
     # revert. Default true — rollback is opt-in. The plan calls for
-    # one such flag per stage; this is the Day 1 (DNS snooping) one.
+    # one such flag per stage; Day 1 added DNS snooping, Day 2 adds
+    # the QUIC tailer.
     dns_snooping_enabled = os.environ.get(
         "LABELER_DNS_SNOOPING", "true"
+    ).strip().lower() in ("true", "1", "yes", "on")
+    quic_tailer_enabled = os.environ.get(
+        "LABELER_QUIC_TAILER", "true"
     ).strip().lower() in ("true", "1", "yes", "on")
 
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
@@ -3850,6 +4073,10 @@ async def main(zeek_log_dir: str) -> None:
         print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
     else:
         print(f"[*] DNS-IP correlation labeler: DISABLED via LABELER_DNS_SNOOPING")
+    if quic_tailer_enabled:
+        print(f"[*] QUIC SNI labeler: enabled (tailing quic.log)")
+    else:
+        print(f"[*] QUIC SNI labeler: DISABLED via LABELER_QUIC_TAILER")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
@@ -3915,6 +4142,8 @@ async def main(zeek_log_dir: str) -> None:
     if dns_snooping_enabled:
         tasks.append(tail_dns_log(dns_log))
         tasks.append(flush_dns_observations())
+    if quic_tailer_enabled:
+        tasks.append(tail_quic_log(quic_log, client))
     if p0f_task is not None:
         tasks.append(p0f_task)
     if scanner_task is not None:

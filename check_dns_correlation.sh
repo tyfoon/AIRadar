@@ -2,18 +2,19 @@
 #
 # check_dns_correlation.sh
 #
-# Day-1 + Day-1.5 smoke test for the DNS-IP correlation labeler.
-# Verifies that:
+# Day-1 + Day-1.5 + Day-2 smoke test for the labeler pipeline. Verifies:
 #   1. The airadar-app container is up.
-#   2. The zeek tailer started tail_dns_log + the new persister + warm-up
-#      without crashing on import or DB access.
+#   2. The zeek tailer started tail_dns_log + persister + warm-up + the
+#      new tail_quic_log without crashing on import or DB access.
 #   3. detection_events is receiving rows in the last few minutes
 #      (any rows — proves the tailer pipeline is alive).
-#   4. dns_correlated detections are firing (the new fallback path).
-#   5. label_attributions has rows from the dns_correlation labeler.
+#   4. dns_correlated detections are firing (Day 1 fallback path).
+#   5. label_attributions has rows from each labeler.
 #   6. Recent dns_correlated samples for visual sanity check.
 #   7. dns_observations table is being filled by flush_dns_observations.
 #   8. The cold-start warm-up actually restored entries on this rebuild.
+#   9. quic_hello detections are firing (Day 2 direct QUIC SNI path).
+#  10. Recent quic_hello samples.
 #
 # Run with: sudo ./check_dns_correlation.sh
 #
@@ -31,8 +32,8 @@ echo
 
 echo "==> 2. tailer banner, warm-up & any tracebacks (last 30 min)"
 sudo docker compose logs --since=30m "$CONTAINER" 2>&1 \
-  | grep -E "AI-Radar Zeek Tailer|DNS-IP correlation|Tailing dns.log|DNS observation persister|DNS cache warm-up|\[dns\] cache|\[dns-persist\]|\[dns-warmup\]|Traceback|ImportError|ModuleNotFoundError" \
-  | tail -25
+  | grep -E "AI-Radar Zeek Tailer|DNS-IP correlation|QUIC SNI labeler|Tailing dns.log|Tailing quic.log|DNS observation persister|DNS cache warm-up|\[dns\] cache|\[dns-persist\]|\[dns-warmup\]|quic.log read error|Traceback|ImportError|ModuleNotFoundError" \
+  | tail -30
 echo
 
 echo "==> DB queries (via python3 sqlite3 — no sqlite cli in container)"
@@ -137,6 +138,41 @@ print("  Look at section 2 for a 'DNS cache warm-up: N entries restored' line.")
 print("  N > 0 on a non-first rebuild means cold-start gap is closed.")
 print("  N = 0 on the very first deploy after this change is expected")
 print("  (the table was empty before flush_dns_observations existed).")
+
+# 9. quic_hello detections (Day 2)
+section("9. quic_hello event count (Day 2)")
+c.execute("SELECT COUNT(*) FROM detection_events WHERE detection_type='quic_hello'")
+qlife = c.fetchone()[0]
+c.execute("""
+    SELECT COUNT(*) FROM detection_events
+    WHERE detection_type='quic_hello'
+      AND timestamp > datetime('now','-5 minutes')
+""")
+qlast5 = c.fetchone()[0]
+print(f"  lifetime: {qlife}    last_5min: {qlast5}")
+try:
+    c.execute("""
+        SELECT COUNT(*) FROM label_attributions
+        WHERE labeler='quic_sni_direct'
+          AND created_at > datetime('now','-5 minutes')
+    """)
+    qattr = c.fetchone()[0]
+    print(f"  label_attributions (quic_sni_direct, last 5min): {qattr}")
+except sqlite3.OperationalError:
+    pass
+if qlife == 0:
+    print("  !! no quic_hello events ever — check Zeek quic.log + tail banner")
+
+# 10. recent quic_hello samples
+section("10. recent quic_hello samples (last 10)")
+c.execute("""
+    SELECT substr(timestamp,12,8) AS ts, ai_service, source_ip, bytes_transferred
+    FROM detection_events
+    WHERE detection_type='quic_hello'
+    ORDER BY id DESC
+    LIMIT 10
+""")
+show(c.fetchall(), ["ts", "ai_service", "source_ip", "bytes"])
 
 conn.close()
 PY
