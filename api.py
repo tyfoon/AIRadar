@@ -6375,6 +6375,28 @@ def admin_fix_macs():
 # Inbound attack ingest — aggregated by (source_ip, target_ip, target_port)
 # ---------------------------------------------------------------------------
 
+# Ranked priority for Zeek conn_state. Keep in sync with zeek_tailer.py —
+# higher rank = more informative about whether the flow actually carried
+# data. Used so aggregated rows display the state of the flow that
+# transferred bytes, not a leftover S0 probe from the first hit.
+_CONN_STATE_RANK = {
+    "":       0,
+    "S0":     1,
+    "REJ":    2,
+    "RSTOS0": 3,
+    "OTH":    3,
+    "SH":     3,
+    "SHR":    3,
+    "RSTR":   4,
+    "RSTRH":  4,
+    "RSTO":   5,
+    "S2":     6,
+    "S3":     6,
+    "S1":     7,
+    "SF":     8,
+}
+
+
 @app.post("/api/inbound/ingest")
 def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
     """Upsert inbound connection attempts from the Zeek tailer buffer."""
@@ -6398,13 +6420,11 @@ def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
             if u.get("severity") == "threat" and row.severity != "threat":
                 row.severity = "threat"
                 row.crowdsec_reason = u.get("crowdsec_reason")
-            # Update conn_state: set if not yet known, escalate to S1/SF
+            # Keep the most informative conn_state we've seen so far, so
+            # the row's label matches the flow that carried the bytes.
             new_cs = u.get("conn_state", "")
-            if new_cs:
-                if not row.conn_state:
-                    row.conn_state = new_cs  # first value — store whatever we got
-                elif new_cs in ("S1", "SF") and row.conn_state not in ("S1", "SF"):
-                    row.conn_state = new_cs  # escalate: established overrides probes
+            if new_cs and _CONN_STATE_RANK.get(new_cs, 0) > _CONN_STATE_RANK.get(row.conn_state or "", 0):
+                row.conn_state = new_cs
         else:
             db.add(InboundAttack(
                 source_ip=src,

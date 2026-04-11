@@ -2177,6 +2177,33 @@ async def _record_geo_conversation(
             _geo_conv_buckets[key] = {"bytes": total_bytes, "ob": ob, "rb": rb, "hits": 1}
 
 
+# Ranked priority for Zeek conn_state. Higher rank = more informative about
+# whether the connection actually carried data. We use this to decide which
+# state to display when aggregating multiple flows under the same
+# (src, dst, port) tuple, so a later RSTO session that transferred real
+# bytes overrides an earlier S0 probe that saw nothing.
+CONN_STATE_RANK = {
+    "":       0,
+    "S0":     1,   # SYN, no reply
+    "REJ":    2,   # responder rejected
+    "RSTOS0": 3,   # orig SYN+RST, no reply
+    "OTH":    3,   # mid-stream capture
+    "SH":     3,   # orig SYN+FIN, no reply
+    "SHR":    3,   # resp SYN-ACK+FIN, no orig ack
+    "RSTR":   4,   # established, responder reset
+    "RSTRH":  4,   # resp SYN-ACK+RST
+    "RSTO":   5,   # established, originator reset — real data likely
+    "S2":     6,   # established, orig FIN only
+    "S3":     6,   # established, resp FIN only
+    "S1":     7,   # established, no FIN seen yet
+    "SF":     8,   # established + normal close
+}
+
+
+def _conn_state_rank(cs: str) -> int:
+    return CONN_STATE_RANK.get(cs or "", 0)
+
+
 async def _record_inbound_attack(
     src_ip: str, target_ip: str, target_port: int,
     target_mac: str | None, total_bytes: int, proto: str = "tcp",
@@ -2193,8 +2220,9 @@ async def _record_inbound_attack(
             if is_threat and bucket["severity"] != "threat":
                 bucket["severity"] = "threat"
                 bucket["crowdsec_reason"] = _crowdsec_ip_reasons.get(src_ip)
-            # Escalate conn_state: if ANY connection was established, record that
-            if conn_state in ("S1", "SF") and bucket.get("conn_state") not in ("S1", "SF"):
+            # Keep the most informative conn_state we've seen so far, so a
+            # row's label matches the flow that actually carried the bytes.
+            if _conn_state_rank(conn_state) > _conn_state_rank(bucket.get("conn_state", "")):
                 bucket["conn_state"] = conn_state
         else:
             cc = _resolve_country(src_ip)
