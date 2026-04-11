@@ -6704,6 +6704,7 @@ function openDeviceDrawer(mac, service, category) {
     `<button class="${tabCls('report')}" data-tab="report" title="${t('dev.drawerReportTab')}" aria-label="${t('dev.drawerReportTab')}" onclick="setDrawerTab('report')"><i class="ph-duotone ph-sparkle"></i></button>`,
     `<button class="${tabCls('summary')}" data-tab="summary" title="${t('dev.drawerSummaryTab')}" aria-label="${t('dev.drawerSummaryTab')}" onclick="setDrawerTab('summary')"><i class="ph-duotone ph-chart-bar"></i></button>`,
     `<button class="${tabCls('connections')}" data-tab="connections" title="${t('dev.drawerConnectionsTab') || 'Connections'}" aria-label="${t('dev.drawerConnectionsTab') || 'Connections'}" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap"></i></button>`,
+    `<button class="${tabCls('activity')}" data-tab="activity" title="${t('dev.drawerActivityTab') || 'Activity'}" aria-label="${t('dev.drawerActivityTab') || 'Activity'}" onclick="setDrawerTab('activity')"><i class="ph-duotone ph-hourglass-medium"></i></button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
@@ -6719,6 +6720,14 @@ function openDeviceDrawer(mac, service, category) {
   _resetReportView();
   // Fire-and-forget the cache fetch so the tab is instant when clicked.
   _loadCachedDeviceReport(mac);
+
+  // --- Reset activity tab state for this device ---
+  // Each device opens fresh on "today" with the session list collapsed
+  // so the previous device's date selection / expanded state doesn't
+  // bleed across.
+  _drawerActivityDate = null;
+  _drawerActivityData = null;
+  _drawerActivityShowSessions = false;
 
   // --- Filter events for active tab and optional service ---
   _applyDrawerFilter(service);
@@ -6737,14 +6746,16 @@ function openDeviceDrawer(mac, service, category) {
 }
 
 function _applyDrawerFilter(serviceFilter) {
-  const summaryView = document.getElementById('drawer-summary-view');
-  const reportView  = document.getElementById('drawer-report-view');
-  const eventsView  = document.getElementById('drawer-events-view');
+  const summaryView  = document.getElementById('drawer-summary-view');
+  const reportView   = document.getElementById('drawer-report-view');
+  const eventsView   = document.getElementById('drawer-events-view');
+  const activityView = document.getElementById('drawer-activity-view');
 
   const hideAll = () => {
-    if (summaryView) summaryView.classList.add('hidden');
-    if (reportView)  reportView.classList.add('hidden');
-    if (eventsView)  eventsView.classList.add('hidden');
+    if (summaryView)  summaryView.classList.add('hidden');
+    if (reportView)   reportView.classList.add('hidden');
+    if (eventsView)   eventsView.classList.add('hidden');
+    if (activityView) activityView.classList.add('hidden');
   };
 
   if (_drawerActiveTab === 'summary') {
@@ -6764,6 +6775,13 @@ function _applyDrawerFilter(serviceFilter) {
     hideAll();
     if (summaryView) summaryView.classList.remove('hidden');
     _loadDrawerConnections();
+    return;
+  }
+
+  if (_drawerActiveTab === 'activity') {
+    hideAll();
+    if (activityView) activityView.classList.remove('hidden');
+    _loadDrawerActivity();
     return;
   }
 
@@ -7036,6 +7054,259 @@ async function _loadDrawerConnections() {
     el.innerHTML = html;
   } catch (err) {
     el.innerHTML = `<p class="text-sm text-red-500 text-center py-4">${err.message}</p>`;
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Activity tab — per-day session timeline
+// ---------------------------------------------------------------------------
+// Renders a 24h horizontal strip with one track per category and one
+// colored segment per session, plus per-category/per-service totals and
+// a collapsable session list. Data comes from /api/devices/{mac}/activity
+// which already does the SQL window-function sessionization on the server.
+
+let _drawerActivityDate = null;          // YYYY-MM-DD in Europe/Amsterdam
+let _drawerActivityShowSessions = false; // detail list collapsed by default
+let _drawerActivityData = null;          // last fetched payload, for cheap re-render on toggle
+
+// Tailwind-aligned colors per activity category. The "fill" is used for
+// the timeline segment background; "text" for the chip label. Picked so
+// they're distinguishable both in light and dark mode without extra css.
+const _ACTIVITY_CAT_COLORS = {
+  ai:        { fill: 'bg-indigo-500',  ring: 'ring-indigo-400/40',  text: 'text-indigo-600 dark:text-indigo-400',   chip: 'bg-indigo-50 dark:bg-indigo-900/30' },
+  streaming: { fill: 'bg-purple-500',  ring: 'ring-purple-400/40',  text: 'text-purple-600 dark:text-purple-400',   chip: 'bg-purple-50 dark:bg-purple-900/30' },
+  social:    { fill: 'bg-pink-500',    ring: 'ring-pink-400/40',    text: 'text-pink-600 dark:text-pink-400',       chip: 'bg-pink-50 dark:bg-pink-900/30' },
+  gaming:    { fill: 'bg-orange-500',  ring: 'ring-orange-400/40',  text: 'text-orange-600 dark:text-orange-400',   chip: 'bg-orange-50 dark:bg-orange-900/30' },
+  shopping:  { fill: 'bg-emerald-500', ring: 'ring-emerald-400/40', text: 'text-emerald-600 dark:text-emerald-400', chip: 'bg-emerald-50 dark:bg-emerald-900/30' },
+};
+function _activityColor(cat) {
+  return _ACTIVITY_CAT_COLORS[cat] || { fill: 'bg-slate-500', ring: 'ring-slate-400/40', text: 'text-slate-600 dark:text-slate-400', chip: 'bg-slate-50 dark:bg-slate-900/30' };
+}
+
+// Format a duration in seconds: "58s" / "12m" / "1h 24m". Distinct from
+// _fmtDuration which takes ms and only does minute granularity.
+function _fmtDurationSec(secs) {
+  if (!secs || secs < 0) return '0s';
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// Local-tz date helpers. The API returns ISO timestamps with offset
+// (e.g. 2026-04-10T11:24:36+02:00) so new Date() parses them correctly
+// and getHours() returns local-day hours.
+function _todayLocalISO() {
+  const d = new Date();
+  // YYYY-MM-DD in local tz (NOT toISOString — that's UTC)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function _formatLocalDateLabel(isoDate) {
+  // Pretty label like "vr 10 apr" / "Fri Apr 10" — short, fits the header.
+  const d = new Date(`${isoDate}T12:00:00`);  // noon to dodge DST edge cases
+  const locale = (typeof getLocale === 'function' && getLocale() === 'nl') ? 'nl-NL' : 'en-US';
+  return d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+async function _loadDrawerActivity() {
+  const el = document.getElementById('drawer-activity-view');
+  if (!el || !_drawerMac) return;
+
+  // Initialize date on first open of this drawer instance.
+  if (!_drawerActivityDate) {
+    _drawerActivityDate = _todayLocalISO();
+  }
+
+  el.innerHTML = `<div class="flex items-center gap-2 text-slate-400 py-6 justify-center">
+    <i class="ph-duotone ph-circle-notch animate-spin text-lg"></i>
+    <span class="text-sm">${t('dev.activityLoading') || 'Loading activity...'}</span>
+  </div>`;
+
+  try {
+    const url = `/api/devices/${encodeURIComponent(_drawerMac)}/activity?date=${_drawerActivityDate}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    _drawerActivityData = data;
+    el.innerHTML = _renderActivity(data);
+  } catch (err) {
+    _drawerActivityData = null;
+    el.innerHTML = _renderActivityHeader() +
+      `<p class="text-sm text-red-500 text-center py-6">${err.message}</p>`;
+  }
+}
+
+function _renderActivityHeader() {
+  // Date nav: ◀ <date> ▶ + Today button. Disable ▶ if we're on today.
+  const today = _todayLocalISO();
+  const isToday = _drawerActivityDate === today;
+  const label = _formatLocalDateLabel(_drawerActivityDate);
+  const nextDisabled = isToday ? 'opacity-30 pointer-events-none' : '';
+  return `
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-200">${t('dev.activityTitle') || 'Daily usage'}</h3>
+      <div class="flex items-center gap-1">
+        <button onclick="_activityShiftDate(-1)" title="${t('dev.activityPrevDay') || 'Previous day'}"
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          <i class="ph-bold ph-caret-left text-sm"></i>
+        </button>
+        <span class="text-xs font-medium text-slate-600 dark:text-slate-300 min-w-[80px] text-center tabular-nums">${label}</span>
+        <button onclick="_activityShiftDate(1)" title="${t('dev.activityNextDay') || 'Next day'}"
+          class="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 ${nextDisabled}">
+          <i class="ph-bold ph-caret-right text-sm"></i>
+        </button>
+        <button onclick="_activityGoToday()" ${isToday ? 'disabled' : ''}
+          class="ml-1 px-2 h-7 text-[11px] font-medium rounded-md ${isToday ? 'text-slate-400 dark:text-slate-600 cursor-default' : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}">
+          ${t('dev.activityToday') || 'Today'}
+        </button>
+      </div>
+    </div>`;
+}
+
+function _renderActivity(data) {
+  let html = _renderActivityHeader();
+
+  const sessions = data.sessions || [];
+  const totalsCat = data.totals_by_category || [];
+  const totalsSvc = data.totals_by_service || [];
+
+  if (sessions.length === 0) {
+    html += `<div class="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
+      <i class="ph-duotone ph-hourglass text-3xl mb-2 block"></i>
+      ${t('dev.activityEmpty') || 'No usage recorded on this day.'}
+    </div>`;
+    return html;
+  }
+
+  // --- Grand total + session count ---
+  html += `<div class="mb-4 flex items-baseline justify-between">
+    <div>
+      <span class="text-xs text-slate-500 dark:text-slate-400">${t('dev.activityTotal') || 'Total usage'}</span>
+      <span class="ml-2 text-base font-semibold text-slate-700 dark:text-slate-200 tabular-nums">${_fmtDurationSec(data.grand_total_seconds)}</span>
+    </div>
+    <span class="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">${sessions.length} ${t('dev.activitySessions') || 'sessions'}</span>
+  </div>`;
+
+  // --- Timeline strip ---
+  // One track per category. 0–24h spans full width. Sessions become
+  // absolute-positioned divs inside their track. Hour grid as background
+  // (CSS handles via .activity-track::before — see style.css).
+  // Group sessions by category in the order categories appear in
+  // totals_by_category (which is sorted by duration desc).
+  const sessionsByCat = {};
+  sessions.forEach(s => {
+    (sessionsByCat[s.category] = sessionsByCat[s.category] || []).push(s);
+  });
+
+  html += '<div class="activity-timeline mb-5">';
+  // Hour labels — show 00, 06, 12, 18, 24 to keep it readable on narrow drawer.
+  html += `<div class="flex justify-between text-[9px] text-slate-400 dark:text-slate-500 px-1 mb-1 tabular-nums select-none">
+    <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
+  </div>`;
+  totalsCat.forEach(catTotal => {
+    const cat = catTotal.category;
+    const color = _activityColor(cat);
+    const catSessions = sessionsByCat[cat] || [];
+    const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
+    html += `<div class="flex items-center gap-2 mb-1.5">
+      <div class="w-16 flex-shrink-0 text-[10px] font-medium ${color.text} truncate" title="${catLabel}">${catLabel}</div>
+      <div class="activity-track flex-1 relative h-6 rounded bg-slate-100 dark:bg-white/[0.04] overflow-hidden">`;
+    catSessions.forEach(s => {
+      const start = new Date(s.start);
+      const end = new Date(s.end);
+      const dayMinutes = 24 * 60;
+      const startMin = start.getHours() * 60 + start.getMinutes() + start.getSeconds() / 60;
+      const endMin = end.getHours() * 60 + end.getMinutes() + end.getSeconds() / 60;
+      const left = (startMin / dayMinutes) * 100;
+      // Force a minimum width so very short sessions stay visible.
+      const width = Math.max(((endMin - startMin) / dayMinutes) * 100, 0.4);
+      const tip = `${svcDisplayName(s.service)} · ${s.start.substring(11, 16)}–${s.end.substring(11, 16)} · ${_fmtDurationSec(s.duration_seconds)}${s.bytes ? ' · ' + _fmtBytes(s.bytes) : ''} · ${s.events} events`;
+      html += `<div class="activity-segment absolute top-0 bottom-0 ${color.fill} hover:ring-2 ${color.ring} cursor-default"
+        style="left:${left}%;width:${width}%"
+        title="${tip}"></div>`;
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+
+  // --- Per-service totals (chips, sorted by duration desc) ---
+  html += `<div class="mb-5">
+    <div class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-medium mb-2">${t('dev.activityTotal') || 'Total usage'}</div>
+    <div class="flex flex-wrap gap-1.5">`;
+  totalsSvc.forEach(svc => {
+    const color = _activityColor(svc.category);
+    html += `<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md ${color.chip} text-[11px]">
+      <span class="w-1.5 h-1.5 rounded-full ${color.fill}"></span>
+      <span class="font-medium ${color.text}">${svcDisplayName(svc.service)}</span>
+      <span class="tabular-nums text-slate-500 dark:text-slate-400">${_fmtDurationSec(svc.duration_seconds)}</span>
+    </div>`;
+  });
+  html += '</div></div>';
+
+  // --- Collapsable session list ---
+  const listLabel = _drawerActivityShowSessions
+    ? (t('dev.activityHideSessions') || 'Hide sessions')
+    : (t('dev.activityShowSessions') || 'Show all sessions');
+  const listIcon = _drawerActivityShowSessions ? 'ph-caret-up' : 'ph-caret-down';
+  html += `<div class="border-t border-slate-200 dark:border-white/[0.05] pt-3">
+    <button onclick="_activityToggleSessions()" class="w-full flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+      <span>${listLabel}</span>
+      <i class="ph-bold ${listIcon}"></i>
+    </button>`;
+  if (_drawerActivityShowSessions) {
+    html += '<div class="mt-3 space-y-1">';
+    sessions.forEach(s => {
+      const color = _activityColor(s.category);
+      const startTime = s.start.substring(11, 16);
+      const endTime = s.end.substring(11, 16);
+      html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+        <span class="w-1.5 h-1.5 rounded-full ${color.fill} flex-shrink-0"></span>
+        <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 w-24 flex-shrink-0">${startTime}–${endTime}</span>
+        <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${svcDisplayName(s.service)}</span>
+        <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_fmtDurationSec(s.duration_seconds)}</span>
+        ${s.bytes ? `<span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500 w-14 text-right flex-shrink-0">${_fmtBytes(s.bytes)}</span>` : '<span class="w-14 flex-shrink-0"></span>'}
+      </div>`;
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  return html;
+}
+
+function _activityShiftDate(delta) {
+  if (!_drawerActivityDate) return;
+  const d = new Date(`${_drawerActivityDate}T12:00:00`);
+  d.setDate(d.getDate() + delta);
+  // Don't allow future dates.
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  if (d > today) return;
+  _drawerActivityDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  _drawerActivityShowSessions = false;  // collapse list when switching days
+  _loadDrawerActivity();
+}
+
+function _activityGoToday() {
+  _drawerActivityDate = _todayLocalISO();
+  _drawerActivityShowSessions = false;
+  _loadDrawerActivity();
+}
+
+function _activityToggleSessions() {
+  _drawerActivityShowSessions = !_drawerActivityShowSessions;
+  // Re-render from cached data — no need to hit the API again.
+  if (_drawerActivityData) {
+    const el = document.getElementById('drawer-activity-view');
+    if (el) el.innerHTML = _renderActivity(_drawerActivityData);
+  } else {
+    _loadDrawerActivity();
   }
 }
 

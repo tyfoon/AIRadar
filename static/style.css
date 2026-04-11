@@ -382,3 +382,30 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   .card-table tbody td:empty { display: none; }
   .card-table tbody td[data-label=""]::before { display: none; }
 }
+
+/* ============================================================
+   Activity tab — per-day session timeline
+   ============================================================
+   Each .activity-track is a 24h horizontal strip; .activity-segment
+   children are absolute-positioned by left/width percentage. The
+   ::before pseudo draws the hour grid (every 6 hours) so segments
+   sit on a readable backdrop without an extra DOM node per tick. */
+.activity-track {
+  background-image: linear-gradient(
+    to right,
+    transparent 0, transparent calc(25% - 1px),
+    rgba(148, 163, 184, 0.18) calc(25% - 1px), rgba(148, 163, 184, 0.18) 25%,
+    transparent 25%, transparent calc(50% - 1px),
+    rgba(148, 163, 184, 0.28) calc(50% - 1px), rgba(148, 163, 184, 0.28) 50%,
+    transparent 50%, transparent calc(75% - 1px),
+    rgba(148, 163, 184, 0.18) calc(75% - 1px), rgba(148, 163, 184, 0.18) 75%,
+    transparent 75%
+  );
+}
+.activity-segment {
+  transition: filter 120ms ease;
+}
+.activity-segment:hover {
+  filter: brightness(1.15);
+  z-index: 2;
+}

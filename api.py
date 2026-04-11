@@ -372,6 +372,21 @@ CLEANUP_INTERVAL = 3600     # Run cleanup every hour (seconds)
 DB_PATH = Path(__file__).parent / "airadar.db"
 MAX_DB_SIZE_MB = 500        # Warn/compact if DB exceeds this
 
+# ---------------------------------------------------------------------------
+# Device activity (per-day session timeline) settings
+# ---------------------------------------------------------------------------
+# A "session" is a contiguous burst of events for one ai_service. Events
+# separated by more than ACTIVITY_SESSION_GAP_SECONDS start a new session.
+# Sessions shorter than the min duration / event count are filtered out as
+# noise (background heartbeats from idle apps). Categories outside the set
+# are excluded entirely so trackers and cloud sync don't drown out real use.
+ACTIVITY_SESSION_GAP_SECONDS = 600     # 10 min silence = new session
+ACTIVITY_SESSION_MIN_EVENTS = 3        # noise filter
+ACTIVITY_SESSION_MIN_SECONDS = 60      # noise filter
+ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping")
+ACTIVITY_TZ = "Europe/Amsterdam"
+ACTIVITY_MAX_DAYS_BACK = 30            # how far back date= can go
+
 
 async def _periodic_cleanup():
     """Background task: prune old events and compact the database."""
@@ -8230,6 +8245,169 @@ def device_connections(
             }
             for r in rows
         ],
+    }
+
+
+@app.get("/api/devices/{mac_address}/activity")
+def device_activity(
+    mac_address: str,
+    date: str | None = Query(None, description="YYYY-MM-DD in Europe/Amsterdam tz, defaults to today"),
+    db: Session = Depends(get_db),
+):
+    """Per-day usage timeline for a device, grouped into sessions.
+
+    Sessionizes detection_events for the device on the given local day:
+    contiguous bursts of events for the same ai_service (gap <= 10 min)
+    become one session. Background heartbeats are filtered out by min
+    event-count and min duration thresholds. Tracking/cloud categories
+    are excluded entirely so the timeline only reflects actual user-
+    facing app usage (social, streaming, gaming, ai, shopping).
+    """
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(ACTIVITY_TZ)
+    today_local = datetime.now(tz).date()
+
+    # Parse requested date (default = today, clamp to allowed range)
+    if date:
+        try:
+            requested = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    else:
+        requested = today_local
+
+    if requested > today_local:
+        raise HTTPException(status_code=400, detail="date cannot be in the future")
+    if (today_local - requested).days > ACTIVITY_MAX_DAYS_BACK:
+        raise HTTPException(
+            status_code=400,
+            detail=f"date cannot be more than {ACTIVITY_MAX_DAYS_BACK} days in the past",
+        )
+
+    # Convert local-day boundaries to UTC strings for the query.
+    # detection_events.timestamp is stored as naive UTC text.
+    day_start_local = datetime.combine(requested, datetime.min.time(), tzinfo=tz)
+    day_end_local = day_start_local + timedelta(days=1)
+    day_start_utc = day_start_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    day_end_utc = day_end_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    placeholders = ",".join(f":cat{i}" for i in range(len(ACTIVITY_CATEGORIES)))
+    sql = text(f"""
+        WITH events AS (
+          SELECT e.timestamp, e.ai_service, e.category, e.bytes_transferred
+          FROM detection_events e
+          JOIN device_ips di ON di.ip = e.source_ip
+          WHERE di.mac_address = :mac
+            AND e.timestamp >= :day_start
+            AND e.timestamp <  :day_end
+            AND e.category IN ({placeholders})
+        ),
+        marked AS (
+          SELECT *,
+            CASE WHEN LAG(timestamp) OVER (PARTITION BY ai_service ORDER BY timestamp) IS NULL
+                      OR (julianday(timestamp) -
+                          julianday(LAG(timestamp) OVER (PARTITION BY ai_service ORDER BY timestamp))
+                         ) * 86400 > :gap
+                 THEN 1 ELSE 0 END AS is_new
+          FROM events
+        ),
+        sessioned AS (
+          SELECT *,
+            SUM(is_new) OVER (PARTITION BY ai_service ORDER BY timestamp) AS sid
+          FROM marked
+        )
+        SELECT ai_service, category,
+               MIN(timestamp) AS start_ts,
+               MAX(timestamp) AS end_ts,
+               COUNT(*)       AS event_count,
+               COALESCE(SUM(bytes_transferred), 0) AS bytes
+        FROM sessioned
+        GROUP BY ai_service, sid
+        HAVING COUNT(*) >= :min_events
+           AND (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 86400 >= :min_seconds
+        ORDER BY start_ts
+    """)
+
+    params = {
+        "mac": mac_address,
+        "day_start": day_start_utc,
+        "day_end": day_end_utc,
+        "gap": ACTIVITY_SESSION_GAP_SECONDS,
+        "min_events": ACTIVITY_SESSION_MIN_EVENTS,
+        "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
+    }
+    for i, cat in enumerate(ACTIVITY_CATEGORIES):
+        params[f"cat{i}"] = cat
+
+    rows = db.execute(sql, params).fetchall()
+
+    # Convert UTC timestamps back to local-tz ISO strings for the frontend.
+    sessions = []
+    for r in rows:
+        start_utc = datetime.fromisoformat(r.start_ts).replace(tzinfo=timezone.utc)
+        end_utc = datetime.fromisoformat(r.end_ts).replace(tzinfo=timezone.utc)
+        duration = int((end_utc - start_utc).total_seconds())
+        sessions.append({
+            "service": r.ai_service,
+            "category": r.category,
+            "start": start_utc.astimezone(tz).isoformat(),
+            "end": end_utc.astimezone(tz).isoformat(),
+            "duration_seconds": duration,
+            "events": r.event_count,
+            "bytes": int(r.bytes or 0),
+        })
+
+    # Aggregate totals. Note: simple sum here — overlapping sessions of
+    # parallel services will double-count toward the grand total. For v1
+    # this is acceptable; "total active time" needs union-merging which
+    # we can add later if it matters.
+    by_service: dict[str, dict] = {}
+    by_category: dict[str, dict] = {}
+    grand_total_seconds = 0
+    for s in sessions:
+        grand_total_seconds += s["duration_seconds"]
+        sk = s["service"]
+        ck = s["category"]
+        if sk not in by_service:
+            by_service[sk] = {
+                "service": sk, "category": ck,
+                "duration_seconds": 0, "events": 0, "bytes": 0,
+            }
+        by_service[sk]["duration_seconds"] += s["duration_seconds"]
+        by_service[sk]["events"] += s["events"]
+        by_service[sk]["bytes"] += s["bytes"]
+        if ck not in by_category:
+            by_category[ck] = {
+                "category": ck, "duration_seconds": 0, "events": 0, "bytes": 0,
+            }
+        by_category[ck]["duration_seconds"] += s["duration_seconds"]
+        by_category[ck]["events"] += s["events"]
+        by_category[ck]["bytes"] += s["bytes"]
+
+    # Sort: services + categories by total duration descending so the most
+    # used items render first in the UI.
+    totals_by_service = sorted(
+        by_service.values(), key=lambda x: x["duration_seconds"], reverse=True
+    )
+    totals_by_category = sorted(
+        by_category.values(), key=lambda x: x["duration_seconds"], reverse=True
+    )
+
+    return {
+        "mac_address": mac_address,
+        "date": requested.isoformat(),
+        "tz": ACTIVITY_TZ,
+        "categories": list(ACTIVITY_CATEGORIES),
+        "thresholds": {
+            "gap_seconds": ACTIVITY_SESSION_GAP_SECONDS,
+            "min_events": ACTIVITY_SESSION_MIN_EVENTS,
+            "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
+        },
+        "sessions": sessions,
+        "totals_by_service": totals_by_service,
+        "totals_by_category": totals_by_category,
+        "grand_total_seconds": grand_total_seconds,
     }
 
 
