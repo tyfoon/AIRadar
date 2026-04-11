@@ -7575,9 +7575,6 @@ function _renderDeviceMatrix() {
     const ipInfo = dev ? _ipSummary(dev) : mac.replace('_ip_', '');
     const dtTag = deviceTypeTag(dev);
 
-    // Truncated original name for display
-    const origTruncated = origName.length > 35 ? origName.slice(0, 33) + '...' : origName;
-
     let cells = '';
     groups.forEach(g => {
       cells += `<td class="py-2.5 px-2 text-center border-l border-slate-100 dark:border-white/[0.04] hidden sm:table-cell">
@@ -7605,23 +7602,29 @@ function _renderDeviceMatrix() {
     const refreshBtn = dev ? `<button id="dev-refresh-btn-${mac.replace(/[^a-zA-Z0-9]/g, '_')}" onclick="event.stopPropagation();refreshDeviceMetadata('${mac}')" class="dev-edit-btn ml-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="${t('dev.refreshMetadata') || 'Refresh device info'}"><i class="ph-duotone ph-arrows-clockwise text-sm"></i></button>` : '';
     const rulesBtn = dev ? `<button onclick="event.stopPropagation();navigateToDeviceRules('${mac}')" class="dev-edit-btn ml-0.5 text-slate-400 hover:text-blue-500 transition-colors" title="${t('rules.manageRules')}"><i class="ph-duotone ph-shield-check text-sm"></i></button>` : '';
 
-    // Name display: friendly name as primary, original name as secondary
+    // Name display: show only the best name on line 1 and the IP
+    // directly below it. The original hostname used to sit as an
+    // extra line between them whenever the user had renamed the
+    // device, which (a) duplicated visible info in the common case
+    // where hostname and IP say similar things, and (b) made every
+    // row 4 lines tall so the Devices table needed constant
+    // scrolling. The original hostname is still reachable via the
+    // name tooltip below so no information is actually lost.
     const nameEscaped = bestName.replace(/"/g, '&quot;');
     const origTitle = origName.replace(/"/g, '&quot;');
-    const secondaryName = hasFriendly && origName
-      ? `<p class="text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[200px]" title="${origTitle}">${origTruncated}</p>`
-      : '';
+    const nameTitle = hasFriendly && origName && origName !== bestName
+      ? `${nameEscaped} (${origTitle})`
+      : nameEscaped;
 
     return `<tr class="border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors ${rowOpacity}">
       <td class="py-3 px-4 sticky left-0 bg-white dark:bg-[#0B0C10] z-10">
         <div class="flex items-center gap-1" id="dev-name-row-${mac.replace(/[^a-zA-Z0-9]/g, '_')}">
-          <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium truncate max-w-[180px]" data-mac="${dev ? dev.mac_address : ''}" title="${nameEscaped}">${bestName}</span>
+          <span class="device-name cursor-pointer hover:text-indigo-500 transition-colors text-sm font-medium truncate max-w-[180px]" data-mac="${dev ? dev.mac_address : ''}" title="${nameTitle}">${bestName}</span>
           ${editBtn}
           ${refreshBtn}
           ${rulesBtn}
           ${reportBtn}
         </div>
-        ${secondaryName}
         <p class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">${ipInfo}</p>
         ${dtTag}
       </td>
