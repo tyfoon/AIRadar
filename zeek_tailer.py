@@ -13,19 +13,24 @@ from __future__ import annotations
 import argparse
 import asyncio
 import ipaddress
+import json
 import os
 import re
 import socket
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 
 # Local modules — keep imports near the top so dependency cycles surface fast.
-from dns_cache import GLOBAL_CACHE as _DNS_CACHE
+from dns_cache import (
+    GLOBAL_CACHE as _DNS_CACHE,
+    parse_zeek_answers,
+    DEFAULT_MIN_TTL_SECONDS,
+)
 from labeler import LabelProposal, SOURCE_WEIGHTS
 
 # ---------------------------------------------------------------------------
@@ -3563,20 +3568,51 @@ async def tail_dns_log(log_path: Path) -> None:
                         continue
 
                     ttls = record.get("TTLs")
-                    inserted = _DNS_CACHE.ingest_zeek_response(
-                        client_mac=client_mac,
+
+                    # Parse the answers field ourselves (instead of using
+                    # _DNS_CACHE.ingest_zeek_response) so we have access to
+                    # each individual (ip, query, ttl) triple. We need
+                    # them per-IP both to feed the in-memory cache AND
+                    # to queue durable observations into the persist
+                    # buffer for the dns_observations table.
+                    triples = parse_zeek_answers(
                         query=query,
                         answers_field=answers,
                         ttls_field=ttls,
+                        default_ttl=DEFAULT_MIN_TTL_SECONDS,
                     )
+                    if not triples:
+                        continue
+
+                    obs_now = datetime.now(timezone.utc)
+                    answer_ips_json = json.dumps([t[0] for t in triples])
+
+                    for ip, q, ttl in triples:
+                        _DNS_CACHE.put(client_mac, ip, q, ttl)
+                        # Queue for durable persistence. Drained by
+                        # flush_dns_observations() every 30s. Buffer is
+                        # capped via DNS_PERSIST_BATCH_MAX in the
+                        # flusher; if pressure builds we drop the
+                        # oldest rather than the newest.
+                        if len(_dns_persist_buffer) < DNS_PERSIST_BATCH_MAX * 4:
+                            _dns_persist_buffer.append({
+                                "client_mac": client_mac,
+                                "server_ip": ip,
+                                "query": q,
+                                "answer_ips": answer_ips_json,
+                                "ttl": ttl,
+                                "observed_at": obs_now,
+                            })
+
                     # Telemetry: only print on novel queries to avoid
                     # log spam from chatty resolvers.
-                    if inserted > 0 and _DNS_CACHE.stats()["puts"] % 500 == 0:
+                    if _DNS_CACHE.stats()["puts"] % 500 == 0:
                         s = _DNS_CACHE.stats()
                         print(
                             f"[dns] cache: {s['size']} entries, "
                             f"hit_rate {s['hit_rate']*100:.1f}%, "
-                            f"replacements {s['replacements']}"
+                            f"replacements {s['replacements']}, "
+                            f"persist_buf {len(_dns_persist_buffer)}"
                         )
         except (OSError, IOError) as exc:
             print(f"[!] dns.log read error: {exc}, retrying in 5s…")
@@ -3634,6 +3670,154 @@ def _label_flow_via_dns(
 
 
 # ---------------------------------------------------------------------------
+# DNS observation persistence — durable backing store for the in-memory cache
+# ---------------------------------------------------------------------------
+# The in-memory DnsCache is fast but volatile: every container rebuild
+# wipes it, leaving a ~5 minute window where dns_correlation labels
+# nothing because the cache hasn't refilled. We close that gap by
+# (1) writing every cache insert to the dns_observations table in
+# small batches, and (2) reading the most recent rows back into the
+# cache on startup as a warm-up.
+#
+# The buffer is only ever touched by coroutines on the same event
+# loop (tail_dns_log appends, flush_dns_observations drains). Neither
+# operation yields between read and clear, so a lock is not required —
+# coroutines don't preempt each other in CPython asyncio. If a future
+# change adds an `await` between the snapshot and clear in the flush
+# loop, revisit this assumption.
+
+_dns_persist_buffer: list[dict] = []
+
+# Tunables. Conservative defaults: a quiet home network produces a few
+# hundred DNS lookups per minute, so a 30 s flush at batch-size 100
+# means at most ~1 batch per flush, and the buffer never grows beyond
+# the size of two intervals' worth of traffic.
+DNS_PERSIST_FLUSH_INTERVAL = 30.0   # seconds between batched DB writes
+DNS_PERSIST_BATCH_MAX = 500          # safety cap so a thundering herd
+                                     # doesn't OOM us during a DNS storm
+DNS_WARMUP_MAX_AGE_HOURS = 6         # how far back warm-up reaches
+DNS_WARMUP_ROW_LIMIT = 20_000        # cap on rows pulled at startup;
+                                     # 20k * ~150B ≈ 3 MB, fast even
+                                     # on the mini-PC's spinning disk
+
+
+async def flush_dns_observations() -> None:
+    """Background task: drain _dns_persist_buffer to the dns_observations table.
+
+    Writes are batched on a fixed interval to keep the SQLite write
+    rate low and predictable. A failed batch is logged but the buffer
+    is still cleared — we'd rather drop a few audit rows than let the
+    buffer grow without bound while the DB is down.
+    """
+    # Lazy import — keeps zeek_tailer importable even if database.py is
+    # mid-migration on a fresh install (the table is created by Day 0).
+    from database import SessionLocal as _SL, DnsObservation as _DO
+
+    print("[*] DNS observation persister: enabled (batched flush every "
+          f"{int(DNS_PERSIST_FLUSH_INTERVAL)}s)")
+
+    while True:
+        await asyncio.sleep(DNS_PERSIST_FLUSH_INTERVAL)
+
+        # Snapshot + clear in one synchronous step. No await between
+        # these two lines → no other coroutine can sneak an append in
+        # and lose it.
+        if not _dns_persist_buffer:
+            continue
+        batch = _dns_persist_buffer[:DNS_PERSIST_BATCH_MAX]
+        del _dns_persist_buffer[:len(batch)]
+
+        try:
+            db = _SL()
+            try:
+                for obs in batch:
+                    db.add(_DO(
+                        client_mac=obs["client_mac"],
+                        server_ip=obs["server_ip"],
+                        query=obs["query"],
+                        answer_ips=obs.get("answer_ips"),
+                        ttl=obs.get("ttl"),
+                        observed_at=obs["observed_at"],
+                        source_log="zeek_dns",
+                    ))
+                db.commit()
+            finally:
+                db.close()
+        except Exception as exc:
+            # We deliberately don't re-queue failed rows: a persistent
+            # DB error would balloon the buffer indefinitely. The next
+            # interval will pick up fresh observations and the gap
+            # shows up in the audit trail as a small hole.
+            print(f"[dns-persist] flush of {len(batch)} rows failed: {exc}")
+
+
+async def warmup_dns_cache_from_db() -> int:
+    """One-shot at startup: prime _DNS_CACHE from recent dns_observations.
+
+    Skips rows whose wire TTL has already expired (we don't want to
+    poison the cache with mappings the original DNS resolver itself
+    would no longer trust). Returns the number of cache entries
+    restored, for the startup banner.
+
+    This is what closes the cold-start gap. Without it, every
+    `docker compose up -d --build` produces a ~5 minute window where
+    dns_correlation labels nothing because the in-memory cache is
+    empty. With it, the cache is warm before tail_dns_log even reads
+    its first new line.
+    """
+    from database import SessionLocal as _SL, DnsObservation as _DO
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=DNS_WARMUP_MAX_AGE_HOURS)
+    restored = 0
+    skipped_expired = 0
+
+    try:
+        db = _SL()
+        try:
+            rows = (
+                db.query(_DO)
+                .filter(_DO.observed_at > cutoff)
+                .order_by(_DO.observed_at.asc())  # oldest first → newest
+                                                  # observation wins on
+                                                  # any (mac, ip) collision
+                .limit(DNS_WARMUP_ROW_LIMIT)
+                .all()
+            )
+        finally:
+            db.close()
+
+        now_dt = datetime.now(timezone.utc)
+        for r in rows:
+            obs_at = r.observed_at
+            if obs_at is None:
+                continue
+            if obs_at.tzinfo is None:
+                obs_at = obs_at.replace(tzinfo=timezone.utc)
+
+            obs_age = (now_dt - obs_at).total_seconds()
+            wire_ttl = r.ttl or DEFAULT_MIN_TTL_SECONDS
+            remaining = wire_ttl - obs_age
+            if remaining <= 0:
+                skipped_expired += 1
+                continue
+
+            _DNS_CACHE.put(
+                client_mac=r.client_mac,
+                server_ip=r.server_ip,
+                hostname=r.query,
+                raw_ttl=int(remaining),
+            )
+            restored += 1
+    except Exception as exc:
+        print(f"[dns-warmup] failed: {exc}")
+        return 0
+
+    if skipped_expired:
+        print(f"[dns-warmup] skipped {skipped_expired} rows past their wire TTL")
+    return restored
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
@@ -3646,6 +3830,14 @@ async def main(zeek_log_dir: str) -> None:
     mdns_log = log_dir / "mdns.log"
     dns_log = log_dir / "dns.log"
 
+    # Per-labeler rollback flags. Each labeler can be turned off via
+    # an env var so we can isolate it in production without a code
+    # revert. Default true — rollback is opt-in. The plan calls for
+    # one such flag per stage; this is the Day 1 (DNS snooping) one.
+    dns_snooping_enabled = os.environ.get(
+        "LABELER_DNS_SNOOPING", "true"
+    ).strip().lower() in ("true", "1", "yes", "on")
+
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
     print(f"[*] Reporting to API at {API_URL}")
     print(f"[*] Monitoring {len(DOMAIN_MAP)} domains (AI + Cloud)")
@@ -3654,7 +3846,10 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] DHCP passive device recognition: enabled")
     print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
     print(f"[*] mDNS device name discovery: enabled (tailing mdns.log)")
-    print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
+    if dns_snooping_enabled:
+        print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
+    else:
+        print(f"[*] DNS-IP correlation labeler: DISABLED via LABELER_DNS_SNOOPING")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
@@ -3691,13 +3886,22 @@ async def main(zeek_log_dir: str) -> None:
     # shows "enriching…" forever.
     await ensure_asn_db(client)
 
+    # DNS cache warm-up: pull recent dns_observations rows back into
+    # the in-memory cache BEFORE any conn.log line gets the chance to
+    # ask for a label. This collapses the cold-start gap (~5 minutes
+    # of zero correlation coverage after every rebuild) to roughly
+    # zero. Skipped when DNS snooping is disabled — no point warming
+    # a cache nobody will read.
+    if dns_snooping_enabled:
+        warmed = await warmup_dns_cache_from_db()
+        print(f"[*] DNS cache warm-up: {warmed} entries restored from DnsObservation")
+
     tasks = [
         tail_ssl_log(ssl_log, client),
         tail_conn_log(conn_log, client),
         tail_dhcp_log(dhcp_log, client),
         tail_ja4d_log(ja4d_log, client),
         tail_mdns_log(mdns_log, client),
-        tail_dns_log(dns_log),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs
@@ -3708,6 +3912,9 @@ async def main(zeek_log_dir: str) -> None:
         _refresh_third_party_sources(),# AdGuard + DDG lookup refresh
         _refresh_crowdsec_cache(client), # CrowdSec IP blocklist → fast local set
     ]
+    if dns_snooping_enabled:
+        tasks.append(tail_dns_log(dns_log))
+        tasks.append(flush_dns_observations())
     if p0f_task is not None:
         tasks.append(p0f_task)
     if scanner_task is not None:

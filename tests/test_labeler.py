@@ -40,6 +40,7 @@ from labeler import (  # noqa: E402
     AGREEMENT_BOOST,
     AGREEMENT_WINDOW,
     UNKNOWN_LABELER_WEIGHT,
+    DETERMINISTIC_LABELERS,
     resolve,
 )
 
@@ -197,6 +198,88 @@ def test_proposals_returned_in_score_order():
     check("ordering.first_is_sni", decision.proposals[0].labeler == "sni_direct")
 
 
+def test_tier_gate_llm_cannot_outscore_ja4_via_high_confidence():
+    """The exact hole the trust hierarchy was supposed to close, written
+    out as a regression test:
+
+      llm_inference at 0.70 weight × 0.95 confidence = 0.665 effective
+      ja4_community_db at 0.80 weight × 0.70 confidence = 0.560 effective
+
+    Pure score sort would give the win to the LLM. The tier gate fixes
+    this: JA4 is deterministic, LLM is probabilistic, so LLM cannot win
+    when any deterministic proposal exists, regardless of how confident
+    the LLM is.
+    """
+    llm = LabelProposal("llm_inference", "tiktok", "social", 0.95, "LLM very sure")
+    ja4 = LabelProposal("ja4_community_db", "youtube", "streaming", 0.70, "JA4 hash")
+    decision = resolve([llm, ja4])
+    check("tier_gate.ja4_wins_over_higher_score_llm",
+          decision.primary.labeler == "ja4_community_db",
+          f"expected ja4 to win, got {decision.primary.labeler} "
+          f"(scores: llm={llm.effective_score:.3f}, ja4={ja4.effective_score:.3f})")
+    check("tier_gate.winner_service", decision.primary.service == "youtube")
+    # The LLM proposal is still in the audit trail — we want to see
+    # later that the LLM disagreed, even though it didn't win.
+    check("tier_gate.llm_in_audit_trail",
+          any(p.labeler == "llm_inference" for p in decision.proposals))
+    check("tier_gate.ja4_in_audit_trail",
+          any(p.labeler == "ja4_community_db" for p in decision.proposals))
+
+
+def test_tier_gate_probabilistic_only_still_wins_when_alone():
+    """When NO deterministic proposal exists, the probabilistic tier
+    must still be allowed to produce a winner. Otherwise the LLM and
+    ip_asn_heuristic paths could never label anything, defeating Day 4.
+    """
+    llm = LabelProposal("llm_inference", "discord", "gaming", 0.90, "LLM guess")
+    asn = LabelProposal("ip_asn_heuristic", "discord", "gaming", 0.85, "ASN org match")
+    decision = resolve([llm, asn])
+    check("prob_only.has_winner", decision.primary is not None)
+    check("prob_only.llm_wins_on_score",
+          decision.primary.labeler == "llm_inference",
+          f"got {decision.primary.labeler}")
+    # llm: 0.70 * 0.90 = 0.63 → above CONFIDENCE_FLOOR (0.60), usable
+    check("prob_only.use_for_primary", decision.use_for_primary_label)
+
+
+def test_tier_gate_dispute_logic_only_runs_within_winning_tier():
+    """A probabilistic proposal must not be able to put a deterministic
+    winner into 'disputed' state — that would be the LLM whispering in
+    the operator's ear "but I think it's tiktok!" alongside a clean
+    SNI match. Disputes should only fire between two deterministic
+    proposals at near-equal score.
+    """
+    sni = LabelProposal("sni_direct", "youtube", "streaming", 0.85, "TLS SNI")
+    llm = LabelProposal("llm_inference", "tiktok", "social", 1.0, "LLM very sure")
+    decision = resolve([sni, llm])
+    # Within the deterministic tier there is only sni → no runner-up,
+    # so dispute logic cannot fire even though the LLM disagrees.
+    check("tier_dispute.not_disputed_cross_tier", not decision.is_disputed)
+    check("tier_dispute.sni_wins", decision.primary.labeler == "sni_direct")
+    # Both proposals stay in the audit trail
+    check("tier_dispute.both_in_audit", len(decision.proposals) == 2)
+
+
+def test_tier_gate_constant_membership():
+    """Sanity-check that the tier-gate constant matches the plan and
+    nobody silently moved a probabilistic labeler into the deterministic
+    set. If you change this set, you are changing the trust model — be
+    sure that's what you mean.
+    """
+    expected_deterministic = {
+        "manual_seed", "curated_v2fly", "sni_direct", "quic_sni_direct",
+        "adguard_services", "ja4_community_db", "dns_correlation",
+    }
+    check("tier_constant.matches_expected",
+          set(DETERMINISTIC_LABELERS) == expected_deterministic,
+          f"got {sorted(DETERMINISTIC_LABELERS)}")
+    # Things that MUST NOT be in the deterministic set
+    check("tier_constant.llm_excluded",
+          "llm_inference" not in DETERMINISTIC_LABELERS)
+    check("tier_constant.ip_asn_excluded",
+          "ip_asn_heuristic" not in DETERMINISTIC_LABELERS)
+
+
 def test_agreement_boost_does_not_exceed_one():
     # If a proposal is already at confidence 1.0 and gets boosted, it
     # must NOT go above 1.0. The cap matters because effective_score
@@ -225,6 +308,10 @@ if __name__ == "__main__":
         test_confidence_clamped_into_unit_interval,
         test_llm_cannot_overrule_direct_sni_when_both_high_confidence,
         test_proposals_returned_in_score_order,
+        test_tier_gate_llm_cannot_outscore_ja4_via_high_confidence,
+        test_tier_gate_probabilistic_only_still_wins_when_alone,
+        test_tier_gate_dispute_logic_only_runs_within_winning_tier,
+        test_tier_gate_constant_membership,
         test_agreement_boost_does_not_exceed_one,
     ]
 

@@ -83,6 +83,39 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "ip_asn_heuristic":    0.50,
 }
 
+# Tier gate. The plan principle is: a probabilistic source must NEVER
+# overrule a deterministic on-wire / curated observation, regardless of
+# its self-reported confidence. The pure source_weight × confidence math
+# does not enforce that on its own — e.g. llm_inference at 0.70 × 0.95
+# = 0.665 outscores ja4_community_db at 0.80 × 0.70 = 0.56 even though
+# JA4 is a deterministic TLS-fingerprint observation and the LLM is a
+# guess. We fix this by segmenting proposals into two tiers in resolve():
+#
+#   - Deterministic tier: any one of these wins over any probabilistic
+#     proposal, regardless of nominal confidence. The score-based sort
+#     and agreement/dispute logic only operates within this tier when
+#     it is non-empty.
+#
+#   - Probabilistic tier: only considered when zero deterministic
+#     proposals exist for the same flow. Probabilistic proposals are
+#     still kept in LabelDecision.proposals for the audit trail (so we
+#     can later see what the LLM said about a flow that was actually
+#     labeled by SNI), but they cannot win when a deterministic
+#     proposal is present.
+#
+# Adding a new labeler? If it observes something on the wire or looks
+# up a curated database, put it here. If it makes a probabilistic
+# guess (LLM, heuristic, ML model), leave it out.
+DETERMINISTIC_LABELERS: frozenset[str] = frozenset({
+    "manual_seed",
+    "curated_v2fly",
+    "sni_direct",
+    "quic_sni_direct",
+    "adguard_services",
+    "ja4_community_db",
+    "dns_correlation",
+})
+
 # Effective scores below this threshold are not used as primary labels in
 # downstream consumers (sessionization, AI recap, alerts). They still get
 # logged as low-confidence attributions for review, so the operator can
@@ -169,15 +202,25 @@ def resolve(proposals: list[LabelProposal]) -> LabelDecision:
     Conflict resolution rules (in order):
 
       1. Empty list → no decision.
-      2. Sort by effective_score descending. Highest is the candidate winner.
-      3. If the runner-up agrees on the same service AND is within
+      2. **Tier gate.** Segment proposals into deterministic vs
+         probabilistic (DETERMINISTIC_LABELERS). If at least one
+         deterministic proposal exists, the candidate set for the
+         winner is the deterministic subset only — probabilistic
+         proposals are kept in the audit trail but cannot win. This
+         enforces the "deterministic on-wire observation always
+         overrules a probabilistic guess" principle without depending
+         on the source_weight × confidence math working out (it
+         doesn't, on its own — see the note above DETERMINISTIC_LABELERS).
+      3. Sort the candidate set by effective_score descending. Highest
+         is the candidate winner.
+      4. If the runner-up agrees on the same service AND is within
          AGREEMENT_WINDOW of the winner's score → corroboration. The winner's
          confidence is multiplied by AGREEMENT_BOOST (capped at 1.0) and the
          decision is marked boosted=True.
-      4. If the runner-up disagrees AND is within AGREEMENT_WINDOW → dispute.
+      5. If the runner-up disagrees AND is within AGREEMENT_WINDOW → dispute.
          The winner is still returned (so we never silently drop a label),
          but is_disputed=True so the UI / observability layer can flag it.
-      5. If the winner's effective score is below CONFIDENCE_FLOOR, return
+      6. If the winner's effective score is below CONFIDENCE_FLOOR, return
          it but mark is_low_confidence=True. Downstream consumers should
          use LabelDecision.use_for_primary_label to skip these for live
          labeling and only treat them as audit-trail data.
@@ -186,14 +229,22 @@ def resolve(proposals: list[LabelProposal]) -> LabelDecision:
         return LabelDecision(primary=None, is_low_confidence=False,
                              is_disputed=False, boosted=False, proposals=[])
 
-    sorted_props = sorted(proposals, key=lambda p: p.effective_score, reverse=True)
-    winner = sorted_props[0]
+    # Tier gate: when any deterministic proposal exists, only those are
+    # candidates for the winner. Probabilistic proposals are still
+    # included in the full audit trail (decision.proposals), but they
+    # never enter the agreement/dispute/score-sort logic that picks
+    # the primary label.
+    deterministic = [p for p in proposals if p.labeler in DETERMINISTIC_LABELERS]
+    candidates = deterministic if deterministic else proposals
+
+    sorted_candidates = sorted(candidates, key=lambda p: p.effective_score, reverse=True)
+    winner = sorted_candidates[0]
 
     boosted = False
     is_disputed = False
 
-    if len(sorted_props) >= 2:
-        runner_up = sorted_props[1]
+    if len(sorted_candidates) >= 2:
+        runner_up = sorted_candidates[1]
         score_diff = winner.effective_score - runner_up.effective_score
         same_label = (winner.service == runner_up.service)
 
@@ -216,12 +267,19 @@ def resolve(proposals: list[LabelProposal]) -> LabelDecision:
 
     is_low_confidence = winner.effective_score < CONFIDENCE_FLOOR
 
+    # Audit trail: full proposals list, sorted by effective_score, INCLUDING
+    # probabilistic ones that were tier-gated out. This is what
+    # persist_attributions writes to label_attributions, so the operator
+    # can later see "the LLM also weighed in on this flow but was
+    # overruled by SNI / JA4 / DNS correlation".
+    full_audit_trail = sorted(proposals, key=lambda p: p.effective_score, reverse=True)
+
     return LabelDecision(
         primary=winner,
         is_low_confidence=is_low_confidence,
         is_disputed=is_disputed,
         boosted=boosted,
-        proposals=sorted_props,
+        proposals=full_audit_trail,
     )
 
 
