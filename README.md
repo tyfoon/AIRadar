@@ -172,6 +172,113 @@ The GeoConversation tracking layer now records `orig_bytes` (upload) and `resp_b
 
 ---
 
+## Service Labeling Pipeline
+
+Identifying _which service_ a flow belongs to is the single hardest problem in network visibility on a modern home network. Direct SNI inspection works beautifully for classic TLS 1.2 / 1.3 handshakes, but it only covers about 30% of real-world traffic once you account for QUIC (HTTP/3), Encrypted ClientHello (ECH), 0-RTT session resumption, and long-lived persistent connections that never re-handshake.
+
+AI-Radar solves this with a **multi-source labeling pipeline** organized as four cooperating layers, resolved by a central `labeler.py` module that enforces a deterministic trust hierarchy. Every label carries provenance (`labeler=...`, `confidence=...`, `rationale=...`) so the UI can always answer "why is this flow marked as YouTube?".
+
+### Quality principles
+
+Quality of information is the top priority of the pipeline — a wrong label is strictly worse than a missing one, because wrong labels poison sessionization, the AI recap, the alert engine, and the operator's mental model.
+
+- **Every label has a herkomst and a confidence.** Events sourced from the AdGuard seed at confidence 0.85 are clearly distinguishable from manual-seed matches at 1.00, and every event records its labeler in `label_attributions` so conflicts can be audited months later.
+- **Conflicts are resolved explicitly.** When two labelers propose different services for the same flow, the tier-gated trust hierarchy picks a winner and flags the loser in the audit trail. Nothing is silently overwritten.
+- **Multi-source corroboration boosts confidence.** When two labelers agree on the same service within a score window, the winner's confidence is bumped up as a reward for independent corroboration.
+- **Observability is first-class.** A dedicated `/api/labeler/stats` endpoint reports coverage per labeler in real time, so the operator can measure how much traffic each layer catches and where the gaps are.
+- **Fail-closed.** If the pipeline is uncertain (effective score below `CONFIDENCE_FLOOR = 0.60`), the flow stays unlabeled rather than being assigned a shaky label. Sessionization, the AI recap, and alerts skip these flows entirely; they remain visible in raw-event views for manual review.
+- **Per-client scoping.** Multi-tenant CDN IPs (Apple's 17.x edge ranges, Cloudflare, Fastly, Akamai) are labeled per `(client_mac, server_ip)` tuple rather than globally, so one device's observation never pollutes another device's flows.
+
+### The four layers
+
+#### Layer 1 — Direct on-wire SNI (`tail_ssl_log`, `tail_quic_log`)
+
+Classic TLS 1.2/1.3 ClientHellos carry the SNI in plaintext. QUIC Initial packets expose the same `server_name` field until ECH is negotiated. Both logs (`ssl.log` and `quic.log`) are tailed continuously and matched against the curated domain map via `match_domain()`. Direct SNI matches produce `sni_hello` events (labeler `sni_direct`, effective_score 0.95) and direct QUIC matches produce `quic_hello` events (labeler `quic_sni_direct`, effective_score 0.90). This layer catches everything visible at the packet level and is the ground truth for all downstream layers.
+
+#### Layer 2 — DNS correlation (`dns_cache.py`, `tail_dns_log`)
+
+For flows whose ClientHello is missing — typically QUIC 0-RTT resumption or ECH-encrypted handshakes — Layer 2 recovers the service identity from the most recent DNS resolution the same client did. Zeek's `dns.log` is tailed into a per-client LRU cache keyed on `(client_mac, server_ip)`. When `tail_conn_log` sees an unlabeled flow, it asks the cache what hostname the client resolved to that destination IP; if the hostname matches a known service, a `dns_correlated` event fires (labeler `dns_correlation`, effective_score 0.75). The cache enforces several correctness invariants:
+
+- **CNAME-aware parsing** — every IP in a Zeek answer chain maps to the ORIGINAL query, never to intermediate CNAMEs. A response like `youtube.com → youtube-ui.l.google.com → 142.250.180.110` correctly records the IP under `youtube.com`, not under the CNAME.
+- **Per-client scoping** — cache entries are keyed on `(client_mac, server_ip)`, so device A resolving `discord.com → 162.159.x.x` and device B resolving `twitch.tv → 162.159.x.x` do not corrupt each other's labels on shared Cloudflare infrastructure.
+- **OrderedDict LRU + wire-TTL expiry** — capped at 50,000 entries with O(1) eviction, honoring each DNS response's wire TTL with a sane floor and ceiling.
+- **Durable persistence + warm-up** — observations are batched into a `dns_observations` table every 30 seconds, and the cache is re-primed from that table on startup so the ~5 minute cold window after a container rebuild collapses to roughly zero.
+
+#### Layer 3 — Per-client volumetric attribution (`_known_ips`, `tail_conn_log`)
+
+Once Layer 1 or Layer 2 has identified a service for a specific `(client_mac, destination_ip)` pair, Layer 3 propagates that label to the volumetric path: every subsequent flow in `conn.log` from the same client to the same destination accumulates bytes under the same service. This is what makes the byte-per-service charts accurate for streaming sessions that open a few connections at the start and hold them open for 25+ minutes.
+
+The cache is scoped per `(client_mac, server_ip)` — **never** globally by IP. Apple's edge IPs (`17.253.63.x`, `17.248.236.x`, etc.) serve many unrelated services (iCloud, Photos, Mail, Apple TV, App Store, Push, Apple Music), so a global cache would cause device A's `tv.apple.com` handshake to mis-attribute device B's iCloud Photos sync as Apple TV. Per-client scoping closes that leak. When a flow arrives from a device whose MAC is not yet known (brand-new device, pre-DHCP), the write is deliberately skipped — no entry is better than an unscoped entry that re-introduces the bug.
+
+#### Layer 4 — Session reconstruction (activity sessionizer)
+
+Daily usage timelines need per-service active-time estimates, but Layer 1–3 events are sparse by design: SNI dedup limits each `(service, source_ip)` to one event per 30 minutes to avoid flooding. A 25-minute YouTube view might produce only 1–2 handshake events — not enough for the noise-filter threshold the session detector applies.
+
+Layer 4 fixes this by UNIONing the `detection_events` stream with the much denser `geo_conversations` byte-counter table. Every `geo_conversations` row (one per `(mac, service, dest_ip)`) contributes two virtual events at `first_seen` and `last_seen`, clamped to the day window. A Hay Day session touching 6 Supercell IPs thus produces ~12 virtual events over the correct 17-minute timespan, and the session detector correctly renders it as a single Gaming session even though only 2 handshakes made it into `detection_events`.
+
+### The trust hierarchy (`labeler.py`)
+
+Every labeler submits a `LabelProposal(labeler, service, category, confidence, rationale)` to `labeler.resolve()`, which picks a winner and persists the full proposal list as `label_attributions` rows for auditability.
+
+```
+SOURCE_WEIGHTS (higher = more trusted)
+  manual_seed         1.00   ← operator wrote it down
+  curated_v2fly       0.95   ← community-maintained list
+  sni_direct          0.95   ← TCP TLS ClientHello, on-wire
+  quic_sni_direct     0.90   ← QUIC Initial, on-wire
+  adguard_services    0.85   ← AdGuard's official service map
+  ja4_community_db    0.80   ← (planned) FoxIO JA4 matches
+  dns_correlation     0.75   ← per-client DNS cache match
+  llm_inference       0.70   ← (planned) LLM classifier
+  ip_asn_heuristic    0.50   ← ASN org-name fuzzy match
+```
+
+`effective_score = source_weight × confidence`. Resolution rules:
+
+1. **Tier gate.** Proposals are split into deterministic (`sni_direct`, `quic_sni_direct`, `adguard_services`, `ja4_community_db`, `dns_correlation`, and curated seeds) and probabilistic (`llm_inference`, `ip_asn_heuristic`) tiers. If any deterministic proposal exists, only those can win — a probabilistic source cannot outrank an on-wire observation regardless of its self-reported confidence.
+2. **Score-based pick within the winning tier.** Highest `effective_score` wins.
+3. **Agreement boost.** When the runner-up agrees on the same service within `AGREEMENT_WINDOW = 0.05`, the winner's confidence is multiplied by `AGREEMENT_BOOST = 1.10` (capped at 1.00) and flagged as `boosted=true`.
+4. **Dispute flag.** When the runner-up _disagrees_ with the winner within the same window, the decision is still recorded but marked `is_disputed=true` so the UI can show a warning badge.
+5. **Confidence floor.** Winners with effective_score below `CONFIDENCE_FLOOR = 0.60` are marked `is_low_confidence=true`, which excludes them from primary labeling but keeps them in the audit trail.
+
+### Per-labeler rollback flags
+
+Each labeler layer can be toggled independently via environment variables, so an operator can isolate a new labeler in production without a code revert:
+
+| Env var | Default | Effect when `false` |
+|---|---|---|
+| `LABELER_DNS_SNOOPING` | `true` | Disables `tail_dns_log`, `flush_dns_observations`, and the cache warm-up on startup |
+| `LABELER_QUIC_TAILER` | `true` | Disables `tail_quic_log` — QUIC flows fall back through Layer 2/3 |
+| _(planned)_ `LABELER_JA4_MATCH` | `true` | Will disable the JA4 community DB lookup once Day 3 ships |
+| _(planned)_ `LABELER_LLM_CLASSIFIER` | `true` | Will disable the LLM classifier once Day 4 ships |
+
+### Diagnostic tooling
+
+A family of standalone Bash scripts ship in the repository root for live labeling diagnostics. Each calls into the in-container SQLite database through `docker compose exec` so no host-side Python or database client is required.
+
+| Script | Args | Purpose |
+|---|---|---|
+| `check_dns_correlation.sh` | none | Post-rebuild smoke test. Container health, tailer banners, detection_events per type, dns_observations persistence, warm-up evidence, quic_hello sample. Run after every labeler deploy. |
+| `check_device_activity.sh` | `<ip-or-mac>` | Diagnoses empty Daily usage for a device. Walks the sessionizer data path and reports the count at every filter step (raw → candidates → surviving). Pinpoints whether the problem is categories, thresholds, or missing events. |
+| `list_apple_devices.sh` | none | Lists every Apple-vendor or iPad/iPhone/Mac-named device sorted by recent activity. Use when "I played X on the iPad" turns up empty — there may be more than one iPad on the network. |
+| `check_hayday.sh` | `<ip>` | Mobile-game specific seed and label audit. Confirms detection_events categories for a device, top unlabeled destinations, and whether `hay`/`supercell`/`clash` exists anywhere in `known_domains` or `detection_events`. |
+| `check_hayday_real_traffic.sh` | `<ip>` | Deeper dive around the labeling layer. Lists `geo_conversations` rows 21–50 (beyond the top 20), PTR/ASN matching on Supercell infrastructure, top unlabeled destinations by bytes, mobile-game-ad event timestamps, and temporal correlation of services ±5 min around ad events. |
+| `check_laptop_appletv.sh` | `<ip> <utc-ts>` | Per-client-scoping verification. Separates legitimate direct-match events from stale-label inheritance, with section A/B/C verdicts. Use after any `_known_ips` change. |
+| `check_laptop_appletv_dns.sh` | `<ip>` | Follow-up that finds which specific DNS queries from the device match an `apple_tv` seed entry. Use when the above verdict is ambiguous. |
+| `check_appletv_seed.sh` | none | Audits all `apple_tv` seed entries, flags suspiciously broad ones, simulates `match_domain()` on key iCloud hostnames, and runs the LIVE `match_domain()` from `zeek_tailer` against the most representative samples. |
+| `find_appletv_trigger.sh` | `<ip>` | Runs `match_domain()` on every distinct DNS query a device made in the last 12 hours and classifies each as `apple_tv` / other / unlabeled. Uses source_ip for context-aware refinement. |
+| `inspect_appletv_event.sh` | `<ip>` | Joins `detection_events` with `label_attributions` so the exact rationale string ("DNS resolved hostname → resp_ip via MAC-suffix") is visible for every apple_tv event. This is the definitive answer to "why did this flow get this label?". |
+
+### Where this is headed
+
+The four layers above deliver approximately 80% coverage of real-world home traffic as of this writing. Remaining work on the roadmap:
+
+- **JA4 community database matching** — adds a deterministic TLS fingerprint lookup against FoxIO's public JA4 database. Catches long-lived QUIC streams whose DNS lookup has expired from the cache, 0-RTT resumed connections, and apps with unique TLS stacks.
+- **LLM classifier (PydanticAI + Haiku 4.5)** — classifies the long tail of unknown SNIs and JA4 hashes via typed LLM output, persists ≥0.70 confidence results back into `known_domains` with `source=llm` for subsequent rounds. Strict privacy filter drops `.local`, `.lan`, `.arpa`, raw IPs, and RFC1918 hostnames before any LLM call. Budgeted at $0.50 / day.
+- **Coverage dashboard widget** — surfaces `/api/labeler/stats` in the UI with a per-labeler breakdown, attribution-on-hover info icons next to service names, and a disputed-label warning badge for rows where the audit trail has competing proposals.
+
+---
+
 ## Architecture
 
 ```
@@ -350,27 +457,62 @@ Copy `.env.example` to `.env` and configure:
 
 ```
 AIRadar/
-├── api.py                 # FastAPI backend — REST API + routing + unified alert engine
-├── database.py            # SQLAlchemy models (Device, DeviceIP, DetectionEvent, BlockRule)
-├── schemas.py             # Pydantic request/response schemas
-├── adguard_client.py      # Async AdGuard Home API client
-├── zeek_tailer.py         # Async Zeek log tailer (ssl, conn, dhcp, weird, dpd logs)
-├── beacon_analyzer.py     # RITA-style beacon scoring engine (skewness, MADM, density)
-├── p0f_tailer.py          # Passive OS fingerprinting via p0f log tailing
-├── service_updater.py     # Third-party domain list updater for service detection
-├── network_scanner.py     # Active network scanner (nmap + nbtscan)
-├── sensor.py              # Legacy scapy-based sensor (deprecated)
+├── api.py                      # FastAPI backend — REST API, unified alert engine,
+│                                 /api/labeler/stats, activity sessionizer SQL
+├── database.py                 # SQLAlchemy models — Device, DeviceIP, DetectionEvent,
+│                                 DnsObservation, LabelAttribution, JA4Signature,
+│                                 UnknownObservation, GeoConversation, BlockRule
+├── schemas.py                  # Pydantic schemas, incl. LabelAttributionCreate
+├── labeler.py                  # Trust hierarchy + resolve() + tier gate
+│                                 (SOURCE_WEIGHTS, DETERMINISTIC_LABELERS,
+│                                 persist_attributions)
+├── dns_cache.py                # Thread-safe LRU+TTL DNS→IP correlation cache with
+│                                 CNAME-aware parsing and per-client scoping
+├── adguard_client.py           # Async AdGuard Home API client
+├── seed_adguard_services.py    # One-off script that seeds known_domains from
+│                                 AdGuard's services.json (source=adguard, conf=0.85)
+├── zeek_tailer.py              # Async Zeek log tailer —
+│                                 tail_ssl_log   (Layer 1: TCP TLS SNI)
+│                                 tail_quic_log  (Layer 1: QUIC Initial SNI)
+│                                 tail_dns_log   (Layer 2: DNS cache population)
+│                                 tail_conn_log  (Layer 3: per-client volumetric
+│                                                 attribution + dns_correlated fallback)
+│                                 plus dhcp, ja4d, mdns, DPD, p0f, network scanner
+├── beacon_analyzer.py          # RITA-style beacon scoring engine
+├── p0f_tailer.py               # Passive OS fingerprinting via p0f log tailing
+├── service_updater.py          # Third-party domain list updater
+├── network_scanner.py          # Active network scanner (nmap + nbtscan)
+├── sensor.py                   # Legacy scapy-based sensor (deprecated)
+├── tests/
+│   ├── test_dns_cache.py       # 68 stdlib-only assertions for dns_cache invariants
+│   │                            (LRU eviction, TTL expiry, CNAME parsing,
+│   │                            per-client isolation, replacement counter)
+│   └── test_labeler.py         # 46 assertions for labeler.resolve() — tier gate,
+│                                 agreement boost, dispute flag, confidence clamp
 ├── static/
-│   ├── index.html         # SPA frontend — all pages in one HTML file
-│   ├── app.js             # Frontend logic — routing, charts, alert cards, network graph
-│   ├── style.css          # Custom styles and alert card CSS
-│   └── i18n.js            # Internationalization module (English + Dutch)
-├── Dockerfile             # Python 3.11-slim container image
-├── docker-compose.yml     # Production stack (AI-Radar + AdGuard + CrowdSec)
-├── setup_n95.sh           # One-time host setup script for the N95 appliance
-├── requirements.txt       # Python dependencies
-├── .env.example           # Environment variable template
-└── .gitignore             # Git ignore rules
+│   ├── index.html              # SPA frontend — all pages in one HTML file
+│   ├── app.js                  # Frontend logic — routing, charts, alert cards,
+│   │                            _eventDescription, Daily usage renderer
+│   ├── style.css               # Custom styles and alert card CSS
+│   └── i18n.js                 # Internationalization (English + Dutch) — incl.
+│                                 ev.quicConnection / ev.dnsCorrelated keys
+├── check_dns_correlation.sh    # Labeler smoke test (Day 0–2 coverage)
+├── check_device_activity.sh    # Daily usage sessionizer diagnostic per device
+├── list_apple_devices.sh       # Multi-iPad / multi-Mac discovery helper
+├── check_hayday.sh             # Mobile-game seed + label audit
+├── check_hayday_real_traffic.sh# Deeper mobile-game traffic analysis via geo_conv
+├── check_laptop_appletv.sh     # Per-client scoping verification (Day 2.4)
+├── check_laptop_appletv_dns.sh # DNS-query to apple_tv seed match trace
+├── check_appletv_seed.sh       # Seed audit + live match_domain() calls
+├── find_appletv_trigger.sh     # Per-query match_domain classification over 12h
+├── inspect_appletv_event.sh    # detection_events + label_attributions rationale
+│                                 inspector (the script that cracks "why this label?")
+├── Dockerfile                  # Python 3.11-slim container image
+├── docker-compose.yml          # Production stack (AI-Radar + AdGuard + CrowdSec)
+├── setup_n95.sh                # One-time host setup script for the N95 appliance
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment variable template
+└── .gitignore                  # Git ignore rules
 ```
 
 ---
@@ -395,8 +537,9 @@ NordVPN, ExpressVPN, Surfshark, ProtonVPN, Private Internet Access, CyberGhost, 
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/ingest` | Ingest a detection event from the Zeek tailer |
-| `GET` | `/api/events` | Query events with filters (category, service, source_ip, start) |
+| `POST` | `/api/ingest` | Ingest a detection event from the Zeek tailer. Accepts an optional `attribution` payload (labeler, confidence, rationale) which is persisted to `label_attributions` as the winning proposal for the event. |
+| `GET` | `/api/labeler/stats` | Real-time service-labeling coverage per labeler. Reports how many flows were labeled by `sni_direct`, `quic_sni_direct`, `dns_correlation`, `adguard_services`, etc. so the operator can see where coverage is improving or regressing. |
+| `GET` | `/api/events` | Query events with filters (category, service, source_ip, start). The `include_heartbeats` flag (default `true`) controls whether zero-byte `sni_hello`, `quic_hello`, and `dns_correlated` events are suppressed to avoid background-handshake noise. |
 | `GET` | `/api/events/export` | Export filtered events as CSV |
 | `GET` | `/api/timeline` | Aggregated event timeline (minute/hour/day buckets) |
 | `GET` | `/api/summary` | Dashboard summary statistics |
