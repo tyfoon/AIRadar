@@ -356,7 +356,8 @@ const SERVICE_NAMES = {
 // trick for Microsoft (Copilot vs OneDrive) and Apple (TV vs iCloud).
 const SERVICE_LOGO_DOMAIN = {
   // AI services
-  openai:'openai.com', anthropic_claude:'anthropic.com',
+  openai:'openai.com',
+  anthropic_claude:'claude.ai',
   google_gemini:'gemini.google.com',
   microsoft_copilot:'copilot.microsoft.com',
   perplexity:'perplexity.ai', huggingface:'huggingface.co',
@@ -451,6 +452,20 @@ const SVC_BADGE_CLS = {
   datadog:'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
 };
 
+// Direct logo URL overrides for brands whose favicon lookup doesn't
+// yield the canonical product icon. Google's s2/favicons service
+// follows redirects, so e.g. drive.google.com resolves through a
+// generic accounts.google.com splash and we get the plain Google "G"
+// instead of the Drive triangle. For those we bypass the service and
+// point at the brand's own product-asset CDN (or a site that serves
+// the real favicon directly). Anything not in this table falls
+// through to SERVICE_LOGO_DOMAIN + s2/favicons as before.
+const SERVICE_LOGO_URL = {
+  google_drive:       'https://ssl.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png',
+  google_gemini:      'https://ssl.gstatic.com/images/branding/product/2x/gemini_48dp.png',
+  google_device_sync: 'https://ssl.gstatic.com/images/branding/product/2x/android_48dp.png',
+};
+
 let _fallbackIdx = 0;
 function svcColor(s) {
   if (!SERVICE_COLORS[s]) SERVICE_COLORS[s] = ACCENT_COLORS[_fallbackIdx++ % ACCENT_COLORS.length];
@@ -461,11 +476,20 @@ function svcDisplayName(s) {
   return SERVICE_NAMES[s] || s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function svcLogo(s) {
+// Single source of truth for which URL to fetch for a service's logo.
+// All other render paths (event rows, alert modal, devices grid) must
+// call this so they all pick up SERVICE_LOGO_URL overrides at once.
+function svcLogoUrl(s) {
+  const direct = SERVICE_LOGO_URL[s];
+  if (direct) return direct;
   const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+}
+
+function svcLogo(s) {
   const color = svcColor(s);
   const letter = svcDisplayName(s).charAt(0);
-  return `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${s}" class="svc-logo"
+  return `<img src="${svcLogoUrl(s)}" alt="${s}" class="svc-logo"
     onerror="this.outerHTML='<span class=\\'svc-logo-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
 }
 
@@ -1622,11 +1646,10 @@ function _renderAlertCard(a, idx, opts) {
     iconHtml = `<div class="w-10 h-10 rounded-lg bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center flex-shrink-0 text-xl">${meta.icon}</div>`;
   } else {
     const svc = a.service_or_dest;
-    const logoDomain = (SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com');
     const fallbackColor = svcColor(svc);
     const fallbackLetter = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
     iconHtml = `<div class="w-10 h-10 rounded-lg bg-white dark:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] flex items-center justify-center flex-shrink-0 overflow-hidden">
-      <img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="${svc}"
+      <img src="${svcLogoUrl(svc)}" alt="${svc}"
         style="width:28px;height:28px;object-fit:contain;"
         onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fallbackColor};color:white;font-weight:700;font-size:14px;\\'>${fallbackLetter}</span>'"/>
     </div>`;
@@ -2262,10 +2285,9 @@ function openAlertActionModal(arg) {
       logoEl.innerHTML = `<div class="w-7 h-7 rounded bg-${meta.color}-100 dark:bg-${meta.color}-900/30 flex items-center justify-center">${meta.icon}</div>`;
     } else {
       const svc = alert.service_or_dest;
-      const logoDomain = SERVICE_LOGO_DOMAIN[svc] || svc.replace(/_/g, '') + '.com';
       const fc = svcColor(svc);
       const fl = (svcDisplayName(svc) || '?').charAt(0).toUpperCase();
-      logoEl.innerHTML = `<img src="https://www.google.com/s2/favicons?domain=${logoDomain}&sz=64" alt="" style="width:28px;height:28px;object-fit:contain" onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fc};color:white;font-weight:700;font-size:14px\\'>${fl}</span>'"/>`;
+      logoEl.innerHTML = `<img src="${svcLogoUrl(svc)}" alt="" style="width:28px;height:28px;object-fit:contain" onerror="this.outerHTML='<span style=\\'width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;background:${fc};color:white;font-weight:700;font-size:14px\\'>${fl}</span>'"/>`;
     }
   }
 
@@ -6506,11 +6528,10 @@ function _heatCell(count, uploads, globalMax, policyAction) {
 // position the red "had upload" dot in the top-right corner — same trick
 // the device-type icons use for the green online dot.
 function svcLogoGrid(s, hasUpload) {
-  const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
   const color = svcColor(s);
   const letter = svcDisplayName(s).charAt(0);
   const dot = hasUpload ? '<span class="svc-upload-dot"></span>' : '';
-  const img = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="${s}" class="svc-logo-grid"
+  const img = `<img src="${svcLogoUrl(s)}" alt="${s}" class="svc-logo-grid"
     onerror="this.outerHTML='<span class=\\'svc-logo-grid-fallback\\' style=\\'background:${color}\\'>${letter}</span>'"/>`;
   return `<span class="svc-logo-grid-wrap">${img}${dot}</span>`;
 }
