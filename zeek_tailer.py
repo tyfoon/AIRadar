@@ -686,7 +686,9 @@ async def cleanup_memory_caches() -> None:
             if now - ts > GOOGLE_CONTEXT_TTL * 2:
                 del _google_context[k]; evicted += 1
 
-        # _known_ips: ip → (svc, cat, ts), TTL = IP_TTL_SECONDS
+        # _known_ips: (mac, ip) → (svc, cat, ts), TTL = IP_TTL_SECONDS
+        # Per-client scoping (Day 2.4) — key is a tuple, value shape
+        # is unchanged, so iteration + unpacking still work as-is.
         for k in list(_known_ips):
             _, _, ts = _known_ips[k]
             if now - ts > IP_TTL_SECONDS * 2:
@@ -1512,7 +1514,27 @@ async def register_device(
 # IPs expire after IP_TTL_SECONDS to prevent false positives from shared IP ranges
 # (e.g. Google reuses the same IPs for Gemini, Drive, Gmail, Chrome sync, etc.)
 IP_TTL_SECONDS = 600  # 10 minutes — after this, the IP→service mapping is stale
-_known_ips: dict[str, tuple[str, str, float]] = {}  # ip → (service, category, time.time())
+
+# Per-client scoped label cache (Day 2.4). Key is (client_mac, resp_ip);
+# value is (service, category, learned_at_ts). Scoping is the same
+# pattern dns_cache.DnsCache uses for DNS correlation: each device's
+# flows only inherit labels learned from THAT device's own on-wire
+# handshakes. Without this, Apple's edge IPs (and any other multi-
+# tenant CDN) get globally tagged with whichever service happened to
+# fire first — e.g. iPad A's TLS hello to tv.apple.com on 17.253.63.x
+# would cause the laptop's unrelated iCloud Photos sync to the same
+# 17.253.63.x to be labelled as "apple_tv" by the conn.log volumetric
+# path. Scoping the cache per-client closes that cross-client leak.
+#
+# Writers MUST skip the write when the client MAC is not yet known
+# (e.g. a brand-new device before DHCP/ARP populates _ip_to_mac). No
+# entry is better than an unscoped entry that re-introduces the bug;
+# the flow will naturally fall through to the per-client DNS
+# correlation pad on the next read.
+_known_ips: dict[tuple[str, str], tuple[str, str, float]] = {}
+#                ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
+#                (client_mac,       (service, category, ts)
+#                 resp_ip)
 
 # Tracks cumulative outbound bytes per service
 _outbound_bytes: dict[str, int] = {}
@@ -1804,9 +1826,18 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                 resp_ip = record.get("id.resp_h", "")
 
-                # Learn this destination IP for conn.log correlation (with TTL)
-                if resp_ip and resp_ip != "-":
-                    _known_ips[resp_ip] = (service, category, time.time())
+                # Learn this destination IP for conn.log correlation (with
+                # TTL). Day 2.4 per-client scoping: the label is stored
+                # under (this client's MAC, resp_ip) so it only applies
+                # to THIS device's future flows. If we don't know the
+                # client's MAC yet (brand-new device pre-DHCP), skip the
+                # write entirely — no entry is better than a globally-
+                # scoped one that re-introduces the multi-tenant CDN bug.
+                _ssl_client_mac = _ip_to_mac.get(src_ip)
+                if _ssl_client_mac and resp_ip and resp_ip != "-":
+                    _known_ips[(_ssl_client_mac, resp_ip)] = (
+                        service, category, time.time()
+                    )
 
                 # The JA4 call above already registered the device for us;
                 # no separate plain register_device call needed.
@@ -1992,8 +2023,17 @@ async def tail_quic_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     # flows in conn.log to this destination get the
                     # same attribution. TTL is bumped on every hit
                     # because we just observed fresh activity.
-                    if resp_ip and resp_ip != "-":
-                        _known_ips[resp_ip] = (service, category, time.time())
+                    # Day 2.4 per-client scoping: key is (mac, ip), so
+                    # a QUIC hello from THIS device only influences
+                    # THIS device's future conn.log attribution. The
+                    # MAC comes from `cached_mac_for_kind` which the
+                    # phase-2 refinement above already looked up — no
+                    # extra lookup needed. Skip the write if we don't
+                    # yet know the client's MAC.
+                    if cached_mac_for_kind and resp_ip and resp_ip != "-":
+                        _known_ips[(cached_mac_for_kind, resp_ip)] = (
+                            service, category, time.time()
+                        )
 
                     # Dedup against the SHARED _sni_last_seen dict, not
                     # a separate quic dict. Rationale: from the
@@ -2884,9 +2924,16 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # fall into the 'unknown' bucket.
                                 conv_mac = _normalize_mac(l2_mac) if l2_mac else None
                                 conv_svc = "unknown"
-                                svc_info = _known_ips.get(public_ip)
-                                if svc_info:
-                                    conv_svc = svc_info[0] or "unknown"
+                                # Day 2.4 per-client scoping: only accept
+                                # a label from (this device, this public
+                                # IP). If conv_mac is unknown, the label
+                                # stays "unknown" rather than inheriting
+                                # whatever service some OTHER device
+                                # happened to tag this IP with.
+                                if conv_mac:
+                                    svc_info = _known_ips.get((conv_mac, public_ip))
+                                    if svc_info:
+                                        conv_svc = svc_info[0] or "unknown"
                                 asyncio.create_task(
                                     _record_geo_conversation(
                                         cc, direction, conv_mac, conv_svc, public_ip, total,
@@ -3151,11 +3198,25 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                     f"    └─ INBOUND {sev}: {src_ip} → {resp_ip}:{resp_port}"
                                 )
 
+                # --- Day 2.4 per-client cache key ---
+                # Build the scoped lookup key once, reuse everywhere
+                # below so the stale-eviction, presence check, primary
+                # read, and dns_correlated writes all hit the same
+                # (client_mac, resp_ip) tuple. When we don't know the
+                # source MAC for this flow the key is None, and every
+                # subsequent check treats the destination as unlabelled
+                # — forcing a fall-through to the per-client DNS
+                # correlation pad, which is also client-scoped.
+                _src_mac_norm = _normalize_mac(l2_mac) if l2_mac else None
+                _kip_key: tuple[str, str] | None = (
+                    (_src_mac_norm, resp_ip) if _src_mac_norm and resp_ip else None
+                )
+
                 # --- Evict stale IP mappings before further checks ---
-                if resp_ip in _known_ips:
-                    _, _, _learned = _known_ips[resp_ip]
+                if _kip_key is not None and _kip_key in _known_ips:
+                    _, _, _learned = _known_ips[_kip_key]
                     if (time.time() - _learned) > IP_TTL_SECONDS:
-                        del _known_ips[resp_ip]
+                        del _known_ips[_kip_key]
 
                 # --- ASN-based VPN detection ---
                 # The old "large flow to unknown IP = VPN" heuristic fired
@@ -3206,8 +3267,11 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 )
 
                 # Check if destination IP is a known AI/Cloud service
-                # (stale mappings were already evicted above)
-                if resp_ip not in _known_ips:
+                # (stale mappings were already evicted above). Day 2.4
+                # per-client scoping: we look up (this device, resp_ip)
+                # — a label tagged by a different device does NOT
+                # bleed over.
+                if _kip_key is None or _kip_key not in _known_ips:
                     # ── DNS correlation fallback ──
                     # The flow has no SNI hello attached (typical for
                     # QUIC, ECH, or 0-RTT resumption). Last chance: ask
@@ -3224,6 +3288,15 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                     dns_service, dns_category, dns_hostname, dns_score, dns_rationale = dns_label
 
+                    # The DNS correlation pad already verified it knows
+                    # this client's MAC (otherwise dns_label would be
+                    # None). Re-resolve here to get the SAME MAC that
+                    # dns_cache uses, so the _known_ips write lands on
+                    # the right scoped key. We prefer _ip_to_mac over
+                    # l2_mac because the dns_cache lookup above used
+                    # _ip_to_mac and we want consistency.
+                    _dns_client_mac = _ip_to_mac.get(src_ip)
+
                     # Per-(service, src_ip) dedup using the same window
                     # as direct SNI hellos. The first hit fires; the
                     # rest within SNI_DEDUP_SECONDS are silently
@@ -3233,20 +3306,28 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     _dns_dedup_key = (dns_service, src_ip)
                     _dns_dedup_last = _sni_last_seen.get(_dns_dedup_key, 0)
                     if (_dns_dedup_now - _dns_dedup_last) < SNI_DEDUP_SECONDS:
-                        # Update the byte counter on the existing
-                        # _known_ips entry so the volumetric path can
-                        # still attribute upload bytes to this service.
-                        _known_ips[resp_ip] = (dns_service, dns_category, time.time())
+                        # Refresh TTL on the existing per-client entry
+                        # so the volumetric path can still attribute
+                        # upload bytes to this service for this device.
+                        if _dns_client_mac:
+                            _known_ips[(_dns_client_mac, resp_ip)] = (
+                                dns_service, dns_category, time.time()
+                            )
                         continue
                     _sni_last_seen[_dns_dedup_key] = _dns_dedup_now
 
                     # Promote the DNS-correlated label into _known_ips
-                    # so subsequent volumetric flows for this IP get
-                    # the same attribution. Acceptable cross-client
-                    # leakage at this layer (one IP, one label) is the
-                    # same trade-off the existing SSL-hello path makes;
-                    # the dns_cache itself stays per-client-scoped.
-                    _known_ips[resp_ip] = (dns_service, dns_category, time.time())
+                    # scoped per (this client, resp_ip). The dns_cache
+                    # itself is already per-client, so this write just
+                    # propagates that scoping to the volumetric pad.
+                    if _dns_client_mac:
+                        _known_ips[(_dns_client_mac, resp_ip)] = (
+                            dns_service, dns_category, time.time()
+                        )
+                        # Update the scoped key so the fall-through
+                        # read at the bottom of this block hits the
+                        # entry we just wrote.
+                        _kip_key = (_dns_client_mac, resp_ip)
 
                     try:
                         flow_orig = int(record.get("orig_bytes", "0") or 0)
@@ -3277,8 +3358,13 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     # Fall through to the volumetric upload path below —
                     # the (service, category) we just learned will be
                     # used by the existing record_upload accumulator.
+                    # If _dns_client_mac was None we never wrote to
+                    # _known_ips, so _kip_key still points nowhere and
+                    # the read below would KeyError — guard against it.
+                    if _kip_key is None or _kip_key not in _known_ips:
+                        continue
 
-                service, category, _ts = _known_ips[resp_ip]
+                service, category, _ts = _known_ips[_kip_key]
 
                 # Check outbound bytes
                 try:
