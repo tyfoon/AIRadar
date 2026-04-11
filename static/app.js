@@ -1332,6 +1332,8 @@ function _countBadge(e) {
 function _eventDescription(e) {
   const type = e.detection_type;
   if (type === 'sni_hello') return t('ev.connection');
+  if (type === 'quic_hello') return t('ev.quicConnection');
+  if (type === 'dns_correlated') return t('ev.dnsCorrelated');
   if (type === 'upload_detected' || e.possible_upload) {
     const size = e.bytes_transferred ? _fmtBytes(e.bytes_transferred) : '';
     return '<span class="text-orange-500 dark:text-orange-400">↑</span> ' + t('ev.upload', { size });

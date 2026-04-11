@@ -1379,19 +1379,32 @@ def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
 # GET /api/events — return events with optional filters
 # ---------------------------------------------------------------------------
 def _apply_heartbeat_filter(q, include_heartbeats: bool):
-    """Filter out zero-byte SNI heartbeats unless explicitly included.
+    """Filter out zero-byte handshake heartbeats unless explicitly included.
 
-    A "heartbeat" is a TLS handshake to a known service (sni_hello) that
-    carries no byte count and is not flagged as an upload. They represent
-    "service is configured and reachable" (e.g. iPhone checking iCloud push
-    every 5-10 min) — useful for service adoption but noise in event tables.
+    A "heartbeat" is a TLS-style handshake to a known service that carries
+    no byte count and is not flagged as an upload. They represent "service
+    is configured and reachable" (e.g. iPhone checking iCloud push every
+    5–10 min) — useful for service adoption but noise in event tables.
+
+    Three detection_types are heartbeats:
+      - sni_hello       : TCP TLS ClientHello with visible SNI
+      - quic_hello      : QUIC Initial with visible server_name (Day 2 —
+                          quic.log has no byte counts so these are
+                          ALWAYS zero-byte; without this filter the
+                          activity table would flood)
+      - dns_correlated  : conn.log flow labelled via the DNS-correlation
+                          fallback (Day 1) when neither SNI nor QUIC
+                          carried a hello — usually has bytes from the
+                          conn.log line, but the rare zero-byte case is
+                          still pure heartbeat noise
     """
     if include_heartbeats:
         return q
-    from sqlalchemy import or_
+    from sqlalchemy import or_, not_
+    heartbeat_types = ("sni_hello", "quic_hello", "dns_correlated")
     return q.filter(
         or_(
-            DetectionEvent.detection_type != "sni_hello",
+            not_(DetectionEvent.detection_type.in_(heartbeat_types)),
             DetectionEvent.bytes_transferred > 0,
             DetectionEvent.possible_upload == True,  # noqa: E712
         )

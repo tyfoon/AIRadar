@@ -465,6 +465,8 @@ const TRANSLATIONS = {
     'ai.uploadsLegend':    'Uploads',
     'ai.lowActivity':      'Low activity detected in this time period. This is normal during quiet periods.',
     'ev.connection':       'Connection detected',
+    'ev.quicConnection':   'QUIC connection',
+    'ev.dnsCorrelated':    'DNS-correlated',
     'ev.upload':           'File upload ({size})',
     'ev.dnsLookup':        'DNS lookup',
 
@@ -1315,6 +1317,8 @@ const TRANSLATIONS = {
     'ai.uploadsLegend':    'Uploads',
     'ai.lowActivity':      'Weinig activiteit in deze periode. Dit is normaal tijdens rustige periodes.',
     'ev.connection':       'Verbinding gedetecteerd',
+    'ev.quicConnection':   'QUIC-verbinding',
+    'ev.dnsCorrelated':    'Via DNS herkend',
     'ev.upload':           'Bestandsupload ({size})',
     'ev.dnsLookup':        'DNS-lookup',
 
