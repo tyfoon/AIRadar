@@ -6470,11 +6470,14 @@ function onDevFilterChange() {
 }
 
 function getCategoryGroups() {
+  // Icons are kept in sync with the left-hand sidebar nav in index.html
+  // so the same concept always shows the same glyph: AI Radar → brain,
+  // Cloud Storage → cloud, Privacy → shield-check, Content → squares-four.
   return [
-    { key: 'ai',       label: t('cat.aiServices'),     icon: '<i class="ph-duotone ph-sparkle text-base"></i>', color: 'indigo' },
-    { key: 'cloud',    label: t('cat.cloudStorage'),   icon: '<i class="ph-duotone ph-cloud text-base"></i>',   color: 'sky' },
+    { key: 'ai',       label: t('cat.aiServices'),     icon: '<i class="ph-duotone ph-brain text-base"></i>',        color: 'indigo' },
+    { key: 'cloud',    label: t('cat.cloudStorage'),   icon: '<i class="ph-duotone ph-cloud text-base"></i>',        color: 'sky' },
     { key: 'tracking', label: t('cat.privacyTrackers'),icon: '<i class="ph-duotone ph-shield-check text-base"></i>', color: 'amber' },
-    { key: 'other',    label: t('cat.other'),          icon: '<i class="ph-duotone ph-chart-bar text-base"></i>', color: 'slate' },
+    { key: 'other',    label: t('cat.other'),          icon: '<i class="ph-duotone ph-squares-four text-base"></i>', color: 'slate' },
   ];
 }
 
@@ -6683,19 +6686,28 @@ function openDeviceDrawer(mac, service, category) {
   // Tabs (in display order): AI Recap · Summary · Connections · (category tabs).
   // AI Recap leads because it's the most useful at-a-glance view; the
   // numeric Summary and per-IP Connections tabs follow for power users.
-  const tabBase = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap';
+  //
+  // Tabs are rendered icon-only (36×36) so the whole bar fits the drawer
+  // width without horizontal scrolling and leaves room for future tabs.
+  // The label still shows via a native `title=` tooltip on hover. Category
+  // tabs get a small count badge in the top-right corner (same trick as
+  // the device-type icons with their online dot).
+  const tabBase = 'relative inline-flex items-center justify-center w-9 h-9 rounded-md text-base transition-colors flex-shrink-0';
   const tabActive = `${tabBase} bg-blue-700 text-white shadow-sm`;
-  const tabInactive = `${tabBase} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
+  const tabInactive = `${tabBase} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5`;
   const tabCls = (key) => (_drawerActiveTab === key ? tabActive : tabInactive);
+  const countBadge = (n) => (n > 0
+    ? `<span class="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 text-[9px] font-semibold leading-4 text-center tabular-nums">${n > 999 ? '999+' : n}</span>`
+    : '');
 
   const tabsHtml = [
-    `<button class="${tabCls('report')}" data-tab="report" onclick="setDrawerTab('report')">&#10024; ${t('dev.drawerReportTab')}</button>`,
-    `<button class="${tabCls('summary')}" data-tab="summary" onclick="setDrawerTab('summary')">${t('dev.drawerSummaryTab')}</button>`,
-    `<button class="${tabCls('connections')}" data-tab="connections" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap text-xs"></i> ${t('dev.drawerConnectionsTab') || 'Connections'}</button>`,
+    `<button class="${tabCls('report')}" data-tab="report" title="${t('dev.drawerReportTab')}" aria-label="${t('dev.drawerReportTab')}" onclick="setDrawerTab('report')"><i class="ph-duotone ph-sparkle"></i></button>`,
+    `<button class="${tabCls('summary')}" data-tab="summary" title="${t('dev.drawerSummaryTab')}" aria-label="${t('dev.drawerSummaryTab')}" onclick="setDrawerTab('summary')"><i class="ph-duotone ph-chart-bar"></i></button>`,
+    `<button class="${tabCls('connections')}" data-tab="connections" title="${t('dev.drawerConnectionsTab') || 'Connections'}" aria-label="${t('dev.drawerConnectionsTab') || 'Connections'}" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap"></i></button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
-      tabsHtml.push(`<button class="${tabCls(c.key)}" data-tab="${c.key}" onclick="setDrawerTab('${c.key}')">${c.icon} ${c.label} <span class="ml-1 text-[10px] opacity-60">${tabCounts[c.key]}</span></button>`);
+      tabsHtml.push(`<button class="${tabCls(c.key)}" data-tab="${c.key}" title="${c.label} (${tabCounts[c.key]})" aria-label="${c.label}" onclick="setDrawerTab('${c.key}')">${c.icon}${countBadge(tabCounts[c.key])}</button>`);
     }
   });
   document.getElementById('drawer-tabs').innerHTML = tabsHtml.join('');
