@@ -380,10 +380,31 @@ MAX_DB_SIZE_MB = 500        # Warn/compact if DB exceeds this
 # Sessions shorter than the min duration / event count are filtered out as
 # noise (background heartbeats from idle apps). Categories outside the set
 # are excluded entirely so trackers and cloud sync don't drown out real use.
+#
+# The sessionizer pulls events from TWO sources, UNIONed together inside
+# the SQL CTE:
+#
+#   1. detection_events — high-quality, per-handshake events from the
+#      tailers. SNI dedup means each (service, src_ip) pair only fires
+#      once per ~30 min, so a single 25-min YouTube stream might only
+#      produce 1-2 events. Insufficient on its own for the noise filter.
+#
+#   2. geo_conversations — per (mac, ai_service, resp_ip) byte-counter
+#      rows with first_seen / last_seen. Each row is converted to TWO
+#      virtual events (start + end timestamps) so the LAG-based session
+#      grouping logic still applies. This is what makes mobile-game
+#      sessions visible: a Hay Day session of ~17 min that touches
+#      6 Supercell IPs becomes ~12 virtual events spanning the right
+#      timespan, easily clearing min_events + min_seconds.
 ACTIVITY_SESSION_GAP_SECONDS = 600     # 10 min silence = new session
 ACTIVITY_SESSION_MIN_EVENTS = 3        # noise filter
 ACTIVITY_SESSION_MIN_SECONDS = 60      # noise filter
-ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping")
+ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping", "news")
+# Minimum byte threshold for a geo_conversations row to count as a
+# real activity signal. Suppresses trivial connection-establishment
+# bursts that aren't actual app usage. 1 KB is conservative — even
+# a single TLS handshake exchanges more than this.
+ACTIVITY_GEO_MIN_BYTES = 1024
 ACTIVITY_TZ = "Europe/Amsterdam"
 ACTIVITY_MAX_DAYS_BACK = 30            # how far back date= can go
 
@@ -8337,8 +8358,36 @@ def device_activity(
     day_end_utc = day_end_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     placeholders = ",".join(f":cat{i}" for i in range(len(ACTIVITY_CATEGORIES)))
+    # The events CTE pulls from TWO sources, UNIONed together:
+    #
+    #   1. detection_events — actual per-handshake events. These are
+    #      sparse (SNI dedup limits them to ~1 per service per 30 min)
+    #      so on their own they often fail the noise threshold for
+    #      apps that use long-lived persistent connections (mobile
+    #      games, video streams).
+    #
+    #   2. geo_conversations — byte-counter rows per (mac, service,
+    #      resp_ip). For each row we emit TWO virtual events: one at
+    #      first_seen (clamped to day_start if earlier) and one at
+    #      last_seen (clamped to day_end if later). Bytes are split
+    #      half-and-half across the two virtual events so SUM(bytes)
+    #      in the final aggregation matches the row's true bytes.
+    #
+    # The category for source 2 comes via a JOIN on a derived table
+    # that maps service_name → category from known_domains. If a
+    # service has multiple categories in the seed (rare; usually a
+    # data quality issue), MIN() picks one deterministically.
+    #
+    # The bytes > :geo_min filter suppresses trivial connection-
+    # establishment bursts that aren't actual app usage. Day 2.3.
     sql = text(f"""
-        WITH events AS (
+        WITH service_cats AS (
+          SELECT service_name, MIN(category) AS category
+          FROM known_domains
+          GROUP BY service_name
+        ),
+        events AS (
+          -- Source 1: detection_events (per-handshake)
           SELECT e.timestamp, e.ai_service, e.category, e.bytes_transferred
           FROM detection_events e
           JOIN device_ips di ON di.ip = e.source_ip
@@ -8346,6 +8395,46 @@ def device_activity(
             AND e.timestamp >= :day_start
             AND e.timestamp <  :day_end
             AND e.category IN ({placeholders})
+
+          UNION ALL
+
+          -- Source 2a: geo_conversations virtual start events
+          SELECT
+            CASE WHEN g.first_seen < :day_start THEN :day_start
+                 ELSE g.first_seen END                       AS timestamp,
+            g.ai_service                                     AS ai_service,
+            sc.category                                      AS category,
+            (g.bytes_transferred / 2)                        AS bytes_transferred
+          FROM geo_conversations g
+          JOIN service_cats sc ON sc.service_name = g.ai_service
+          WHERE g.mac_address = :mac
+            AND g.last_seen   >= :day_start
+            AND g.first_seen  <  :day_end
+            AND g.ai_service IS NOT NULL
+            AND g.ai_service != ''
+            AND g.ai_service != 'unknown'
+            AND g.bytes_transferred > :geo_min
+            AND sc.category IN ({placeholders})
+
+          UNION ALL
+
+          -- Source 2b: geo_conversations virtual end events
+          SELECT
+            CASE WHEN g.last_seen > :day_end THEN :day_end
+                 ELSE g.last_seen END                        AS timestamp,
+            g.ai_service                                     AS ai_service,
+            sc.category                                      AS category,
+            (g.bytes_transferred - (g.bytes_transferred / 2)) AS bytes_transferred
+          FROM geo_conversations g
+          JOIN service_cats sc ON sc.service_name = g.ai_service
+          WHERE g.mac_address = :mac
+            AND g.last_seen   >= :day_start
+            AND g.first_seen  <  :day_end
+            AND g.ai_service IS NOT NULL
+            AND g.ai_service != ''
+            AND g.ai_service != 'unknown'
+            AND g.bytes_transferred > :geo_min
+            AND sc.category IN ({placeholders})
         ),
         marked AS (
           SELECT *,
@@ -8380,6 +8469,7 @@ def device_activity(
         "gap": ACTIVITY_SESSION_GAP_SECONDS,
         "min_events": ACTIVITY_SESSION_MIN_EVENTS,
         "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
+        "geo_min": ACTIVITY_GEO_MIN_BYTES,
     }
     for i, cat in enumerate(ACTIVITY_CATEGORIES):
         params[f"cat{i}"] = cat
