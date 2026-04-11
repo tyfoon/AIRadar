@@ -2786,7 +2786,10 @@ BASELINE_READY_DAYS = 7
 # Bump FEATURE_VERSION whenever the feature vector below changes —
 # loaders will refuse to score with a stale feature_version and trigger
 # a retrain on the next baseline pass.
-FEATURE_VERSION = 1
+# v2: unique_destinations is now COUNT(DISTINCT asn_org) with resp_ip
+# fallback, so the feature has a very different distribution than the
+# v1 raw-IP count. Old detectors are invalid and must retrain.
+FEATURE_VERSION = 2
 
 # Minimum hourly samples required to fit the detector. 72 hours = 3 days
 # is enough for ECOD to learn the diurnal shape without overfitting.
@@ -8216,18 +8219,29 @@ def iot_fleet(db: Session = Depends(get_db)):
     devices = db.query(Device).all()
     iot_devices = [d for d in devices if _is_iot_backend(d)]
 
-    # Traffic stats from geo_conversations (last 24h approximation)
+    # Traffic stats from geo_conversations (last 24h approximation).
+    #
+    # Destinations are counted as DISTINCT ASN org (with a raw-IP
+    # fallback when metadata isn't enriched yet) instead of raw
+    # resp_ip. A single logical service behind a CDN/anycast often
+    # resolves to dozens or hundreds of edge IPs per day — counting
+    # those as separate destinations made IoT cards show "900+ dest"
+    # for devices that actually only talk to 3-5 clouds. ASN-org
+    # collapses CDN fan-out while still distinguishing genuinely
+    # different backends.
     cutoff = datetime.utcnow() - timedelta(hours=24)
     conv_stats = {}
+    _dest_key = func.coalesce(IpMetadata.asn_org, GeoConversation.resp_ip)
     for row in (
         db.query(
             GeoConversation.mac_address,
             func.sum(GeoConversation.bytes_transferred).label("bytes"),
             func.sum(GeoConversation.hits).label("hits"),
-            func.count(func.distinct(GeoConversation.resp_ip)).label("destinations"),
+            func.count(func.distinct(_dest_key)).label("destinations"),
             func.sum(GeoConversation.orig_bytes).label("orig_bytes"),
             func.sum(GeoConversation.resp_bytes).label("resp_bytes"),
         )
+        .outerjoin(IpMetadata, IpMetadata.ip == GeoConversation.resp_ip)
         .filter(GeoConversation.last_seen >= cutoff)
         .group_by(GeoConversation.mac_address)
         .all()
@@ -8565,13 +8579,15 @@ async def _compute_device_baselines():
             macs = [r[0] for r in db.query(GeoConversation.mac_address).distinct().all() if r[0]]
 
             updated = 0
+            _dest_key = func.coalesce(IpMetadata.asn_org, GeoConversation.resp_ip)
             for mac in macs:
                 convs = (
                     db.query(
                         func.sum(GeoConversation.bytes_transferred).label("bytes"),
                         func.sum(GeoConversation.hits).label("hits"),
-                        func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+                        func.count(func.distinct(_dest_key)).label("dests"),
                     )
+                    .outerjoin(IpMetadata, IpMetadata.ip == GeoConversation.resp_ip)
                     .filter(
                         GeoConversation.mac_address == mac,
                         GeoConversation.last_seen >= cutoff,
@@ -8697,14 +8713,20 @@ def _take_traffic_snapshot(db, window_start: datetime, window_end: datetime) -> 
     Aggregates GeoConversation data between window_start and window_end
     per MAC address. Returns the number of device rows upserted.
     """
+    # Destinations are counted as DISTINCT ASN org (fall back to IP
+    # when the enrichment hasn't populated asn_org yet). See the
+    # longer note in /api/iot/fleet — same rationale: we want one
+    # CDN to count as one destination, not N edge IPs.
+    _dest_key = func.coalesce(IpMetadata.asn_org, GeoConversation.resp_ip)
     rows = (
         db.query(
             GeoConversation.mac_address,
             func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("tx"),
             func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("rx"),
             func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
-            func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+            func.count(func.distinct(_dest_key)).label("dests"),
         )
+        .outerjoin(IpMetadata, IpMetadata.ip == GeoConversation.resp_ip)
         .filter(
             GeoConversation.mac_address.isnot(None),
             GeoConversation.last_seen >= window_start,
@@ -8802,8 +8824,60 @@ def get_device_traffic_history(
     days: int = Query(7, ge=1, le=30),
     db: Session = Depends(get_db),
 ):
-    """Return hourly TX/RX traffic history for a device (sparkline data)."""
+    """Return TX/RX traffic history for a device (sparkline data).
+
+    DeviceTrafficHourly is misnamed — rows are written every 5 minutes,
+    not every hour. That's fine for short views (a 1-day chart gets
+    288 points), but rendering 2016 points in a 48px sparkline for a
+    7-day view produces a dense unreadable forest. So for any view of
+    ≥2 days we aggregate in SQL to 1-hour buckets, giving at most
+    720 points even for a 30-day view and a chart you can actually
+    read.
+
+    Destinations are taken as MAX per hour instead of SUM because the
+    raw column is already a COUNT(DISTINCT) and summing would
+    double-count across snapshots.
+    """
     cutoff = datetime.utcnow() - timedelta(days=days)
+
+    if days >= 2:
+        # 1-hour buckets (SQLite strftime — we are single-backend).
+        bucket = func.strftime(
+            '%Y-%m-%dT%H:00:00', DeviceTrafficHourly.hour
+        ).label("bucket")
+        rows = (
+            db.query(
+                bucket,
+                func.coalesce(func.sum(DeviceTrafficHourly.bytes_out), 0).label("tx"),
+                func.coalesce(func.sum(DeviceTrafficHourly.bytes_in), 0).label("rx"),
+                func.coalesce(func.sum(DeviceTrafficHourly.connections), 0).label("conns"),
+                func.coalesce(func.max(DeviceTrafficHourly.unique_destinations), 0).label("dests"),
+            )
+            .filter(
+                DeviceTrafficHourly.mac_address == mac,
+                DeviceTrafficHourly.hour >= cutoff,
+            )
+            .group_by(bucket)
+            .order_by(bucket.asc())
+            .all()
+        )
+        return {
+            "mac_address": mac,
+            "days": days,
+            "bucket": "1h",
+            "data": [
+                {
+                    "hour": r.bucket,
+                    "tx": int(r.tx or 0),
+                    "rx": int(r.rx or 0),
+                    "connections": int(r.conns or 0),
+                    "destinations": int(r.dests or 0),
+                }
+                for r in rows
+            ],
+        }
+
+    # 1-day view: keep full 5-minute resolution
     rows = (
         db.query(DeviceTrafficHourly)
         .filter(
@@ -8816,6 +8890,7 @@ def get_device_traffic_history(
     return {
         "mac_address": mac,
         "days": days,
+        "bucket": "5m",
         "data": [
             {
                 "hour": r.hour.isoformat(),
@@ -8929,11 +9004,18 @@ async def _check_volume_spikes():
                 #
                 # Also pull connection count + unique destinations so
                 # the PyOD detector has a full feature vector.
+                # Destination key must match the v2 semantics used in
+                # _take_traffic_snapshot and baseline training — count
+                # distinct ASN orgs (fall back to IP) so training and
+                # inference features are on the same scale.
+                _dest_key = func.coalesce(IpMetadata.asn_org, GeoConversation.resp_ip)
                 _hour_row = db.query(
                     func.coalesce(func.sum(GeoConversation.orig_bytes), 0).label("up"),
                     func.coalesce(func.sum(GeoConversation.resp_bytes), 0).label("down"),
                     func.coalesce(func.sum(GeoConversation.hits), 0).label("conns"),
-                    func.count(func.distinct(GeoConversation.resp_ip)).label("dests"),
+                    func.count(func.distinct(_dest_key)).label("dests"),
+                ).outerjoin(
+                    IpMetadata, IpMetadata.ip == GeoConversation.resp_ip
                 ).filter(
                     GeoConversation.mac_address == bl.mac_address,
                     GeoConversation.last_seen >= hour_ago,
