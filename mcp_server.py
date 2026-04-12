@@ -72,7 +72,7 @@ def _resolve_policy_action(
     Within a level: service_name > category.
     Multiple groups at the same level: most restrictive wins.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     _action_rank = {"block": 3, "alert": 2, "allow": 1}
 
     def _first(pred):
@@ -139,7 +139,7 @@ def get_network_status() -> str:
     vertonen (VPN tunnels, beaconing, port scans)."""
     db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=24)
 
         policies = db.query(ServicePolicy).all()
@@ -242,7 +242,7 @@ def block_service(mac_address: str, service_name: str, duration_hours: int = Non
     try:
         expires_at = None
         if duration_hours:
-            expires_at = datetime.utcnow() + timedelta(hours=duration_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
 
         policy = (
             db.query(ServicePolicy)
@@ -252,7 +252,7 @@ def block_service(mac_address: str, service_name: str, duration_hours: int = Non
         if policy:
             policy.action = "block"
             policy.expires_at = expires_at
-            policy.updated_at = datetime.utcnow()
+            policy.updated_at = datetime.now(timezone.utc)
         else:
             policy = ServicePolicy(
                 scope="device",
@@ -287,7 +287,7 @@ def allow_service(mac_address: str, service_name: str) -> str:
         if policy:
             policy.action = "allow"
             policy.expires_at = None
-            policy.updated_at = datetime.utcnow()
+            policy.updated_at = datetime.now(timezone.utc)
         else:
             policy = ServicePolicy(
                 scope="device",
@@ -315,7 +315,7 @@ def snooze_anomaly(mac_address: str, alert_type: str, duration_hours: int) -> st
     'new_device'."""
     db = SessionLocal()
     try:
-        expires_at = datetime.utcnow() + timedelta(hours=duration_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
         exception = AlertException(
             mac_address=mac_address,
             alert_type=alert_type,
@@ -354,7 +354,7 @@ def search_network_activity(
     Retourneert per dienst: wie (apparaat), wanneer, hoeveel data."""
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         dev_ip_rows = db.query(DeviceIP).all()
         ip_to_mac = {d.ip: d.mac_address for d in dev_ip_rows}
         device_by_mac = {d.mac_address: d for d in db.query(Device).all()}

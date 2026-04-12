@@ -7194,7 +7194,8 @@ async function _loadDrawerActivity() {
   </div>`;
 
   try {
-    const url = `/api/devices/${encodeURIComponent(_drawerMac)}/activity?date=${_drawerActivityDate}`;
+    const _browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const url = `/api/devices/${encodeURIComponent(_drawerMac)}/activity?date=${_drawerActivityDate}&tz=${encodeURIComponent(_browserTz)}`;
     const res = await fetch(url);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -7294,7 +7295,9 @@ function _renderActivity(data) {
       const left = (startMin / dayMinutes) * 100;
       // Force a minimum width so very short sessions stay visible.
       const width = Math.max(((endMin - startMin) / dayMinutes) * 100, 0.4);
-      const tip = `${svcDisplayName(s.service)} · ${s.start.substring(11, 16)}–${s.end.substring(11, 16)} · ${_fmtDurationSec(s.duration_seconds)}${s.bytes ? ' · ' + _fmtBytes(s.bytes) : ''} · ${s.events} events`;
+      const _localStart = start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const _localEnd = end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const tip = `${svcDisplayName(s.service)} · ${_localStart}–${_localEnd} · ${_fmtDurationSec(s.duration_seconds)}${s.bytes ? ' · ' + _fmtBytes(s.bytes) : ''} · ${s.events} events`;
       // Color by service (not category) so Instagram vs WhatsApp are distinguishable
       const svcColor = _svcColor(s.service);
       html += `<div class="activity-segment absolute top-0 bottom-0 hover:ring-2 ring-white/50 cursor-default rounded-sm"
@@ -7334,8 +7337,8 @@ function _renderActivity(data) {
     html += '<div class="mt-3 space-y-1">';
     sessions.forEach(s => {
       const svcColor = _svcColor(s.service);
-      const startTime = s.start.substring(11, 16);
-      const endTime = s.end.substring(11, 16);
+      const startTime = new Date(s.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      const endTime = new Date(s.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
       html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-slate-50 dark:hover:bg-white/[0.03]">
         <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${svcColor}"></span>
         <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 w-24 flex-shrink-0">${startTime}–${endTime}</span>
