@@ -399,9 +399,18 @@ MAX_DB_SIZE_MB = 500        # Warn/compact if DB exceeds this
 ACTIVITY_SESSION_GAP_SECONDS = 600     # 10 min silence = new session
 ACTIVITY_SESSION_MIN_EVENTS = 3        # noise filter
 ACTIVITY_SESSION_MIN_SECONDS = 60      # noise filter
-ACTIVITY_SESSION_MIN_BYTES = 512_000   # 500 KB — filters keepalive "sessions"
-                                       # (e.g. idle browser tab pinging
-                                       # accounts.youtube.com every 30 min)
+# Per-category minimum bytes to count as a real session.
+# Streaming/gaming need significant data to be "real" (a video is 10+ MB).
+# Social/messaging is real even at tiny volumes (text chats = few KB).
+ACTIVITY_SESSION_MIN_BYTES_BY_CAT: dict[str, int] = {
+    "streaming": 512_000,   # 500 KB — filters idle YouTube tab keepalives
+    "gaming":    256_000,   # 256 KB — mobile game sessions transfer less
+    "shopping":   10_000,   # 10 KB  — browsing is lightweight
+    "social":      1_000,   # 1 KB   — a text message is enough
+    "ai":          1_000,   # 1 KB   — a single prompt/response counts
+    "news":        1_000,   # 1 KB   — article load is real usage
+}
+ACTIVITY_SESSION_MIN_BYTES_DEFAULT = 10_000  # 10 KB for unknown categories
 ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping", "news")
 # Minimum byte threshold for a geo_conversations row to count as a
 # real activity signal. Suppresses trivial connection-establishment
@@ -8481,7 +8490,15 @@ def device_activity(
         GROUP BY ai_service, sid
         HAVING COUNT(*) >= :min_events
            AND (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 86400 >= :min_seconds
-           AND COALESCE(SUM(bytes_transferred), 0) >= :min_bytes
+           AND COALESCE(SUM(bytes_transferred), 0) >= CASE category
+               WHEN 'streaming' THEN :min_bytes_streaming
+               WHEN 'gaming'    THEN :min_bytes_gaming
+               WHEN 'shopping'  THEN :min_bytes_shopping
+               WHEN 'social'    THEN :min_bytes_social
+               WHEN 'ai'        THEN :min_bytes_ai
+               WHEN 'news'      THEN :min_bytes_news
+               ELSE :min_bytes_default
+           END
         ORDER BY start_ts
     """)
 
@@ -8492,7 +8509,13 @@ def device_activity(
         "gap": ACTIVITY_SESSION_GAP_SECONDS,
         "min_events": ACTIVITY_SESSION_MIN_EVENTS,
         "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
-        "min_bytes": ACTIVITY_SESSION_MIN_BYTES,
+        "min_bytes_streaming": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("streaming", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_gaming": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("gaming", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_shopping": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("shopping", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_social": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("social", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_ai": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("ai", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_news": ACTIVITY_SESSION_MIN_BYTES_BY_CAT.get("news", ACTIVITY_SESSION_MIN_BYTES_DEFAULT),
+        "min_bytes_default": ACTIVITY_SESSION_MIN_BYTES_DEFAULT,
         "geo_min": ACTIVITY_GEO_MIN_BYTES,
     }
     for i, cat in enumerate(ACTIVITY_CATEGORIES):
@@ -8561,7 +8584,7 @@ def device_activity(
             "gap_seconds": ACTIVITY_SESSION_GAP_SECONDS,
             "min_events": ACTIVITY_SESSION_MIN_EVENTS,
             "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
-            "min_bytes": ACTIVITY_SESSION_MIN_BYTES,
+            "min_bytes_by_category": ACTIVITY_SESSION_MIN_BYTES_BY_CAT,
         },
         "sessions": sessions,
         "totals_by_service": totals_by_service,
