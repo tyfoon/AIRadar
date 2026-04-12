@@ -758,6 +758,49 @@ async def sync_domain_cache(client=None) -> None:
         await asyncio.sleep(DOMAIN_CACHE_SYNC_INTERVAL)
 
 
+# ---------------------------------------------------------------------------
+# JA4 community DB — in-memory lookup map
+# ---------------------------------------------------------------------------
+# Keyed on ja4 fingerprint hash → (application, category, confidence).
+# Synced from ja4_signatures table every 5 minutes (same cadence as domains).
+_ja4_lookup: dict[str, tuple[str, str | None, float]] = {}
+
+JA4_SYNC_INTERVAL = 300  # seconds — match domain cache cadence
+
+
+async def sync_ja4_cache() -> None:
+    """Background task: populate _ja4_lookup from ja4_signatures."""
+    global _ja4_lookup
+    from database import SessionLocal as _SL, JA4Signature as _JS
+    while True:
+        try:
+            db = _SL()
+            rows = db.query(_JS.ja4, _JS.application, _JS.category, _JS.confidence).all()
+            db.close()
+            new_map = {r.ja4: (r.application, r.category, r.confidence) for r in rows}
+            if len(new_map) != len(_ja4_lookup):
+                _ja4_lookup = new_map
+                print(f"[ja4-cache] Synced {len(new_map)} fingerprints from ja4_signatures")
+            else:
+                _ja4_lookup = new_map
+        except Exception as exc:
+            print(f"[ja4-cache] Sync failed: {exc}")
+        await asyncio.sleep(JA4_SYNC_INTERVAL)
+
+
+def match_ja4(ja4_hash: str) -> tuple[str, str | None, float, str] | None:
+    """Look up a JA4 hash in the community DB cache.
+
+    Returns (application, category, confidence, rationale) on hit, None on miss.
+    """
+    hit = _ja4_lookup.get(ja4_hash)
+    if not hit:
+        return None
+    app, cat, conf = hit
+    rationale = f"JA4 community DB: {ja4_hash[:20]}… → {app}"
+    return app, cat, conf, rationale
+
+
 def match_domain(
     hostname: str, source_ip: str | None = None
 ) -> tuple[str, str, str] | None:
@@ -1557,6 +1600,9 @@ IP_TTL_SECONDS = 600  # 10 minutes — after this, the IP→service mapping is s
 _known_ips: dict[tuple[str, str], tuple[str, str, float]] = {}
 #                ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^
 #                (client_mac,       (service, category, ts)
+
+# Day 3: JA4 community DB match — set in main(), checked in ssl.log handler
+_ja4_match_enabled: bool = True
 #                 resp_ip)
 
 # Tracks cumulative outbound bytes per service
@@ -1829,6 +1875,43 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     ))
 
                 if not match:
+                    # --- Day 3: JA4 community DB fallback ---
+                    # When SNI doesn't match our domain map, try identifying
+                    # the TLS client via its JA4 fingerprint. Only fires for
+                    # non-generic fingerprints (generic browsers are dampened
+                    # to low confidence by ja4_db_sync and won't pass the
+                    # confidence floor in labeler.resolve()).
+                    if ja4 and _ja4_match_enabled:
+                        ja4_hit = match_ja4(ja4)
+                        if ja4_hit:
+                            j_app, j_cat, j_conf, j_rationale = ja4_hit
+                            # Skip generic browser matches entirely — they
+                            # don't tell us which service, only the client.
+                            if j_conf <= 0.50:
+                                continue
+                            proposal = LabelProposal(
+                                labeler="ja4_community_db",
+                                service=j_app.lower().replace(" ", "_"),
+                                category=j_cat or "cloud",
+                                confidence=j_conf,
+                                rationale=j_rationale,
+                            )
+                            if proposal.effective_score >= 0.60:
+                                await send_event(
+                                    client,
+                                    detection_type="sni_hello",
+                                    ai_service=proposal.service,
+                                    source_ip=src_ip,
+                                    bytes_transferred=0,
+                                    category=proposal.category,
+                                    attribution={
+                                        "labeler": "ja4_community_db",
+                                        "confidence": proposal.effective_score,
+                                        "rationale": j_rationale,
+                                        "proposed_service": proposal.service,
+                                        "proposed_category": proposal.category,
+                                    },
+                                )
                     continue
 
                 service, category, _domain = match
@@ -4163,11 +4246,16 @@ async def main(zeek_log_dir: str) -> None:
     # revert. Default true — rollback is opt-in. The plan calls for
     # one such flag per stage; Day 1 added DNS snooping, Day 2 adds
     # the QUIC tailer.
+    global _ja4_match_enabled
+
     dns_snooping_enabled = os.environ.get(
         "LABELER_DNS_SNOOPING", "true"
     ).strip().lower() in ("true", "1", "yes", "on")
     quic_tailer_enabled = os.environ.get(
         "LABELER_QUIC_TAILER", "true"
+    ).strip().lower() in ("true", "1", "yes", "on")
+    _ja4_match_enabled = os.environ.get(
+        "LABELER_JA4_MATCH", "true"
     ).strip().lower() in ("true", "1", "yes", "on")
 
     print(f"[*] AI-Radar Zeek Tailer starting on host '{SENSOR_ID}'")
@@ -4186,6 +4274,10 @@ async def main(zeek_log_dir: str) -> None:
         print(f"[*] QUIC SNI labeler: enabled (tailing quic.log)")
     else:
         print(f"[*] QUIC SNI labeler: DISABLED via LABELER_QUIC_TAILER")
+    if _ja4_match_enabled:
+        print(f"[*] JA4 community DB labeler: enabled (weekly sync from FoxIO)")
+    else:
+        print(f"[*] JA4 community DB labeler: DISABLED via LABELER_JA4_MATCH")
     print(f"[*] DPD stealth VPN/Tor detection: enabled ({len(DPD_EVASION_PROTOCOLS)} protocols)")
     print(f"[*] Zeek log directory: {log_dir}")
 
@@ -4232,6 +4324,24 @@ async def main(zeek_log_dir: str) -> None:
         warmed = await warmup_dns_cache_from_db()
         print(f"[*] DNS cache warm-up: {warmed} entries restored from DnsObservation")
 
+    # JA4 community DB sync — issue #6 fix: persist last_sync_at in the
+    # ja4_signatures.updated_at column. On startup, check if a sync is
+    # needed (>7 days since last import) and run it before tailing starts.
+    if _ja4_match_enabled:
+        try:
+            from ja4_db_sync import sync_ja4_db, needs_sync
+            from database import SessionLocal as _JA4SL
+            _ja4_db = _JA4SL()
+            if needs_sync(_ja4_db):
+                print("[ja4-sync] JA4 community DB is stale or empty — syncing from FoxIO…")
+                synced = await sync_ja4_db(_ja4_db)
+                print(f"[ja4-sync] Imported {synced} fingerprints")
+            else:
+                print("[ja4-sync] JA4 community DB is fresh — skipping sync")
+            _ja4_db.close()
+        except Exception as exc:
+            print(f"[ja4-sync] Startup sync failed (will retry in 7d): {exc}")
+
     tasks = [
         tail_ssl_log(ssl_log, client),
         tail_conn_log(conn_log, client),
@@ -4253,6 +4363,8 @@ async def main(zeek_log_dir: str) -> None:
         tasks.append(flush_dns_observations())
     if quic_tailer_enabled:
         tasks.append(tail_quic_log(quic_log, client))
+    if _ja4_match_enabled:
+        tasks.append(sync_ja4_cache())
     if p0f_task is not None:
         tasks.append(p0f_task)
     if scanner_task is not None:
