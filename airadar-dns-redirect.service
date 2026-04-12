@@ -1,0 +1,46 @@
+# ──────────────────────────────────────────────────────────────
+# AI-Radar — Transparent DNS Redirect
+# Intercepts all DNS traffic (port 53) and DNS-over-TLS (port 853)
+# passing through the bridge and redirects it to the local
+# AdGuard Home instance.
+#
+# This means clients don't need to change their DNS settings —
+# all DNS queries are transparently filtered, zero-touch.
+#
+# Port 853 (DoT) added 2026-04-12: Android "Private DNS" and
+# other DoT clients were bypassing the port 53 redirect,
+# causing ~7 devices to have zero DNS observations.
+#
+# Deployed to: /etc/systemd/system/airadar-dns-redirect.service
+# ──────────────────────────────────────────────────────────────
+[Unit]
+Description=AI-Radar transparent DNS redirect (iptables)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Redirect all DNS (UDP+TCP port 53) traversing the bridge to local AdGuard
+# -i br0: only traffic entering via the bridge (not locally generated)
+# REDIRECT: send to AdGuard listening on 127.0.0.1:53
+ExecStart=/usr/sbin/iptables  -t nat -A PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-port 53
+ExecStart=/usr/sbin/iptables  -t nat -A PREROUTING -i br0 -p tcp --dport 53 -j REDIRECT --to-port 53
+ExecStart=/usr/sbin/ip6tables -t nat -A PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-port 53
+ExecStart=/usr/sbin/ip6tables -t nat -A PREROUTING -i br0 -p tcp --dport 53 -j REDIRECT --to-port 53
+
+# Redirect DNS-over-TLS (port 853) — catches Android "Private DNS"
+ExecStart=/usr/sbin/iptables  -t nat -A PREROUTING -i br0 -p tcp --dport 853 -j REDIRECT --to-port 53
+ExecStart=/usr/sbin/ip6tables -t nat -A PREROUTING -i br0 -p tcp --dport 853 -j REDIRECT --to-port 53
+
+# Clean up on stop
+ExecStop=/usr/sbin/iptables  -t nat -D PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-port 53
+ExecStop=/usr/sbin/iptables  -t nat -D PREROUTING -i br0 -p tcp --dport 53 -j REDIRECT --to-port 53
+ExecStop=/usr/sbin/ip6tables -t nat -D PREROUTING -i br0 -p udp --dport 53 -j REDIRECT --to-port 53
+ExecStop=/usr/sbin/ip6tables -t nat -D PREROUTING -i br0 -p tcp --dport 53 -j REDIRECT --to-port 53
+ExecStop=/usr/sbin/iptables  -t nat -D PREROUTING -i br0 -p tcp --dport 853 -j REDIRECT --to-port 53
+ExecStop=/usr/sbin/ip6tables -t nat -D PREROUTING -i br0 -p tcp --dport 853 -j REDIRECT --to-port 53
+
+[Install]
+WantedBy=multi-user.target
