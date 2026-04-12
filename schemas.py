@@ -3,24 +3,10 @@ AI-Radar — Pydantic schemas for request / response validation.
 Supports both AI and Cloud detection categories.
 """
 
-from datetime import datetime, timezone
-from typing import Annotated, List, Optional
+from datetime import datetime
+from typing import List, Optional
 
-from pydantic import BaseModel, PlainSerializer
-
-# All timestamps from SQLite are naive UTC.  Force a 'Z' suffix so the
-# frontend can unambiguously parse them as UTC and convert to local time.
-UtcDatetime = Annotated[
-    datetime,
-    PlainSerializer(
-        lambda dt: (
-            dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-            if dt.tzinfo is None
-            else dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-        ),
-        return_type=str,
-    ),
-]
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +39,7 @@ class EventCreate(BaseModel):
     """Payload accepted by POST /api/ingest."""
 
     sensor_id: str
-    timestamp: UtcDatetime
+    timestamp: datetime
     detection_type: str
     ai_service: str
     source_ip: str
@@ -82,8 +68,8 @@ class DeviceIPRead(BaseModel):
     """An IP address associated with a device."""
 
     ip: str
-    first_seen: UtcDatetime
-    last_seen: UtcDatetime
+    first_seen: datetime
+    last_seen: datetime
 
     model_config = {"from_attributes": True}
 
@@ -104,8 +90,8 @@ class DeviceRead(BaseModel):
     ja4_label: Optional[str] = None        # Friendly name resolved from ja4
     dhcp_vendor_class: Optional[str] = None  # e.g. "MSFT 5.0", "android-dhcp-14"
     dhcp_fingerprint: Optional[str] = None   # JA4D DHCP hash
-    first_seen: UtcDatetime
-    last_seen: UtcDatetime
+    first_seen: datetime
+    last_seen: datetime
     ips: List[DeviceIPRead] = []
 
     model_config = {"from_attributes": True}
@@ -167,8 +153,8 @@ class BlockRuleRead(BaseModel):
     domain: str
     category: str
     is_active: bool
-    created_at: UtcDatetime
-    expires_at: Optional[UtcDatetime] = None
+    created_at: datetime
+    expires_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -234,7 +220,7 @@ class ServicePolicyCreate(BaseModel):
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str = "alert"              # "allow" | "alert" | "block"
-    expires_at: Optional[UtcDatetime] = None  # NULL = permanent
+    expires_at: Optional[datetime] = None  # NULL = permanent
 
 
 class ServicePolicyRead(BaseModel):
@@ -247,9 +233,9 @@ class ServicePolicyRead(BaseModel):
     service_name: Optional[str] = None
     category: Optional[str] = None
     action: str
-    expires_at: Optional[UtcDatetime] = None
-    created_at: UtcDatetime
-    updated_at: UtcDatetime
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -278,7 +264,7 @@ class AlertExceptionCreate(BaseModel):
     mac_address: str
     alert_type: str
     destination: Optional[str] = None
-    expires_at: Optional[UtcDatetime] = None   # None = permanent whitelist
+    expires_at: Optional[datetime] = None   # None = permanent whitelist
     dismissed_score: Optional[float] = None  # beacon score at dismiss time
 
 
@@ -289,9 +275,9 @@ class AlertExceptionRead(BaseModel):
     mac_address: str
     alert_type: str
     destination: Optional[str] = None
-    expires_at: Optional[UtcDatetime] = None
+    expires_at: Optional[datetime] = None
     dismissed_score: Optional[float] = None
-    created_at: UtcDatetime
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -312,8 +298,8 @@ class ActiveAlert(BaseModel):
     alert_type: str                     # e.g. "beaconing_threat", "vpn_tunnel", "upload", "service_access"
     service_or_dest: str                # service_name or destination IP
     category: Optional[str] = None
-    timestamp: UtcDatetime                 # last_seen
-    first_seen: UtcDatetime
+    timestamp: datetime                 # last_seen
+    first_seen: datetime
     hits: int
     total_bytes: int = 0
     details: dict = {}                  # free-form: policy_action, reason, etc.

@@ -74,7 +74,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Integer, func, or_, text
 from sqlalchemy.orm import Session
@@ -1360,7 +1360,30 @@ async def lifespan(app: FastAPI):
     filter_schedule_task.cancel()
 
 
-app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan)
+# Custom JSON response that serialises naive datetimes with a 'Z' suffix.
+# This is the single place where "internal naive UTC" gets turned into
+# "unambiguous ISO 8601 for the frontend".  Everything else in the
+# codebase stays plain datetime objects — no more UtcDatetime / PlainSerializer.
+import json as _json
+
+
+class _UTCEncoder(_json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            s = obj.isoformat()
+            if obj.tzinfo is None:
+                return s + "Z"
+            return s.replace("+00:00", "Z")
+        return super().default(obj)
+
+
+class UTCJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return _json.dumps(content, cls=_UTCEncoder, ensure_ascii=False).encode("utf-8")
+
+
+app = FastAPI(title="AI-Radar", version="0.3.0", lifespan=lifespan,
+              default_response_class=UTCJSONResponse)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -1401,12 +1424,8 @@ def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
     classifier) include an `attribution` block which we persist into
     label_attributions for the audit trail.
     """
-    payload = event.model_dump(mode="python")
+    payload = event.model_dump()
     attribution = payload.pop("attribution", None)
-
-    # Ensure timestamp is naive for SQLite
-    if payload.get("timestamp") and hasattr(payload["timestamp"], "tzinfo") and payload["timestamp"].tzinfo:
-        payload["timestamp"] = payload["timestamp"].replace(tzinfo=None)
 
     db_event = DetectionEvent(**payload)
     db.add(db_event)
