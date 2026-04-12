@@ -7149,6 +7149,9 @@ const _ACTIVITY_CAT_COLORS = {
 function _activityColor(cat) {
   return _ACTIVITY_CAT_COLORS[cat] || { fill: 'bg-slate-500', ring: 'ring-slate-400/40', text: 'text-slate-600 dark:text-slate-400', chip: 'bg-slate-50 dark:bg-slate-900/30' };
 }
+// Per-service color for timeline segments so services within the same
+// category (e.g. Instagram vs WhatsApp in "social") are distinguishable.
+function _svcColor(svc) { return svcColor(svc); }
 
 // Format a duration in seconds: "58s" / "12m" / "1h 24m". Distinct from
 // _fmtDuration which takes ms and only does minute granularity.
@@ -7293,8 +7296,10 @@ function _renderActivity(data) {
       // Force a minimum width so very short sessions stay visible.
       const width = Math.max(((endMin - startMin) / dayMinutes) * 100, 0.4);
       const tip = `${svcDisplayName(s.service)} · ${s.start.substring(11, 16)}–${s.end.substring(11, 16)} · ${_fmtDurationSec(s.duration_seconds)}${s.bytes ? ' · ' + _fmtBytes(s.bytes) : ''} · ${s.events} events`;
-      html += `<div class="activity-segment absolute top-0 bottom-0 ${color.fill} hover:ring-2 ${color.ring} cursor-default"
-        style="left:${left}%;width:${width}%"
+      // Color by service (not category) so Instagram vs WhatsApp are distinguishable
+      const svcColor = _svcColor(s.service);
+      html += `<div class="activity-segment absolute top-0 bottom-0 hover:ring-2 ring-white/50 cursor-default rounded-sm"
+        style="left:${left}%;width:${width}%;background:${svcColor}"
         title="${tip}"></div>`;
     });
     html += '</div></div>';
@@ -7307,8 +7312,9 @@ function _renderActivity(data) {
     <div class="flex flex-wrap gap-1.5">`;
   totalsSvc.forEach(svc => {
     const color = _activityColor(svc.category);
+    const svcColor = _svcColor(svc.service);
     html += `<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md ${color.chip} text-[11px]">
-      <span class="w-1.5 h-1.5 rounded-full ${color.fill}"></span>
+      <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${svcColor}"></span>
       <span class="font-medium ${color.text}">${svcDisplayName(svc.service)}</span>
       <span class="tabular-nums text-slate-500 dark:text-slate-400">${_fmtDurationSec(svc.duration_seconds)}</span>
     </div>`;
@@ -7328,11 +7334,11 @@ function _renderActivity(data) {
   if (_drawerActivityShowSessions) {
     html += '<div class="mt-3 space-y-1">';
     sessions.forEach(s => {
-      const color = _activityColor(s.category);
+      const svcColor = _svcColor(s.service);
       const startTime = s.start.substring(11, 16);
       const endTime = s.end.substring(11, 16);
       html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-slate-50 dark:hover:bg-white/[0.03]">
-        <span class="w-1.5 h-1.5 rounded-full ${color.fill} flex-shrink-0"></span>
+        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${svcColor}"></span>
         <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 w-24 flex-shrink-0">${startTime}–${endTime}</span>
         <span class="text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex-1">${svcDisplayName(s.service)}</span>
         <span class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_fmtDurationSec(s.duration_seconds)}</span>
