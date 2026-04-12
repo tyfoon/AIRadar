@@ -3382,12 +3382,53 @@ function renderDashAlarms() {
 
 // --- SANKEY DIAGRAM ---
 let sankeyInstance = null;
+let _sankeyEvents = [];
+let _sankeyModeHits = false;
+let _sankeyExcludeTop = false;
+
+// Category display names & colors
+const CATEGORY_NAMES = {
+  ai: 'AI', cloud: 'Cloud', streaming: 'Streaming', gaming: 'Gaming',
+  social: 'Social', tracking: 'Tracking', shopping: 'Shopping',
+  news: 'News', adult: 'Adult',
+};
+const CATEGORY_COLORS = {
+  ai: '#6366f1', cloud: '#3b82f6', streaming: '#e50914', gaming: '#10b981',
+  social: '#f59e0b', tracking: '#ef4444', shopping: '#8b5cf6',
+  news: '#06b6d4', adult: '#64748b',
+};
+
+function _initSankeyControls() {
+  const toggle = document.getElementById('sankey-mode-toggle');
+  const knob = document.getElementById('sankey-mode-knob');
+  const excludeCb = document.getElementById('sankey-exclude-top');
+  if (toggle) toggle.addEventListener('click', () => {
+    _sankeyModeHits = !_sankeyModeHits;
+    knob.style.transform = _sankeyModeHits ? 'translateX(16px)' : '';
+    toggle.classList.toggle('bg-indigo-500', _sankeyModeHits);
+    toggle.classList.toggle('dark:bg-indigo-600', _sankeyModeHits);
+    toggle.classList.toggle('bg-slate-300', !_sankeyModeHits);
+    toggle.classList.toggle('dark:bg-slate-600', !_sankeyModeHits);
+    _renderSankeyFromState();
+  });
+  if (excludeCb) excludeCb.addEventListener('change', () => {
+    _sankeyExcludeTop = excludeCb.checked;
+    _renderSankeyFromState();
+  });
+}
 
 function renderSankey(events) {
+  _sankeyEvents = events;
+  _renderSankeyFromState();
+}
+
+function _renderSankeyFromState() {
   const container = document.getElementById('sankey-chart');
   const emptyMsg = document.getElementById('sankey-empty');
+  const excludeLabel = document.getElementById('sankey-exclude-label');
   if (!container) return;
 
+  let events = _sankeyEvents;
   if (!events.length) {
     container.style.display = 'none';
     if (emptyMsg) emptyMsg.classList.remove('hidden');
@@ -3396,58 +3437,80 @@ function renderSankey(events) {
   container.style.display = '';
   if (emptyMsg) emptyMsg.classList.add('hidden');
 
-  // Build flows: device → AI-Radar → service, weighted by bytes_transferred
-  const deviceFlows = {};  // device → total bytes
-  const serviceFlows = {}; // service → total bytes
+  // Metric function: bytes or hit count
+  const metric = _sankeyModeHits
+    ? () => 1
+    : (e) => (e.bytes_transferred || 1);
+
+  // Find the top talker for the exclude toggle label
+  const devTotals = {};
+  events.forEach(e => {
+    const dev = deviceName(e.source_ip);
+    devTotals[dev] = (devTotals[dev] || 0) + metric(e);
+  });
+  const topDev = Object.entries(devTotals).sort((a, b) => b[1] - a[1])[0];
+  if (excludeLabel && topDev) {
+    excludeLabel.textContent = `Exclude ${topDev[0]}`;
+  }
+
+  // Filter out top talker if checked
+  if (_sankeyExcludeTop && topDev) {
+    events = events.filter(e => deviceName(e.source_ip) !== topDev[0]);
+  }
+
+  if (!events.length) {
+    container.style.display = 'none';
+    if (emptyMsg) emptyMsg.classList.remove('hidden');
+    return;
+  }
+
+  // Build flows: device → category (direct mapping, no middle node)
+  const flowMap = {};   // "dev\0cat" → { raw, scaled }
+  const devFlows = {};  // device → raw total
+  const catFlows = {};  // category → raw total
 
   events.forEach(e => {
     const dev = deviceName(e.source_ip);
-    const svc = svcDisplayName(e.ai_service);
-    deviceFlows[dev] = (deviceFlows[dev] || 0) + (e.bytes_transferred || 1);
-    serviceFlows[svc] = (serviceFlows[svc] || 0) + (e.bytes_transferred || 1);
+    const cat = CATEGORY_NAMES[e.category] || (e.category ? e.category.charAt(0).toUpperCase() + e.category.slice(1) : 'Other');
+    const val = metric(e);
+    const key = dev + '\0' + cat;
+    flowMap[key] = (flowMap[key] || 0) + val;
+    devFlows[dev] = (devFlows[dev] || 0) + val;
+    catFlows[cat] = (catFlows[cat] || 0) + val;
   });
 
-  // Limit to top 10 devices by traffic volume to keep the chart readable.
-  const top10Devices = new Set(
-    Object.entries(deviceFlows)
+  // Limit to top 10 devices
+  const top10 = new Set(
+    Object.entries(devFlows)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-      .map(([dev]) => dev)
+      .map(([d]) => d)
   );
 
-  // Rebuild device flows with only top 10
-  const filteredDeviceFlows = {};
-  Object.entries(deviceFlows).forEach(([dev, bytes]) => {
-    if (top10Devices.has(dev)) filteredDeviceFlows[dev] = bytes;
-  });
+  // Build links with sqrt scaling (keeps small flows visible)
+  const links = [];
+  const rawValues = {};  // for tooltip display
+  const usedDevs = new Set();
+  const usedCats = new Set();
 
-  // Rebuild service flows from events of top 10 devices only
-  const filteredServiceFlows = {};
-  events.forEach(e => {
-    const dev = deviceName(e.source_ip);
-    if (!top10Devices.has(dev)) return;
-    const svc = svcDisplayName(e.ai_service);
-    filteredServiceFlows[svc] = (filteredServiceFlows[svc] || 0) + (e.bytes_transferred || 1);
+  Object.entries(flowMap).forEach(([key, raw]) => {
+    const [dev, cat] = key.split('\0');
+    if (!top10.has(dev)) return;
+    const scaled = Math.max(1, Math.sqrt(raw));
+    links.push({ source: dev, target: cat, value: scaled });
+    rawValues[dev + ' → ' + cat] = raw;
+    usedDevs.add(dev);
+    usedCats.add(cat);
   });
 
   // Nodes
   const nodes = [];
-  const nodeSet = new Set();
-  Object.keys(filteredDeviceFlows).forEach(d => { if (!nodeSet.has(d)) { nodeSet.add(d); nodes.push({ name: d }); } });
-  nodes.push({ name: 'AI-Radar' });
-  Object.keys(filteredServiceFlows).forEach(s => { if (!nodeSet.has(s)) { nodeSet.add(s); nodes.push({ name: s }); } });
-
-  // Links: device → AI-Radar, AI-Radar → service
-  const links = [];
-  Object.entries(filteredDeviceFlows).forEach(([dev, bytes]) => {
-    links.push({ source: dev, target: 'AI-Radar', value: bytes });
-  });
-  Object.entries(filteredServiceFlows).forEach(([svc, bytes]) => {
-    links.push({ source: 'AI-Radar', target: svc, value: bytes });
-  });
+  usedDevs.forEach(d => nodes.push({ name: d, isDevice: true }));
+  usedCats.forEach(c => nodes.push({ name: c, isDevice: false }));
 
   const dark = isDark();
   const textColor = dark ? '#94a3b8' : '#475569';
+  const unit = _sankeyModeHits ? 'hits' : null;
 
   if (sankeyInstance) sankeyInstance.dispose();
   sankeyInstance = echarts.init(container, null, { renderer: 'canvas' });
@@ -3461,9 +3524,16 @@ function renderSankey(events) {
       textStyle: { color: dark ? '#e2e8f0' : '#1e293b', fontSize: 12, fontFamily: 'Inter' },
       formatter: (params) => {
         if (params.dataType === 'edge') {
-          return `${params.data.source} → ${params.data.target}<br/><b>${_fmtBytes(params.value)}</b>`;
+          const raw = rawValues[params.data.source + ' → ' + params.data.target] || 0;
+          const display = unit ? raw.toLocaleString() + ' ' + unit : _fmtBytes(raw);
+          return `${params.data.source} → ${params.data.target}<br/><b>${display}</b>`;
         }
-        return params.name;
+        // Node tooltip: show total
+        const devRaw = devFlows[params.name];
+        const catRaw = catFlows[params.name];
+        const raw = devRaw || catRaw || 0;
+        const display = unit ? raw.toLocaleString() + ' ' + unit : _fmtBytes(raw);
+        return `<b>${params.name}</b><br/>${display}`;
       }
     },
     series: [{
@@ -3477,16 +3547,11 @@ function renderSankey(events) {
       data: nodes.map(n => ({
         name: n.name,
         itemStyle: {
-          color: n.name === 'AI-Radar' ? '#6366f1'
-            : serviceFlows[n.name] ? (SERVICE_COLORS[Object.keys(SERVICE_NAMES).find(k => SERVICE_NAMES[k] === n.name)] || '#6366f1')
-            : '#3b82f6',
+          color: n.isDevice ? '#3b82f6'
+            : (CATEGORY_COLORS[Object.keys(CATEGORY_NAMES).find(k => CATEGORY_NAMES[k] === n.name)] || '#6366f1'),
           borderColor: 'transparent',
         },
-        label: {
-          color: textColor,
-          fontSize: 12,
-          fontFamily: 'Inter',
-        }
+        label: { color: textColor, fontSize: 11, fontFamily: 'Inter' }
       })),
       links: links,
       lineStyle: {
@@ -3497,16 +3562,15 @@ function renderSankey(events) {
       label: {
         position: 'right',
         color: textColor,
-        fontSize: 12,
+        fontSize: 11,
         fontFamily: 'Inter',
       },
-      left: 40, right: 120, top: 10, bottom: 10,
+      left: 40, right: 100, top: 10, bottom: 10,
     }]
   };
 
   sankeyInstance.setOption(option);
 
-  // Resize observer
   const resizeObserver = new ResizeObserver(() => { sankeyInstance?.resize(); });
   resizeObserver.observe(container);
 }
@@ -10539,6 +10603,7 @@ async function manualRefresh() {
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   initSidebar();
+  _initSankeyControls();
   await loadDevices();
   initRouter();
   updateRefreshTimestamp();
