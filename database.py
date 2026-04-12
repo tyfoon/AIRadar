@@ -1035,8 +1035,7 @@ def init_db() -> None:
             "DELETE FROM geo_conversations WHERE ai_service = 'apple_tv'"
         ))
         conn.execute(text(
-            "UPDATE detection_events SET ai_service = NULL, category = NULL "
-            "WHERE ai_service = 'apple_tv'"
+            "DELETE FROM detection_events WHERE ai_service = 'apple_tv'"
         ))
         conn.execute(text(
             "DELETE FROM label_attributions "
