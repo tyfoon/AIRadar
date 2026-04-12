@@ -421,6 +421,17 @@ ACTIVITY_TZ = "Europe/Amsterdam"
 ACTIVITY_MAX_DAYS_BACK = 30            # how far back date= can go
 
 
+def _utc_now_naive() -> datetime:
+    """Return current UTC time as a naive datetime.
+
+    SQLite stores datetimes without timezone info. When comparing
+    datetime.now(timezone.utc) (aware) with a value read from SQLite
+    (naive), Python raises 'can't subtract offset-naive and offset-aware'.
+    Use this for DB comparisons and writes.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _utc_iso(dt: datetime | None) -> str | None:
     """Format a datetime as an ISO 8601 UTC string with 'Z' suffix.
 
@@ -441,7 +452,7 @@ async def _periodic_cleanup():
             db = SessionLocal()
 
             # 1) Delete events older than RETENTION_DAYS
-            cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+            cutoff = _utc_now_naive() - timedelta(days=RETENTION_DAYS)
             old = db.query(DetectionEvent).filter(
                 DetectionEvent.timestamp < cutoff
             ).delete(synchronize_session=False)
@@ -464,13 +475,13 @@ async def _periodic_cleanup():
                     overflow = len(ids)
 
             # 3) Prune old performance snapshots (keep 7 days)
-            perf_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            perf_cutoff = _utc_now_naive() - timedelta(days=7)
             old_perf = db.query(NetworkPerformance).filter(
                 NetworkPerformance.timestamp < perf_cutoff
             ).delete(synchronize_session=False)
 
             # 4) Prune old geo_conversations (keep 30 days)
-            geo_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            geo_cutoff = _utc_now_naive() - timedelta(days=30)
             old_geo = db.query(GeoConversation).filter(
                 GeoConversation.last_seen < geo_cutoff
             ).delete(synchronize_session=False)
@@ -481,13 +492,13 @@ async def _periodic_cleanup():
             ).delete(synchronize_session=False)
 
             # 6) Prune stale ip_metadata (not updated in 30 days)
-            ip_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            ip_cutoff = _utc_now_naive() - timedelta(days=30)
             old_ip = db.query(IpMetadata).filter(
                 IpMetadata.updated_at < ip_cutoff
             ).delete(synchronize_session=False)
 
             # 6) Prune old tls_fingerprints (not seen in 30 days)
-            tls_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            tls_cutoff = _utc_now_naive() - timedelta(days=30)
             old_tls = db.query(TlsFingerprint).filter(
                 TlsFingerprint.last_seen < tls_cutoff
             ).delete(synchronize_session=False)
@@ -495,11 +506,11 @@ async def _periodic_cleanup():
             # 7) Remove expired alert_exceptions
             old_alerts = db.query(AlertException).filter(
                 AlertException.expires_at.isnot(None),
-                AlertException.expires_at < datetime.now(timezone.utc),
+                AlertException.expires_at < _utc_now_naive(),
             ).delete(synchronize_session=False)
 
             # 8) Prune old inbound_attacks (keep 7 days)
-            inbound_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            inbound_cutoff = _utc_now_naive() - timedelta(days=7)
             old_inbound = db.query(InboundAttack).filter(
                 InboundAttack.last_seen < inbound_cutoff
             ).delete(synchronize_session=False)
@@ -582,12 +593,12 @@ async def _periodic_beacon_scan():
             if findings:
                 db = SessionLocal()
                 try:
-                    cutoff = datetime.now(timezone.utc) - timedelta(hours=BEACON_DEDUP_HOURS)
+                    cutoff = _utc_now_naive() - timedelta(hours=BEACON_DEDUP_HOURS)
                     # Build IP → MAC lookup for destination novelty check
                     _dev_ips = db.query(DeviceIP).all()
                     _ip_to_mac_beacon = {d.ip: d.mac_address for d in _dev_ips}
                     # Threshold: destinations seen for > 7 days are "known"
-                    _known_dest_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                    _known_dest_cutoff = _utc_now_naive() - timedelta(days=7)
 
                     for f in findings:
                         dst_ip = f["dst"]
@@ -706,7 +717,7 @@ async def _periodic_beacon_scan():
 
                         event = DetectionEvent(
                             sensor_id="airadar",
-                            timestamp=datetime.now(timezone.utc),
+                            timestamp=_utc_now_naive(),
                             detection_type="beaconing_threat",
                             ai_service=svc_label,
                             source_ip=src_ip,
@@ -732,7 +743,7 @@ async def _periodic_beacon_scan():
             else:
                 print("[beacon] Scan complete — no beaconing patterns detected")
 
-            _beacon_status["last_scan_at"] = _utc_iso(datetime.now(timezone.utc))
+            _beacon_status["last_scan_at"] = _utc_iso(_utc_now_naive())
             _beacon_status["last_findings"] = len(findings)
             _beacon_status["last_new_alerts"] = new_count
             _beacon_status["scans_completed"] += 1
@@ -752,7 +763,7 @@ async def _expire_block_rules():
         await asyncio.sleep(RULE_EXPIRY_INTERVAL)
         try:
             db = SessionLocal()
-            now = datetime.now(timezone.utc)
+            now = _utc_now_naive()
 
             # Find active rules that have expired
             expired = (
@@ -797,7 +808,7 @@ async def _expire_service_policies():
         await asyncio.sleep(POLICY_EXPIRY_INTERVAL)
         try:
             db = SessionLocal()
-            now = datetime.now(timezone.utc)
+            now = _utc_now_naive()
             expired = (
                 db.query(ServicePolicy)
                 .filter(
@@ -1412,7 +1423,7 @@ def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
             effective_score=float(attribution.get("confidence", 0.0)),
             rationale=attribution.get("rationale"),
             is_winner=True,
-            created_at=datetime.now(timezone.utc),
+            created_at=_utc_now_naive(),
         ))
 
     db.commit()
@@ -1700,7 +1711,7 @@ async def device_ai_report(
     device_label = device.display_name or device.hostname or device_ips[0]
 
     # 2. Fetch detection events (last 24h)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = _utc_now_naive() - timedelta(hours=24)
     all_events = (
         db.query(DetectionEvent)
         .filter(
@@ -1854,7 +1865,7 @@ async def device_ai_report(
     # JA4 label) so Gemini can open its report with a concrete
     # "This is a Windows gaming PC / iPad / IoT speaker" classification
     # instead of a vague "this device does traffic".
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now_str = _utc_now_naive().strftime("%Y-%m-%d %H:%M UTC")
     ja4_label_resolved = _resolve_ja4_label(device.ja4_fingerprint)
 
     # Language selection — 'en' falls back to NL for anything other than
@@ -2372,7 +2383,7 @@ async def device_ai_report(
     # Persist the freshly-generated report on the Device row so future
     # reads hit the cache instead of the LLM.
     device.ai_report_md = report_md
-    device.ai_report_at = datetime.now(timezone.utc)
+    device.ai_report_at = _utc_now_naive()
     device.ai_report_model = gemini_model
     device.ai_report_tokens = token_info.get("total_tokens", 0)
     if flags_json is not None:
@@ -2406,7 +2417,7 @@ def _normalize_mac(mac: str) -> str:
 
 @app.post("/api/devices", response_model=DeviceRead, status_code=201)
 def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     mac = _normalize_mac(payload.mac_address)
 
     # Sanitize incoming hostname — drop junk so it never lands in the DB
@@ -2696,7 +2707,7 @@ def update_device_fingerprint(payload: dict, db: Session = Depends(get_db)):
         device.device_class = payload["device_class"]
     if payload.get("network_distance") is not None:
         device.network_distance = payload["network_distance"]
-    device.p0f_last_seen = datetime.now(timezone.utc)
+    device.p0f_last_seen = _utc_now_naive()
 
     db.commit()
     db.refresh(device)
@@ -2823,7 +2834,7 @@ def geo_ingest(payload: dict, db: Session = Depends(get_db)):
     updates = payload.get("updates") or []
     if not isinstance(updates, list):
         raise HTTPException(status_code=400, detail="updates must be a list")
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     for u in updates:
         cc = (u.get("country_code") or "").upper()[:2]
         direction = u.get("direction") or ""
@@ -3035,7 +3046,7 @@ def ingest_geo_conversations(
     updates = payload.get("updates") or []
     if not isinstance(updates, list):
         raise HTTPException(status_code=400, detail="updates must be a list")
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     now_ts = time.time()
     unseen_ips: set[str] = set()
     accepted = 0
@@ -3179,7 +3190,7 @@ def ingest_ip_metadata(
     entries = payload.get("entries") or []
     if not isinstance(entries, list):
         raise HTTPException(status_code=400, detail="entries must be a list")
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     backfilled = 0
     for e in entries:
         ip = e.get("ip") or ""
@@ -3713,7 +3724,7 @@ async def upsert_policy(payload: ServicePolicyCreate, db: Session = Depends(get_
         )
         .first()
     )
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     if existing:
         existing.action = payload.action
         existing.expires_at = payload.expires_at
@@ -3779,7 +3790,7 @@ def list_exceptions(
     if alert_type:
         q = q.filter(AlertException.alert_type == alert_type)
     if not include_expired:
-        now = datetime.now(timezone.utc)
+        now = _utc_now_naive()
         q = q.filter(
             (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
         )
@@ -3796,7 +3807,7 @@ def create_exception(payload: AlertExceptionCreate, db: Session = Depends(get_db
         destination=payload.destination,
         expires_at=payload.expires_at,
         dismissed_score=payload.dismissed_score,
-        created_at=datetime.now(timezone.utc),
+        created_at=_utc_now_naive(),
     )
     db.add(exc)
     db.commit()
@@ -3844,7 +3855,7 @@ def delete_beacon_alert(
             alert_type="beaconing_threat",
             destination=dest_ip,
             expires_at=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=_utc_now_naive(),
         ))
     db.commit()
     return None
@@ -3880,7 +3891,7 @@ def delete_iot_anomaly(
             alert_type=detection_type,
             destination=dest,
             expires_at=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=_utc_now_naive(),
         ))
     db.commit()
     return None
@@ -3914,7 +3925,7 @@ def delete_vpn_alert(
                 alert_type=dtype,
                 destination=service,
                 expires_at=None,
-                created_at=datetime.now(timezone.utc),
+                created_at=_utc_now_naive(),
             ))
     db.commit()
     return None
@@ -3957,7 +3968,7 @@ def get_network_graph(
     Nodes include all devices involved in lateral movement, plus the
     router/gateway as the central hub.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
 
     # Fetch lateral movement events
     events = (
@@ -4067,7 +4078,7 @@ def _resolve_policy_action(
 
     Policies with an expires_at in the past are treated as non-existent.
     """
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     _action_rank = {"block": 3, "alert": 2, "allow": 1}
 
     def _first(pred):
@@ -4364,8 +4375,8 @@ def get_active_alerts(
       4. Group the resulting alerts by (mac_address, alert_type,
          service_or_dest) so repeated hits collapse into one row.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    now = datetime.now(timezone.utc)
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
+    now = _utc_now_naive()
 
     # Eager-load policies + exceptions + group memberships once
     policies = db.query(ServicePolicy).all()
@@ -4946,7 +4957,7 @@ def category_tree(
 
 
 def _family_window_start(hours: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(hours=hours)
+    return _utc_now_naive() - timedelta(hours=hours)
 
 
 @app.get("/api/family/meta")
@@ -5296,7 +5307,7 @@ def family_category_detail(
             for d in db.query(Device).filter(Device.mac_address.in_(seen_macs)).all()
         }
 
-    now_ts = datetime.now(timezone.utc)
+    now_ts = _utc_now_naive()
     ONLINE_WINDOW = timedelta(minutes=5)
 
     def _device_entry(mac: str, fallback_ip: str) -> dict:
@@ -5460,7 +5471,7 @@ def family_category_detail(
         .filter(ServicePolicy.action != "allow")
         .all()
     )
-    now_naive = datetime.now(timezone.utc)
+    now_naive = _utc_now_naive()
     policies_out: list[dict] = []
     for pol in policy_rows:
         # Expiry check — normalise aware → naive UTC before comparing.
@@ -5642,7 +5653,7 @@ async def privacy_stats(
     #    The last event must be within 15 minutes, so a device that
     #    stopped its VPN an hour ago doesn't keep flashing red.
     from sqlalchemy import case, Integer
-    vpn_active_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    vpn_active_cutoff = _utc_now_naive() - timedelta(minutes=15)
     stealth_flag = func.sum(
         case((DetectionEvent.detection_type == "stealth_vpn_tunnel", 1), else_=0)
     ).label("stealth_hits")
@@ -5700,8 +5711,8 @@ async def privacy_stats(
         })
 
     # 4) Security stats: beaconing_threat + any future security-category events
-    sec_cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
-    sec_cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    sec_cutoff_24h = _utc_now_naive() - timedelta(hours=24)
+    sec_cutoff_7d = _utc_now_naive() - timedelta(days=7)
     sec_filter = (
         (DetectionEvent.detection_type == "beaconing_threat")
         | (DetectionEvent.category == "security")
@@ -5718,7 +5729,7 @@ async def privacy_stats(
     )
     # Daily buckets for a 7-day sparkline (oldest → newest)
     sparkline = [0] * 7
-    start_of_today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_today = _utc_now_naive().replace(hour=0, minute=0, second=0, microsecond=0)
     daily_rows = (
         db.query(
             func.strftime("%Y-%m-%d", DetectionEvent.timestamp).label("day"),
@@ -5739,7 +5750,7 @@ async def privacy_stats(
     }
 
     # 5) Beaconing / C2 threat alerts (last 24h, one row per src→dst pair)
-    beacon_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    beacon_cutoff = _utc_now_naive() - timedelta(hours=24)
     beacon_rows = (
         db.query(
             DetectionEvent.source_ip,
@@ -5758,7 +5769,7 @@ async def privacy_stats(
         .all()
     )
     # Pre-fetch active exceptions so we can mark dismissed beacons
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     beacon_exceptions = db.query(AlertException).filter(
         AlertException.alert_type == "beaconing_threat",
         (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now),
@@ -6030,7 +6041,7 @@ def list_filter_schedules(db: Session = Depends(get_db)):
                 start_time="00:00",
                 end_time="00:00",
                 timezone="Europe/Amsterdam",
-                updated_at=datetime.now(timezone.utc),
+                updated_at=_utc_now_naive(),
             )
             db.add(row)
             db.commit()
@@ -6067,7 +6078,7 @@ def update_filter_schedule(
     row.start_time = payload.start_time or "00:00"
     row.end_time = payload.end_time or "00:00"
     row.timezone = payload.timezone or "Europe/Amsterdam"
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = _utc_now_naive()
     db.commit()
     db.refresh(row)
     # Nudge the enforcer: apply the new schedule immediately so the user sees
@@ -6341,7 +6352,7 @@ async def get_ips_status():
     # --- Inbound attack stats from Zeek conn.log ---
     db = SessionLocal()
     try:
-        cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_24h = _utc_now_naive() - timedelta(hours=24)
         from sqlalchemy import func as sa_func
         total_blocked_24h = db.query(
             sa_func.coalesce(sa_func.sum(InboundAttack.hit_count), 0)
@@ -6505,7 +6516,7 @@ _CONN_STATE_RANK = {
 def ingest_inbound_attacks(payload: dict, db: Session = Depends(get_db)):
     """Upsert inbound connection attempts from the Zeek tailer buffer."""
     updates = payload.get("updates") or []
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     for u in updates:
         src = u.get("source_ip")
         tgt = u.get("target_ip")
@@ -6740,7 +6751,7 @@ async def block_service(payload: BlockRuleCreate, db: Session = Depends(get_db))
     # Calculate expiry
     expires = None
     if payload.duration_minutes and payload.duration_minutes > 0:
-        expires = datetime.now(timezone.utc) + timedelta(minutes=payload.duration_minutes)
+        expires = _utc_now_naive() + timedelta(minutes=payload.duration_minutes)
 
     created = []
     for domain in domains:
@@ -6989,7 +7000,7 @@ async def toggle_killswitch(payload: dict):
       3. IPS → re-enabled
     """
     active = payload.get("active", False)
-    now = _utc_iso(datetime.now(timezone.utc))
+    now = _utc_iso(_utc_now_naive())
     results = {"actions": []}
 
     if active:
@@ -7115,7 +7126,7 @@ async def _adguard_watchdog():
                     # Emergency: activate killswitch
                     state = {
                         "active": True,
-                        "activated_at": _utc_iso(datetime.now(timezone.utc)),
+                        "activated_at": _utc_iso(_utc_now_naive()),
                         "activated_by": "auto_failsafe",
                     }
                     _write_killswitch_state(state)
@@ -7473,7 +7484,7 @@ async def _periodic_reputation_scan():
                 # Find IPs in ip_metadata that are NOT yet in reputation_cache
                 # or were checked more than 7 days ago
                 from sqlalchemy import and_, or_
-                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                cutoff = _utc_now_naive() - timedelta(days=7)
 
                 # Get all known external IPs
                 all_ips = db.query(IpMetadata.ip).all()
@@ -7538,11 +7549,11 @@ async def _push_notifier_task():
             # Use the DB watermark — only process events/devices newer
             # than the last successful notification cycle.  On first
             # run (watermark is NULL) start from now to avoid flooding.
-            watermark = config.last_notified_at or datetime.now(timezone.utc)
+            watermark = config.last_notified_at or _utc_now_naive()
             if config.last_notified_at is None:
                 # First run after migration: set watermark to now so we
                 # don't retroactively notify for old events.
-                config.last_notified_at = datetime.now(timezone.utc)
+                config.last_notified_at = _utc_now_naive()
                 db.commit()
                 db.close()
                 continue
@@ -7564,7 +7575,7 @@ async def _push_notifier_task():
             # skipped here AND in every future cycle. To avoid that we
             # use a 10-min lookback on the lower bound — HA deduplicates
             # on the `tag` field so re-sending is safe.
-            _new_dev_min_age = datetime.now(timezone.utc) - timedelta(minutes=5)
+            _new_dev_min_age = _utc_now_naive() - timedelta(minutes=5)
             _new_dev_lookback = watermark - timedelta(minutes=10)
             new_devices = (
                 db.query(Device)
@@ -7581,9 +7592,9 @@ async def _push_notifier_task():
             if new_devices:
                 _notify_exceptions = db.query(AlertException).filter(
                     (AlertException.expires_at.is_(None))
-                    | (AlertException.expires_at > datetime.now(timezone.utc))
+                    | (AlertException.expires_at > _utc_now_naive())
                 ).all()
-                _now_notify = datetime.now(timezone.utc)
+                _now_notify = _utc_now_naive()
                 new_devices = [
                     d for d in new_devices
                     if not _is_exception_active(
@@ -7771,7 +7782,7 @@ async def _push_notifier_task():
                 print(f"[notify] Sent {len(notifications)} notification(s) to Home Assistant")
 
             # Advance watermark to now — persisted in DB, survives restarts
-            config.last_notified_at = datetime.now(timezone.utc)
+            config.last_notified_at = _utc_now_naive()
             db.commit()
             db.close()
 
@@ -7910,7 +7921,7 @@ async def ask_network(payload: dict = Body(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Question too short")
 
     # Rate limiting (simple in-memory, keyed by constant since single-user)
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     timestamps = _ask_rate_limit.setdefault("global", [])
     cutoff = now - timedelta(hours=1)
     timestamps[:] = [t for t in timestamps if t > cutoff]
@@ -8624,7 +8635,7 @@ def labeler_stats(
     largest remaining gaps via top_unknowns — these are the bytes that
     the next iteration of the labeler stack should focus on.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    cutoff = _utc_now_naive() - timedelta(hours=window_hours)
 
     # --- Universe: total flows + bytes from geo_conversations ---
     total = db.execute(text("""
@@ -8714,7 +8725,7 @@ def labeler_stats(
 
     return {
         "window_hours": window_hours,
-        "generated_at": _utc_iso(datetime.now(timezone.utc)),
+        "generated_at": _utc_iso(_utc_now_naive()),
         "totals": {
             "flows": total_rows,
             "bytes": total_bytes,
@@ -8750,7 +8761,7 @@ def iot_fleet(db: Session = Depends(get_db)):
     # for devices that actually only talk to 3-5 clouds. ASN-org
     # collapses CDN fan-out while still distinguishing genuinely
     # different backends.
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff = _utc_now_naive() - timedelta(hours=24)
     conv_stats = {}
     _dest_key = func.coalesce(IpMetadata.asn_org, GeoConversation.resp_ip)
     for row in (
@@ -8804,7 +8815,7 @@ def iot_fleet(db: Session = Depends(get_db)):
 
     # Recent anomalies (last 24h), filtered by AlertExceptions so
     # whitelisted anomalies don't make a device show red on the IoT page.
-    now = datetime.now(timezone.utc)
+    now = _utc_now_naive()
     exceptions = db.query(AlertException).filter(
         (AlertException.expires_at.is_(None)) | (AlertException.expires_at > now)
     ).all()
@@ -8916,8 +8927,8 @@ def iot_anomalies(
     Anomalies that the user has whitelisted or snoozed via the Summary
     inbox are filtered out here too, keeping both views in sync.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    now = datetime.now(timezone.utc)
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
+    now = _utc_now_naive()
     anomaly_types = ("iot_lateral_movement", "iot_suspicious_port", "iot_new_country", "iot_volume_spike")
 
     # Pre-fetch active exceptions (same pattern as /api/alerts/active)
@@ -9096,7 +9107,7 @@ async def _compute_device_baselines():
             import statistics as _stats
 
             db = SessionLocal()
-            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            cutoff = _utc_now_naive() - timedelta(days=7)
             macs = [r[0] for r in db.query(GeoConversation.mac_address).distinct().all() if r[0]]
 
             updated = 0
@@ -9182,7 +9193,7 @@ async def _compute_device_baselines():
                     existing.stddev_bytes = stddev_bytes
                     existing.stddev_connections = stddev_connections
                     existing.known_countries = _json.dumps(countries)
-                    existing.computed_at = datetime.now(timezone.utc)
+                    existing.computed_at = _utc_now_naive()
                     if trained:
                         blob, p99, n_samples = trained
                         existing.model_blob = blob
@@ -9190,7 +9201,7 @@ async def _compute_device_baselines():
                         existing.feature_version = FEATURE_VERSION
                         existing.model_samples = n_samples
                         existing.score_p99 = p99
-                        existing.model_trained_at = datetime.now(timezone.utc)
+                        existing.model_trained_at = _utc_now_naive()
                 else:
                     new_bl = DeviceBaseline(
                         mac_address=mac,
@@ -9200,7 +9211,7 @@ async def _compute_device_baselines():
                         stddev_bytes=stddev_bytes,
                         stddev_connections=stddev_connections,
                         known_countries=_json.dumps(countries),
-                        computed_at=datetime.now(timezone.utc),
+                        computed_at=_utc_now_naive(),
                     )
                     if trained:
                         blob, p99, n_samples = trained
@@ -9209,7 +9220,7 @@ async def _compute_device_baselines():
                         new_bl.feature_version = FEATURE_VERSION
                         new_bl.model_samples = n_samples
                         new_bl.score_p99 = p99
-                        new_bl.model_trained_at = datetime.now(timezone.utc)
+                        new_bl.model_trained_at = _utc_now_naive()
                     db.add(new_bl)
                 updated += 1
 
@@ -9300,7 +9311,7 @@ async def _snapshot_device_traffic():
         try:
             db = SessionLocal()
             try:
-                now = datetime.now(timezone.utc)
+                now = _utc_now_naive()
 
                 # --- One-time backfill on first run ---
                 if not backfilled:
@@ -9359,7 +9370,7 @@ def get_device_traffic_history(
     raw column is already a COUNT(DISTINCT) and summing would
     double-count across snapshots.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = _utc_now_naive() - timedelta(days=days)
 
     if days >= 2:
         # 1-hour buckets (SQLite strftime — we are single-backend).
@@ -9469,7 +9480,7 @@ async def _check_volume_spikes():
         try:
             import json as _json
             db = SessionLocal()
-            now = datetime.now(timezone.utc)
+            now = _utc_now_naive()
             now_ts = time.time()
             hour_ago = now - timedelta(hours=1)
 
@@ -9793,7 +9804,7 @@ def network_performance_history(
     db: Session = Depends(get_db),
 ):
     """Return time-series performance data for the last N hours."""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
     rows = (
         db.query(NetworkPerformance)
         .filter(NetworkPerformance.timestamp >= cutoff)
@@ -9944,7 +9955,7 @@ async def health_check(db: Session = Depends(get_db)):
             pids = proc.stdout.decode().strip().split('\n')
             # Check freshness — was there an event in the last 60s?
             from datetime import datetime, timedelta
-            cutoff = datetime.now(timezone.utc) - timedelta(seconds=60)
+            cutoff = _utc_now_naive() - timedelta(seconds=60)
             recent = db.query(DetectionEvent).filter(
                 DetectionEvent.timestamp > cutoff
             ).count()
