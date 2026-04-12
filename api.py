@@ -403,7 +403,7 @@ ACTIVITY_SESSION_MIN_SECONDS = 60      # noise filter
 # Streaming/gaming need significant data to be "real" (a video is 10+ MB).
 # Social/messaging is real even at tiny volumes (text chats = few KB).
 ACTIVITY_SESSION_MIN_BYTES_BY_CAT: dict[str, int] = {
-    "streaming": 512_000,   # 500 KB — filters idle YouTube tab keepalives
+    "streaming": 5_000_000, # 5 MB — idle YouTube tabs do 1-4 MB keepalives; real video is 50+ MB
     "gaming":    256_000,   # 256 KB — mobile game sessions transfer less
     "shopping":   10_000,   # 10 KB  — browsing is lightweight
     "social":      1_000,   # 1 KB   — a text message is enough
