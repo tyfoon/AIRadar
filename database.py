@@ -1021,6 +1021,28 @@ def init_db() -> None:
             "WHERE ai_service = 'google_api'"
         ))
 
+    # --- Day 2.5: purge mislabeled apple_tv data ---
+    # The v2fly "apple" domain list (900+ brand-protection domains) was
+    # wrongly mapped to apple_tv.  Remove those seed entries and clean up
+    # the downstream tables so the dashboard no longer shows NTP, MDM,
+    # App Store, etc. as "Apple TV".  Idempotent.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "DELETE FROM known_domains "
+            "WHERE service_name = 'apple_tv' AND source = 'v2fly'"
+        ))
+        conn.execute(text(
+            "DELETE FROM geo_conversations WHERE ai_service = 'apple_tv'"
+        ))
+        conn.execute(text(
+            "UPDATE detection_events SET ai_service = NULL, category = NULL "
+            "WHERE ai_service = 'apple_tv'"
+        ))
+        conn.execute(text(
+            "DELETE FROM label_attributions "
+            "WHERE proposed_service = 'apple_tv'"
+        ))
+
     # --- Backfill: push Device.first_seen back to the oldest DeviceIP
     # first_seen, so placeholder→real MAC upgrades (and other late MAC
     # bindings) don't keep firing spurious "new device" alerts for IPs

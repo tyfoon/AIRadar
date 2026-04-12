@@ -214,7 +214,12 @@ V2FLY_SOURCES: dict[tuple[str, str], str] = {
     ("streaming", "youtube"):     V2FLY_BASE + "youtube",
     ("streaming", "disney_plus"): V2FLY_BASE + "disney",
     ("streaming", "prime_video"): V2FLY_BASE + "amazonvideo",
-    ("streaming", "apple_tv"):    V2FLY_BASE + "apple",
+    # NOTE: v2fly "apple" list deliberately NOT mapped here — it contains
+    # 900+ brand-protection domains (NTP, MDM, CDN, typosquats, country
+    # sites …) that are NOT Apple TV content.  Mapping them all to
+    # apple_tv caused massive mislabeling.  Apple TV is covered by the
+    # static DOMAIN_MAP entry for tv.apple.com; iCloud has its own v2fly
+    # list below.  See Day 2.5 commit for details.
     ("cloud", "dropbox"):         V2FLY_BASE + "dropbox",
     ("cloud", "onedrive"):        V2FLY_BASE + "onedrive",
     ("cloud", "icloud"):          V2FLY_BASE + "icloud",
