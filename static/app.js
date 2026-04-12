@@ -3001,17 +3001,16 @@ window.showToast = showToast;
 // --- DASHBOARD ---
 async function refreshDashboard() {
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const [aiEvt, cloudEvt, privRes, healthRes, sankeyAi, sankeyCloud, ksState, policiesRes] = await Promise.all([
+  const [aiEvt, cloudEvt, privRes, healthRes, sankeyAll, ksState, policiesRes] = await Promise.all([
     // Counter: meaningful activity only (heartbeats excluded). Users see
     // a realistic "real events today" number, not thousands of 0-byte pings.
     fetch('/api/events?category=ai&limit=200&include_heartbeats=false&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/events?category=cloud&limit=200&include_heartbeats=false&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/privacy/stats').then(r => r.json()).catch(() => null),
     fetch('/api/health').then(r => r.json()).catch(() => null),
-    // Sankey: include heartbeats so service adoption (e.g. "my iPhone uses iCloud")
-    // is represented even when the device only pings and never transfers data.
-    fetch('/api/events?category=ai&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
-    fetch('/api/events?category=cloud&limit=500&start=' + todayStart.toISOString()).then(r => r.json()),
+    // Sankey: all categories (ai, cloud, social, streaming, gaming, …)
+    // so the chart shows the full picture of device→category flows.
+    fetch('/api/events?limit=1000&start=' + todayStart.toISOString()).then(r => r.json()),
     fetch('/api/killswitch').then(r => r.json()).catch(() => ({ active: false })),
     // Policies — needed for the "Services Blocked" stat card + list.
     fetch('/api/policies?scope=global').then(r => r.json()).catch(() => []),
@@ -3150,7 +3149,7 @@ async function refreshDashboard() {
   renderDashAlarms();
 
   // Sankey Data Flow Diagram
-  renderSankey([...sankeyAi, ...sankeyCloud]);
+  renderSankey(sankeyAll);
 }
 
 // --- DASHBOARD ALARMS: grouping, pagination, severity filter, interactivity ---
