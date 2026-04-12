@@ -5345,8 +5345,8 @@ def family_category_detail(
             online = False
             if dev.last_seen:
                 ls = dev.last_seen
-                if ls.tzinfo is None:
-                    ls = ls.replace(tzinfo=timezone.utc)
+                if ls.tzinfo is not None:
+                    ls = ls.replace(tzinfo=None)
                 online = (now_ts - ls) <= ONLINE_WINDOW
             return {
                 "mac_address": mac,
