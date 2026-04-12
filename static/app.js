@@ -6326,10 +6326,14 @@ async function _loadCountryDrawer() {
   }
 }
 
-function _renderCountryDrawer(data) {
+async function _renderCountryDrawer(data) {
   const dirLabel = data.direction === 'outbound'
     ? (t('geo.outbound') || 'Outbound')
     : (t('geo.inbound') || 'Inbound');
+
+  // Prefetch reputation data for all IPs so badges render immediately
+  const allIps = (data.top_ips || []).map(ip => ip.ip);
+  await _fetchReputationBulk(allIps);
   document.getElementById('country-drawer-meta').textContent =
     `${dirLabel} · ${_geoFmtBytes(data.total_bytes)} · ${formatNumber(data.total_hits)} ${t('geo.connectionsShort') || 'conn.'}`;
 
@@ -6425,9 +6429,10 @@ function _renderCountryDrawer(data) {
         primary = `<div class="text-xs text-slate-400 dark:text-slate-600 italic">${t('country.ipEnriching') || 'enriching…'}</div>`;
       }
 
-      return `<div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+      const repBadge = _reputationBadge(ip.ip);
+      return `<div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.04] last:border-0 cursor-pointer" onclick="_openReputationCheck('${ip.ip.replace(/'/g, "\\'")}')">
         <div class="min-w-0 flex-1">
-          <div class="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">${ip.ip}</div>
+          <div class="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">${ip.ip}${repBadge ? ' ' + repBadge : ''}</div>
           ${primary}
           ${secondary}
         </div>
