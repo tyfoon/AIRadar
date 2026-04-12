@@ -1401,8 +1401,12 @@ def ingest_event(event: EventCreate, db: Session = Depends(get_db)):
     classifier) include an `attribution` block which we persist into
     label_attributions for the audit trail.
     """
-    payload = event.model_dump()
+    payload = event.model_dump(mode="python")
     attribution = payload.pop("attribution", None)
+
+    # Ensure timestamp is naive for SQLite
+    if payload.get("timestamp") and hasattr(payload["timestamp"], "tzinfo") and payload["timestamp"].tzinfo:
+        payload["timestamp"] = payload["timestamp"].replace(tzinfo=None)
 
     db_event = DetectionEvent(**payload)
     db.add(db_event)
