@@ -399,6 +399,9 @@ MAX_DB_SIZE_MB = 500        # Warn/compact if DB exceeds this
 ACTIVITY_SESSION_GAP_SECONDS = 600     # 10 min silence = new session
 ACTIVITY_SESSION_MIN_EVENTS = 3        # noise filter
 ACTIVITY_SESSION_MIN_SECONDS = 60      # noise filter
+ACTIVITY_SESSION_MIN_BYTES = 512_000   # 500 KB — filters keepalive "sessions"
+                                       # (e.g. idle browser tab pinging
+                                       # accounts.youtube.com every 30 min)
 ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping", "news")
 # Minimum byte threshold for a geo_conversations row to count as a
 # real activity signal. Suppresses trivial connection-establishment
@@ -8478,6 +8481,7 @@ def device_activity(
         GROUP BY ai_service, sid
         HAVING COUNT(*) >= :min_events
            AND (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 86400 >= :min_seconds
+           AND COALESCE(SUM(bytes_transferred), 0) >= :min_bytes
         ORDER BY start_ts
     """)
 
@@ -8488,6 +8492,7 @@ def device_activity(
         "gap": ACTIVITY_SESSION_GAP_SECONDS,
         "min_events": ACTIVITY_SESSION_MIN_EVENTS,
         "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
+        "min_bytes": ACTIVITY_SESSION_MIN_BYTES,
         "geo_min": ACTIVITY_GEO_MIN_BYTES,
     }
     for i, cat in enumerate(ACTIVITY_CATEGORIES):
@@ -8556,6 +8561,7 @@ def device_activity(
             "gap_seconds": ACTIVITY_SESSION_GAP_SECONDS,
             "min_events": ACTIVITY_SESSION_MIN_EVENTS,
             "min_seconds": ACTIVITY_SESSION_MIN_SECONDS,
+            "min_bytes": ACTIVITY_SESSION_MIN_BYTES,
         },
         "sessions": sessions,
         "totals_by_service": totals_by_service,
