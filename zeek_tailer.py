@@ -759,6 +759,99 @@ async def sync_domain_cache(client=None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# PTR / ASN category fallback
+# ---------------------------------------------------------------------------
+# When DNS correlation fails, use ip_metadata (PTR + ASN) to assign a
+# category. We do NOT invent fake service names — the service stays
+# "unknown" but the category is set so the dashboard can group traffic.
+# Some PTR patterns are specific enough to assign a real service.
+
+# ASN → category mapping. Only ASNs where the category is unambiguous.
+_ASN_CATEGORY: dict[int, str] = {
+    2906:  "streaming",    # Netflix
+    40027: "streaming",    # Netflix Streaming Services
+    13414: "streaming",    # Twitter/X video CDN
+    32934: "social",       # Facebook/Meta
+    63293: "social",       # Facebook/WhatsApp
+    714:   "cloud",        # Apple
+    15169: "cloud",        # Google
+    8075:  "cloud",        # Microsoft
+    19679: "cloud",        # Dropbox
+    14618: "cloud",        # Amazon (too broad for streaming)
+    16509: "cloud",        # Amazon AWS
+    13335: "cloud",        # Cloudflare
+    20940: "cloud",        # Akamai
+    54113: "cloud",        # Fastly
+    63949: "cloud",        # Akamai Technologies
+}
+
+# PTR pattern → (service, category). Checked via substring match.
+# Only patterns specific enough to identify the actual service.
+_PTR_SERVICE_PATTERNS: list[tuple[str, str, str]] = [
+    ("nflxvideo.net",    "netflix",   "streaming"),
+    ("nflxso.net",       "netflix",   "streaming"),
+    ("googlevideo.com",  "youtube",   "streaming"),
+    ("fbcdn.net",        "facebook",  "social"),
+    ("whatsapp",         "whatsapp",  "social"),
+    ("instagram",        "instagram", "social"),
+    ("spotify",          "spotify",   "streaming"),
+    ("steamcontent.com", "steam",     "gaming"),
+    ("twitch.tv",        "twitch",    "gaming"),
+]
+
+# In-memory ip_metadata cache: ip → (ptr, asn, asn_org)
+# Synced from DB periodically alongside the domain cache.
+_ip_meta_cache: dict[str, tuple[str | None, int | None, str | None]] = {}
+IP_META_SYNC_INTERVAL = 300  # same cadence as domain cache
+
+
+async def sync_ip_meta_cache() -> None:
+    """Background task: populate _ip_meta_cache from ip_metadata table."""
+    global _ip_meta_cache
+    from database import SessionLocal as _SL
+    while True:
+        try:
+            db = _SL()
+            rows = db.execute(
+                "SELECT ip, ptr, asn, asn_org FROM ip_metadata "
+                "WHERE asn IS NOT NULL OR ptr IS NOT NULL"
+            ).fetchall()
+            db.close()
+            new = {r[0]: (r[1], r[2], r[3]) for r in rows}
+            if len(new) != len(_ip_meta_cache):
+                print(f"[ip-meta-cache] Synced {len(new)} entries from ip_metadata")
+            _ip_meta_cache = new
+        except Exception as exc:
+            print(f"[ip-meta-cache] Sync failed: {exc}")
+        await asyncio.sleep(IP_META_SYNC_INTERVAL)
+
+
+def _label_via_ptr_asn(resp_ip: str) -> tuple[str, str] | None:
+    """Try to assign (service, category) from PTR/ASN metadata.
+
+    Returns (service, category) or None.  Service may be "unknown" if
+    only the category can be determined (ASN-only match).
+    """
+    meta = _ip_meta_cache.get(resp_ip)
+    if not meta:
+        return None
+    ptr, asn, asn_org = meta
+
+    # PTR patterns first — more specific than ASN
+    if ptr:
+        ptr_lower = ptr.lower()
+        for pattern, service, category in _PTR_SERVICE_PATTERNS:
+            if pattern in ptr_lower:
+                return service, category
+
+    # ASN category fallback — category only, service stays "unknown"
+    if asn and asn in _ASN_CATEGORY:
+        return "unknown", _ASN_CATEGORY[asn]
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # JA4 community DB — in-memory lookup map
 # ---------------------------------------------------------------------------
 # Keyed on ja4 fingerprint hash → (application, category, confidence).
@@ -1805,6 +1898,7 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
             # Seek to end for tailing
             f.seek(0, 2)
 
+            _line_count = 0
             while True:
                 line = f.readline()
                 if not line:
@@ -1830,7 +1924,15 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 if len(parts) != len(fields):
                     continue
 
-                record = dict(zip(fields, parts))
+                _line_count += 1
+                if _line_count % 1000 == 0:
+                    await asyncio.sleep(0)
+
+                try:
+                    record = dict(zip(fields, parts))
+                except Exception as _parse_exc:
+                    print(f"[ssl.log] Malformed line skipped: {_parse_exc}")
+                    continue
 
                 # Extract SNI and source IP
                 sni = record.get("server_name", "-")
@@ -2066,6 +2168,7 @@ async def tail_quic_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 fields = parse_zeek_header(header_lines) or []
                 f.seek(0, 2)
 
+                _line_count = 0
                 while True:
                     line = f.readline()
                     if not line:
@@ -2090,7 +2193,15 @@ async def tail_quic_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if len(parts) != len(fields):
                         continue
 
-                    record = dict(zip(fields, parts))
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception as _parse_exc:
+                        print(f"[quic.log] Malformed line skipped: {_parse_exc}")
+                        continue
 
                     # Most QUIC handshakes start with an Initial packet
                     # that has no server_name yet, then the analyzer
@@ -2931,6 +3042,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
             f.seek(0, 2)
 
+            _line_count = 0
             while True:
                 line = f.readline()
                 if not line:
@@ -2955,7 +3067,15 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 if len(parts) != len(fields):
                     continue
 
-                record = dict(zip(fields, parts))
+                _line_count += 1
+                if _line_count % 1000 == 0:
+                    await asyncio.sleep(0)
+
+                try:
+                    record = dict(zip(fields, parts))
+                except Exception as _parse_exc:
+                    print(f"[conn.log] Malformed line skipped: {_parse_exc}")
+                    continue
 
                 src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
@@ -3048,18 +3168,31 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # volumetric-upload path, but applied BEFORE
                                 # geo_conversation recording so the row gets
                                 # a service label instead of "unknown".
+                                conv_cat = None
                                 if conv_svc == "unknown" and conv_mac:
                                     dns_label = _label_flow_via_dns(
                                         src_ip, public_ip,
                                     )
                                     if dns_label:
                                         conv_svc = dns_label[0]
-                                        # Also populate _known_ips so subsequent
-                                        # flows to the same IP are labeled without
-                                        # another DNS lookup.
+                                        conv_cat = dns_label[1]
                                         _known_ips[(conv_mac, public_ip)] = (
                                             dns_label[0], dns_label[1], time.time()
                                         )
+
+                                # --- PTR/ASN category fallback ---
+                                # Last resort: if DNS correlation also failed,
+                                # check ip_metadata for PTR patterns (e.g.
+                                # nflxvideo.net → netflix) or ASN category
+                                # (e.g. AS2906 → streaming). Service may
+                                # stay "unknown" but the category is assigned.
+                                if conv_svc == "unknown":
+                                    ptr_asn = _label_via_ptr_asn(public_ip)
+                                    if ptr_asn:
+                                        ptr_svc, ptr_cat = ptr_asn
+                                        if ptr_svc != "unknown":
+                                            conv_svc = ptr_svc
+                                        conv_cat = ptr_cat
 
                                 asyncio.create_task(
                                     _record_geo_conversation(
@@ -3572,6 +3705,7 @@ async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # Seek to end for tailing
                 f.seek(0, 2)
 
+                _line_count = 0
                 while True:
                     line = f.readline()
                     if not line:
@@ -3596,7 +3730,15 @@ async def tail_dhcp_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if len(parts) != len(fields):
                         continue
 
-                    record = dict(zip(fields, parts))
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception as _parse_exc:
+                        print(f"[dhcp.log] Malformed line skipped: {_parse_exc}")
+                        continue
 
                     mac_raw = record.get("mac", "-")
                     if not mac_raw or mac_raw == "-":
@@ -3681,6 +3823,7 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 fields = parse_zeek_header(header_lines) or []
                 f.seek(0, 2)
 
+                _line_count = 0
                 while True:
                     line = f.readline()
                     if not line:
@@ -3705,7 +3848,15 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if len(parts) != len(fields):
                         continue
 
-                    record = dict(zip(fields, parts))
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception as _parse_exc:
+                        print(f"[ja4d.log] Malformed line skipped: {_parse_exc}")
+                        continue
 
                     mac_raw = record.get("client_mac", "-")
                     if not mac_raw or mac_raw == "-":
@@ -3810,6 +3961,7 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 fields = parse_zeek_header(header_lines) or []
                 f.seek(0, 2)
 
+                _line_count = 0
                 while True:
                     line = f.readline()
                     if not line:
@@ -3834,7 +3986,15 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if len(parts) != len(fields):
                         continue
 
-                    record = dict(zip(fields, parts))
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception as _parse_exc:
+                        print(f"[mdns.log] Malformed line skipped: {_parse_exc}")
+                        continue
 
                     src_ip = record.get("id.orig_h", "-")
                     if src_ip == "-" or not _is_local_ip(src_ip):
@@ -3938,6 +4098,7 @@ async def tail_dns_log(log_path: Path) -> None:
                 fields = parse_zeek_header(header_lines) or []
                 f.seek(0, 2)
 
+                _line_count = 0
                 while True:
                     line = f.readline()
                     if not line:
@@ -3962,7 +4123,15 @@ async def tail_dns_log(log_path: Path) -> None:
                     if len(parts) != len(fields):
                         continue
 
-                    record = dict(zip(fields, parts))
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception as _parse_exc:
+                        print(f"[dns.log] Malformed line skipped: {_parse_exc}")
+                        continue
 
                     # Only successful resolutions. NXDOMAIN, REFUSED,
                     # SERVFAIL, etc. add no signal.
@@ -4386,6 +4555,7 @@ async def main(zeek_log_dir: str) -> None:
         tasks.append(tail_quic_log(quic_log, client))
     if _ja4_match_enabled:
         tasks.append(sync_ja4_cache())
+    tasks.append(sync_ip_meta_cache())  # PTR/ASN fallback cache
     if p0f_task is not None:
         tasks.append(p0f_task)
     if scanner_task is not None:
