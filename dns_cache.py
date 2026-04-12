@@ -70,10 +70,14 @@ DEFAULT_MAX_ENTRIES = 50_000
 # Hard floor: we keep an entry alive at least this long even if the DNS
 # response specified a tiny TTL. Many CDNs ship 30-60 s TTLs for load
 # balancing reasons, but the application that just resolved the domain
-# typically caches the result client-side for far longer than the
-# advertised TTL. Honouring the wire TTL strictly would expire entries
-# while the app is still actively using the connection.
-DEFAULT_MIN_TTL_SECONDS = 300
+# typically caches the result client-side for far longer.
+#
+# 12 hours: a Netflix stream can last 3+ hours, and Zeek writes conn.log
+# at connection teardown. With a 5-minute TTL, the DNS→IP correlation
+# fails for any long-lived connection. 12h covers overnight streaming
+# sessions and work-from-home video calls while still expiring within
+# the same day to limit staleness.
+DEFAULT_MIN_TTL_SECONDS = 43200  # 12 hours
 
 # Hard ceiling: never trust a single DNS observation for longer than
 # this, regardless of advertised TTL, to bound staleness during

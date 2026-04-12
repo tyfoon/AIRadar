@@ -3040,6 +3040,27 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                     svc_info = _known_ips.get((conv_mac, public_ip))
                                     if svc_info:
                                         conv_svc = svc_info[0] or "unknown"
+
+                                # --- Coverage fix: DNS correlation fallback ---
+                                # When _known_ips has no label (no SNI/QUIC
+                                # was seen for this flow), try the DNS cache.
+                                # This is the same lookup that fires in the
+                                # volumetric-upload path, but applied BEFORE
+                                # geo_conversation recording so the row gets
+                                # a service label instead of "unknown".
+                                if conv_svc == "unknown" and conv_mac:
+                                    dns_label = _label_flow_via_dns(
+                                        src_ip, public_ip,
+                                    )
+                                    if dns_label:
+                                        conv_svc = dns_label[0]
+                                        # Also populate _known_ips so subsequent
+                                        # flows to the same IP are labeled without
+                                        # another DNS lookup.
+                                        _known_ips[(conv_mac, public_ip)] = (
+                                            dns_label[0], dns_label[1], time.time()
+                                        )
+
                                 asyncio.create_task(
                                     _record_geo_conversation(
                                         cc, direction, conv_mac, conv_svc, public_ip, total,
