@@ -48,7 +48,7 @@ class DetectionEvent(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sensor_id = Column(String, nullable=False, index=True)
-    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     detection_type = Column(String, nullable=False)   # e.g. "sni_hello", "dns_query", "volumetric_upload"
     ai_service = Column(String, nullable=False)        # e.g. "openai", "dropbox"
     source_ip = Column(String, nullable=False)
@@ -82,9 +82,9 @@ class Device(Base):
     ai_report_tokens = Column(Integer, nullable=True)   # Total tokens used (for cost display)
     ai_report_flags = Column(String, nullable=True)     # JSON: extracted RecapFlags (vpn_detected, ai_usage_present, ...)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     ips = relationship("DeviceIP", back_populates="device",
                        order_by="DeviceIP.last_seen.desc()")
@@ -98,9 +98,9 @@ class DeviceIP(Base):
     ip = Column(String, primary_key=True)
     mac_address = Column(String, ForeignKey("devices.mac_address"), nullable=False, index=True)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     device = relationship("Device", back_populates="ips")
 
@@ -125,9 +125,9 @@ class TlsFingerprint(Base):
     ja4s = Column(String, nullable=True)
     sni = Column(String, nullable=True, index=True)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     hit_count = Column(Integer, nullable=False, default=1)
 
     __table_args__ = (
@@ -166,10 +166,10 @@ class ServicePolicy(Base):
     action = Column(String, nullable=False, default="alert")  # "allow" | "alert" | "block"
     expires_at = Column(DateTime, nullable=True)               # NULL = permanent
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     __table_args__ = (
         UniqueConstraint(
@@ -205,7 +205,7 @@ class AlertException(Base):
     expires_at = Column(DateTime, nullable=True)             # NULL = permanent
     dismissed_score = Column(Float, nullable=True)           # beacon score at time of dismiss (re-alert if score rises >10)
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class GeoTraffic(Base):
@@ -224,7 +224,7 @@ class GeoTraffic(Base):
     bytes_transferred = Column(Integer, nullable=False, default=0)
     hits = Column(Integer, nullable=False, default=0)
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     __table_args__ = (
         UniqueConstraint("country_code", "direction", name="uq_geo_traffic_cc_dir"),
@@ -258,9 +258,9 @@ class GeoConversation(Base):
     resp_bytes = Column(Integer, nullable=False, default=0)  # remote → device (download)
     hits = Column(Integer, nullable=False, default=0)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     __table_args__ = (
         UniqueConstraint(
@@ -292,8 +292,8 @@ class IpMetadata(Base):
     asn_org = Column(String, nullable=True)            # org / netname (e.g. "Google LLC")
     country_code = Column(String, nullable=True)       # mirror of geo lookup for convenience
     updated_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class ReputationCache(Base):
@@ -355,7 +355,7 @@ class DeviceGroup(Base):
     color = Column(String, nullable=True, default="blue")
     auto_match_rules = Column(String, nullable=True)  # JSON array
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class DeviceGroupMember(Base):
@@ -368,7 +368,7 @@ class DeviceGroupMember(Base):
     mac_address = Column(String, nullable=False, index=True)
     source = Column(String, nullable=False, default="manual")  # "manual" or "auto"
     added_at = Column(DateTime, nullable=False,
-                      default=lambda: datetime.now(timezone.utc))
+                      default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     __table_args__ = (
         UniqueConstraint("group_id", "mac_address", name="uq_group_member"),
@@ -425,7 +425,7 @@ class DeviceBaseline(Base):
     known_asns = Column(String, nullable=True)        # JSON array of ASN numbers
     known_countries = Column(String, nullable=True)    # JSON array of country codes
     computed_at = Column(DateTime, nullable=False,
-                         default=lambda: datetime.now(timezone.utc))
+                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     # --- Multivariate PyOD detector (ECOD) ---
     # Pickled (joblib) detector instance, or NULL if not yet trained.
@@ -496,8 +496,8 @@ class KnownDomain(Base):
     # confidence (typically 0.6-0.95).
     confidence = Column(Float, nullable=False, default=1.0)
     updated_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +533,7 @@ class DnsObservation(Base):
     answer_ips = Column(String)                          # JSON list of all returned IPs
     ttl = Column(Integer)                                # for cache invalidation
     observed_at = Column(DateTime, nullable=False, index=True,
-                         default=lambda: datetime.now(timezone.utc))
+                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     source_log = Column(String, nullable=False, default="zeek_dns")
     # source_log: "zeek_dns" | "adguard_querylog"
 
@@ -571,7 +571,7 @@ class LabelAttribution(Base):
     rationale = Column(String)
     is_winner = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class JA4Signature(Base):
@@ -599,8 +599,8 @@ class JA4Signature(Base):
     # source: "foxio" | "manual" | "observed" (self-learned from co-occurrence with SNI)
     notes = Column(String)
     updated_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class UnknownObservation(Base):
@@ -624,9 +624,9 @@ class UnknownObservation(Base):
     kind = Column(String, nullable=False)        # "sni" | "domain" | "ja4"
     value = Column(String, nullable=False, index=True)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     hit_count = Column(Integer, nullable=False, default=1)
     sample_macs = Column(String)                  # JSON: up to 5 example MACs
     sample_destinations = Column(String)          # JSON: up to 5 example IPs/ASNs
@@ -650,7 +650,7 @@ class NetworkPerformance(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, nullable=False, index=True,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     # DNS resolution latency (ms) — time to resolve a test domain via AdGuard
     dns_latency_ms = Column(Integer, nullable=True)
@@ -705,9 +705,9 @@ class InboundAttack(Base):
     hit_count = Column(Integer, nullable=False, default=1)
     bytes_transferred = Column(Integer, nullable=False, default=0)
     first_seen = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
-                       default=lambda: datetime.now(timezone.utc))
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     __table_args__ = (
         UniqueConstraint("source_ip", "target_ip", "target_port",
@@ -731,7 +731,7 @@ class GeoBlockRule(Base):
     direction = Column(String, nullable=False, default="both")  # "inbound"|"outbound"|"both"
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class BlockRule(Base):
@@ -745,7 +745,7 @@ class BlockRule(Base):
     category = Column(String, nullable=False, default="ai")      # "ai" or "cloud"
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     expires_at = Column(DateTime, nullable=True)                 # NULL = permanent
 
 
@@ -774,8 +774,8 @@ class FilterSchedule(Base):
     end_time = Column(String, nullable=False, default="00:00")    # "HH:MM"
     timezone = Column(String, nullable=False, default="Europe/Amsterdam")
     updated_at = Column(DateTime, nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+                        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 def init_db() -> None:

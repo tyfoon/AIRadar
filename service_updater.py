@@ -296,7 +296,7 @@ def _seed_domains() -> None:
     try:
         if db.query(KnownDomain).first() is not None:
             return  # already seeded
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for domain, (svc, cat) in _SEED_DOMAINS.items():
             db.add(KnownDomain(
                 domain=domain,
@@ -356,7 +356,7 @@ async def update_domains() -> None:
                         if existing.source == "v2fly":
                             existing.service_name = service_name
                             existing.category = category
-                            existing.updated_at = datetime.now(timezone.utc)
+                            existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                             total_updated += 1
                     else:
                         db.add(KnownDomain(
@@ -364,7 +364,7 @@ async def update_domains() -> None:
                             service_name=service_name,
                             category=category,
                             source="v2fly",
-                            updated_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
                         ))
                         total_new += 1
                 db.commit()

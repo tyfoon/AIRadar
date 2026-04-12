@@ -35,7 +35,7 @@ def is_checkable(target: str) -> bool:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ def _check_rate_limit(service: str) -> bool:
     rl = _rate_limits.get(service)
     if not rl:
         return True
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
     if rl["day"] != today:
         rl["day"] = today
         rl["count"] = 0
@@ -203,7 +203,7 @@ def get_rate_limit_status() -> dict:
     """Return current rate limit usage for the frontend."""
     result = {}
     for svc, rl in _rate_limits.items():
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(timezone.utc).replace(tzinfo=None).date()
         count = rl["count"] if rl["day"] == today else 0
         result[svc] = {"used": count, "max": rl["max"]}
     return result

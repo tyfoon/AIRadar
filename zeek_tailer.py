@@ -1665,7 +1665,7 @@ async def send_event(
     """
     event = {
         "sensor_id": SENSOR_ID,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "detection_type": detection_type,
         "ai_service": ai_service,
         "source_ip": source_ip,
@@ -4015,7 +4015,7 @@ async def tail_dns_log(log_path: Path) -> None:
                     if not triples:
                         continue
 
-                    obs_now = datetime.now(timezone.utc)
+                    obs_now = datetime.now(timezone.utc).replace(tzinfo=None)
                     answer_ips_json = json.dumps([t[0] for t in triples])
 
                     for ip, q, ttl in triples:
@@ -4198,7 +4198,7 @@ async def warmup_dns_cache_from_db() -> int:
     """
     from database import SessionLocal as _SL, DnsObservation as _DO
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=DNS_WARMUP_MAX_AGE_HOURS)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=DNS_WARMUP_MAX_AGE_HOURS)
     restored = 0
     skipped_expired = 0
 
@@ -4217,7 +4217,7 @@ async def warmup_dns_cache_from_db() -> int:
         finally:
             db.close()
 
-        now_dt = datetime.now(timezone.utc)
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
         for r in rows:
             obs_at = r.observed_at
             if obs_at is None:

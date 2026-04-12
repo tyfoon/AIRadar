@@ -318,7 +318,7 @@ def persist_attributions(
     if decision.primary is None:
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     winner_id = id(decision.primary)  # object identity to flag the winner
 
     for prop in decision.proposals:

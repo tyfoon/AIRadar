@@ -117,7 +117,7 @@ async def sync_ja4_db(db_session) -> int:
                 existing.category = category
                 existing.confidence = confidence
                 existing.notes = entry.get("notes")
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         else:
             db_session.add(JA4Signature(
                 ja4=ja4,
@@ -145,5 +145,5 @@ def needs_sync(db_session) -> bool:
         return True
     if latest.tzinfo is None:
         latest = latest.replace(tzinfo=timezone.utc)
-    age = datetime.now(timezone.utc) - latest
+    age = datetime.now(timezone.utc).replace(tzinfo=None) - latest
     return age > timedelta(days=SYNC_INTERVAL_DAYS)
