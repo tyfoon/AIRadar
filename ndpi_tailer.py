@@ -91,14 +91,16 @@ NDPI_SERVICE_MAP: dict[str, tuple[str, str]] = {
     "OpenAI":           ("openai",           "ai"),
     "ChatGPT":          ("openai",           "ai"),
 
-    # Google sub-services (nDPI uses these compound names)
+    # Google (bare name + sub-services)
+    "Google":           ("google",           "cloud"),
     "GoogleServices":   ("google",           "cloud"),
     "GoogleDocs":       ("google_drive",     "cloud"),
     "PlayStore":        ("play_store",       "cloud"),
     "GoogleMaps":       ("google_maps",      "cloud"),
     "GMail":            ("gmail",            "communication"),
 
-    # Apple sub-services
+    # Apple (bare name + sub-services)
+    "Apple":            ("apple",            "cloud"),
     "AppleiCloud":      ("icloud",           "cloud"),
     "AppleiTunes":      ("apple_music",      "streaming"),
     "ApplePush":        ("apple",            "cloud"),
@@ -149,6 +151,7 @@ _NDPI_SKIP: frozenset[str] = frozenset({
     "TCP", "UDP", "ARP", "NetBIOS", "ICMPV6",
     "HTTP_Proxy", "UBNTAC2", "TPLINK_SHP", "TuyaLP",
     "DoH_DoT", "Canonical", "Alibaba", "Tencent",
+    "AJP", "DHCPV6", "IMAPS",
 })
 
 # ---------------------------------------------------------------------------
