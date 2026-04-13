@@ -78,6 +78,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "quic_sni_direct":     0.90,
     "adguard_services":    0.85,
     "ja4_community_db":    0.80,
+    "m365_ip_prefix":      0.78,
     "dns_correlation":     0.75,
     "llm_inference":       0.70,
     "ip_asn_heuristic":    0.50,
@@ -113,6 +114,7 @@ DETERMINISTIC_LABELERS: frozenset[str] = frozenset({
     "quic_sni_direct",
     "adguard_services",
     "ja4_community_db",
+    "m365_ip_prefix",
     "dns_correlation",
 })
 

@@ -103,6 +103,7 @@ const TRANSLATIONS = {
     'other.cat.news':      'News',
     'other.cat.dating':    'Dating',
     'other.cat.adult':     'Adult',
+    'other.cat.communication': 'Communication',
 
     // Content page (internally still called "family" in code/DOM ids)
     'family.title':             'Content',
@@ -137,6 +138,7 @@ const TRANSLATIONS = {
     'family.cat.news':          'News',
     'family.cat.dating':        'Dating',
     'family.cat.adult':         'Adult',
+    'family.cat.communication': 'Communication',
     // Content page — extras added for chip counts, row expand, and
     // the rule-dialog status line. Kept under family.*/content.* so
     // the rest of the Content page translations sit together.
@@ -956,6 +958,7 @@ const TRANSLATIONS = {
     'other.cat.news':      'Nieuws',
     'other.cat.dating':    'Dating',
     'other.cat.adult':     'Volwassen',
+    'other.cat.communication': 'Communicatie',
 
     // Content pagina (interne code-naam blijft "family")
     'family.title':             'Content',
@@ -990,6 +993,7 @@ const TRANSLATIONS = {
     'family.cat.news':          'Nieuws',
     'family.cat.dating':        'Dating',
     'family.cat.adult':         'Volwassen',
+    'family.cat.communication': 'Communicatie',
     // Content pagina — extra strings voor de tegels, uitklap en
     // de regel-dialoog status.
     'content.loading':          'Laden…',

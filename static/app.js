@@ -3389,12 +3389,12 @@ let _sankeyExcludeTop = false;
 const CATEGORY_NAMES = {
   ai: 'AI', cloud: 'Cloud', streaming: 'Streaming', gaming: 'Gaming',
   social: 'Social', tracking: 'Tracking', shopping: 'Shopping',
-  news: 'News', adult: 'Adult',
+  news: 'News', adult: 'Adult', communication: 'Communication',
 };
 const CATEGORY_COLORS = {
   ai: '#6366f1', cloud: '#3b82f6', streaming: '#e50914', gaming: '#10b981',
   social: '#f59e0b', tracking: '#ef4444', shopping: '#8b5cf6',
-  news: '#06b6d4', adult: '#64748b',
+  news: '#06b6d4', adult: '#64748b', communication: '#0ea5e9',
 };
 
 function _initSankeyControls() {
@@ -4964,6 +4964,7 @@ const CATEGORY_META = {
   dating:    { icon: '<i class="ph-duotone ph-heart text-xl"></i>', color: 'rose' },
   adult:     { icon: '<i class="ph-duotone ph-warning-circle text-xl"></i>', color: 'red' },
   gambling:  { icon: '<i class="ph-duotone ph-dice-five text-xl"></i>', color: 'rose' },
+  communication: { icon: '<i class="ph-duotone ph-phone-call text-xl"></i>', color: 'sky' },
 };
 
 let _familyMeta = null;

@@ -345,6 +345,23 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     # Microsoft Copilot
     "copilot.microsoft.com":             ("microsoft_copilot", "ai"),
     "sydney.bing.com":                   ("microsoft_copilot", "ai"),
+    # Microsoft Teams
+    "teams.microsoft.com":               ("microsoft_teams", "communication"),
+    "teams.cloud.microsoft":             ("microsoft_teams", "communication"),
+    "teams.live.com":                    ("microsoft_teams", "communication"),
+    "trouter.teams.microsoft.com":       ("microsoft_teams", "communication"),
+    "lync.com":                          ("microsoft_teams", "communication"),
+    "skype.com":                         ("microsoft_teams", "communication"),
+    "skypeassets.com":                   ("microsoft_teams", "communication"),
+    # Microsoft Outlook / Exchange
+    "outlook.office.com":                ("outlook", "communication"),
+    "outlook.office365.com":             ("outlook", "communication"),
+    "outlook.live.com":                  ("outlook", "communication"),
+    "outlook.cloud.microsoft":           ("outlook", "communication"),
+    # Microsoft SharePoint / OneDrive
+    "sharepoint.com":                    ("sharepoint", "cloud"),
+    "onedrive.com":                      ("onedrive", "cloud"),
+    "onedrive.live.com":                 ("onedrive", "cloud"),
     # Perplexity
     "perplexity.ai":                     ("perplexity", "ai"),
     # Hugging Face
@@ -853,6 +870,36 @@ def _label_via_ptr_asn(resp_ip: str) -> tuple[str, str] | None:
 
 
 # ---------------------------------------------------------------------------
+# M365 IP-prefix matching
+# ---------------------------------------------------------------------------
+# IP-prefix list from Microsoft 365 endpoint API. Populated by
+# _refresh_third_party_sources() and used as a labeling fallback
+# between DNS correlation and PTR/ASN.
+
+import ipaddress as _ipaddress
+
+_m365_ip_prefixes: list[tuple[_ipaddress.IPv4Network | _ipaddress.IPv6Network, str, str]] = []
+
+
+def _label_via_ip_prefix(resp_ip: str) -> tuple[str, str] | None:
+    """Match an IP against M365 IP-prefix ranges.
+
+    Returns (service, category) or None. Unlike PTR/ASN fallback,
+    this always returns a specific service name (e.g. microsoft_teams).
+    """
+    if not _m365_ip_prefixes:
+        return None
+    try:
+        addr = _ipaddress.ip_address(resp_ip)
+    except ValueError:
+        return None
+    for net, service, category in _m365_ip_prefixes:
+        if addr in net:
+            return service, category
+    return None
+
+
+# ---------------------------------------------------------------------------
 # JA4 community DB — in-memory lookup map
 # ---------------------------------------------------------------------------
 # Keyed on ja4 fingerprint hash → (application, category, confidence).
@@ -964,10 +1011,11 @@ async def _refresh_third_party_sources() -> None:
     fetching live) and then every 12 hours. The load_third_party_map
     function handles its own caching and fallback logic.
     """
+    global _m365_ip_prefixes
     from third_party_sources import load_third_party_map
     while True:
         try:
-            tp = await load_third_party_map()
+            tp, ip_prefixes = await load_third_party_map()
             if tp:
                 _rebuild_lookup(tp)
                 print(
@@ -976,6 +1024,12 @@ async def _refresh_third_party_sources() -> None:
                     f"({len(_dynamic_domain_map)} KnownDomain + "
                     f"{len(DOMAIN_MAP)} static fallback + "
                     f"{len(tp)} third-party)"
+                )
+            if ip_prefixes:
+                _m365_ip_prefixes = ip_prefixes
+                print(
+                    f"[third-party] M365 IP-prefix table loaded: "
+                    f"{len(ip_prefixes)} prefixes"
                 )
         except Exception as exc:
             print(f"[third-party] Refresh failed: {exc}")
@@ -3181,6 +3235,18 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                             dns_label[0], dns_label[1], time.time()
                                         )
 
+                                # --- M365 IP-prefix fallback ---
+                                # Teams media relays (52.112.0.0/14) have
+                                # no SNI and no DNS — match by IP prefix.
+                                if conv_svc == "unknown" and conv_mac:
+                                    pfx_label = _label_via_ip_prefix(public_ip)
+                                    if pfx_label:
+                                        conv_svc = pfx_label[0]
+                                        conv_cat = pfx_label[1]
+                                        _known_ips[(conv_mac, public_ip)] = (
+                                            pfx_label[0], pfx_label[1], time.time()
+                                        )
+
                                 # --- PTR/ASN category fallback ---
                                 # Last resort: if DNS correlation also failed,
                                 # check ip_metadata for PTR patterns (e.g.
@@ -3545,85 +3611,100 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     # notes in dns_cache.py and _label_flow_via_dns().
                     dns_label = _label_flow_via_dns(src_ip, resp_ip)
                     if dns_label is None:
-                        continue
+                        # ── M365 IP-prefix fallback ──
+                        # Teams media relays etc. have no SNI and no DNS.
+                        # Populate _known_ips so volumetric path picks it up.
+                        _pfx = _label_via_ip_prefix(resp_ip)
+                        if _pfx is None:
+                            continue
+                        _pfx_mac = _ip_to_mac.get(src_ip)
+                        if _pfx_mac:
+                            _known_ips[(_pfx_mac, resp_ip)] = (
+                                _pfx[0], _pfx[1], time.time()
+                            )
+                            _kip_key = (_pfx_mac, resp_ip)
+                        if _kip_key is None or _kip_key not in _known_ips:
+                            continue
+                        # _known_ips populated — skip DNS event, jump to
+                        # the volumetric upload check at line ~3693.
+                    else:
+                        dns_service, dns_category, dns_hostname, dns_score, dns_rationale = dns_label
 
-                    dns_service, dns_category, dns_hostname, dns_score, dns_rationale = dns_label
+                        # The DNS correlation pad already verified it knows
+                        # this client's MAC (otherwise dns_label would be
+                        # None). Re-resolve here to get the SAME MAC that
+                        # dns_cache uses, so the _known_ips write lands on
+                        # the right scoped key. We prefer _ip_to_mac over
+                        # l2_mac because the dns_cache lookup above used
+                        # _ip_to_mac and we want consistency.
+                        _dns_client_mac = _ip_to_mac.get(src_ip)
 
-                    # The DNS correlation pad already verified it knows
-                    # this client's MAC (otherwise dns_label would be
-                    # None). Re-resolve here to get the SAME MAC that
-                    # dns_cache uses, so the _known_ips write lands on
-                    # the right scoped key. We prefer _ip_to_mac over
-                    # l2_mac because the dns_cache lookup above used
-                    # _ip_to_mac and we want consistency.
-                    _dns_client_mac = _ip_to_mac.get(src_ip)
+                        # Per-(service, src_ip) dedup using the same window
+                        # as direct SNI hellos. The first hit fires; the
+                        # rest within SNI_DEDUP_SECONDS are silently
+                        # absorbed. This prevents one streaming session
+                        # from generating thousands of duplicate events.
+                        _dns_dedup_now = time.time()
+                        _dns_dedup_key = (dns_service, src_ip)
+                        _dns_dedup_last = _sni_last_seen.get(_dns_dedup_key, 0)
+                        if (_dns_dedup_now - _dns_dedup_last) < SNI_DEDUP_SECONDS:
+                            # Refresh TTL on the existing per-client entry
+                            # so the volumetric path can still attribute
+                            # upload bytes to this service for this device.
+                            if _dns_client_mac:
+                                _known_ips[(_dns_client_mac, resp_ip)] = (
+                                    dns_service, dns_category, time.time()
+                                )
+                            continue
+                        _sni_last_seen[_dns_dedup_key] = _dns_dedup_now
 
-                    # Per-(service, src_ip) dedup using the same window
-                    # as direct SNI hellos. The first hit fires; the
-                    # rest within SNI_DEDUP_SECONDS are silently
-                    # absorbed. This prevents one streaming session
-                    # from generating thousands of duplicate events.
-                    _dns_dedup_now = time.time()
-                    _dns_dedup_key = (dns_service, src_ip)
-                    _dns_dedup_last = _sni_last_seen.get(_dns_dedup_key, 0)
-                    if (_dns_dedup_now - _dns_dedup_last) < SNI_DEDUP_SECONDS:
-                        # Refresh TTL on the existing per-client entry
-                        # so the volumetric path can still attribute
-                        # upload bytes to this service for this device.
+                        # Promote the DNS-correlated label into _known_ips
+                        # scoped per (this client, resp_ip). The dns_cache
+                        # itself is already per-client, so this write just
+                        # propagates that scoping to the volumetric pad.
                         if _dns_client_mac:
                             _known_ips[(_dns_client_mac, resp_ip)] = (
                                 dns_service, dns_category, time.time()
                             )
-                        continue
-                    _sni_last_seen[_dns_dedup_key] = _dns_dedup_now
+                            # Update the scoped key so the fall-through
+                            # read at the bottom of this block hits the
+                            # entry we just wrote.
+                            _kip_key = (_dns_client_mac, resp_ip)
 
-                    # Promote the DNS-correlated label into _known_ips
-                    # scoped per (this client, resp_ip). The dns_cache
-                    # itself is already per-client, so this write just
-                    # propagates that scoping to the volumetric pad.
-                    if _dns_client_mac:
-                        _known_ips[(_dns_client_mac, resp_ip)] = (
-                            dns_service, dns_category, time.time()
+                        try:
+                            flow_orig = int(record.get("orig_bytes", "0") or 0)
+                        except ValueError:
+                            flow_orig = 0
+                        try:
+                            flow_resp = int(record.get("resp_bytes", "0") or 0)
+                        except ValueError:
+                            flow_resp = 0
+
+                        await send_event(
+                            client,
+                            detection_type="dns_correlated",
+                            ai_service=dns_service,
+                            source_ip=src_ip,
+                            bytes_transferred=flow_orig + flow_resp,
+                            category=dns_category,
+                            attribution={
+                                "labeler": "dns_correlation",
+                                "confidence": dns_score,
+                                "rationale": dns_rationale,
+                                "proposed_service": dns_service,
+                                "proposed_category": dns_category,
+                                "is_low_confidence": False,
+                                "is_disputed": False,
+                            },
                         )
-                        # Update the scoped key so the fall-through
-                        # read at the bottom of this block hits the
-                        # entry we just wrote.
-                        _kip_key = (_dns_client_mac, resp_ip)
-
-                    try:
-                        flow_orig = int(record.get("orig_bytes", "0") or 0)
-                    except ValueError:
-                        flow_orig = 0
-                    try:
-                        flow_resp = int(record.get("resp_bytes", "0") or 0)
-                    except ValueError:
-                        flow_resp = 0
-
-                    await send_event(
-                        client,
-                        detection_type="dns_correlated",
-                        ai_service=dns_service,
-                        source_ip=src_ip,
-                        bytes_transferred=flow_orig + flow_resp,
-                        category=dns_category,
-                        attribution={
-                            "labeler": "dns_correlation",
-                            "confidence": dns_score,
-                            "rationale": dns_rationale,
-                            "proposed_service": dns_service,
-                            "proposed_category": dns_category,
-                            "is_low_confidence": False,
-                            "is_disputed": False,
-                        },
-                    )
-                    # Fall through to the volumetric upload path below —
-                    # the (service, category) we just learned will be
-                    # used by the existing record_upload accumulator.
-                    # If _dns_client_mac was None we never wrote to
-                    # _known_ips, so _kip_key still points nowhere and
-                    # the read below would KeyError — guard against it.
-                    if _kip_key is None or _kip_key not in _known_ips:
-                        continue
+                        # Fall through to the volumetric upload path below —
+                        # the (service, category) we just learned will be
+                        # used by the existing record_upload accumulator.
+                        # If _dns_client_mac was None we never wrote to
+                        # _known_ips, so _kip_key still points nowhere and
+                        # the read below would KeyError — guard against it.
+                        if _kip_key is None or _kip_key not in _known_ips:
+                            continue
 
                 service, category, _ts = _known_ips[_kip_key]
 
