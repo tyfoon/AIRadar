@@ -45,6 +45,7 @@ NDPI_TMP="/app/data/ndpi_tmp.csv"
 NDPI_IFACE="${NDPI_INTERFACE:-br0}"
 if [ -x /usr/bin/ndpiReader ]; then
     rm -f "${NDPI_OUT}" "${NDPI_TMP}"
+    NDPI_MAX_MB=50  # truncate CSV when it exceeds this size
     (while true; do
         /usr/bin/ndpiReader -i "${NDPI_IFACE}" -s 60 -C "${NDPI_TMP}" -q 2>/dev/null
         if [ -s "${NDPI_TMP}" ]; then
@@ -55,6 +56,15 @@ if [ -x /usr/bin/ndpiReader ]; then
                 tail -n +2 "${NDPI_TMP}" >> "${NDPI_OUT}"
             fi
             rm -f "${NDPI_TMP}"
+            # Truncate if CSV gets too large (old data is never re-read)
+            SIZE_KB=$(du -k "${NDPI_OUT}" 2>/dev/null | cut -f1)
+            if [ "${SIZE_KB:-0}" -gt $((NDPI_MAX_MB * 1024)) ]; then
+                HEADER=$(head -1 "${NDPI_OUT}")
+                tail -n 10000 "${NDPI_OUT}" > "${NDPI_OUT}.trim"
+                echo "${HEADER}" > "${NDPI_OUT}"
+                cat "${NDPI_OUT}.trim" >> "${NDPI_OUT}"
+                rm -f "${NDPI_OUT}.trim"
+            fi
         fi
     done) &
     NDPI_PID=$!
