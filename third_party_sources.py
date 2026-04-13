@@ -307,6 +307,10 @@ def _load_cache() -> Optional[dict]:
         age = time.time() - float(data.get("fetched_at", 0))
         if age > CACHE_TTL_SECONDS:
             return None
+        # Force refetch if M365 data is missing (cache predates M365 support)
+        if "m365_domains" not in data:
+            print("[third-party] Cache missing M365 data, forcing refresh")
+            return None
         return data
     except Exception as exc:
         print(f"[third-party] Cache read failed: {exc}")
