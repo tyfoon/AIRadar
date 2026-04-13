@@ -812,10 +812,11 @@ async def sync_ip_meta_cache() -> None:
     while True:
         try:
             db = _SL()
-            rows = db.execute(
+            from sqlalchemy import text as _text
+            rows = db.execute(_text(
                 "SELECT ip, ptr, asn, asn_org FROM ip_metadata "
                 "WHERE asn IS NOT NULL OR ptr IS NOT NULL"
-            ).fetchall()
+            )).fetchall()
             db.close()
             new = {r[0]: (r[1], r[2], r[3]) for r in rows}
             if len(new) != len(_ip_meta_cache):
