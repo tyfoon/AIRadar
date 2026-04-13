@@ -299,6 +299,8 @@ async def tail_ndpi_output(output_path: Path) -> None:
                         continue
 
                     lines_read += 1
+                    if lines_read == 1:
+                        print(f"[ndpi] First flow line received (tailing works)")
                     parts = line.split("|")
                     if len(parts) <= max(_col_src_ip, _col_dst_ip, _col_proto):
                         continue
@@ -310,14 +312,19 @@ async def tail_ndpi_output(output_path: Path) -> None:
                     )
                     if result:
                         labeled += 1
-                        if labeled % 100 == 0:
+                        if labeled <= 3 or labeled % 100 == 0:
                             print(
-                                f"[ndpi] {labeled} flows labeled "
-                                f"({lines_read} total lines read)"
+                                f"[ndpi] Labeled #{labeled}: "
+                                f"{parts[_col_proto]} → {NDPI_SERVICE_MAP.get(_normalize_ndpi_proto(parts[_col_proto]), ('?','?'))[0]} "
+                                f"({lines_read} lines read, {len(_ndpi_ip_cache)} IPs cached)"
                             )
 
-                    # Breathe to avoid starving the event loop
-                    if lines_read % 50 == 0:
+                    # Periodic status + breathe
+                    if lines_read % 500 == 0:
+                        print(
+                            f"[ndpi] Status: {lines_read} lines read, "
+                            f"{labeled} labeled, {len(_ndpi_ip_cache)} IPs cached"
+                        )
                         await asyncio.sleep(0)
 
         except (OSError, IOError) as exc:
@@ -376,5 +383,8 @@ def _process_csv_flow(src_ip: str, dst_ip: str, proto: str) -> bool:
     if dedup_key not in _known_ips:
         _known_ips[dedup_key] = (service, category, now)
         return True
+    else:
+        # Already labeled by a higher-trust source — expected
+        return False
 
     return False
