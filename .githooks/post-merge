@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Auto-sync Claude Code memory after git pull/merge
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ESCAPED="$(echo "$REPO_DIR" | sed 's|^/||; s|/|-|g')"
+TARGET="$HOME/.claude/projects/-${ESCAPED}/memory"
+mkdir -p "$TARGET"
+cp "$REPO_DIR/.claude/memory/"*.md "$TARGET/" 2>/dev/null
