@@ -370,6 +370,9 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     "mistral.ai":                        ("mistral", "ai"),
 
     # --- Cloud storage / transfer (category="cloud") ---
+    "github.com":                        ("github", "cloud"),
+    "githubusercontent.com":             ("github", "cloud"),
+    "github.io":                         ("github", "cloud"),
     "dropbox.com":                       ("dropbox", "cloud"),
     "wetransfer.com":                    ("wetransfer", "cloud"),
     "drive.google.com":                  ("google_drive", "cloud"),
@@ -549,6 +552,8 @@ DOMAIN_MAP: dict[str, tuple[str, str]] = {
     "max.com":                           ("hbo_max", "streaming"),
     "primevideo.com":                    ("prime_video", "streaming"),
     "aiv-cdn.net":                       ("prime_video", "streaming"),
+    "aiv-delivery.net":                  ("prime_video", "streaming"),
+    "pv-cdn.net":                        ("prime_video", "streaming"),
     "amazonvideo.com":                   ("prime_video", "streaming"),
     "tv.apple.com":                      ("apple_tv", "streaming"),
     "videoland.com":                     ("videoland", "streaming"),
@@ -805,15 +810,22 @@ _ASN_CATEGORY: dict[int, str] = {
 # PTR pattern → (service, category). Checked via substring match.
 # Only patterns specific enough to identify the actual service.
 _PTR_SERVICE_PATTERNS: list[tuple[str, str, str]] = [
-    ("nflxvideo.net",    "netflix",   "streaming"),
-    ("nflxso.net",       "netflix",   "streaming"),
-    ("googlevideo.com",  "youtube",   "streaming"),
-    ("fbcdn.net",        "facebook",  "social"),
-    ("whatsapp",         "whatsapp",  "social"),
-    ("instagram",        "instagram", "social"),
-    ("spotify",          "spotify",   "streaming"),
-    ("steamcontent.com", "steam",     "gaming"),
-    ("twitch.tv",        "twitch",    "gaming"),
+    ("nflxvideo.net",    "netflix",       "streaming"),
+    ("nflxso.net",       "netflix",       "streaming"),
+    ("googlevideo.com",  "youtube",       "streaming"),
+    ("fbcdn.net",        "facebook",      "social"),
+    ("whatsapp",         "whatsapp",      "social"),
+    ("instagram",        "instagram",     "social"),
+    ("spotify",          "spotify",       "streaming"),
+    ("steamcontent.com", "steam",         "gaming"),
+    ("twitch.tv",        "twitch",        "gaming"),
+    (".github.com",      "github",        "cloud"),
+    (".github.io",       "github",        "cloud"),
+    ("aiv-cdn.net",      "prime_video",   "streaming"),
+    ("aiv-delivery.net", "prime_video",   "streaming"),
+    ("pv-cdn.net",       "prime_video",   "streaming"),
+    (".cloudfront.net",  "amazon_cdn",    "cloud"),
+    (".aaplimg.com",     "apple",         "cloud"),
 ]
 
 # In-memory ip_metadata cache: ip → (ptr, asn, asn_org)
