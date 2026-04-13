@@ -3995,10 +3995,7 @@ async function refreshPrivacy() {
   // VPN stat card + expandable panel
   renderVpnAlerts(privRes.vpn_alerts || []);
 
-  // Security stat card (beaconing + future security category events)
-  renderSecurityStats(privRes.security || {}, 'security-stat-count', 'security-stat-7d', 'security-spark');
-
-  // Beaconing / C2 threat intelligence card
+  // Beaconing / C2 threat intelligence card (now rendered on Security page)
   renderBeaconAlerts(privRes.beaconing_alerts || [], privRes.beaconing_status || null);
 }
 
@@ -9226,9 +9223,11 @@ async function loadIpsStatus() {
     try {
       const privRes = await fetch('/api/privacy/stats').then(r => r.json());
       renderBeaconAlerts(privRes.beaconing_alerts || [], privRes.beaconing_status || null);
+      renderSecurityStats(privRes.security || {}, 'security-stat-count', 'security-stat-7d', 'security-spark');
       const outboundCountEl = document.getElementById('ips-tab-outbound-count');
       const activeBeacons = (privRes.beaconing_alerts || []).filter(a => !a.dismissed).length;
-      if (outboundCountEl) outboundCountEl.textContent = activeBeacons;
+      const secEvents = (privRes.security || {}).total_24h || 0;
+      if (outboundCountEl) outboundCountEl.textContent = activeBeacons + secEvents;
     } catch(e2) { console.error('loadBeaconData:', e2); }
   } catch(e) { console.error('loadIpsStatus:', e); }
 }

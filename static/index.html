@@ -650,14 +650,6 @@
           <p id="vpn-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-orange-500 dark:text-orange-400">0</p>
           <p class="text-[10px] mt-1"><span id="vpn-stat-label" class="text-emerald-500 dark:text-emerald-400" data-i18n="priv.noTunnels">No tunnels detected</span></p>
         </div>
-        <div id="security-stat-card" class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover">
-          <p class="text-xs text-red-500 dark:text-red-400 font-medium" data-i18n="priv.securityEvents">Security Events</p>
-          <p id="security-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
-          <div class="flex items-end justify-between mt-1 gap-2">
-            <p class="text-[10px] text-slate-400 dark:text-slate-500"><span data-i18n="priv.last7d">Last 7 days</span>: <span id="security-stat-7d" class="tabular-nums font-medium">0</span></p>
-            <svg id="security-spark" class="h-5 w-16" viewBox="0 0 64 20" preserveAspectRatio="none"></svg>
-          </div>
-        </div>
       </div>
 
       <!-- VPN detail expandable -->
@@ -1201,6 +1193,18 @@
 
       <!-- Outbound panel (hidden by default) -->
       <div id="ips-panel-outbound" class="hidden space-y-4">
+        <!-- Security Events summary card -->
+        <div class="stat-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div id="security-stat-card" class="bg-white dark:bg-red-900/10 border border-slate-200 dark:border-red-700/30 rounded-xl p-5 card-hover">
+            <p class="text-xs text-red-500 dark:text-red-400 font-medium">Outbound Security Events</p>
+            <p id="security-stat-count" class="text-2xl font-bold mt-2 tabular-nums text-red-500 dark:text-red-400">0</p>
+            <div class="flex items-end justify-between mt-1 gap-2">
+              <p class="text-[10px] text-slate-400 dark:text-slate-500"><span data-i18n="priv.last7d">Last 7 days</span>: <span id="security-stat-7d" class="tabular-nums font-medium">0</span></p>
+              <svg id="security-spark" class="h-5 w-16" viewBox="0 0 64 20" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </div>
+
         <!-- Beaconing / C2 Detection -->
         <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
           <div class="p-5">
