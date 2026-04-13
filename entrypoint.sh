@@ -37,13 +37,28 @@ else
 fi
 
 # Start ndpiReader in background — deep packet inspection on the bridge
+# ndpiReader's -C flag only writes at exit, not per-flow. We run it in
+# a loop with 60-second capture windows. Each cycle writes to a temp file,
+# then we append (minus header) to the main CSV that the tailer follows.
 NDPI_OUT="/app/data/ndpi_flows.csv"
+NDPI_TMP="/app/data/ndpi_tmp.csv"
 NDPI_IFACE="${NDPI_INTERFACE:-br0}"
 if [ -x /usr/bin/ndpiReader ]; then
-    rm -f "${NDPI_OUT}"
-    /usr/bin/ndpiReader -i "${NDPI_IFACE}" -C "${NDPI_OUT}" -q &
+    rm -f "${NDPI_OUT}" "${NDPI_TMP}"
+    (while true; do
+        /usr/bin/ndpiReader -i "${NDPI_IFACE}" -s 60 -C "${NDPI_TMP}" -q 2>/dev/null
+        if [ -s "${NDPI_TMP}" ]; then
+            # First cycle: include header; subsequent: skip header line
+            if [ ! -s "${NDPI_OUT}" ]; then
+                cat "${NDPI_TMP}" >> "${NDPI_OUT}"
+            else
+                tail -n +2 "${NDPI_TMP}" >> "${NDPI_OUT}"
+            fi
+            rm -f "${NDPI_TMP}"
+        fi
+    done) &
     NDPI_PID=$!
-    echo "[entrypoint] ndpiReader started on ${NDPI_IFACE} (PID ${NDPI_PID})"
+    echo "[entrypoint] ndpiReader loop started on ${NDPI_IFACE} (PID ${NDPI_PID})"
 else
     echo "[entrypoint] WARNING: ndpiReader not found, DPI disabled"
 fi
