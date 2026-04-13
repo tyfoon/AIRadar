@@ -36,6 +36,18 @@ else
     echo "[entrypoint] WARNING: p0f not found, OS fingerprinting disabled"
 fi
 
+# Start ndpiReader in background — deep packet inspection on the bridge
+NDPI_OUT="/app/data/ndpi_flows.json"
+NDPI_IFACE="${NDPI_INTERFACE:-br0}"
+if [ -x /usr/bin/ndpiReader ]; then
+    rm -f "${NDPI_OUT}"
+    /usr/bin/ndpiReader -i "${NDPI_IFACE}" -j "${NDPI_OUT}" &
+    NDPI_PID=$!
+    echo "[entrypoint] ndpiReader started on ${NDPI_IFACE} (PID ${NDPI_PID})"
+else
+    echo "[entrypoint] WARNING: ndpiReader not found, DPI disabled"
+fi
+
 # Start zeek_tailer in background — monitor its PID
 python zeek_tailer.py --zeek-log-dir "${ZEEK_LOG_DIR}" &
 TAILER_PID=$!
@@ -45,6 +57,7 @@ echo "[entrypoint] zeek_tailer started (PID ${TAILER_PID})"
 cleanup() {
     echo "[entrypoint] Shutting down..."
     kill ${P0F_PID} 2>/dev/null || true
+    kill ${NDPI_PID} 2>/dev/null || true
     kill ${TAILER_PID} 2>/dev/null || true
     kill ${MCP_PID} 2>/dev/null || true
     wait ${TAILER_PID} 2>/dev/null || true

@@ -20,6 +20,7 @@ RUN apt-get update && \
         nbtscan \
         ipset \
         iptables \
+        libndpi-bin \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i 's/^hosts:.*/hosts: files mdns4_minimal [NOTFOUND=return] dns/' /etc/nsswitch.conf
 

@@ -80,6 +80,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "ja4_community_db":    0.80,
     "m365_ip_prefix":      0.78,
     "dns_correlation":     0.75,
+    "ndpi_dpi":            0.72,
     "llm_inference":       0.70,
     "ip_asn_heuristic":    0.50,
 }
@@ -116,6 +117,7 @@ DETERMINISTIC_LABELERS: frozenset[str] = frozenset({
     "ja4_community_db",
     "m365_ip_prefix",
     "dns_correlation",
+    "ndpi_dpi",
 })
 
 # Effective scores below this threshold are not used as primary labels in

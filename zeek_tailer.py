@@ -3259,6 +3259,19 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                             pfx_label[0], pfx_label[1], time.time()
                                         )
 
+                                # --- nDPI DPI fallback ---
+                                # nDPI identifies apps in encrypted traffic
+                                # via packet pattern analysis.
+                                if conv_svc == "unknown":
+                                    try:
+                                        from ndpi_tailer import label_via_ndpi
+                                        ndpi_label = label_via_ndpi(public_ip)
+                                        if ndpi_label:
+                                            conv_svc = ndpi_label[0]
+                                            conv_cat = ndpi_label[1]
+                                    except ImportError:
+                                        pass
+
                                 # --- PTR/ASN category fallback ---
                                 # Last resort: if DNS correlation also failed,
                                 # check ip_metadata for PTR patterns (e.g.
@@ -4577,6 +4590,18 @@ async def main(zeek_log_dir: str) -> None:
     except Exception as exc:
         print(f"[*] p0f passive OS fingerprinting: disabled ({exc})")
 
+    # nDPI deep packet inspection — tail ndpiReader output
+    ndpi_task = None
+    try:
+        from ndpi_tailer import tail_ndpi_output, NDPI_OUTPUT_FILE
+        ndpi_path = Path(NDPI_OUTPUT_FILE)
+        ndpi_task = tail_ndpi_output(ndpi_path)
+        print(f"[*] nDPI deep packet inspection: enabled (tailing {ndpi_path})")
+    except ImportError:
+        print(f"[*] nDPI deep packet inspection: disabled (ndpi_tailer not found)")
+    except Exception as exc:
+        print(f"[*] nDPI deep packet inspection: disabled ({exc})")
+
     print()
 
     # Network scanner — periodic nmap + nbtscan for hostname discovery
@@ -4654,6 +4679,8 @@ async def main(zeek_log_dir: str) -> None:
         tasks.append(p0f_task)
     if scanner_task is not None:
         tasks.append(scanner_task)
+    if ndpi_task is not None:
+        tasks.append(ndpi_task)
 
     try:
         await asyncio.gather(*tasks)
