@@ -8,6 +8,8 @@ export default defineConfig({
     rollupOptions: {
       input: resolve(__dirname, 'src/main.tsx'),
       output: {
+        // IIFE format prevents leaking globals that conflict with app.js
+        format: 'iife',
         entryFileNames: 'screentime.bundle.js',
         assetFileNames: 'screentime.[ext]',
       },
