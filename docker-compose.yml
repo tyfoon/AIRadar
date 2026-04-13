@@ -28,7 +28,9 @@ services:
       # Persistent database — survives container restarts
       - ./data:/app/data
       # Read-only access to Zeek logs on the host
-      - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/app/logs:ro
+      # Mount spool/zeek directly — /opt/zeek/logs/current is a symlink
+      # that Docker bind mounts don't follow reliably.
+      - ${ZEEK_LOG_DIR:-/opt/zeek/spool/zeek}:/app/logs:ro
       # Read-only docker socket — used for per-container performance stats
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
@@ -77,7 +79,7 @@ services:
       - ./crowdsec/conf:/etc/crowdsec
       - ./crowdsec/data:/var/lib/crowdsec/data
       # Same Zeek logs as our app — CrowdSec parses them for threats
-      - ${ZEEK_LOG_DIR:-/opt/zeek/logs/current}:/var/log/zeek:ro
+      - ${ZEEK_LOG_DIR:-/opt/zeek/spool/zeek}:/var/log/zeek:ro
       # Host system logs for SSH brute force & syslog detection
       - /var/log:/var/log/host:ro
     healthcheck:
