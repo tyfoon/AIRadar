@@ -931,4 +931,4 @@ def get_inbound_threats(hours: int = 24) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="sse", host="0.0.0.0", port=8100)

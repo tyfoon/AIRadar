@@ -46,10 +46,16 @@ cleanup() {
     echo "[entrypoint] Shutting down..."
     kill ${P0F_PID} 2>/dev/null || true
     kill ${TAILER_PID} 2>/dev/null || true
+    kill ${MCP_PID} 2>/dev/null || true
     wait ${TAILER_PID} 2>/dev/null || true
     exit 0
 }
 trap cleanup TERM INT
+
+# Start MCP server in background (SSE on port 8100)
+python mcp_server.py &
+MCP_PID=$!
+echo "[entrypoint] MCP server started on port 8100 (PID ${MCP_PID})"
 
 # Start uvicorn in foreground
 uvicorn api:app --host 0.0.0.0 --port 8000 &
