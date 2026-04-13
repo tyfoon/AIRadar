@@ -198,11 +198,21 @@ def label_via_ndpi(resp_ip: str) -> tuple[str, str] | None:
 
 
 # ---------------------------------------------------------------------------
-# Local IP check
+# Local IP check — use zeek_tailer's version which handles IPv6 prefixes
 # ---------------------------------------------------------------------------
 
 def _is_local_ip(ip: str) -> bool:
-    """Return True if the IP is a private / link-local address."""
+    """Return True if the IP is a local network address.
+
+    Uses zeek_tailer's implementation which auto-detects the local IPv6
+    prefix (e.g. 2a02:a447:d50b::/48) from interface addresses. Falls
+    back to simple RFC1918 check if zeek_tailer isn't available yet.
+    """
+    try:
+        from zeek_tailer import _is_local_ip as _zt_is_local
+        return _zt_is_local(ip)
+    except ImportError:
+        pass
     try:
         addr = ipaddress.ip_address(ip)
         return addr.is_private or addr.is_link_local
