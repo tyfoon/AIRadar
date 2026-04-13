@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchActivity } from './api';
-import { categoryColor, formatDuration, formatBytes, serviceName } from './colors';
+import { categoryColor, categoryName, serviceColor, formatDuration, formatBytes, serviceName } from './colors';
 import type { Session } from './types';
 
 // Get today in YYYY-MM-DD local time
@@ -116,23 +116,26 @@ export default function ScreenTime({ macAddress }: Props) {
           {/* Service chips */}
           {data.totals_by_service.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {data.totals_by_service.map(t => (
-                <div
-                  key={t.service}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
-                  style={{
-                    backgroundColor: categoryColor(t.category) + '18',
-                    color: categoryColor(t.category),
-                  }}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: categoryColor(t.category) }}
-                  />
-                  {serviceName(t.service)}
-                  <span className="opacity-60">{formatDuration(t.duration_seconds)}</span>
-                </div>
-              ))}
+              {data.totals_by_service.map(t => {
+                const color = serviceColor(t.service, t.category);
+                return (
+                  <div
+                    key={t.service}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+                    style={{
+                      backgroundColor: color + '20',
+                      color: color,
+                    }}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    {serviceName(t.service)}
+                    <span className="opacity-60">{formatDuration(t.duration_seconds)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -160,48 +163,67 @@ export default function ScreenTime({ macAddress }: Props) {
 
 // --- Timeline Strip (24h horizontal bar) ---
 function TimelineStrip({ sessions }: { sessions: Session[] }) {
-  // Group sessions by category for layered rendering
   const categories = [...new Set(sessions.map(s => s.category))];
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       {categories.map(cat => {
         const catSessions = sessions.filter(s => s.category === cat);
         return (
-          <div key={cat} className="relative h-5 rounded bg-slate-100 dark:bg-white/[0.04]">
-            {/* Hour markers */}
-            {[6, 12, 18].map(h => (
-              <div
-                key={h}
-                className="absolute top-0 bottom-0 border-l border-slate-200 dark:border-white/[0.06]"
-                style={{ left: `${(h / 24) * 100}%` }}
+          <div key={cat}>
+            {/* Category label */}
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: categoryColor(cat) }}
               />
-            ))}
-            {/* Session blocks */}
-            {catSessions.map((s, i) => {
-              const startH = toHour(s.start);
-              const endH = toHour(s.end);
-              const left = (startH / 24) * 100;
-              const width = Math.max(0.5, ((endH - startH) / 24) * 100);
-              return (
+              <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                {categoryName(cat)}
+              </span>
+            </div>
+            {/* Timeline bar */}
+            <div className="relative h-6 rounded bg-slate-100 dark:bg-white/[0.04]">
+              {/* Hour markers */}
+              {[6, 12, 18].map(h => (
                 <div
-                  key={i}
-                  className="absolute top-0.5 bottom-0.5 rounded-sm"
-                  style={{
-                    left: `${left}%`,
-                    width: `${width}%`,
-                    backgroundColor: categoryColor(cat),
-                    opacity: 0.85,
-                  }}
-                  title={`${serviceName(s.service)} · ${new Date(s.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${new Date(s.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${formatDuration(s.duration_seconds)} · ${formatBytes(s.bytes)}`}
+                  key={h}
+                  className="absolute top-0 bottom-0 border-l border-slate-200 dark:border-white/[0.08]"
+                  style={{ left: `${(h / 24) * 100}%` }}
                 />
-              );
-            })}
+              ))}
+              {/* Session blocks — per-service color */}
+              {catSessions.map((s, i) => {
+                const startH = toHour(s.start);
+                const endH = toHour(s.end);
+                const left = (startH / 24) * 100;
+                const width = Math.max(0.8, ((endH - startH) / 24) * 100);
+                const color = serviceColor(s.service, s.category);
+                return (
+                  <div
+                    key={i}
+                    className="absolute top-0.5 bottom-0.5 rounded-sm flex items-center justify-center overflow-hidden"
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      backgroundColor: color,
+                    }}
+                    title={`${serviceName(s.service)} · ${new Date(s.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${new Date(s.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${formatDuration(s.duration_seconds)} · ${formatBytes(s.bytes)}`}
+                  >
+                    {/* Show service name if block is wide enough */}
+                    {width > 4 && (
+                      <span className="text-[8px] text-white font-medium truncate px-0.5">
+                        {serviceName(s.service)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })}
       {/* Hour labels */}
-      <div className="flex justify-between text-[9px] text-slate-400 px-0.5 -mt-0.5">
+      <div className="flex justify-between text-[9px] text-slate-400 px-0.5">
         <span>0:00</span>
         <span>6:00</span>
         <span>12:00</span>
@@ -228,7 +250,7 @@ function SessionList({ sessions }: { sessions: Session[] }) {
         >
           <span
             className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{ backgroundColor: categoryColor(s.category) }}
+            style={{ backgroundColor: serviceColor(s.service, s.category) }}
           />
           <span className="font-medium text-slate-700 dark:text-slate-200 min-w-[100px]">
             {serviceName(s.service)}
