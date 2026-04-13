@@ -91,6 +91,19 @@ NDPI_SERVICE_MAP: dict[str, tuple[str, str]] = {
     "OpenAI":           ("openai",           "ai"),
     "ChatGPT":          ("openai",           "ai"),
 
+    # Google sub-services (nDPI uses these compound names)
+    "GoogleServices":   ("google",           "cloud"),
+    "GoogleDocs":       ("google_drive",     "cloud"),
+    "PlayStore":        ("play_store",       "cloud"),
+    "GoogleMaps":       ("google_maps",      "cloud"),
+    "GMail":            ("gmail",            "communication"),
+
+    # Apple sub-services
+    "AppleiCloud":      ("icloud",           "cloud"),
+    "AppleiTunes":      ("apple_music",      "streaming"),
+    "ApplePush":        ("apple",            "cloud"),
+    "iCloudPrivateRelay": ("icloud",         "cloud"),
+
     # Gaming
     "Steam":            ("steam",            "gaming"),
     "PlayStation":      ("playstation",      "gaming"),
@@ -131,9 +144,11 @@ _NDPI_SKIP: frozenset[str] = frozenset({
     "TLS", "HTTP", "HTTPS", "DNS", "QUIC", "Unknown", "ICMP", "IGMP",
     "NTP", "DHCP", "SSDP", "MDNS", "LLMNR", "STUN", "DTLS",
     "SSL", "SSH", "FTP", "SMTP", "POP3", "IMAP",
-    "Cloudflare", "AmazonAWS", "GoogleCloud", "Azure",
+    "Cloudflare", "AmazonAWS", "GoogleCloud", "Azure", "AWS_EC2",
     "Akamai", "Fastly", "CloudFront",
-    "TCP", "UDP", "ARP", "NetBIOS",
+    "TCP", "UDP", "ARP", "NetBIOS", "ICMPV6",
+    "HTTP_Proxy", "UBNTAC2", "TPLINK_SHP", "TuyaLP",
+    "DoH_DoT", "Canonical", "Alibaba", "Tencent",
 })
 
 # ---------------------------------------------------------------------------
@@ -195,10 +210,11 @@ def _is_local_ip(ip: str) -> bool:
 # ---------------------------------------------------------------------------
 # CSV output tailer
 # ---------------------------------------------------------------------------
-# ndpiReader v5's -C flag writes per-flow CSV lines as flows complete.
-# Typical CSV header:
-#   flow_id,src_ip,src_port,dst_ip,dst_port,ndpi_proto_num,ndpi_proto,
-#   server_name,src2dst_bytes,dst2src_bytes,...
+# ndpiReader v5's -C flag writes pipe-separated CSV with a header
+# starting with '#'. Format:
+#   #flow_id|protocol|first_seen|...|src_ip|src_port|dst_ip|dst_port|
+#   ndpi_proto_num|ndpi_proto|...
+# Delimiter is '|' (pipe), not comma.
 
 # Column indices we care about (set from header on first read)
 _col_src_ip: int = -1
@@ -207,12 +223,12 @@ _col_proto: int = -1
 
 
 async def tail_ndpi_output(output_path: Path) -> None:
-    """Tail ndpiReader's CSV output and populate _known_ips."""
+    """Tail ndpiReader's pipe-separated CSV output and populate _known_ips."""
     global _col_src_ip, _col_dst_ip, _col_proto
 
     print(f"[ndpi] Tailing CSV output: {output_path}")
 
-    # Wait for ndpiReader to start writing
+    # Wait for ndpiReader to write its first batch (60s capture window)
     while True:
         if output_path.exists() and output_path.stat().st_size > 0:
             break
@@ -228,27 +244,28 @@ async def tail_ndpi_output(output_path: Path) -> None:
                 # Read header to discover column positions
                 header_line = f.readline()
                 if header_line:
-                    cols = [c.strip() for c in header_line.split(",")]
+                    # Strip leading '#' and parse pipe-separated columns
+                    header = header_line.strip().lstrip("#")
+                    cols = [c.strip() for c in header.split("|")]
                     for i, col in enumerate(cols):
-                        if col in ("src_ip", "src_name"):
+                        if col == "src_ip":
                             _col_src_ip = i
-                        elif col in ("dst_ip", "dst_name"):
+                        elif col == "dst_ip":
                             _col_dst_ip = i
-                        elif col in ("ndpi_proto", "protocol", "proto"):
+                        elif col == "ndpi_proto":
                             _col_proto = i
 
                     if _col_proto >= 0:
                         print(
-                            f"[ndpi] CSV header parsed: proto=col{_col_proto}, "
+                            f"[ndpi] Header parsed: proto=col{_col_proto}, "
                             f"src_ip=col{_col_src_ip}, dst_ip=col{_col_dst_ip} "
                             f"({len(cols)} columns)"
                         )
                     else:
-                        # Fallback: try common positions
-                        print(f"[ndpi] CSV header: {cols[:10]}...")
-                        _col_src_ip = 1
-                        _col_dst_ip = 3
-                        _col_proto = 6
+                        print(f"[ndpi] WARNING: ndpi_proto column not found in header")
+                        print(f"[ndpi] Columns: {cols[:15]}...")
+                        await asyncio.sleep(60)
+                        continue
 
                 # Seek to end — only process new flows
                 f.seek(0, 2)
@@ -269,7 +286,7 @@ async def tail_ndpi_output(output_path: Path) -> None:
                         continue
 
                     lines_read += 1
-                    parts = line.split(",")
+                    parts = line.split("|")
                     if len(parts) <= max(_col_src_ip, _col_dst_ip, _col_proto):
                         continue
 
