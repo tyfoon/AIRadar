@@ -6772,6 +6772,7 @@ function openDeviceDrawer(mac, service, category) {
     `<button class="${tabCls('summary')}" data-tab="summary" title="${t('dev.drawerSummaryTab')}" aria-label="${t('dev.drawerSummaryTab')}" onclick="setDrawerTab('summary')"><i class="ph-duotone ph-chart-bar"></i></button>`,
     `<button class="${tabCls('connections')}" data-tab="connections" title="${t('dev.drawerConnectionsTab') || 'Connections'}" aria-label="${t('dev.drawerConnectionsTab') || 'Connections'}" onclick="setDrawerTab('connections')"><i class="ph-duotone ph-swap"></i></button>`,
     `<button class="${tabCls('activity')}" data-tab="activity" title="${t('dev.drawerActivityTab') || 'Activity'}" aria-label="${t('dev.drawerActivityTab') || 'Activity'}" onclick="setDrawerTab('activity')"><i class="ph-duotone ph-hourglass-medium"></i></button>`,
+    `<button class="${tabCls('screentime')}" data-tab="screentime" title="Sessions" aria-label="Sessions" onclick="setDrawerTab('screentime')"><i class="ph-duotone ph-timer"></i></button>`,
   ];
   cats.forEach(c => {
     if (tabCounts[c.key] > 0) {
@@ -6813,16 +6814,18 @@ function openDeviceDrawer(mac, service, category) {
 }
 
 function _applyDrawerFilter(serviceFilter) {
-  const summaryView  = document.getElementById('drawer-summary-view');
-  const reportView   = document.getElementById('drawer-report-view');
-  const eventsView   = document.getElementById('drawer-events-view');
-  const activityView = document.getElementById('drawer-activity-view');
+  const summaryView    = document.getElementById('drawer-summary-view');
+  const reportView     = document.getElementById('drawer-report-view');
+  const eventsView     = document.getElementById('drawer-events-view');
+  const activityView   = document.getElementById('drawer-activity-view');
+  const screentimeView = document.getElementById('react-screentime-root');
 
   const hideAll = () => {
-    if (summaryView)  summaryView.classList.add('hidden');
-    if (reportView)   reportView.classList.add('hidden');
-    if (eventsView)   eventsView.classList.add('hidden');
-    if (activityView) activityView.classList.add('hidden');
+    if (summaryView)    summaryView.classList.add('hidden');
+    if (reportView)     reportView.classList.add('hidden');
+    if (eventsView)     eventsView.classList.add('hidden');
+    if (activityView)   activityView.classList.add('hidden');
+    if (screentimeView) screentimeView.classList.add('hidden');
   };
 
   if (_drawerActiveTab === 'summary') {
@@ -6849,6 +6852,15 @@ function _applyDrawerFilter(serviceFilter) {
     hideAll();
     if (activityView) activityView.classList.remove('hidden');
     _loadDrawerActivity();
+    return;
+  }
+
+  if (_drawerActiveTab === 'screentime') {
+    hideAll();
+    if (screentimeView) {
+      screentimeView.classList.remove('hidden');
+      screentimeView.setAttribute('data-mac', _drawerMac);
+    }
     return;
   }
 
