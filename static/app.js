@@ -952,8 +952,7 @@ function getBucketSize(cat) {
   if (!per) return 'hour';
   const m = parseInt(per);
   if (m <= 60) return 'minute';
-  if (m <= 1440) return 'hour';
-  return 'day';
+  return 'hour';
 }
 
 function exportCSV(cat) {
