@@ -15,10 +15,16 @@ from database import (
     SessionLocal,
     AlertException,
     DetectionEvent,
+    DeviceBaseline,
     DeviceGroupMember,
     DeviceGroup,
     DeviceIP,
     Device,
+    FilterSchedule,
+    GeoConversation,
+    InboundAttack,
+    IpMetadata,
+    NetworkPerformance,
     ServicePolicy,
 )
 
@@ -454,6 +460,471 @@ def list_devices() -> str:
                 f"- {name} | MAC: {d.mac_address} | IP: {ips} "
                 f"| Fabrikant: {vendor} | Laatst gezien: {last}"
             )
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 7: get_device_screen_time ────────────────────────────
+
+
+@mcp.tool()
+def get_device_screen_time(mac_address: str, hours: int = 24) -> str:
+    """Shows how long a device has been actively using apps, grouped by
+    category (gaming, social, streaming, ai). Answers questions like
+    "How long did this device play Roblox?" or "How much Netflix today?"
+
+    Returns a timeline of sessions with service name, duration, and bytes."""
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        cutoff = now - timedelta(hours=hours)
+
+        dev = db.query(Device).filter(Device.mac_address == mac_address).first()
+        dev_name = (dev.display_name or dev.hostname or mac_address) if dev else mac_address
+
+        # Get IPs for this device
+        ips = [r.ip for r in db.query(DeviceIP.ip).filter(DeviceIP.mac_address == mac_address).all()]
+        if not ips:
+            return f"Device {mac_address} not found."
+
+        # Activity categories
+        activity_cats = ("social", "streaming", "gaming", "ai", "shopping", "news")
+
+        # Get detection events
+        from sqlalchemy import or_
+        events = (
+            db.query(DetectionEvent)
+            .filter(
+                DetectionEvent.source_ip.in_(ips),
+                DetectionEvent.timestamp >= cutoff,
+                DetectionEvent.category.in_(activity_cats),
+            )
+            .order_by(DetectionEvent.timestamp.asc())
+            .all()
+        )
+
+        # Also get geo_conversations for richer data
+        geo = (
+            db.query(GeoConversation)
+            .filter(
+                GeoConversation.mac_address == mac_address,
+                GeoConversation.last_seen >= cutoff,
+                GeoConversation.ai_service.isnot(None),
+                GeoConversation.ai_service != "unknown",
+                GeoConversation.ai_service != "",
+            )
+            .all()
+        )
+
+        # Build per-service summary
+        svc_stats: dict[str, dict] = {}
+        for e in events:
+            s = svc_stats.setdefault(e.ai_service, {
+                "service": e.ai_service, "category": e.category,
+                "hits": 0, "bytes": 0, "first": e.timestamp, "last": e.timestamp,
+            })
+            s["hits"] += 1
+            s["bytes"] += e.bytes_transferred or 0
+            if e.timestamp < s["first"]:
+                s["first"] = e.timestamp
+            if e.timestamp > s["last"]:
+                s["last"] = e.timestamp
+
+        # Add geo_conversation bytes (often much larger than event bytes)
+        for g in geo:
+            s = svc_stats.setdefault(g.ai_service, {
+                "service": g.ai_service, "category": "unknown",
+                "hits": 0, "bytes": 0, "first": g.first_seen, "last": g.last_seen,
+            })
+            s["bytes"] += g.bytes_transferred or 0
+            s["hits"] += g.hits or 0
+
+        if not svc_stats:
+            return f"No app activity for {dev_name} in the last {hours} hours."
+
+        # Group by category
+        by_cat: dict[str, list] = {}
+        for s in sorted(svc_stats.values(), key=lambda x: x["bytes"], reverse=True):
+            by_cat.setdefault(s["category"], []).append(s)
+
+        lines = [f"Screen time for {dev_name} (last {hours}h):\n"]
+        grand_bytes = sum(s["bytes"] for s in svc_stats.values())
+        lines.append(f"Total data: {grand_bytes / 1048576:.1f} MB\n")
+
+        for cat in ("streaming", "gaming", "social", "ai", "shopping", "news"):
+            svcs = by_cat.get(cat, [])
+            if not svcs:
+                continue
+            cat_bytes = sum(s["bytes"] for s in svcs)
+            lines.append(f"**{cat.upper()}** ({cat_bytes / 1048576:.1f} MB)")
+            for s in svcs:
+                duration = (s["last"] - s["first"]).total_seconds()
+                dur_str = f"{int(duration // 3600)}h {int((duration % 3600) // 60)}m" if duration >= 3600 else f"{int(duration // 60)}m"
+                mb = s["bytes"] / 1048576
+                lines.append(f"  - {s['service']}: {dur_str} active, {mb:.1f} MB, {s['hits']} events")
+            lines.append("")
+
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 8: get_geo_traffic ──────────────────────────────────
+
+
+@mcp.tool()
+def get_geo_traffic(mac_address: str = None, hours: int = 24) -> str:
+    """Shows which countries and external networks (ASNs) a device or the
+    entire network is communicating with. Answers questions like "Is any
+    device talking to China?" or "Where does most traffic go?"
+
+    If mac_address is provided, filters for that specific device."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+
+        q = db.query(GeoConversation).filter(GeoConversation.last_seen >= cutoff)
+        if mac_address:
+            q = q.filter(GeoConversation.mac_address == mac_address)
+
+        convs = q.all()
+        if not convs:
+            target = f"device {mac_address}" if mac_address else "the network"
+            return f"No geo traffic data for {target} in the last {hours} hours."
+
+        # Aggregate by country
+        by_country: dict[str, dict] = {}
+        for c in convs:
+            cc = c.country_code or "??"
+            s = by_country.setdefault(cc, {"bytes": 0, "hits": 0, "devices": set()})
+            s["bytes"] += c.bytes_transferred or 0
+            s["hits"] += c.hits or 0
+            if c.mac_address:
+                s["devices"].add(c.mac_address)
+
+        # Aggregate by ASN (via ip_metadata)
+        resp_ips = list({c.resp_ip for c in convs if c.resp_ip})
+        ip_meta = {}
+        if resp_ips:
+            for m in db.query(IpMetadata).filter(IpMetadata.ip.in_(resp_ips)).all():
+                ip_meta[m.ip] = m
+
+        by_asn: dict[str, dict] = {}
+        for c in convs:
+            meta = ip_meta.get(c.resp_ip)
+            asn_label = f"AS{meta.asn} {meta.asn_org}" if meta and meta.asn else "Unknown ASN"
+            s = by_asn.setdefault(asn_label, {"bytes": 0, "hits": 0})
+            s["bytes"] += c.bytes_transferred or 0
+            s["hits"] += c.hits or 0
+
+        # Device name for header
+        target = "Network-wide"
+        if mac_address:
+            dev = db.query(Device).filter(Device.mac_address == mac_address).first()
+            target = (dev.display_name or dev.hostname or mac_address) if dev else mac_address
+
+        lines = [f"Geo traffic for {target} (last {hours}h):\n"]
+
+        lines.append("**Top countries:**")
+        for cc, s in sorted(by_country.items(), key=lambda x: x[1]["bytes"], reverse=True)[:10]:
+            mb = s["bytes"] / 1048576
+            lines.append(f"  - {cc}: {mb:.1f} MB, {s['hits']} connections, {len(s['devices'])} devices")
+
+        lines.append("\n**Top ASNs:**")
+        for asn, s in sorted(by_asn.items(), key=lambda x: x[1]["bytes"], reverse=True)[:10]:
+            mb = s["bytes"] / 1048576
+            lines.append(f"  - {asn}: {mb:.1f} MB, {s['hits']} connections")
+
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 9: get_global_filter_status ─────────────────────────
+
+
+@mcp.tool()
+def get_global_filter_status() -> str:
+    """Shows the current state of all network-wide content filters and
+    service policies. Answers questions like "Is the parental filter on?"
+    or "Which services are blocked globally?"."""
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Filter schedules
+        schedules = db.query(FilterSchedule).all()
+
+        # Global policies
+        policies = (
+            db.query(ServicePolicy)
+            .filter(ServicePolicy.scope == "global")
+            .all()
+        )
+
+        lines = ["**Network Filter Status**\n"]
+
+        # Schedules
+        if schedules:
+            lines.append("**Filter Schedules:**")
+            for s in schedules:
+                status = "ENABLED" if s.enabled else "disabled"
+                if s.mode == "always":
+                    mode_str = "always on"
+                else:
+                    days = s.days or "none"
+                    mode_str = f"{s.start_time}–{s.end_time} on {days}"
+                lines.append(f"  - {s.filter_key}: {status} ({mode_str})")
+        else:
+            lines.append("No filter schedules configured.")
+
+        lines.append("")
+
+        # Policies
+        active_policies = [p for p in policies if not p.expires_at or p.expires_at > now]
+        if active_policies:
+            blocked = [p for p in active_policies if p.action == "block"]
+            alerted = [p for p in active_policies if p.action == "alert"]
+            allowed = [p for p in active_policies if p.action == "allow"]
+
+            if blocked:
+                lines.append(f"**Blocked services ({len(blocked)}):**")
+                for p in blocked:
+                    target = p.service_name or f"category:{p.category}"
+                    exp = f" (until {p.expires_at.strftime('%Y-%m-%d %H:%M')})" if p.expires_at else " (permanent)"
+                    lines.append(f"  - {target}{exp}")
+
+            if alerted:
+                lines.append(f"\n**Alert-only services ({len(alerted)}):**")
+                for p in alerted:
+                    target = p.service_name or f"category:{p.category}"
+                    lines.append(f"  - {target}")
+
+            if allowed:
+                lines.append(f"\n**Explicitly allowed ({len(allowed)}):**")
+                for p in allowed:
+                    target = p.service_name or f"category:{p.category}"
+                    lines.append(f"  - {target}")
+        else:
+            lines.append("No active global policies.")
+
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 10: get_network_performance ─────────────────────────
+
+
+@mcp.tool()
+def get_network_performance(hours: int = 4) -> str:
+    """Shows recent network performance metrics: latency, packet loss,
+    bandwidth, and system load. Answers questions like "Is the internet
+    slow?" or "Is the AIradar box overloaded?"."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+
+        rows = (
+            db.query(NetworkPerformance)
+            .filter(NetworkPerformance.timestamp >= cutoff)
+            .order_by(NetworkPerformance.timestamp.desc())
+            .limit(50)
+            .all()
+        )
+
+        if not rows:
+            return f"No network performance data in the last {hours} hours."
+
+        latest = rows[0]
+        lines = [f"**Network Performance** (last {hours}h, {len(rows)} samples)\n"]
+
+        # Latest metrics
+        lines.append("**Current (most recent sample):**")
+        if latest.ping_internet_ms is not None:
+            lines.append(f"  - Internet ping: {latest.ping_internet_ms:.0f} ms")
+        if latest.ping_gateway_ms is not None:
+            lines.append(f"  - Gateway ping: {latest.ping_gateway_ms:.0f} ms")
+        if latest.dns_latency_ms is not None:
+            lines.append(f"  - DNS latency: {latest.dns_latency_ms:.0f} ms")
+        if latest.packet_loss_pct is not None:
+            lines.append(f"  - Packet loss: {latest.packet_loss_pct:.1f}%")
+        if latest.cpu_percent is not None:
+            lines.append(f"  - CPU: {latest.cpu_percent:.0f}%")
+        if latest.memory_percent is not None:
+            lines.append(f"  - Memory: {latest.memory_percent:.0f}%")
+        if latest.load_avg_1 is not None:
+            lines.append(f"  - Load: {latest.load_avg_1:.2f} / {latest.load_avg_5:.2f} / {latest.load_avg_15:.2f}")
+
+        # Averages
+        pings = [r.ping_internet_ms for r in rows if r.ping_internet_ms is not None]
+        losses = [r.packet_loss_pct for r in rows if r.packet_loss_pct is not None]
+        cpus = [r.cpu_percent for r in rows if r.cpu_percent is not None]
+
+        if pings:
+            lines.append(f"\n**Averages ({len(rows)} samples):**")
+            lines.append(f"  - Avg internet ping: {sum(pings)/len(pings):.0f} ms (min {min(pings):.0f}, max {max(pings):.0f})")
+        if losses:
+            lines.append(f"  - Avg packet loss: {sum(losses)/len(losses):.2f}%")
+        if cpus:
+            lines.append(f"  - Avg CPU: {sum(cpus)/len(cpus):.0f}%")
+
+        # Warnings
+        warnings = []
+        if pings and max(pings) > 100:
+            warnings.append(f"High latency detected: {max(pings):.0f} ms peak")
+        if losses and max(losses) > 1.0:
+            warnings.append(f"Packet loss detected: {max(losses):.1f}% peak")
+        if cpus and max(cpus) > 90:
+            warnings.append(f"High CPU usage: {max(cpus):.0f}% peak")
+
+        if warnings:
+            lines.append("\n**⚠️ Warnings:**")
+            for w in warnings:
+                lines.append(f"  - {w}")
+
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 11: get_iot_health ──────────────────────────────────
+
+
+@mcp.tool()
+def get_iot_health() -> str:
+    """Shows the health status of IoT/smart home devices compared to their
+    learned baselines. Answers questions like "Are my smart devices behaving
+    normally?" or "Which IoT device is acting weird?"."""
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        cutoff_24h = now - timedelta(hours=24)
+
+        baselines = db.query(DeviceBaseline).all()
+        device_by_mac = {d.mac_address: d for d in db.query(Device).all()}
+
+        if not baselines:
+            return "No IoT baselines computed yet. Devices need 7+ days of data."
+
+        # Get recent anomaly alerts
+        anomaly_types = ("iot_volume_spike", "iot_new_country", "iot_lateral_movement", "iot_suspicious_port")
+        ip_rows = db.query(DeviceIP).all()
+        mac_to_ips = {}
+        for r in ip_rows:
+            mac_to_ips.setdefault(r.mac_address, []).append(r.ip)
+
+        all_anomaly_ips = []
+        for b in baselines:
+            all_anomaly_ips.extend(mac_to_ips.get(b.mac_address, []))
+
+        anomalies = []
+        if all_anomaly_ips:
+            anomalies = (
+                db.query(DetectionEvent)
+                .filter(
+                    DetectionEvent.source_ip.in_(all_anomaly_ips),
+                    DetectionEvent.detection_type.in_(anomaly_types),
+                    DetectionEvent.timestamp >= cutoff_24h,
+                )
+                .all()
+            )
+
+        # Map anomalies to MACs
+        ip_to_mac = {ip: mac for mac, ips in mac_to_ips.items() for ip in ips}
+        anomalies_by_mac: dict[str, list] = {}
+        for a in anomalies:
+            mac = ip_to_mac.get(a.source_ip)
+            if mac:
+                anomalies_by_mac.setdefault(mac, []).append(a)
+
+        lines = [f"**IoT Health Report** ({len(baselines)} devices with baselines)\n"]
+
+        # Devices with anomalies
+        problem_devices = []
+        healthy_devices = []
+        for b in baselines:
+            dev = device_by_mac.get(b.mac_address)
+            name = (dev.display_name or dev.hostname or b.mac_address) if dev else b.mac_address
+            device_anomalies = anomalies_by_mac.get(b.mac_address, [])
+
+            if device_anomalies:
+                problem_devices.append((name, b, device_anomalies))
+            else:
+                healthy_devices.append((name, b))
+
+        if problem_devices:
+            lines.append(f"**⚠️ Devices with anomalies ({len(problem_devices)}):**")
+            for name, b, anoms in problem_devices:
+                lines.append(f"  - **{name}** (baseline: {b.avg_bytes_hour / 1024:.0f} KB/h)")
+                for a in anoms[:3]:
+                    lines.append(f"    - {a.detection_type}: {a.ai_service} ({a.bytes_transferred / 1024:.0f} KB) at {a.timestamp.strftime('%H:%M')}")
+            lines.append("")
+
+        lines.append(f"**✅ Healthy devices ({len(healthy_devices)}):**")
+        for name, b in healthy_devices[:15]:
+            countries = b.known_countries or "[]"
+            lines.append(f"  - {name}: {b.avg_bytes_hour / 1024:.0f} KB/h baseline, countries: {countries}")
+
+        return "\n".join(lines)
+    finally:
+        db.close()
+
+
+# ── Tool 12: get_inbound_threats ─────────────────────────────
+
+
+@mcp.tool()
+def get_inbound_threats(hours: int = 24) -> str:
+    """Shows inbound attacks and port scans detected by CrowdSec and the
+    IPS. Answers questions like "Is someone trying to hack my network?"
+    or "Which ports are being scanned?"."""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+
+        attacks = (
+            db.query(InboundAttack)
+            .filter(InboundAttack.last_seen >= cutoff)
+            .order_by(InboundAttack.hit_count.desc())
+            .limit(50)
+            .all()
+        )
+
+        if not attacks:
+            return f"No inbound threats detected in the last {hours} hours. Network perimeter is clean."
+
+        total_hits = sum(a.hit_count or 0 for a in attacks)
+        unique_ips = len({a.source_ip for a in attacks})
+        unique_ports = len({a.target_port for a in attacks if a.target_port})
+
+        lines = [
+            f"**Inbound Threats** (last {hours}h)\n",
+            f"Total: {total_hits} blocked attempts from {unique_ips} unique IPs targeting {unique_ports} ports\n",
+        ]
+
+        # Group by severity
+        by_severity: dict[str, list] = {}
+        for a in attacks:
+            by_severity.setdefault(a.severity or "unknown", []).append(a)
+
+        for sev in ("threat", "aggressive", "scan", "unknown"):
+            group = by_severity.get(sev, [])
+            if not group:
+                continue
+            lines.append(f"**{sev.upper()} ({len(group)} sources):**")
+            for a in group[:10]:
+                country = f" ({a.country_code})" if a.country_code else ""
+                asn = f" [{a.asn_org}]" if a.asn_org else ""
+                reason = f" — {a.crowdsec_reason}" if a.crowdsec_reason else ""
+                lines.append(
+                    f"  - {a.source_ip}{country}{asn}: "
+                    f"port {a.target_port}/{a.protocol or '?'}, "
+                    f"{a.hit_count}x{reason}"
+                )
+            lines.append("")
+
         return "\n".join(lines)
     finally:
         db.close()
