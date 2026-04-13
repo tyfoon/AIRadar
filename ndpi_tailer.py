@@ -104,6 +104,7 @@ NDPI_SERVICE_MAP: dict[str, tuple[str, str]] = {
     "AppleiCloud":      ("icloud",           "cloud"),
     "AppleiTunes":      ("apple_music",      "streaming"),
     "ApplePush":        ("apple",            "cloud"),
+    "AppleSiri":        ("siri",             "cloud"),
     "iCloudPrivateRelay": ("icloud",         "cloud"),
 
     # Gaming
@@ -148,10 +149,11 @@ _NDPI_SKIP: frozenset[str] = frozenset({
     "SSL", "SSH", "FTP", "SMTP", "POP3", "IMAP",
     "Cloudflare", "AmazonAWS", "GoogleCloud", "Azure", "AWS_EC2",
     "Akamai", "Fastly", "CloudFront",
-    "TCP", "UDP", "ARP", "NetBIOS", "ICMPV6",
+    "TCP", "UDP", "ARP", "NetBIOS", "SMBv1", "SMBv23", "ICMPV6",
     "HTTP_Proxy", "UBNTAC2", "TPLINK_SHP", "TuyaLP",
     "DoH_DoT", "Canonical", "Alibaba", "Tencent",
     "AJP", "DHCPV6", "IMAPS",
+    "Cybersec", "AWS_S3",
 })
 
 # ---------------------------------------------------------------------------
@@ -177,7 +179,9 @@ def _normalize_ndpi_proto(proto: str) -> str | None:
         return None
 
     # Strip common prefixes for compound protocols
-    for prefix in ("TLS.", "QUIC.", "HTTP.", "SSL.", "DTLS."):
+    # nDPI uses: TLS.YouTube, QUIC.Google, HTTP.UBNTAC2, IMAPS.GMail,
+    # HTTP_Connect.GoogleServices, DTLS.Signal, SSL.Facebook
+    for prefix in ("TLS.", "QUIC.", "HTTP.", "SSL.", "DTLS.", "IMAPS.", "HTTP_Connect.", "HTTP_Proxy.", "NetBIOS."):
         if proto.startswith(prefix):
             proto = proto[len(prefix):]
             break
