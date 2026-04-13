@@ -1,7 +1,7 @@
 """
 AI-Radar — nDPI Deep Packet Inspection Tailer.
 
-Tails ndpiReader's JSON output to identify applications in encrypted
+Tails ndpiReader's CSV output to identify applications in encrypted
 traffic (Netflix via CloudFront, YouTube QUIC 0-RTT, WhatsApp calls,
 etc.) and populates _known_ips so the labeling cascade picks them up.
 
@@ -13,8 +13,8 @@ Run: launched automatically by entrypoint.sh alongside p0f.
 from __future__ import annotations
 
 import asyncio
+import csv
 import ipaddress
-import json
 import os
 import time
 from pathlib import Path
@@ -25,7 +25,7 @@ from pathlib import Path
 
 NDPI_OUTPUT_FILE = os.environ.get(
     "NDPI_OUTPUT_FILE",
-    os.path.join(os.path.dirname(__file__), "data", "ndpi_flows.json"),
+    os.path.join(os.path.dirname(__file__), "data", "ndpi_flows.csv"),
 )
 
 # Dedup: don't re-label the same (mac, ip) within this window
@@ -193,20 +193,24 @@ def _is_local_ip(ip: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# JSON output tailer
+# CSV output tailer
 # ---------------------------------------------------------------------------
+# ndpiReader v5's -C flag writes per-flow CSV lines as flows complete.
+# Typical CSV header:
+#   flow_id,src_ip,src_port,dst_ip,dst_port,ndpi_proto_num,ndpi_proto,
+#   server_name,src2dst_bytes,dst2src_bytes,...
+
+# Column indices we care about (set from header on first read)
+_col_src_ip: int = -1
+_col_dst_ip: int = -1
+_col_proto: int = -1
+
 
 async def tail_ndpi_output(output_path: Path) -> None:
-    """Tail ndpiReader's JSON output and populate _known_ips.
+    """Tail ndpiReader's CSV output and populate _known_ips."""
+    global _col_src_ip, _col_dst_ip, _col_proto
 
-    ndpiReader v4.2's -j flag writes a JSON file. The format may be:
-    a) One JSON object per line (JSONL) — each is a completed flow
-    b) A single JSON document written at exit — less useful for real-time
-
-    We handle both: try line-by-line JSON parsing first. If a line
-    doesn't parse, accumulate and try as part of a larger structure.
-    """
-    print(f"[ndpi] Tailing output: {output_path}")
+    print(f"[ndpi] Tailing CSV output: {output_path}")
 
     # Wait for ndpiReader to start writing
     while True:
@@ -214,67 +218,88 @@ async def tail_ndpi_output(output_path: Path) -> None:
             break
         await asyncio.sleep(2)
 
-    print(f"[ndpi] Output file detected, starting to parse")
+    print(f"[ndpi] CSV file detected, starting to parse")
     labeled = 0
+    lines_read = 0
 
-    try:
-        with open(output_path, "r") as f:
-            # Seek to end — we only want new flows
-            f.seek(0, 2)
+    while True:
+        try:
+            with open(output_path, "r") as f:
+                # Read header to discover column positions
+                header_line = f.readline()
+                if header_line:
+                    cols = [c.strip() for c in header_line.split(",")]
+                    for i, col in enumerate(cols):
+                        if col in ("src_ip", "src_name"):
+                            _col_src_ip = i
+                        elif col in ("dst_ip", "dst_name"):
+                            _col_dst_ip = i
+                        elif col in ("ndpi_proto", "protocol", "proto"):
+                            _col_proto = i
 
-            while True:
-                line = f.readline()
-                if not line:
-                    try:
-                        if f.tell() > os.path.getsize(output_path):
-                            break  # file rotated
-                    except OSError:
-                        break
-                    await asyncio.sleep(0.5)
-                    continue
+                    if _col_proto >= 0:
+                        print(
+                            f"[ndpi] CSV header parsed: proto=col{_col_proto}, "
+                            f"src_ip=col{_col_src_ip}, dst_ip=col{_col_dst_ip} "
+                            f"({len(cols)} columns)"
+                        )
+                    else:
+                        # Fallback: try common positions
+                        print(f"[ndpi] CSV header: {cols[:10]}...")
+                        _col_src_ip = 1
+                        _col_dst_ip = 3
+                        _col_proto = 6
 
-                line = line.strip()
-                if not line or line.startswith("[") or line.startswith("]"):
-                    continue
+                # Seek to end — only process new flows
+                f.seek(0, 2)
 
-                # Strip trailing comma (JSON array elements)
-                if line.endswith(","):
-                    line = line[:-1]
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(output_path):
+                                break  # file rotated
+                        except OSError:
+                            break
+                        await asyncio.sleep(0.5)
+                        continue
 
-                try:
-                    flow = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
 
-                result = _process_flow(flow)
-                if result:
-                    labeled += 1
-                    if labeled % 100 == 0:
-                        print(f"[ndpi] {labeled} flows labeled so far")
+                    lines_read += 1
+                    parts = line.split(",")
+                    if len(parts) <= max(_col_src_ip, _col_dst_ip, _col_proto):
+                        continue
 
-                # Breathe every line to avoid starving the event loop
-                if labeled % 50 == 0:
-                    await asyncio.sleep(0)
+                    result = _process_csv_flow(
+                        parts[_col_src_ip].strip(),
+                        parts[_col_dst_ip].strip(),
+                        parts[_col_proto].strip(),
+                    )
+                    if result:
+                        labeled += 1
+                        if labeled % 100 == 0:
+                            print(
+                                f"[ndpi] {labeled} flows labeled "
+                                f"({lines_read} total lines read)"
+                            )
 
-    except (OSError, IOError) as exc:
-        print(f"[ndpi] Output read error: {exc}, retrying in 5s...")
-        await asyncio.sleep(5)
+                    # Breathe to avoid starving the event loop
+                    if lines_read % 50 == 0:
+                        await asyncio.sleep(0)
+
+        except (OSError, IOError) as exc:
+            print(f"[ndpi] CSV read error: {exc}, retrying in 5s...")
+            await asyncio.sleep(5)
 
 
-def _process_flow(flow: dict) -> bool:
-    """Process a single nDPI flow record.
+def _process_csv_flow(src_ip: str, dst_ip: str, proto: str) -> bool:
+    """Process a single nDPI CSV flow record.
 
     Returns True if a new label was injected into _known_ips.
     """
-    # Extract protocol name — field names vary by ndpiReader version
-    proto = (
-        flow.get("ndpi_proto")
-        or flow.get("detected.protocol.name")
-        or flow.get("proto")
-        or flow.get("name")
-        or ""
-    )
-
     normalized = _normalize_ndpi_proto(proto)
     if not normalized:
         return False
@@ -286,9 +311,6 @@ def _process_flow(flow: dict) -> bool:
     service, category = mapping
 
     # Determine local vs remote IP
-    src_ip = flow.get("src_ip") or flow.get("src_name") or ""
-    dst_ip = flow.get("dst_ip") or flow.get("dst_name") or ""
-
     if _is_local_ip(src_ip) and not _is_local_ip(dst_ip):
         remote_ip = dst_ip
         local_ip = src_ip

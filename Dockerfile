@@ -20,9 +20,18 @@ RUN apt-get update && \
         nbtscan \
         ipset \
         iptables \
-        libndpi-bin \
+        gnupg \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i 's/^hosts:.*/hosts: files mdns4_minimal [NOTFOUND=return] dns/' /etc/nsswitch.conf
+
+# Install nDPI 5.x from ntop's repository (v5 has per-flow CSV output,
+# Ubuntu's v4.2 only writes summaries at exit)
+RUN curl -fsSL https://packages.ntop.org/apt-stable/24.04/all/apt-ntop-stable.deb -o /tmp/apt-ntop.deb \
+    && dpkg -i /tmp/apt-ntop.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ndpi \
+    && rm -f /tmp/apt-ntop.deb \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

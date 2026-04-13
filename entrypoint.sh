@@ -37,11 +37,11 @@ else
 fi
 
 # Start ndpiReader in background — deep packet inspection on the bridge
-NDPI_OUT="/app/data/ndpi_flows.json"
+NDPI_OUT="/app/data/ndpi_flows.csv"
 NDPI_IFACE="${NDPI_INTERFACE:-br0}"
 if [ -x /usr/bin/ndpiReader ]; then
     rm -f "${NDPI_OUT}"
-    /usr/bin/ndpiReader -i "${NDPI_IFACE}" -j "${NDPI_OUT}" &
+    /usr/bin/ndpiReader -i "${NDPI_IFACE}" -C "${NDPI_OUT}" -q &
     NDPI_PID=$!
     echo "[entrypoint] ndpiReader started on ${NDPI_IFACE} (PID ${NDPI_PID})"
 else
