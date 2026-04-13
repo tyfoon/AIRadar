@@ -26,7 +26,9 @@ RUN apt-get update && \
 
 # Install nDPI 5.x from ntop's repository (v5 has per-flow CSV output,
 # Ubuntu's v4.2 only writes summaries at exit)
-RUN curl -fsSL https://packages.ntop.org/apt-stable/24.04/all/apt-ntop-stable.deb -o /tmp/apt-ntop.deb \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends lsb-release whiptail \
+    && curl -fsSL https://packages.ntop.org/apt-stable/24.04/all/apt-ntop-stable.deb -o /tmp/apt-ntop.deb \
     && dpkg -i /tmp/apt-ntop.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends ndpi \
