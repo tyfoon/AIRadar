@@ -276,28 +276,30 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     countries.forEach(c => { m[c.country_code] = c.bytes; });
     return m;
   }, [countries]);
-  // Attack hits per country (inbound only, 0 for outbound)
-  const attacksByCC = useMemo(() => {
+  // Attack IPs per country (inbound only). We use unique attacker IPs as
+  // the intensity metric because it's accurate per-period. hit_count is
+  // cumulative over the attack row's lifetime and overestimates for any
+  // single period window.
+  const attackIpsByCC = useMemo(() => {
     const m: Record<string, number> = {};
-    countries.forEach(c => { if (c.attack_hits) m[c.country_code] = c.attack_hits; });
+    countries.forEach(c => { if (c.attack_ips) m[c.country_code] = c.attack_ips; });
     return m;
   }, [countries]);
   const maxBytes = useMemo(() => Math.max(1, ...countries.map(c => c.bytes)), [countries]);
-  const maxAttacks = useMemo(() => Math.max(1, ...countries.map(c => c.attack_hits || 0)), [countries]);
+  const maxAttackIps = useMemo(() => Math.max(1, ...countries.map(c => c.attack_ips || 0)), [countries]);
   const logMax = Math.log10(maxBytes + 1);
-  const logMaxAtk = Math.log10(maxAttacks + 1);
+  const logMaxAtk = Math.log10(maxAttackIps + 1);
 
-  // Returns true if the country's traffic is predominantly attack traffic
   const isAttackCountry = useCallback((cc: string) => {
-    return (attacksByCC[cc] || 0) > 0;
-  }, [attacksByCC]);
+    return (attackIpsByCC[cc] || 0) > 0;
+  }, [attackIpsByCC]);
 
   const flatColor = useCallback((bytes: number, cc?: string) => {
     const dark = document.documentElement.classList.contains('dark');
-    const atk = cc ? (attacksByCC[cc] || 0) : 0;
-    // Red for attack countries (inbound)
-    if (atk > 0) {
-      const t = Math.log10(atk + 1) / logMaxAtk;
+    const atkIps = cc ? (attackIpsByCC[cc] || 0) : 0;
+    // Red for attack countries (inbound) — intensity from unique attacker IPs
+    if (atkIps > 0) {
+      const t = Math.log10(atkIps + 1) / logMaxAtk;
       if (dark) return `rgb(${Math.round(80 + t * 175)},${Math.round(20 + t * 10)},${Math.round(20 + t * 10)})`;
       return `rgb(${Math.round(254 - t * 50)},${Math.round(202 - t * 170)},${Math.round(202 - t * 170)})`;
     }
@@ -306,20 +308,20 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     const t = Math.log10(bytes + 1) / logMax;
     if (dark) return `rgb(${Math.round(30 + t * 29)},${Math.round(58 + t * 72)},${Math.round(138 + t * 108)})`;
     return `rgb(${Math.round(219 - t * 180)},${Math.round(234 - t * 136)},${Math.round(254 - t * 8)})`;
-  }, [logMax, logMaxAtk, attacksByCC]);
+  }, [logMax, logMaxAtk, attackIpsByCC]);
 
   const globeColor = useCallback((cc: string) => {
-    const atk = attacksByCC[cc] || 0;
+    const atkIps = attackIpsByCC[cc] || 0;
     // Red for attack countries on the 3D globe
-    if (atk > 0) {
-      const t = Math.log10(atk + 1) / logMaxAtk;
+    if (atkIps > 0) {
+      const t = Math.log10(atkIps + 1) / logMaxAtk;
       return `rgb(${Math.round(80 + t * 175)},${Math.round(20 + t * 20)},${Math.round(20 + t * 15)})`;
     }
     const bytes = bytesByCC[cc] || 0;
     if (bytes <= 0) return 'rgba(30,58,100,0.3)';
     const t = Math.log10(bytes + 1) / logMax;
     return `rgb(${Math.round(20 + t * 40)},${Math.round(60 + t * 100)},${Math.round(160 + t * 90)})`;
-  }, [bytesByCC, attacksByCC, logMax, logMaxAtk]);
+  }, [bytesByCC, attackIpsByCC, logMax, logMaxAtk]);
 
   // --- Globe accessors ---
   const polygonCapColor = useCallback((f: any) => globeColor(f?.properties?.ISO_A2 || ''), [globeColor]);
@@ -328,7 +330,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     const name = f?.properties?.NAME || cc;
     const c = countries.find(x => x.country_code === cc);
     if (c) {
-      const atkLine = c.attack_hits ? `<br/><span style="color:#f87171">⚠ ${formatNumber(c.attack_hits)} attacks (${c.attack_ips || 0} IPs)</span>` : '';
+      const atkLine = c.attack_ips ? `<br/><span style="color:#f87171">⚠ ${c.attack_ips} attacker IPs</span>` : '';
       return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px"><b>${name}</b><br/>${formatBytes(c.bytes)} &middot; ${formatNumber(c.hits)} conn.${atkLine}</div>`;
     }
     return `<div style="background:rgba(0,0,0,.7);color:#ccc;padding:4px 8px;border-radius:4px;font-size:11px">${name}</div>`;
@@ -347,12 +349,13 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
       const outbound = direction === 'outbound';
       const atk = c.attack_hits || 0;
       // Red arcs for attack countries, blue for normal traffic
-      const isAtk = atk > 0;
+      const atkIps = c.attack_ips || 0;
+      const isAtk = atkIps > 0;
       const r = isAtk ? 239 : 59;
       const g = isAtk ? 68 : 130;
       const b = isAtk ? 68 : 246;
-      // Attack arcs use attack intensity, normal arcs use byte intensity
-      const tArc = isAtk ? Math.log10(atk + 1) / logMaxAtk : t;
+      // Attack arcs use attacker-IP count as intensity, normal arcs use bytes
+      const tArc = isAtk ? Math.log10(atkIps + 1) / logMaxAtk : t;
       return {
         startLat: outbound ? HOME.lat : d.lat,
         startLng: outbound ? HOME.lng : d.lng,
@@ -360,7 +363,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
         endLng: outbound ? d.lng : HOME.lng,
         color: [`rgba(${r},${g},${b},${(.3 + tArc * .5).toFixed(2)})`, `rgba(${r},${g},${b},${(.1 + tArc * .2).toFixed(2)})`],
         stroke: 0.3 + tArc * 1.5,
-        label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}${atk ? ` · ${formatNumber(atk)} attacks` : ''}`,
+        label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}${isAtk ? ` · ${atkIps} attacker IPs` : ''}`,
       };
     }), [countries, logMax, logMaxAtk, direction]);
 
@@ -458,7 +461,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
                           onMouseEnter={(evt: any) => {
                             setHoveredCC(cc);
                             const c = countries.find(x => x.country_code === cc);
-                            const atkHtml = c?.attack_hits ? `<br/><span style="color:#f87171">⚠ ${formatNumber(c.attack_hits)} attacks (${c.attack_ips || 0} IPs)</span>` : '';
+                            const atkHtml = c?.attack_ips ? `<br/><span style="color:#f87171">⚠ ${c.attack_ips} attacker IPs</span>` : '';
                             const html = c
                               ? `<b>${countryName(cc)}</b><br/>${formatBytes(c.bytes)} · ${formatNumber(c.hits)} connections${atkHtml}`
                               : `<b>${geo.properties?.name || cc}</b><br/>No traffic`;
@@ -589,7 +592,7 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
         <tbody>
           {countries.map((c, i) => {
             const pct = (c.bytes / maxBytes) * 100;
-            const color = c.attack_hits ? '#ef4444' : ratioColor(c.bytes, c.opposite_bytes, direction);
+            const color = c.attack_ips ? '#ef4444' : ratioColor(c.bytes, c.opposite_bytes, direction);
             const isBlocked = blockedSet.has(c.country_code);
             return (
               <tr key={c.country_code} className="border-b border-slate-50 dark:border-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
@@ -599,7 +602,7 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
                     <span className={`${flagClass(c.country_code)} text-base`} />
                     <span className="font-medium text-slate-700 dark:text-slate-200">{countryName(c.country_code)}</span>
                     {isBlocked && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">blocked</span>}
-                    {!!c.attack_hits && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title={`${c.attack_ips || 0} unique attacker IPs`}>⚠ {formatNumber(c.attack_hits)} attacks</span>}
+                    {!!c.attack_ips && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title={`${formatNumber(c.attack_hits || 0)} cumulative hits`}>⚠ {c.attack_ips} attacker IPs</span>}
                   </span>
                 </td>
                 <td className="py-2.5 px-4 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatBytes(c.bytes)}</td>

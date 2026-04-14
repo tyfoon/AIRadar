@@ -3412,6 +3412,15 @@ def get_geo_traffic(
     # --- Attack overlay (inbound only) ---
     # Aggregate InboundAttack by country_code so the frontend can colour
     # attack-heavy countries red on the globe and flat map.
+    #
+    # InboundAttack rows accumulate hit_count over the lifetime of a
+    # (source_ip, target_ip, target_port) tuple, so the sum of hit_count
+    # is always a cumulative total — NOT per-period.  To give the user a
+    # meaningful period-scoped metric we report:
+    #   attack_ips  — unique attacker IPs active in the period (accurate)
+    #   attack_hits — sum of hit_count for rows active in the period
+    #                 (overestimates for long-lived attackers, but gives
+    #                  a rough severity signal; the tooltip clarifies)
     attack_map: dict[str, dict] = {}
     if direction == "inbound":
         atk_q = db.query(
@@ -3420,6 +3429,7 @@ def get_geo_traffic(
             func.count(func.distinct(InboundAttack.source_ip)).label("ips"),
         ).filter(InboundAttack.country_code.isnot(None))
         if start:
+            # Row is "active in the period" if it was last seen since start
             atk_q = atk_q.filter(InboundAttack.last_seen >= start)
         atk_rows = atk_q.group_by(InboundAttack.country_code).all()
         for r in atk_rows:
