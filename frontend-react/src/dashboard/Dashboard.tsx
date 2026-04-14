@@ -20,15 +20,17 @@ import type { FleetDevice } from '../iot/types';
 // Dashboard — System Overview
 // ---------------------------------------------------------------------------
 export default function Dashboard() {
+  const [hours] = useState(24);
+
   const health = useQuery({ queryKey: ['dash-health'], queryFn: fetchHealth, refetchInterval: 30_000 });
   const sysPerf = useQuery({ queryKey: ['dash-sys-perf'], queryFn: fetchSystemPerf, refetchInterval: 60_000 });
-  const netPerf = useQuery({ queryKey: ['dash-net-perf'], queryFn: fetchNetworkPerf, refetchInterval: 60_000 });
-  const privacy = useQuery({ queryKey: ['dash-privacy'], queryFn: fetchPrivacyStats, refetchInterval: 60_000 });
+  const netPerf = useQuery({ queryKey: ['dash-net-perf', hours], queryFn: () => fetchNetworkPerf(hours), refetchInterval: 60_000 });
+  const privacy = useQuery({ queryKey: ['dash-privacy', hours], queryFn: () => fetchPrivacyStats(hours), refetchInterval: 60_000 });
   const ips = useQuery({ queryKey: ['dash-ips'], queryFn: fetchIpsStatus, refetchInterval: 30_000 });
   const fleet = useQuery({ queryKey: ['dash-fleet'], queryFn: fetchFleetSummary, refetchInterval: 60_000 });
-  const events = useQuery({ queryKey: ['dash-events'], queryFn: fetchDashEvents, refetchInterval: 30_000 });
-  const geoOut = useQuery({ queryKey: ['dash-geo-out'], queryFn: () => fetchGeoTraffic('outbound'), refetchInterval: 60_000 });
-  const geoIn = useQuery({ queryKey: ['dash-geo-in'], queryFn: () => fetchGeoTraffic('inbound'), refetchInterval: 60_000 });
+  const events = useQuery({ queryKey: ['dash-events', hours], queryFn: () => fetchDashEvents(hours), refetchInterval: 30_000 });
+  const geoOut = useQuery({ queryKey: ['dash-geo-out', hours], queryFn: () => fetchGeoTraffic('outbound', String(hours * 60)), refetchInterval: 60_000 });
+  const geoIn = useQuery({ queryKey: ['dash-geo-in', hours], queryFn: () => fetchGeoTraffic('inbound', String(hours * 60)), refetchInterval: 60_000 });
 
   const deviceCount = fleet.data?.total_devices ?? 0;
   const onlineCount = fleet.data?.devices?.filter(d => d.online).length ?? 0;
@@ -57,7 +59,7 @@ export default function Dashboard() {
         <MetricCard
           icon="ph-duotone ph-pulse"
           iconColor="text-indigo-500"
-          label="Events Today"
+          label={hours <= 24 ? 'Events 24h' : `Events ${hours}h`}
           value={events.data?.length ?? '...'}
           sub="AI + Cloud + all"
         />

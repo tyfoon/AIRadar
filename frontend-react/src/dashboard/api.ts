@@ -8,11 +8,10 @@ import type {
 } from './types';
 import type { FleetResponse } from '../iot/types';
 
-const todayStart = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-};
+/** ISO timestamp for "hours ago from now" — used as rolling window start. */
+export function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 3600_000).toISOString();
+}
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const r = await fetch('/api/health');
@@ -24,27 +23,29 @@ export async function fetchSystemPerf(): Promise<SystemPerformance> {
   return r.json();
 }
 
-export async function fetchNetworkPerf(): Promise<NetworkPerfResponse> {
-  const r = await fetch('/api/network/performance/history?hours=24');
+export async function fetchNetworkPerf(hours: number): Promise<NetworkPerfResponse> {
+  const r = await fetch(`/api/network/performance/history?hours=${hours}`);
   return r.json();
 }
 
-export async function fetchPrivacyStats(): Promise<PrivacyStats> {
-  const r = await fetch('/api/privacy/stats');
+export async function fetchPrivacyStats(hours: number): Promise<PrivacyStats> {
+  const r = await fetch(`/api/privacy/stats?start=${hoursAgo(hours)}`);
   return r.json();
 }
 
 export async function fetchIpsStatus(): Promise<IpsStatus> {
+  // IPS endpoint uses its own 24h window internally
   const r = await fetch('/api/ips/status');
   return r.json();
 }
 
 export async function fetchFleetSummary(): Promise<FleetResponse> {
+  // Fleet endpoint uses its own 24h window internally
   const r = await fetch('/api/iot/fleet');
   return r.json();
 }
 
-export async function fetchDashEvents(): Promise<DashEvent[]> {
-  const r = await fetch(`/api/events?limit=1000&include_heartbeats=false&start=${todayStart()}`);
+export async function fetchDashEvents(hours: number): Promise<DashEvent[]> {
+  const r = await fetch(`/api/events?limit=1000&include_heartbeats=false&start=${hoursAgo(hours)}`);
   return r.json();
 }
