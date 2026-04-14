@@ -75,27 +75,36 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const queryClient = useQueryClient();
   const globeRef = useRef<any>(null);
   const globeWrapRef = useRef<HTMLDivElement>(null);
-  const [globeSize, setGlobeSize] = useState(320);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [globeSize, setGlobeSize] = useState(0);
+  const [visible, setVisible] = useState(false);
   const [geoJson, setGeoJson] = useState<any>(null);
 
-  // Measure globe container (square) — also re-measure when becoming visible
+  // Detect when the component becomes visible (parent toggling hidden class)
   useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisible(true);
+    }, { threshold: 0.01 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Measure globe container once visible
+  useEffect(() => {
+    if (!visible) return;
     function measure() {
       if (globeWrapRef.current) {
         const w = globeWrapRef.current.clientWidth;
         if (w > 0) setGlobeSize(w);
       }
     }
-    measure();
+    // Small delay to let layout settle after hidden→visible
+    const t = setTimeout(measure, 50);
     window.addEventListener('resize', measure);
-    // Re-measure when parent becomes visible (hidden→shown toggle)
-    const interval = setInterval(() => {
-      if (globeWrapRef.current && globeWrapRef.current.clientWidth > 0 && globeSize === 0) {
-        measure();
-      }
-    }, 200);
-    return () => { window.removeEventListener('resize', measure); clearInterval(interval); };
-  }, [globeSize]);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
+  }, [visible]);
 
   useEffect(() => {
     fetch(GEO_JSON_URL).then(r => r.json()).then(d => setGeoJson(d.features));
@@ -215,7 +224,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4">
       {/* Direction tabs */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
         <TabBtn active={direction === 'outbound'} onClick={() => setDirection('outbound')} icon="ph-duotone ph-arrow-up-right" label="Outbound" />
