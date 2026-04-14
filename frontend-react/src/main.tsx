@@ -4,6 +4,7 @@ import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ScreenTime from './ScreenTime';
 import GeoMap from './geo/GeoMap';
+import IotOverview from './iot/IotOverview';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +93,18 @@ mountIsland('react-screentime-root', 'data-mac', (el, mac) => {
 mountIsland('react-geo-root', 'data-active', (el, active) => {
   if (active) {
     renderInto(el, <GeoMap />);
+  } else {
+    unmountFrom(el);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Island: IoT Overview (iot page)
+// Same mount/unmount pattern as GeoMap to free resources when off-page.
+// ---------------------------------------------------------------------------
+mountIsland('react-iot-root', 'data-active', (el, active) => {
+  if (active) {
+    renderInto(el, <IotOverview />);
   } else {
     unmountFrom(el);
   }
