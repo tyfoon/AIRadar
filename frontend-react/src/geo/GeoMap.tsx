@@ -78,18 +78,24 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const [globeSize, setGlobeSize] = useState(320);
   const [geoJson, setGeoJson] = useState<any>(null);
 
-  // Measure globe container (square)
+  // Measure globe container (square) — also re-measure when becoming visible
   useEffect(() => {
     function measure() {
       if (globeWrapRef.current) {
         const w = globeWrapRef.current.clientWidth;
-        setGlobeSize(w);
+        if (w > 0) setGlobeSize(w);
       }
     }
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+    // Re-measure when parent becomes visible (hidden→shown toggle)
+    const interval = setInterval(() => {
+      if (globeWrapRef.current && globeWrapRef.current.clientWidth > 0 && globeSize === 0) {
+        measure();
+      }
+    }, 200);
+    return () => { window.removeEventListener('resize', measure); clearInterval(interval); };
+  }, [globeSize]);
 
   useEffect(() => {
     fetch(GEO_JSON_URL).then(r => r.json()).then(d => setGeoJson(d.features));
@@ -310,7 +316,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
             className="flex-[1] min-w-0 bg-slate-950 border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden flex items-center justify-center"
             style={{ aspectRatio: '1' }}
           >
-            {geoJson && (
+            {geoJson && globeSize > 0 && (
               <Globe ref={globeRef}
                 width={globeSize} height={globeSize}
                 backgroundColor="rgba(0,0,0,0)"
