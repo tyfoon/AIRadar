@@ -20,7 +20,7 @@ import type { FleetDevice } from '../iot/types';
 // Dashboard — System Overview
 // ---------------------------------------------------------------------------
 export default function Dashboard() {
-  const [hours] = useState(24);
+  const [hours, setHours] = useState(24);
 
   const health = useQuery({ queryKey: ['dash-health'], queryFn: fetchHealth, refetchInterval: 30_000 });
   const sysPerf = useQuery({ queryKey: ['dash-sys-perf'], queryFn: fetchSystemPerf, refetchInterval: 60_000 });
@@ -35,8 +35,34 @@ export default function Dashboard() {
   const deviceCount = fleet.data?.total_devices ?? 0;
   const onlineCount = fleet.data?.devices?.filter(d => d.online).length ?? 0;
 
+  const PERIOD_OPTIONS = [
+    { value: 1, label: '1h' },
+    { value: 24, label: '24h' },
+    { value: 168, label: '7d' },
+  ] as const;
+
   return (
     <div className="space-y-4">
+      {/* ── Header row: title + period toggle ── */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-700 dark:text-slate-200">System Overview</h2>
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-0.5">
+          {PERIOD_OPTIONS.map(o => (
+            <button
+              key={o.value}
+              onClick={() => setHours(o.value)}
+              className={`text-[11px] px-3 py-1 rounded-md font-medium transition-colors ${
+                hours === o.value
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Metric Cards (5 cards — System Health+Network merged) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <MetricCard
@@ -59,7 +85,7 @@ export default function Dashboard() {
         <MetricCard
           icon="ph-duotone ph-pulse"
           iconColor="text-indigo-500"
-          label={hours <= 24 ? 'Events 24h' : `Events ${hours}h`}
+          label={`Events ${hours >= 168 ? '7d' : hours + 'h'}`}
           value={events.data?.length ?? '...'}
           sub="AI + Cloud + all"
         />
