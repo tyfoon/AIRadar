@@ -101,7 +101,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     c.autoRotate = true;
     c.autoRotateSpeed = 0.4;
     c.enableZoom = true;
-    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 2.0 }, 0);
+    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.5 }, 0);
   }, [geoJson]);
 
   // --- Data queries ---
