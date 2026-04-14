@@ -584,98 +584,89 @@ function collapseEvents(events: DeviceEvent[], keyFn: (e: DeviceEvent) => string
 }
 
 function EventsTab({ events, category, serviceFilter, policyByService, policyExpiresByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [expandedSvc, setExpandedSvc] = useState<string | null>(null);
   const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
 
   let filtered = events.filter(e => e._cat === category);
   if (serviceFilter) filtered = filtered.filter(e => e.ai_service === serviceFilter);
 
-  const collapsed = collapseEvents(filtered, e => `${e.ai_service}|${e.detection_type}`);
+  useEffect(() => { setExpandedSvc(null); setExpandedPolicy(null); }, [category, serviceFilter]);
 
-  useEffect(() => { setVisible(PAGE_SIZE); setExpandedPolicy(null); }, [category, serviceFilter]);
-
-  if (collapsed.length === 0) {
+  if (filtered.length === 0) {
     return <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">{t('dev.noActivity') || 'No events'}</div>;
   }
 
-  const shown = collapsed.slice(0, visible);
-
-  // Unique services with event counts
-  const svcCounts: Record<string, number> = {};
-  filtered.forEach(e => { svcCounts[e.ai_service] = (svcCounts[e.ai_service] || 0) + 1; });
-  const uniqueServices = Object.keys(svcCounts).sort((a, b) => svcCounts[b] - svcCounts[a]);
+  // Group events by service
+  const eventsBySvc: Record<string, DeviceEvent[]> = {};
+  filtered.forEach(e => {
+    (eventsBySvc[e.ai_service] = eventsBySvc[e.ai_service] || []).push(e);
+  });
+  const services = Object.keys(eventsBySvc).sort((a, b) => eventsBySvc[b].length - eventsBySvc[a].length);
 
   return (
-    <div className="p-0">
-      {/* Service list — policy folds out on shield click */}
-      <div className="px-4 py-3 space-y-2">
-        {uniqueServices.map(svc => {
-          const action = (policyByService[svc] as 'allow' | 'alert' | 'block') || null;
-          const borderCls = action === 'block' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10'
-            : action === 'alert' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10'
-            : 'border-slate-200 dark:border-white/[0.05]';
-          return (
-            <div key={svc} className={`border ${borderCls} rounded-xl p-3 bg-white dark:bg-white/[0.03] transition-colors`}>
-              <div className="flex items-center gap-2">
-                <SvcLogo service={svc} size={20} />
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
-                <button
-                  onClick={() => setExpandedPolicy(expandedPolicy === svc ? null : svc)}
-                  className={`ml-1 transition-colors ${expandedPolicy === svc ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}
-                  title={t('rules.manageRules') || 'Set policy'}
-                >
-                  <i className="ph-duotone ph-shield-check text-sm" />
-                </button>
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> {svcCounts[svc]}
-                </span>
-              </div>
-              {expandedPolicy === svc && (
-                <div className="mt-2">
-                  <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="px-4 py-3 space-y-2">
+      {services.map(svc => {
+        const action = (policyByService[svc] as 'allow' | 'alert' | 'block') || null;
+        const borderCls = action === 'block' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10'
+          : action === 'alert' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10'
+          : 'border-slate-200 dark:border-white/[0.05]';
+        const isExpanded = expandedSvc === svc;
+        const svcEvents = eventsBySvc[svc];
+        const collapsed = isExpanded ? collapseEvents(svcEvents, e => `${e.ai_service}|${e.detection_type}`) : [];
 
-      {/* Event table */}
-      <table className="w-full text-left striped-rows">
-        <tbody>
-          {shown.map((e, i) => (
-            <tr key={i} className={`border-b border-slate-100 dark:border-white/[0.04] ${e.possible_upload ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
-              <td className="py-2.5 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                {fmtTime(e._newest_ts || e.timestamp)}
-                {(e._count || 0) > 1 && (
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500"> – {fmtTime(e._oldest_ts || e.timestamp)}</span>
-                )}
-              </td>
-              <td className="py-2.5 px-4 truncate">
-                <span className="inline-flex items-center gap-2 min-w-0">
-                  <SvcLogo service={e.ai_service} size={24} showUploadDot={!!e.possible_upload} />
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(e.ai_service)}</span>
-                  {(e._count || 0) > 1 && (
-                    <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums bg-slate-200/70 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300">
-                      ×{e._count}
+        return (
+          <div key={svc} className={`border ${borderCls} rounded-xl bg-white dark:bg-white/[0.03] transition-colors overflow-hidden`}>
+            {/* Service header — click to expand events */}
+            <div
+              className="flex items-center gap-2 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
+              onClick={() => setExpandedSvc(isExpanded ? null : svc)}
+            >
+              <i className={`ph-bold ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'} text-[10px] text-slate-400 flex-shrink-0`} />
+              <SvcLogo service={svc} size={20} />
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
+              <button
+                onClick={e => { e.stopPropagation(); setExpandedPolicy(expandedPolicy === svc ? null : svc); }}
+                className={`ml-1 transition-colors ${expandedPolicy === svc ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}
+                title={t('rules.manageRules') || 'Set policy'}
+              >
+                <i className="ph-duotone ph-shield-check text-sm" />
+              </button>
+              <span className="ml-auto inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> {svcEvents.length}
+              </span>
+            </div>
+
+            {/* Policy controls — fold out on shield click */}
+            {expandedPolicy === svc && (
+              <div className="px-3 pb-3">
+                <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
+              </div>
+            )}
+
+            {/* Event rows — fold out on card click */}
+            {isExpanded && (
+              <div className="border-t border-slate-100 dark:border-white/[0.04]">
+                {collapsed.map((e, i) => (
+                  <div key={i} className={`flex items-center gap-3 px-4 py-2 text-xs border-b border-slate-50 dark:border-white/[0.02] last:border-0 ${e.possible_upload ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
+                    <span className="tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap w-[70px] flex-shrink-0">
+                      {fmtTime(e._newest_ts || e.timestamp)}
                     </span>
-                  )}
-                </span>
-              </td>
-              <td className="py-2.5 px-4 text-xs text-right tabular-nums whitespace-nowrap">
-                {e.bytes_transferred ? fmtBytes(e.bytes_transferred) : '0 B'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {visible < collapsed.length && (
-        <div className="py-3 text-center">
-          <button onClick={() => setVisible(v => v + PAGE_SIZE)} className="px-4 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-white/[0.06] text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
-            Load more ({collapsed.length - visible} remaining)
-          </button>
-        </div>
-      )}
+                    {(e._count || 0) > 1 && (
+                      <span className="px-1 py-0.5 rounded text-[10px] font-semibold tabular-nums bg-slate-200/70 dark:bg-white/[0.08] text-slate-600 dark:text-slate-300 flex-shrink-0">
+                        ×{e._count}
+                      </span>
+                    )}
+                    <span className="flex-1" />
+                    <span className="tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap flex-shrink-0">
+                      {e.bytes_transferred ? fmtBytes(e.bytes_transferred) : '0 B'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
