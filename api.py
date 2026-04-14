@@ -3409,30 +3409,68 @@ def get_geo_traffic(
         top_by_cc[cc].sort(key=lambda x: -x["bytes"])
         top_by_cc[cc] = top_by_cc[cc][:3]
 
+    # --- Attack overlay (inbound only) ---
+    # Aggregate InboundAttack by country_code so the frontend can colour
+    # attack-heavy countries red on the globe and flat map.
+    attack_map: dict[str, dict] = {}
+    if direction == "inbound":
+        atk_q = db.query(
+            InboundAttack.country_code,
+            func.sum(InboundAttack.hit_count).label("hits"),
+            func.count(func.distinct(InboundAttack.source_ip)).label("ips"),
+        ).filter(InboundAttack.country_code.isnot(None))
+        if start:
+            atk_q = atk_q.filter(InboundAttack.last_seen >= start)
+        atk_rows = atk_q.group_by(InboundAttack.country_code).all()
+        for r in atk_rows:
+            attack_map[r.country_code] = {
+                "hits": int(r.hits or 0),
+                "ips": int(r.ips or 0),
+            }
+
     # Normalise the two row shapes (GeoTraffic model row vs aggregated
     # conversations Row) into the same country dict.
     countries_out = []
+    all_ccs = set()
     for r in rows:
         if filters_active:
-            # Aggregated row from GeoConversation query: r.bytes, r.hits
             country_code = r.country_code
             byts = int(r.bytes or 0)
             hits = int(r.hits or 0)
             last_seen = str(r.last_seen) if r.last_seen else ""
         else:
-            # GeoTraffic model row
             country_code = r.country_code
             byts = r.bytes_transferred
             hits = r.hits
             last_seen = str(r.last_seen)
-        countries_out.append({
+        all_ccs.add(country_code)
+        entry: dict = {
             "country_code": country_code,
             "bytes": byts,
             "hits": hits,
             "last_seen": last_seen,
             "opposite_bytes": int(opp_map.get(country_code, 0)),
             "top_devices": top_by_cc.get(country_code, []),
-        })
+        }
+        if direction == "inbound" and country_code in attack_map:
+            entry["attack_hits"] = attack_map[country_code]["hits"]
+            entry["attack_ips"] = attack_map[country_code]["ips"]
+        countries_out.append(entry)
+
+    # Countries that only appear in attack data (no normal inbound traffic)
+    if direction == "inbound":
+        for cc, atk in attack_map.items():
+            if cc not in all_ccs:
+                countries_out.append({
+                    "country_code": cc,
+                    "bytes": 0,
+                    "hits": 0,
+                    "last_seen": "",
+                    "opposite_bytes": int(opp_map.get(cc, 0)),
+                    "top_devices": [],
+                    "attack_hits": atk["hits"],
+                    "attack_ips": atk["ips"],
+                })
 
     return {
         "direction": direction,

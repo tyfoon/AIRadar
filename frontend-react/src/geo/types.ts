@@ -11,6 +11,10 @@ export interface GeoCountry {
   hits: number;
   opposite_bytes: number;
   top_devices: GeoDevice[];
+  /** Inbound only — total attack connection attempts from this country */
+  attack_hits?: number;
+  /** Inbound only — unique attacker IPs from this country */
+  attack_ips?: number;
 }
 
 export interface GeoTrafficResponse {

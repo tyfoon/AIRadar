@@ -276,23 +276,50 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     countries.forEach(c => { m[c.country_code] = c.bytes; });
     return m;
   }, [countries]);
+  // Attack hits per country (inbound only, 0 for outbound)
+  const attacksByCC = useMemo(() => {
+    const m: Record<string, number> = {};
+    countries.forEach(c => { if (c.attack_hits) m[c.country_code] = c.attack_hits; });
+    return m;
+  }, [countries]);
   const maxBytes = useMemo(() => Math.max(1, ...countries.map(c => c.bytes)), [countries]);
+  const maxAttacks = useMemo(() => Math.max(1, ...countries.map(c => c.attack_hits || 0)), [countries]);
   const logMax = Math.log10(maxBytes + 1);
+  const logMaxAtk = Math.log10(maxAttacks + 1);
 
-  const flatColor = useCallback((bytes: number) => {
+  // Returns true if the country's traffic is predominantly attack traffic
+  const isAttackCountry = useCallback((cc: string) => {
+    return (attacksByCC[cc] || 0) > 0;
+  }, [attacksByCC]);
+
+  const flatColor = useCallback((bytes: number, cc?: string) => {
     const dark = document.documentElement.classList.contains('dark');
+    const atk = cc ? (attacksByCC[cc] || 0) : 0;
+    // Red for attack countries (inbound)
+    if (atk > 0) {
+      const t = Math.log10(atk + 1) / logMaxAtk;
+      if (dark) return `rgb(${Math.round(80 + t * 175)},${Math.round(20 + t * 10)},${Math.round(20 + t * 10)})`;
+      return `rgb(${Math.round(254 - t * 50)},${Math.round(202 - t * 170)},${Math.round(202 - t * 170)})`;
+    }
+    // Blue for normal traffic
     if (bytes <= 0) return dark ? '#1e293b' : '#e2e8f0';
     const t = Math.log10(bytes + 1) / logMax;
     if (dark) return `rgb(${Math.round(30 + t * 29)},${Math.round(58 + t * 72)},${Math.round(138 + t * 108)})`;
     return `rgb(${Math.round(219 - t * 180)},${Math.round(234 - t * 136)},${Math.round(254 - t * 8)})`;
-  }, [logMax]);
+  }, [logMax, logMaxAtk, attacksByCC]);
 
   const globeColor = useCallback((cc: string) => {
+    const atk = attacksByCC[cc] || 0;
+    // Red for attack countries on the 3D globe
+    if (atk > 0) {
+      const t = Math.log10(atk + 1) / logMaxAtk;
+      return `rgb(${Math.round(80 + t * 175)},${Math.round(20 + t * 20)},${Math.round(20 + t * 15)})`;
+    }
     const bytes = bytesByCC[cc] || 0;
     if (bytes <= 0) return 'rgba(30,58,100,0.3)';
     const t = Math.log10(bytes + 1) / logMax;
     return `rgb(${Math.round(20 + t * 40)},${Math.round(60 + t * 100)},${Math.round(160 + t * 90)})`;
-  }, [bytesByCC, logMax]);
+  }, [bytesByCC, attacksByCC, logMax, logMaxAtk]);
 
   // --- Globe accessors ---
   const polygonCapColor = useCallback((f: any) => globeColor(f?.properties?.ISO_A2 || ''), [globeColor]);
@@ -300,7 +327,10 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     const cc = f?.properties?.ISO_A2 || '';
     const name = f?.properties?.NAME || cc;
     const c = countries.find(x => x.country_code === cc);
-    if (c) return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px"><b>${name}</b><br/>${formatBytes(c.bytes)} &middot; ${formatNumber(c.hits)} conn.</div>`;
+    if (c) {
+      const atkLine = c.attack_hits ? `<br/><span style="color:#f87171">⚠ ${formatNumber(c.attack_hits)} attacks (${c.attack_ips || 0} IPs)</span>` : '';
+      return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px"><b>${name}</b><br/>${formatBytes(c.bytes)} &middot; ${formatNumber(c.hits)} conn.${atkLine}</div>`;
+    }
     return `<div style="background:rgba(0,0,0,.7);color:#ccc;padding:4px 8px;border-radius:4px;font-size:11px">${name}</div>`;
   }, [countries]);
   const handlePolygonClick = useCallback((f: any) => {
@@ -315,16 +345,24 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
       const d = CENTROIDS[c.country_code];
       const t = Math.log10(c.bytes + 1) / logMax;
       const outbound = direction === 'outbound';
+      const atk = c.attack_hits || 0;
+      // Red arcs for attack countries, blue for normal traffic
+      const isAtk = atk > 0;
+      const r = isAtk ? 239 : 59;
+      const g = isAtk ? 68 : 130;
+      const b = isAtk ? 68 : 246;
+      // Attack arcs use attack intensity, normal arcs use byte intensity
+      const tArc = isAtk ? Math.log10(atk + 1) / logMaxAtk : t;
       return {
         startLat: outbound ? HOME.lat : d.lat,
         startLng: outbound ? HOME.lng : d.lng,
         endLat: outbound ? d.lat : HOME.lat,
         endLng: outbound ? d.lng : HOME.lng,
-        color: [`rgba(59,130,246,${(.3 + t * .5).toFixed(2)})`, `rgba(59,130,246,${(.1 + t * .2).toFixed(2)})`],
-        stroke: 0.3 + t * 1.5,
-        label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}`,
+        color: [`rgba(${r},${g},${b},${(.3 + tArc * .5).toFixed(2)})`, `rgba(${r},${g},${b},${(.1 + tArc * .2).toFixed(2)})`],
+        stroke: 0.3 + tArc * 1.5,
+        label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}${atk ? ` · ${formatNumber(atk)} attacks` : ''}`,
       };
-    }), [countries, logMax, direction]);
+    }), [countries, logMax, logMaxAtk, direction]);
 
   async function handleBlock(cc: string) {
     try { await blockCountry(cc, 'both'); queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] }); } catch (e) { console.error(e); }
@@ -406,21 +444,23 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
                       const cc = NUM_TO_ALPHA2[geo.id] || '';
                       const bytes = bytesByCC[cc] || 0;
                       const isDark = document.documentElement.classList.contains('dark');
+                      const hasAttack = isAttackCountry(cc);
                       return (
                         <Geography key={geo.rsmKey} geography={geo}
-                          fill={flatColor(bytes)}
-                          stroke={isDark ? '#334155' : '#cbd5e1'}
-                          strokeWidth={0.4}
+                          fill={flatColor(bytes, cc)}
+                          stroke={hasAttack ? (isDark ? '#991b1b' : '#fca5a5') : (isDark ? '#334155' : '#cbd5e1')}
+                          strokeWidth={hasAttack ? 0.8 : 0.4}
                           style={{
                             default: { outline: 'none' },
-                            hover: { outline: 'none', stroke: isDark ? '#e2e8f0' : '#334155', strokeWidth: 1.2, cursor: 'pointer' },
+                            hover: { outline: 'none', stroke: hasAttack ? '#ef4444' : (isDark ? '#e2e8f0' : '#334155'), strokeWidth: 1.2, cursor: 'pointer' },
                             pressed: { outline: 'none' },
                           }}
                           onMouseEnter={(evt: any) => {
                             setHoveredCC(cc);
                             const c = countries.find(x => x.country_code === cc);
+                            const atkHtml = c?.attack_hits ? `<br/><span style="color:#f87171">⚠ ${formatNumber(c.attack_hits)} attacks (${c.attack_ips || 0} IPs)</span>` : '';
                             const html = c
-                              ? `<b>${countryName(cc)}</b><br/>${formatBytes(c.bytes)} · ${formatNumber(c.hits)} connections`
+                              ? `<b>${countryName(cc)}</b><br/>${formatBytes(c.bytes)} · ${formatNumber(c.hits)} connections${atkHtml}`
                               : `<b>${geo.properties?.name || cc}</b><br/>No traffic`;
                             const rect = (evt.target as SVGElement).closest('svg')?.getBoundingClientRect();
                             setTooltip({ html, x: rect ? evt.clientX - rect.left : 0, y: rect ? evt.clientY - rect.top : 0 });
@@ -549,7 +589,7 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
         <tbody>
           {countries.map((c, i) => {
             const pct = (c.bytes / maxBytes) * 100;
-            const color = ratioColor(c.bytes, c.opposite_bytes, direction);
+            const color = c.attack_hits ? '#ef4444' : ratioColor(c.bytes, c.opposite_bytes, direction);
             const isBlocked = blockedSet.has(c.country_code);
             return (
               <tr key={c.country_code} className="border-b border-slate-50 dark:border-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
@@ -559,6 +599,7 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
                     <span className={`${flagClass(c.country_code)} text-base`} />
                     <span className="font-medium text-slate-700 dark:text-slate-200">{countryName(c.country_code)}</span>
                     {isBlocked && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">blocked</span>}
+                    {!!c.attack_hits && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title={`${c.attack_ips || 0} unique attacker IPs`}>⚠ {formatNumber(c.attack_hits)} attacks</span>}
                   </span>
                 </td>
                 <td className="py-2.5 px-4 text-right tabular-nums text-slate-600 dark:text-slate-300">{formatBytes(c.bytes)}</td>
