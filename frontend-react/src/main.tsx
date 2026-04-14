@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ScreenTime from './ScreenTime';
+import GeoMap from './geo/GeoMap';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -10,68 +11,74 @@ const queryClient = new QueryClient({
   },
 });
 
-// Island injector: observe the data-mac attribute on the mount point.
-// When app.js sets data-mac="AA:BB:CC", React re-renders with the new MAC.
+// ---------------------------------------------------------------------------
+// Generic island helper: observe a data attribute and (re-)render on change
+// ---------------------------------------------------------------------------
 
-const MOUNT_ID = 'react-screentime-root';
-let root: Root | null = null;
-let currentMac = '';
+function mountIsland(
+  elementId: string,
+  attrName: string,
+  renderFn: (el: HTMLElement, value: string) => void,
+) {
+  function tryMount() {
+    const el = document.getElementById(elementId);
+    if (!el) {
+      // Wait for element to appear in DOM
+      const obs = new MutationObserver(() => {
+        if (document.getElementById(elementId)) {
+          obs.disconnect();
+          tryMount();
+        }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      return;
+    }
 
-function render(mac: string) {
-  const el = document.getElementById(MOUNT_ID);
-  if (!el) return;
+    // Initial render if attribute is already set
+    const val = el.getAttribute(attrName);
+    if (val) renderFn(el, val);
 
-  if (!root) {
-    root = createRoot(el);
+    // Observe attribute changes
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === attrName) {
+          const newVal = el.getAttribute(attrName) || '';
+          if (newVal) renderFn(el, newVal);
+        }
+      }
+    });
+    observer.observe(el, { attributes: true, attributeFilter: [attrName] });
   }
 
-  currentMac = mac;
+  tryMount();
+}
+
+function renderInto(el: HTMLElement, component: React.ReactNode) {
+  // Reuse or create root
+  let root = (el as any).__reactRoot as Root | undefined;
+  if (!root) {
+    root = createRoot(el);
+    (el as any).__reactRoot = root;
+  }
   root.render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <ScreenTime macAddress={mac} />
+        {component}
       </QueryClientProvider>
     </StrictMode>,
   );
 }
 
-// Watch for data-mac changes via MutationObserver
-function init() {
-  const el = document.getElementById(MOUNT_ID);
-  if (!el) {
-    // Element not in DOM yet — wait for it
-    const bodyObserver = new MutationObserver(() => {
-      if (document.getElementById(MOUNT_ID)) {
-        bodyObserver.disconnect();
-        init();
-      }
-    });
-    bodyObserver.observe(document.body, { childList: true, subtree: true });
-    return;
-  }
+// ---------------------------------------------------------------------------
+// Island: ScreenTime (device drawer Sessions tab)
+// ---------------------------------------------------------------------------
+mountIsland('react-screentime-root', 'data-mac', (el, mac) => {
+  renderInto(el, <ScreenTime macAddress={mac} />);
+});
 
-  // Initial render if data-mac is already set
-  const mac = el.getAttribute('data-mac');
-  if (mac) render(mac);
-
-  // Observe attribute changes
-  const observer = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      if (m.type === 'attributes' && m.attributeName === 'data-mac') {
-        const newMac = el.getAttribute('data-mac') || '';
-        if (newMac && newMac !== currentMac) {
-          render(newMac);
-        }
-      }
-    }
-  });
-
-  observer.observe(el, { attributes: true, attributeFilter: ['data-mac'] });
-}
-
-// Start when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+// ---------------------------------------------------------------------------
+// Island: GeoMap (geo page)
+// ---------------------------------------------------------------------------
+mountIsland('react-geo-root', 'data-active', (el, _active) => {
+  renderInto(el, <GeoMap />);
+});
