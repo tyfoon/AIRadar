@@ -6,6 +6,7 @@ import ScreenTime from './ScreenTime';
 import GeoMap from './geo/GeoMap';
 import IotOverview from './iot/IotOverview';
 import Dashboard from './dashboard/Dashboard';
+import DevicesPage from './devices/DevicesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -118,6 +119,18 @@ mountIsland('react-iot-root', 'data-active', (el, active) => {
 mountIsland('react-dashboard-root', 'data-active', (el, active) => {
   if (active) {
     renderInto(el, <Dashboard />);
+  } else {
+    unmountFrom(el);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Island: Devices Page (devices page)
+// Full devices page: matrix, drawer, groups, ask network.
+// ---------------------------------------------------------------------------
+mountIsland('react-devices-root', 'data-active', (el, active) => {
+  if (active) {
+    renderInto(el, <DevicesPage />);
   } else {
     unmountFrom(el);
   }

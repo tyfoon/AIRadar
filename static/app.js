@@ -253,6 +253,12 @@ function navigate(page) {
       reactDash.setAttribute('data-active', '');
     }
   }
+  if (page !== 'devices') {
+    const reactDev = document.getElementById('react-devices-root');
+    if (reactDev && reactDev.getAttribute('data-active')) {
+      reactDev.setAttribute('data-active', '');
+    }
+  }
 
   // Load data for this page
   refreshPage(page);
@@ -1533,7 +1539,13 @@ async function refreshPage(page) {
     else if (page === 'ai') await refreshAI();
     else if (page === 'cloud') await refreshCloud();
     else if (page === 'privacy') await refreshPrivacy();
-    else if (page === 'devices') await refreshDevices();
+    else if (page === 'devices') {
+      // React island — activate mount point
+      const el = document.getElementById('react-devices-root');
+      if (el) el.setAttribute('data-active', '1');
+      // Still load devices for other pages that depend on deviceMap/ipToMac
+      await loadDevices();
+    }
     else if (page === 'ips') await refreshIps();
     else if (page === 'rules') await refreshRules();
     else if (page === 'iot') await refreshIot();  // React island — just ensures mount
