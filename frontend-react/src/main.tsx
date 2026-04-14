@@ -80,12 +80,7 @@ function unmountFrom(el: HTMLElement) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Island: ScreenTime (device drawer Sessions tab)
-// ---------------------------------------------------------------------------
-mountIsland('react-screentime-root', 'data-mac', (el, mac) => {
-  renderInto(el, <ScreenTime macAddress={mac} />);
-});
+// ScreenTime island removed — now rendered inside DeviceDrawer via React.
 
 // ---------------------------------------------------------------------------
 // Island: GeoMap (geo page)

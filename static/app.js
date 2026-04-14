@@ -5014,7 +5014,7 @@ async function _renderCountryDrawer(data) {
 function closeCountryDrawer() {
   document.getElementById('country-drawer-backdrop').classList.remove('open');
   document.getElementById('country-drawer-panel').classList.remove('open');
-  if (!document.getElementById('drawer-panel').classList.contains('open')) {
+  if (!document.getElementById('drawer-panel')?.classList.contains('open')) {
     document.body.classList.remove('overflow-hidden');
   }
   _countryDrawerCC = null;
