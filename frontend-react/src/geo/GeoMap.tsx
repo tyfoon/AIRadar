@@ -379,11 +379,34 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
   const topCountry = countries[0];
   const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
-  // ── Compact mode: globe-only (used on Dashboard) ──
+  // ── Compact mode: globe + direction toggle (used on Dashboard) ──
   if (compact) {
     return (
-      <div ref={rootRef} className="w-full h-full flex items-center justify-center">
-        <div ref={globeWrapRef} className="w-full h-full flex items-center justify-center" style={{ minHeight: 380 }}>
+      <div ref={rootRef} className="w-full h-full flex flex-col">
+        {/* Compact direction toggle */}
+        <div className="flex items-center gap-1 p-2">
+          <button
+            onClick={() => setDirection('inbound')}
+            className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors ${
+              direction === 'inbound'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <i className="ph-duotone ph-arrow-down-left text-xs mr-1" />Inbound
+          </button>
+          <button
+            onClick={() => setDirection('outbound')}
+            className={`text-[11px] px-2.5 py-1 rounded-md font-medium transition-colors ${
+              direction === 'outbound'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <i className="ph-duotone ph-arrow-up-right text-xs mr-1" />Outbound
+          </button>
+        </div>
+        <div ref={globeWrapRef} className="flex-1 flex items-center justify-center" style={{ minHeight: 340 }}>
           {geoJson && globeSize > 0 && (
             <GlobeBoundary globeRef={globeRef}><Globe ref={globeRef}
               width={globeSize} height={globeSize}

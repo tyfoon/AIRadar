@@ -4,9 +4,9 @@ import type {
   NetworkPerfResponse,
   PrivacyStats,
   IpsStatus,
-  FleetResponse,
   DashEvent,
 } from './types';
+import type { FleetResponse } from '../iot/types';
 
 const todayStart = () => {
   const d = new Date();

@@ -8,12 +8,12 @@ import {
   fetchHealth, fetchSystemPerf, fetchNetworkPerf,
   fetchPrivacyStats, fetchIpsStatus, fetchFleetSummary, fetchDashEvents,
 } from './api';
-import type {
-  HealthService, DashEvent,
-} from './types';
-import { categoryName, formatBytes, serviceName } from '../colors';
+import type { DashEvent } from './types';
+import { categoryColor, categoryName, formatBytes, serviceName } from '../colors';
 import { formatNumber, countryName, flagClass } from '../geo/utils';
 import GeoMap from '../geo/GeoMap';
+import { FleetCard } from '../iot/FleetCard';
+import type { FleetDevice } from '../iot/types';
 
 // ---------------------------------------------------------------------------
 // Dashboard — System Overview
@@ -32,14 +32,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
-      {/* ── Metric Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* ── Metric Cards (5 cards — System Health+Network merged) ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <MetricCard
           icon="ph-duotone ph-heartbeat"
           iconColor={health.data?.summary.all_ok ? 'text-emerald-500' : 'text-amber-500'}
           label="System Health"
           value={health.data ? `${health.data.summary.ok}/${health.data.summary.total}` : '...'}
-          sub={health.data?.summary.all_ok ? 'All systems operational' : `${(health.data?.summary.total ?? 0) - (health.data?.summary.ok ?? 0)} issue(s)`}
+          sub={sysPerf.data
+            ? `CPU ${Math.round(sysPerf.data.host.cpu_percent)}% · Mem ${Math.round(sysPerf.data.host.memory.percent)}%`
+            : health.data?.summary.all_ok ? 'All systems operational' : ''}
           subColor={health.data?.summary.all_ok ? 'text-emerald-500' : 'text-amber-500'}
         />
         <MetricCard
@@ -71,38 +73,27 @@ export default function Dashboard() {
           value={privacy.data?.trackers.total_detected ?? '...'}
           sub="Trackers detected"
         />
-        <MetricCard
-          icon="ph-duotone ph-wifi-high"
-          iconColor="text-cyan-500"
-          label="Network"
-          value={sysPerf.data ? `${Math.round(sysPerf.data.host.cpu_percent)}%` : '...'}
-          sub={sysPerf.data ? `Mem ${Math.round(sysPerf.data.host.memory.percent)}%` : ''}
-        />
       </div>
 
-      {/* ── Main Grid: Globe + Right Stack ── */}
+      {/* ── Globe + Category Donuts ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Globe (50%) */}
         <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-200 dark:border-white/[0.05]" style={{ minHeight: 380 }}>
           <GeoMap initialDirection="inbound" compact />
         </div>
 
-        {/* Right stack (50%) */}
-        <div className="flex flex-col gap-4">
-          {/* Donut Row */}
-          <DonutRow events={events.data ?? []} />
-          {/* IoT Fleet — top active devices */}
-          <IotFleetPanel devices={fleet.data?.devices ?? []} />
-        </div>
+        {/* Donuts grid (50%) */}
+        <DonutGrid events={events.data ?? []} privacy={privacy.data} />
       </div>
 
-      {/* ── Sankey ── */}
+      {/* ── IoT Fleet — top 3 devices, full width ── */}
+      <IotFleetRow devices={fleet.data?.devices ?? []} />
+
+      {/* ── Sankey — full width, compact ── */}
       <SankeyFlow events={events.data ?? []} />
 
-      {/* ── Bottom Grid: Health + Network Perf + IPS + Privacy ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <HealthGrid services={health.data?.services ?? []} />
-        <NetworkPerfPanel data={netPerf.data?.data ?? []} />
+      {/* ── Bottom Grid: IPS + Privacy + Network Perf ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <IpsPanel
           attacks={ips.data?.inbound_attacks_24h ?? 0}
           uniqueIps={ips.data?.inbound_unique_ips_24h ?? 0}
@@ -118,6 +109,7 @@ export default function Dashboard() {
           adguardBlocked={privacy.data?.adguard.blocked_queries ?? 0}
           adguardPct={privacy.data?.adguard.block_percentage ?? 0}
         />
+        <NetworkPerfPanel data={netPerf.data?.data ?? []} />
       </div>
     </div>
   );
@@ -143,83 +135,94 @@ function MetricCard({ icon, iconColor, label, value, sub, subColor }: {
 }
 
 // ---------------------------------------------------------------------------
-// DonutRow — AI + Cloud traffic donuts
+// DonutGrid — AI, Cloud, 7 content categories, Trackers
 // ---------------------------------------------------------------------------
-function DonutRow({ events }: { events: DashEvent[] }) {
-  const { aiData, cloudData, aiTotal, cloudTotal } = useMemo(() => {
-    const ai: Record<string, number> = {};
-    const cloud: Record<string, number> = {};
+const CONTENT_CATEGORIES = ['streaming', 'gaming', 'social', 'shopping', 'news', 'adult', 'communication'] as const;
+
+function DonutGrid({ events, privacy }: { events: DashEvent[]; privacy: any }) {
+  const donuts = useMemo(() => {
+    const byCat: Record<string, Record<string, number>> = {};
     events.forEach(e => {
-      if (e.category === 'ai') ai[e.ai_service] = (ai[e.ai_service] || 0) + 1;
-      else if (e.category === 'cloud') cloud[e.ai_service] = (cloud[e.ai_service] || 0) + 1;
+      if (!byCat[e.category]) byCat[e.category] = {};
+      byCat[e.category][e.ai_service] = (byCat[e.category][e.ai_service] || 0) + 1;
     });
+
+    const make = (cat: string) => {
+      const m = byCat[cat] || {};
+      const data = Object.entries(m).map(([name, value]) => ({ name: serviceName(name), value, key: name }));
+      const total = data.reduce((s, d) => s + d.value, 0);
+      return { data, total };
+    };
+
     return {
-      aiData: Object.entries(ai).map(([name, value]) => ({ name: serviceName(name), value, key: name })),
-      cloudData: Object.entries(cloud).map(([name, value]) => ({ name: serviceName(name), value, key: name })),
-      aiTotal: Object.values(ai).reduce((s, v) => s + v, 0),
-      cloudTotal: Object.values(cloud).reduce((s, v) => s + v, 0),
+      ai: make('ai'),
+      cloud: make('cloud'),
+      content: CONTENT_CATEGORIES.map(c => ({ cat: c, ...make(c) })),
     };
   }, [events]);
 
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <MiniDonut label="AI Traffic" data={aiData} total={aiTotal} category="ai" />
-      <MiniDonut label="Cloud Traffic" data={cloudData} total={cloudTotal} category="cloud" />
-    </div>
-  );
-}
-
-function MiniDonut({ label, data, total, category }: {
-  label: string; data: { name: string; value: number; key: string }[];
-  total: number; category: string;
-}) {
-  const COLORS = useMemo(() => {
-    if (!data.length) return ['#e2e8f0'];
-    const baseHue = category === 'ai' ? 245 : 217;
-    return data.map((_, i) => `hsl(${baseHue + i * 25}, 65%, ${50 + i * 5}%)`);
-  }, [data, category]);
-
-  const displayData = data.length ? data : [{ name: 'None', value: 1, key: '_empty' }];
+  const trackerTotal = privacy?.trackers?.total_detected ?? 0;
+  const trackerData = (privacy?.trackers?.top_trackers ?? []).slice(0, 5).map((t: any) => ({
+    name: serviceName(t.service), value: t.hits, key: t.service,
+  }));
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
-      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mb-2">{label}</p>
-      <div className="flex items-center gap-3">
-        <div style={{ width: 100, height: 100, flexShrink: 0 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
-                innerRadius={30} outerRadius={46} strokeWidth={0} paddingAngle={1}>
-                {displayData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-2xl font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</p>
-          <p className="text-[11px] text-slate-400 mb-1">events today</p>
-          {data.slice(0, 4).map(d => (
-            <p key={d.key} className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{d.name}: {d.value}</p>
-          ))}
-        </div>
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide mb-3">Traffic by Category</p>
+      <div className="grid grid-cols-5 gap-2">
+        {/* AI + Cloud — first row, slightly larger */}
+        <TinyDonut label="AI" data={donuts.ai.data} total={donuts.ai.total} color={categoryColor('ai')} />
+        <TinyDonut label="Cloud" data={donuts.cloud.data} total={donuts.cloud.total} color={categoryColor('cloud')} />
+        {/* Content categories */}
+        {donuts.content.map(c => (
+          <TinyDonut key={c.cat} label={categoryName(c.cat)} data={c.data} total={c.total} color={categoryColor(c.cat)} />
+        ))}
+        {/* Trackers */}
+        <TinyDonut label="Trackers" data={trackerData} total={trackerTotal} color={categoryColor('tracking')} />
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// IoT Fleet Panel — top active device cards
-// ---------------------------------------------------------------------------
-import type { FleetDevice } from './types';
+function TinyDonut({ label, data, total, color }: {
+  label: string; data: { name: string; value: number; key: string }[];
+  total: number; color: string;
+}) {
+  const COLORS = useMemo(() => {
+    if (!data.length) return ['#334155'];
+    const base = color;
+    // Generate shades from the base color
+    return data.map((_, i) => {
+      const opacity = 1 - (i * 0.15);
+      return i === 0 ? base : base + Math.round(opacity * 255).toString(16).padStart(2, '0').slice(0, 2);
+    });
+  }, [data, color]);
 
-const HEALTH_RING: Record<string, string> = {
-  green: 'ring-emerald-500/30',
-  orange: 'ring-amber-500/50',
-  red: 'ring-red-500/50',
-};
+  const displayData = data.length ? data.slice(0, 6) : [{ name: 'None', value: 1, key: '_empty' }];
+  const isEmpty = !data.length;
 
-function IotFleetPanel({ devices }: { devices: FleetDevice[] }) {
-  // Sort by bytes_24h descending, take top 3 most active
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div style={{ width: 56, height: 56 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
+              innerRadius={16} outerRadius={26} strokeWidth={0} paddingAngle={1}>
+              {displayData.map((_, i) => <Cell key={i} fill={isEmpty ? '#334155' : COLORS[i % COLORS.length]} />)}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 text-center leading-tight">{label}</p>
+      <p className="text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// IoT Fleet Row — top 3 most active devices (full FleetCard from IoT page)
+// ---------------------------------------------------------------------------
+function IotFleetRow({ devices }: { devices: FleetDevice[] }) {
   const top = useMemo(() =>
     [...devices].sort((a, b) => b.bytes_24h - a.bytes_24h).slice(0, 3),
   [devices]);
@@ -229,7 +232,7 @@ function IotFleetPanel({ devices }: { devices: FleetDevice[] }) {
   const anomalies = devices.reduce((s, d) => s + d.anomalies, 0);
 
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 flex-1 flex flex-col">
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <i className="ph-duotone ph-cpu text-lg text-teal-500" />
@@ -241,78 +244,12 @@ function IotFleetPanel({ devices }: { devices: FleetDevice[] }) {
           {anomalies > 0 && <span className="text-amber-500">{anomalies} anomalies</span>}
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-2 flex-1">
-        {top.map(d => <MiniFleetCard key={d.mac_address} device={d} />)}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {top.map(d => <FleetCard key={d.mac_address} device={d} />)}
         {top.length === 0 && (
-          <div className="flex items-center justify-center text-xs text-slate-400 py-4">No IoT devices detected</div>
+          <div className="col-span-3 flex items-center justify-center text-xs text-slate-400 py-4">No IoT devices detected</div>
         )}
       </div>
-    </div>
-  );
-}
-
-function MiniFleetCard({ device: d }: { device: FleetDevice }) {
-  const name = d.display_name || d.hostname || d.mac_address;
-  const ring = HEALTH_RING[d.health] || HEALTH_RING.green;
-  const ratio = d.baseline_avg_bytes_24h && d.baseline_avg_bytes_24h > 0
-    ? d.bytes_24h / d.baseline_avg_bytes_24h : null;
-  const barPct = ratio ? Math.min(ratio * 100, 300) / 3 : null;
-  const barColor = ratio && ratio > 3 ? 'bg-red-500' : ratio && ratio > 2 ? 'bg-amber-500' : 'bg-blue-500';
-
-  return (
-    <div
-      className={`bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-lg px-3 py-2.5 ring-1 ${ring} cursor-pointer hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors`}
-      onClick={() => {
-        if (typeof (window as any).openDeviceDrawer === 'function') {
-          (window as any).openDeviceDrawer(d.mac_address, null, null);
-        }
-      }}
-    >
-      <div className="flex items-center gap-2">
-        {/* Icon + online dot */}
-        <div className="relative flex-shrink-0">
-          <i className="ph-duotone ph-cpu text-base text-slate-500 dark:text-slate-400" />
-          {d.online && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-900" />
-          )}
-        </div>
-
-        {/* Name + vendor */}
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{name}</p>
-        </div>
-
-        {/* Traffic stats */}
-        <div className="flex items-center gap-2 text-[10px] text-slate-400 flex-shrink-0 tabular-nums">
-          <span>{formatBytes(d.bytes_24h)}</span>
-          <span className="text-amber-500">↑{formatBytes(d.orig_bytes_24h)}</span>
-          <span className="text-blue-500">↓{formatBytes(d.resp_bytes_24h)}</span>
-        </div>
-
-        {/* Flags */}
-        <div className="flex gap-0.5 flex-shrink-0">
-          {d.top_countries?.slice(0, 3).map(c => (
-            <span key={c.cc} className={`fi fi-${c.cc.toLowerCase()} text-xs`} title={`${c.cc}: ${formatBytes(c.bytes)}`} />
-          ))}
-        </div>
-
-        {/* Anomaly badge */}
-        {d.anomalies > 0 && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/20 text-red-500 font-medium flex-shrink-0">
-            {d.anomalies} <i className="ph-duotone ph-warning" />
-          </span>
-        )}
-      </div>
-
-      {/* Throughput bar */}
-      {barPct !== null && (
-        <div className="mt-1.5 flex items-center gap-2">
-          <div className="flex-1 h-1 bg-slate-200 dark:bg-white/[0.04] rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.max(2, barPct)}%` }} />
-          </div>
-          <span className="text-[9px] text-slate-400 tabular-nums flex-shrink-0">{(ratio! * 100).toFixed(0)}%</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -354,7 +291,6 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
       return ip;
     };
 
-    // Aggregate
     const devTotals: Record<string, number> = {};
     events.forEach(e => { const d = devName(e.source_ip); devTotals[d] = (devTotals[d] || 0) + metric(e); });
     const topDev = Object.entries(devTotals).sort((a, b) => b[1] - a[1])[0];
@@ -375,46 +311,41 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
       cFlows[cat] = (cFlows[cat] || 0) + val;
     });
 
-    // Top 8 devices
     const top8 = new Set(Object.entries(dFlows).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([d]) => d));
     const devList = [...top8].sort((a, b) => (dFlows[b] || 0) - (dFlows[a] || 0));
     const catList = Object.entries(cFlows).sort((a, b) => b[1] - a[1]).map(([c]) => c);
 
-    // Layout parameters
-    const H = Math.max(280, Math.max(devList.length, catList.length) * 40);
-    const nodeW = 14;
+    // Compact height
+    const H = Math.max(200, Math.max(devList.length, catList.length) * 32);
+    const nodeW = 12;
     const padL = 8;
     const padR = 8;
-    const gap = 6;
+    const gap = 5;
 
-    // Position device nodes (left)
     const totalDevVal = devList.reduce((s, d) => s + Math.sqrt(dFlows[d] || 0), 0);
     const devAvailH = H - gap * (devList.length - 1);
     let dy = 0;
     const devNodes: SankeyNode[] = devList.map(d => {
-      const h = Math.max(12, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
+      const h = Math.max(10, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
       const node: SankeyNode = { name: d, isDevice: true, value: dFlows[d] || 0, y: dy, h };
       dy += h + gap;
       return node;
     });
 
-    // Position category nodes (right)
     const totalCatVal = catList.reduce((s, c) => s + Math.sqrt(cFlows[c] || 0), 0);
     const catAvailH = H - gap * (catList.length - 1);
     let cy = 0;
     const catNodes: SankeyNode[] = catList.map(c => {
-      const h = Math.max(12, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
+      const h = Math.max(10, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
       const node: SankeyNode = { name: c, isDevice: false, value: cFlows[c] || 0, y: cy, h };
       cy += h + gap;
       return node;
     });
 
-    // Build links with sub-positioning
     const devUsed: Record<string, number> = {};
     const catUsed: Record<string, number> = {};
     const links: SankeyLink[] = [];
 
-    // Sort flows for each device by their target category order
     devList.forEach(dev => {
       const devFlowsForDev = Object.entries(flowMap)
         .filter(([k]) => k.startsWith(dev + '\0') && top8.has(dev))
@@ -455,8 +386,8 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
   const svgH = height + 20;
 
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
           <i className="ph-duotone ph-flow-arrow text-blue-500" /> Network Flow
         </h3>
@@ -489,7 +420,6 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
             })}
           </defs>
 
-          {/* Links */}
           {links.map((l, i) => {
             const x0 = leftX + nodeW;
             const x1 = rightX;
@@ -512,7 +442,6 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
             );
           })}
 
-          {/* Device nodes (left) */}
           {devNodes.map(n => {
             const isHigh = hovered === n.name;
             const isDim = hovered && !isHigh && !links.some(l => l.source === n.name && l.target === hovered);
@@ -543,7 +472,6 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
             );
           })}
 
-          {/* Category nodes (right) */}
           {catNodes.map(n => {
             const color = CAT_COLORS[n.name] || '#6366f1';
             const isHigh = hovered === n.name;
@@ -581,38 +509,6 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Health Grid
-// ---------------------------------------------------------------------------
-function HealthGrid({ services }: { services: HealthService[] }) {
-  return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
-      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-3">
-        <i className="ph-duotone ph-heartbeat text-emerald-500" /> System Health
-      </h3>
-      {services.length === 0 ? (
-        <p className="text-xs text-slate-400 py-4 text-center">Loading...</p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {services.map(s => (
-            <div key={s.service} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.02]">
-              <span className="text-base">{s.icon}</span>
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                s.status === 'ok' ? 'bg-emerald-500' : s.status === 'warning' ? 'bg-amber-500' : 'bg-red-500'
-              }`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{s.service}</p>
-                <p className="text-[10px] text-slate-400 truncate">{s.details}</p>
-              </div>
-              <span className="text-[10px] tabular-nums text-slate-400 flex-shrink-0">{Math.round(s.response_ms)}ms</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Network Performance Panel
 // ---------------------------------------------------------------------------
 function NetworkPerfPanel({ data }: { data: { ts: string; dns_ms: number | null; loss_pct: number | null; br_rx_bps: number | null; br_tx_bps: number | null }[] }) {
@@ -620,7 +516,7 @@ function NetworkPerfPanel({ data }: { data: { ts: string; dns_ms: number | null;
     data.map(d => ({
       dns: d.dns_ms ?? 0,
       loss: d.loss_pct ?? 0,
-      rx: (d.br_rx_bps ?? 0) / 1024 / 1024, // Mbps
+      rx: (d.br_rx_bps ?? 0) / 1024 / 1024,
       tx: (d.br_tx_bps ?? 0) / 1024 / 1024,
     })),
   [data]);
@@ -635,15 +531,15 @@ function NetworkPerfPanel({ data }: { data: { ts: string; dns_ms: number | null;
         <i className="ph-duotone ph-chart-line-up text-cyan-500" /> Network Performance
       </h3>
       <div className="space-y-4">
-        <Sparkline label="DNS Latency" value={`${lastDns.toFixed(1)} ms`} data={sparkData} dataKey="dns" color="#06b6d4" />
-        <Sparkline label="Packet Loss" value={`${lastLoss.toFixed(2)}%`} data={sparkData} dataKey="loss" color={lastLoss > 1 ? '#ef4444' : '#10b981'} />
-        <Sparkline label="Throughput" value={`${lastRx.toFixed(1)} Mbps`} data={sparkData} dataKey="rx" color="#3b82f6" />
+        <DashSparkline label="DNS Latency" value={`${lastDns.toFixed(1)} ms`} data={sparkData} dataKey="dns" color="#06b6d4" />
+        <DashSparkline label="Packet Loss" value={`${lastLoss.toFixed(2)}%`} data={sparkData} dataKey="loss" color={lastLoss > 1 ? '#ef4444' : '#10b981'} />
+        <DashSparkline label="Throughput" value={`${lastRx.toFixed(1)} Mbps`} data={sparkData} dataKey="rx" color="#3b82f6" />
       </div>
     </div>
   );
 }
 
-function Sparkline({ label, value, data, dataKey, color }: {
+function DashSparkline({ label, value, data, dataKey, color }: {
   label: string; value: string; data: any[]; dataKey: string; color: string;
 }) {
   return (
@@ -677,7 +573,6 @@ function IpsPanel({ attacks, uniqueIps, blocked, topAttackers }: {
   attacks: number; uniqueIps: number; blocked: number;
   topAttackers: { country_code: string; hit_count: number; source_ip: string; crowdsec_reason: string }[];
 }) {
-  // Top 5 attacker countries
   const topCountries = useMemo(() => {
     const m: Record<string, number> = {};
     topAttackers.forEach(a => {
@@ -704,7 +599,6 @@ function IpsPanel({ attacks, uniqueIps, blocked, topAttackers }: {
         </div>
       </div>
 
-      {/* Blocked ratio bar */}
       <div className="mb-3">
         <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
           <span>Blocked: {blockedPct}%</span>
@@ -715,7 +609,6 @@ function IpsPanel({ attacks, uniqueIps, blocked, topAttackers }: {
         </div>
       </div>
 
-      {/* Top attacker countries */}
       {topCountries.length > 0 && (
         <div>
           <p className="text-[10px] text-slate-400 mb-1.5">Top attacker countries</p>
@@ -765,13 +658,11 @@ function PrivacyPanel({ trackersDetected, topTrackers, vpnAlerts, beaconingThrea
         </div>
       </div>
 
-      {/* AdGuard */}
       <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
         <span>AdGuard DNS blocked</span>
         <span className="font-medium">{formatNumber(adguardBlocked)} ({adguardPct.toFixed(1)}%)</span>
       </div>
 
-      {/* Security events 7-day sparkline */}
       {sparkData.length > 0 && (
         <div>
           <p className="text-[10px] text-slate-400 mb-1">Security events (7 days)</p>
@@ -792,7 +683,6 @@ function PrivacyPanel({ trackersDetected, topTrackers, vpnAlerts, beaconingThrea
         </div>
       )}
 
-      {/* Top trackers */}
       {topTrackers.length > 0 && (
         <div className="mt-2">
           <p className="text-[10px] text-slate-400 mb-1">Top trackers</p>
