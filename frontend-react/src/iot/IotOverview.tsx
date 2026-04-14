@@ -561,6 +561,194 @@ function getNodeColor(deviceClass: string | null, online: boolean) {
   return NODE_COLORS.default;
 }
 
+// Device type detection — matches label/deviceClass to an icon type
+type IconType = 'router' | 'camera' | 'doorbell' | 'speaker' | 'phone' | 'laptop' | 'desktop' | 'tv' | 'tablet' | 'watch' | 'printer' | 'server' | 'light' | 'device';
+
+const DEVICE_ICON_MAP: [RegExp, IconType][] = [
+  [/router|gateway|udm|unifi|ubnt/i, 'router'],
+  [/nest[\s-]?hello|doorbell/i, 'doorbell'],
+  [/camera|cam\b/i, 'camera'],
+  [/homepod|google[\s-]?home|echo|sonos|speaker/i, 'speaker'],
+  [/iphone|pixel|galaxy|samsung|phone/i, 'phone'],
+  [/macbook|laptop/i, 'laptop'],
+  [/imac|mac[\s-]?pro|mac[\s-]?mini|desktop/i, 'desktop'],
+  [/apple[\s-]?tv|chromecast|fire[\s-]?tv|roku|tv/i, 'tv'],
+  [/ipad|tablet/i, 'tablet'],
+  [/watch/i, 'watch'],
+  [/printer/i, 'printer'],
+  [/server|airadar|synology|qnap|nas\b/i, 'server'],
+  [/hue|light|bulb|lamp/i, 'light'],
+];
+
+function getDeviceIconType(label: string, deviceClass: string | null): IconType {
+  const text = `${label} ${deviceClass || ''}`;
+  for (const [re, icon] of DEVICE_ICON_MAP) {
+    if (re.test(text)) return icon;
+  }
+  return 'device';
+}
+
+/** Draw a device-type icon on Canvas at (cx, cy) with given size and color */
+function drawDeviceIcon(ctx: CanvasRenderingContext2D, type: IconType, cx: number, cy: number, size: number, color: string) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const s = size * 0.4; // half-size
+
+  switch (type) {
+    case 'router': {
+      // Router: box with two antennas
+      const bw = s * 0.9, bh = s * 0.4;
+      ctx.strokeRect(cx - bw, cy - bh * 0.2, bw * 2, bh);
+      // Antennas
+      ctx.beginPath();
+      ctx.moveTo(cx - bw * 0.5, cy - bh * 0.2);
+      ctx.lineTo(cx - bw * 0.7, cy - bh * 1.3);
+      ctx.moveTo(cx + bw * 0.5, cy - bh * 0.2);
+      ctx.lineTo(cx + bw * 0.7, cy - bh * 1.3);
+      ctx.stroke();
+      // Dots on antennas
+      ctx.beginPath();
+      ctx.arc(cx - bw * 0.7, cy - bh * 1.3, size * 0.06, 0, Math.PI * 2);
+      ctx.arc(cx + bw * 0.7, cy - bh * 1.3, size * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'camera': {
+      // Video camera: rectangle + triangle lens
+      const bw = s * 0.6, bh = s * 0.5;
+      ctx.strokeRect(cx - bw - s * 0.15, cy - bh, bw * 1.6, bh * 2);
+      ctx.beginPath();
+      ctx.moveTo(cx + bw * 0.5, cy - bh * 0.5);
+      ctx.lineTo(cx + s, cy);
+      ctx.lineTo(cx + bw * 0.5, cy + bh * 0.5);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case 'doorbell': {
+      // Bell shape
+      ctx.beginPath();
+      ctx.arc(cx, cy - s * 0.3, s * 0.55, Math.PI, 0);
+      ctx.lineTo(cx + s * 0.7, cy + s * 0.3);
+      ctx.lineTo(cx - s * 0.7, cy + s * 0.3);
+      ctx.closePath();
+      ctx.stroke();
+      // Clapper
+      ctx.beginPath();
+      ctx.arc(cx, cy + s * 0.5, s * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'speaker': {
+      // Speaker: rounded rect with circle
+      const bw = s * 0.55, bh = s * 0.85;
+      ctx.beginPath();
+      ctx.roundRect(cx - bw, cy - bh, bw * 2, bh * 2, s * 0.2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy + bh * 0.15, s * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy - bh * 0.4, s * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'phone': {
+      // Phone: tall rounded rect with notch
+      const pw = s * 0.4, ph = s * 0.85;
+      ctx.beginPath();
+      ctx.roundRect(cx - pw, cy - ph, pw * 2, ph * 2, s * 0.15);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - pw * 0.3, cy + ph * 0.75);
+      ctx.lineTo(cx + pw * 0.3, cy + ph * 0.75);
+      ctx.stroke();
+      break;
+    }
+    case 'laptop': {
+      // Laptop: screen + base
+      ctx.strokeRect(cx - s * 0.7, cy - s * 0.6, s * 1.4, s * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.9, cy + s * 0.45);
+      ctx.lineTo(cx + s * 0.9, cy + s * 0.45);
+      ctx.lineTo(cx + s * 0.7, cy + s * 0.3);
+      ctx.lineTo(cx - s * 0.7, cy + s * 0.3);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case 'desktop': {
+      // Monitor
+      ctx.strokeRect(cx - s * 0.75, cy - s * 0.65, s * 1.5, s * 1);
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.2, cy + s * 0.35);
+      ctx.lineTo(cx + s * 0.2, cy + s * 0.35);
+      ctx.moveTo(cx, cy + s * 0.35);
+      ctx.lineTo(cx, cy + s * 0.6);
+      ctx.moveTo(cx - s * 0.35, cy + s * 0.6);
+      ctx.lineTo(cx + s * 0.35, cy + s * 0.6);
+      ctx.stroke();
+      break;
+    }
+    case 'tv': {
+      // TV: wide rect + stand
+      ctx.strokeRect(cx - s * 0.85, cy - s * 0.5, s * 1.7, s * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.3, cy + s * 0.4);
+      ctx.lineTo(cx - s * 0.5, cy + s * 0.65);
+      ctx.moveTo(cx + s * 0.3, cy + s * 0.4);
+      ctx.lineTo(cx + s * 0.5, cy + s * 0.65);
+      ctx.stroke();
+      break;
+    }
+    case 'server': {
+      // Server: stacked rectangles
+      const sw = s * 0.65, sh = s * 0.28;
+      for (let i = -1; i <= 1; i++) {
+        ctx.strokeRect(cx - sw, cy + i * sh * 1.3 - sh / 2, sw * 2, sh);
+        ctx.beginPath();
+        ctx.arc(cx + sw * 0.7, cy + i * sh * 1.3, sh * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'light': {
+      // Lightbulb
+      ctx.beginPath();
+      ctx.arc(cx, cy - s * 0.15, s * 0.45, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.2, cy + s * 0.3);
+      ctx.lineTo(cx - s * 0.2, cy + s * 0.55);
+      ctx.lineTo(cx + s * 0.2, cy + s * 0.55);
+      ctx.lineTo(cx + s * 0.2, cy + s * 0.3);
+      ctx.stroke();
+      break;
+    }
+    default: {
+      // Generic device: circuit/chip icon
+      ctx.strokeRect(cx - s * 0.4, cy - s * 0.4, s * 0.8, s * 0.8);
+      // Pins on sides
+      const pins = 3;
+      for (let i = 0; i < pins; i++) {
+        const py = cy - s * 0.3 + i * s * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.4, py);
+        ctx.lineTo(cx - s * 0.7, py);
+        ctx.moveTo(cx + s * 0.4, py);
+        ctx.lineTo(cx + s * 0.7, py);
+        ctx.stroke();
+      }
+      break;
+    }
+  }
+  ctx.restore();
+}
+
 interface GNode extends SimulationNodeDatum {
   id: string;
   label: string;
@@ -569,6 +757,7 @@ interface GNode extends SimulationNodeDatum {
   deviceClass: string | null;
   totalHits: number;
   radius: number;
+  iconType: IconType;
 }
 interface GLink extends SimulationLinkDatum<GNode> {
   port: number;
@@ -603,22 +792,26 @@ function NetworkGraph({ nodes, edges, width, height }: {
     });
     const maxNodeHits = Math.max(...[...hitsByNode.values()], 1);
 
-    const gNodes: GNode[] = nodes.map(n => ({
-      id: n.ip,
-      label: n.display_name || n.hostname || n.ip,
-      online: n.last_seen ? Date.now() - new Date(n.last_seen).getTime() < 300000 : false,
-      ip: n.ip,
-      deviceClass: n.device_class,
-      totalHits: hitsByNode.get(n.ip) || 0,
-      radius: 10 + ((hitsByNode.get(n.ip) || 0) / maxNodeHits) * 16,
-    }));
+    const gNodes: GNode[] = nodes.map(n => {
+      const label = n.display_name || n.hostname || n.ip;
+      return {
+        id: n.ip,
+        label,
+        online: n.last_seen ? Date.now() - new Date(n.last_seen).getTime() < 300000 : false,
+        ip: n.ip,
+        deviceClass: n.device_class,
+        totalHits: hitsByNode.get(n.ip) || 0,
+        radius: 10 + ((hitsByNode.get(n.ip) || 0) / maxNodeHits) * 16,
+        iconType: getDeviceIconType(label, n.device_class),
+      };
+    });
 
     // Add missing nodes from edges
     const ids = new Set(gNodes.map(n => n.id));
     edges.forEach(e => {
       [e.source_ip, e.target_ip].forEach(ip => {
         if (!ids.has(ip)) {
-          gNodes.push({ id: ip, label: ip, online: false, ip, deviceClass: null, totalHits: hitsByNode.get(ip) || 0, radius: 10 });
+          gNodes.push({ id: ip, label: ip, online: false, ip, deviceClass: null, totalHits: hitsByNode.get(ip) || 0, radius: 10, iconType: 'device' });
           ids.add(ip);
         }
       });
@@ -821,11 +1014,14 @@ function NetworkGraph({ nodes, edges, width, height }: {
         ctx.fillStyle = hlGrad;
         ctx.fill();
 
+        // Device icon inside the node
+        drawDeviceIcon(ctx, n.iconType, x, y, r * 1.3, 'rgba(255,255,255,0.85)');
+
         // Border
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
+        ctx.lineWidth = 1.2;
         ctx.stroke();
 
         // Online dot
