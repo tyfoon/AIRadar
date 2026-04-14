@@ -120,6 +120,32 @@ export async function removeGroupMember(groupId: number, mac: string): Promise<v
   await fetch(`/api/groups/${groupId}/members/${encodeURIComponent(mac)}`, { method: 'DELETE' });
 }
 
+// Policies
+export async function setServicePolicy(
+  serviceName: string,
+  action: 'allow' | 'alert' | 'block',
+  scope: 'global' | 'device' | 'group' = 'global',
+  macAddress?: string,
+  groupId?: number,
+): Promise<void> {
+  const res = await fetch('/api/policies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scope,
+      mac_address: scope === 'device' ? macAddress : null,
+      group_id: scope === 'group' ? groupId : null,
+      service_name: serviceName,
+      category: null,
+      action,
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+}
+
 // Ask
 export async function askNetwork(question: string, lang: string): Promise<AskResponse> {
   return json<AskResponse>('/api/ask', {

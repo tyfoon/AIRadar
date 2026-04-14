@@ -145,6 +145,7 @@ export default function DevicesPage() {
         deviceMap={deviceMap}
         allEvents={allEvents}
         svcCategoryMap={matrix.svcCategoryMap}
+        policyByService={policyByService}
         onClose={closeDrawer}
         onDevicesRefetch={refetch}
       />

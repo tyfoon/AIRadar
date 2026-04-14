@@ -11,12 +11,14 @@ import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, rena
 import SvcLogo from './SvcLogo';
 import PhIcon from './PhIcon';
 import ScreenTime from '../ScreenTime';
+import PolicySegment from './PolicySegment';
 
 interface Props {
   mac: string | null;
   deviceMap: DeviceMap;
   allEvents: DeviceEvent[];
   svcCategoryMap: Record<string, string>;
+  policyByService: Record<string, string>;
   onClose: () => void;
   onDevicesRefetch: () => void;
 }
@@ -43,7 +45,7 @@ function estimateActiveTime(timestamps: string[]): number {
   return total;
 }
 
-export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, onClose, onDevicesRefetch }: Props) {
+export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, policyByService, onClose, onDevicesRefetch }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('report');
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -225,11 +227,11 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
         {/* Content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {activeTab === 'report' && <ReportTab mac={mac} />}
-          {activeTab === 'summary' && <SummaryTab events={deviceEvents} mac={mac} />}
+          {activeTab === 'summary' && <SummaryTab events={deviceEvents} mac={mac} policyByService={policyByService} />}
           {activeTab === 'connections' && <ConnectionsTab mac={mac} />}
           {activeTab === 'screentime' && <div className="p-0"><ScreenTime macAddress={mac} /></div>}
           {['ai', 'cloud', 'tracking', 'other'].includes(activeTab) && (
-            <EventsTab events={deviceEvents} category={activeTab} serviceFilter={serviceFilter} />
+            <EventsTab events={deviceEvents} category={activeTab} serviceFilter={serviceFilter} policyByService={policyByService} />
           )}
         </div>
       </div>
@@ -383,7 +385,7 @@ function renderSimpleMarkdown(md: string): string {
 }
 
 // --- Summary Tab ---
-function SummaryTab({ events, mac }: { events: DeviceEvent[]; mac: string }) {
+function SummaryTab({ events, mac, policyByService }: { events: DeviceEvent[]; mac: string; policyByService: Record<string, string> }) {
   const iotQuery = useQuery({
     queryKey: ['iotProfile', mac],
     queryFn: () => fetchIotProfile(mac),
@@ -418,21 +420,26 @@ function SummaryTab({ events, mac }: { events: DeviceEvent[]; mac: string }) {
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('dev.summaryTitle') || 'Top Services'}</h3>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-2.5">
         {rows.map(([svc, info]) => (
-          <div key={svc} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
-            <SvcLogo service={svc} size={20} />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
-                <span className="text-xs tabular-nums flex-shrink-0 flex items-center gap-2">
-                  <span className="text-blue-600 dark:text-blue-400 font-semibold"><i className="ph-duotone ph-clock text-[10px]" /> {fmtDuration(info.activeMs)}</span>
-                  {info.bytes > 0 && <span className="text-slate-400 dark:text-slate-500">{fmtBytes(info.bytes)}</span>}
-                </span>
+          <div key={svc} className="py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
+            <div className="flex items-center gap-3">
+              <SvcLogo service={svc} size={20} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
+                  <span className="text-xs tabular-nums flex-shrink-0 flex items-center gap-2">
+                    <span className="text-blue-600 dark:text-blue-400 font-semibold"><i className="ph-duotone ph-clock text-[10px]" /> {fmtDuration(info.activeMs)}</span>
+                    {info.bytes > 0 && <span className="text-slate-400 dark:text-slate-500">{fmtBytes(info.bytes)}</span>}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${maxTime > 0 ? (info.activeMs / maxTime * 100) : 0}%` }} />
+                </div>
               </div>
-              <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${maxTime > 0 ? (info.activeMs / maxTime * 100) : 0}%` }} />
-              </div>
+            </div>
+            <div className="mt-2 ml-8">
+              <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} />
             </div>
           </div>
         ))}
@@ -568,15 +575,16 @@ function collapseEvents(events: DeviceEvent[], keyFn: (e: DeviceEvent) => string
   return out;
 }
 
-function EventsTab({ events, category, serviceFilter }: { events: DeviceEvent[]; category: string; serviceFilter: string | null }) {
+function EventsTab({ events, category, serviceFilter, policyByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string> }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
 
   let filtered = events.filter(e => e._cat === category);
   if (serviceFilter) filtered = filtered.filter(e => e.ai_service === serviceFilter);
 
   const collapsed = collapseEvents(filtered, e => `${e.ai_service}|${e.detection_type}`);
 
-  useEffect(() => setVisible(PAGE_SIZE), [category, serviceFilter]);
+  useEffect(() => { setVisible(PAGE_SIZE); setExpandedPolicy(null); }, [category, serviceFilter]);
 
   if (collapsed.length === 0) {
     return <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">{t('dev.noActivity') || 'No events'}</div>;
@@ -584,8 +592,25 @@ function EventsTab({ events, category, serviceFilter }: { events: DeviceEvent[];
 
   const shown = collapsed.slice(0, visible);
 
+  // Unique services in this view
+  const uniqueServices = [...new Set(filtered.map(e => e.ai_service))];
+
   return (
     <div className="p-0">
+      {/* Per-service policy controls at top */}
+      {uniqueServices.length <= 5 && (
+        <div className="px-4 py-3 space-y-2 border-b border-slate-100 dark:border-white/[0.04]">
+          {uniqueServices.map(svc => (
+            <div key={svc} className="flex items-center gap-2">
+              <SvcLogo service={svc} size={16} />
+              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 min-w-[80px] truncate">{svcDisplayName(svc)}</span>
+              <div className="flex-1">
+                <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <table className="w-full text-left striped-rows">
         <tbody>
           {shown.map((e, i) => (
@@ -605,7 +630,23 @@ function EventsTab({ events, category, serviceFilter }: { events: DeviceEvent[];
                       ×{e._count}
                     </span>
                   )}
+                  {/* Shield icon — expand inline policy for this service (when >5 unique services) */}
+                  {uniqueServices.length > 5 && (
+                    <button
+                      onClick={ev => { ev.stopPropagation(); setExpandedPolicy(expandedPolicy === e.ai_service ? null : e.ai_service); }}
+                      className="ml-1 text-slate-400 hover:text-blue-500 transition-colors"
+                      title={t('rules.manageRules') || 'Set policy'}
+                    >
+                      <i className="ph-duotone ph-shield-check text-sm" />
+                    </button>
+                  )}
                 </span>
+                {/* Inline policy segment when expanded */}
+                {uniqueServices.length > 5 && expandedPolicy === e.ai_service && (
+                  <div className="mt-1.5">
+                    <PolicySegment serviceName={e.ai_service} currentAction={(policyByService[e.ai_service] as 'allow' | 'alert' | 'block') || null} />
+                  </div>
+                )}
               </td>
               <td className="py-2.5 px-4 text-xs text-right tabular-nums whitespace-nowrap">
                 {e.bytes_transferred ? fmtBytes(e.bytes_transferred) : '0 B'}
