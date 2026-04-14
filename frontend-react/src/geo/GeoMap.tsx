@@ -148,9 +148,9 @@ function svcDisplayName(svc: string): string {
   return svc.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface Props { initialDirection?: Direction }
+interface Props { initialDirection?: Direction; compact?: boolean }
 
-export default function GeoMap({ initialDirection = 'outbound' }: Props) {
+export default function GeoMap({ initialDirection = 'outbound', compact = false }: Props) {
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [period, setPeriod] = useState('1440');
   const [serviceFilter, setServiceFilter] = useState('');
@@ -347,7 +347,6 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
       const d = CENTROIDS[c.country_code];
       const t = Math.log10(c.bytes + 1) / logMax;
       const outbound = direction === 'outbound';
-      const atk = c.attack_hits || 0;
       // Red arcs for attack countries, blue for normal traffic
       const atkIps = c.attack_ips || 0;
       const isAtk = atkIps > 0;
@@ -379,6 +378,50 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const totalHits = countries.reduce((s, c) => s + c.hits, 0);
   const topCountry = countries[0];
   const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+
+  // ── Compact mode: globe-only (used on Dashboard) ──
+  if (compact) {
+    return (
+      <div ref={rootRef} className="w-full h-full flex items-center justify-center">
+        <div ref={globeWrapRef} className="w-full h-full flex items-center justify-center" style={{ minHeight: 380 }}>
+          {geoJson && globeSize > 0 && (
+            <GlobeBoundary globeRef={globeRef}><Globe ref={globeRef}
+              width={globeSize} height={globeSize}
+              backgroundColor="rgba(0,0,0,0)"
+              showAtmosphere={true}
+              atmosphereColor={dark ? '#1e3a8a' : '#3b82f6'}
+              atmosphereAltitude={0.15}
+              polygonsData={geoJson}
+              polygonGeoJsonGeometry="geometry"
+              polygonCapColor={polygonCapColor}
+              polygonSideColor={() => 'rgba(30,58,100,0.15)'}
+              polygonStrokeColor={() => 'rgba(100,140,200,0.2)'}
+              polygonAltitude={(f: any) => {
+                const bytes = bytesByCC[f?.properties?.ISO_A2 || ''] || 0;
+                return bytes > 0 ? 0.005 + (Math.log10(bytes + 1) / logMax) * 0.02 : 0.003;
+              }}
+              polygonLabel={polygonLabel}
+              onPolygonClick={handlePolygonClick}
+              arcsData={arcsData}
+              arcStartLat="startLat" arcStartLng="startLng"
+              arcEndLat="endLat" arcEndLng="endLng"
+              arcColor="color" arcStroke="stroke"
+              arcDashLength={0.5} arcDashGap={0.3} arcDashAnimateTime={2000}
+              arcLabel="label" arcsTransitionDuration={500}
+              pointsData={[{ lat: HOME.lat, lng: HOME.lng, size: 0.4, color: '#3b82f6' }]}
+              pointLat="lat" pointLng="lng" pointColor="color"
+              pointAltitude={0.03} pointRadius="size"
+            /></GlobeBoundary>
+          )}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-5 h-5 border-2 border-slate-600 border-t-indigo-500 rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} className="space-y-4">

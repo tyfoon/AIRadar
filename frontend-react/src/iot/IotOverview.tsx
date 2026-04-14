@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip,
+  AreaChart, Area, Tooltip as RTooltip,
   ResponsiveContainer,
 } from 'recharts';
 import {
@@ -9,7 +9,7 @@ import {
 } from 'd3-force';
 import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
 import { fetchFleet, fetchAnomalies, fetchTrafficHistory, fetchNetworkGraph, dismissAnomaly } from './api';
-import type { FleetDevice, Anomaly, IotTab, TrafficHistoryResponse, NetworkNode, NetworkEdge } from './types';
+import type { FleetDevice, Anomaly, IotTab, NetworkNode, NetworkEdge } from './types';
 import type { NetworkGraphResponse } from './types';
 
 // ---------------------------------------------------------------------------
@@ -49,11 +49,6 @@ const HEALTH_RING: Record<string, string> = {
   green: 'ring-emerald-500/40',
   orange: 'ring-amber-500/50',
   red: 'ring-red-500/50',
-};
-const HEALTH_DOT: Record<string, string> = {
-  green: 'bg-emerald-500',
-  orange: 'bg-amber-500',
-  red: 'bg-red-500',
 };
 
 const DETECTION_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -167,7 +162,6 @@ function StatsRow({ fleet, anomalyCount, loading }: {
   anomalyCount: number;
   loading: boolean;
 }) {
-  const skeleton = 'h-7 w-20 bg-slate-200 dark:bg-white/[0.06] rounded animate-pulse';
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <StatCard label="IoT Devices" loading={loading}>
@@ -460,7 +454,7 @@ function Sparkline({ mac }: { mac: string }) {
           <RTooltip
             contentStyle={{ background: 'rgba(0,0,0,.85)', border: 'none', borderRadius: 6, fontSize: 11, padding: '4px 8px' }}
             labelStyle={{ display: 'none' }}
-            formatter={(v: number, name: string) => [fmtBytes(v), name === 'rx' ? '↓ RX' : '↑ TX']}
+            formatter={(v: any, name: any) => [fmtBytes(v ?? 0), name === 'rx' ? '↓ RX' : '↑ TX']}
           />
           <Area type="monotone" dataKey="rx" stroke="#3b82f6" strokeWidth={1.5} fill={`url(#rx-${mac})`} dot={false} isAnimationActive={false} />
           <Area type="monotone" dataKey="tx" stroke="#f59e0b" strokeWidth={1} fill={`url(#tx-${mac})`} dot={false} isAnimationActive={false} />
@@ -775,7 +769,6 @@ function NetworkGraph({ nodes, edges, width, height }: {
   const simRef = useRef<ReturnType<typeof forceSimulation<GNode>> | null>(null);
   const frameRef = useRef(0);
   const dragRef = useRef<{ node: GNode; offsetX: number; offsetY: number } | null>(null);
-  const transformRef = useRef({ x: 0, y: 0, k: 1 });
   const nodesRef = useRef<GNode[]>([]);
   const linksRef = useRef<GLink[]>([]);
   // Particle positions along links (0..1 progress)
@@ -974,7 +967,6 @@ function NetworkGraph({ nodes, edges, width, height }: {
       });
 
       // --- Draw nodes ---
-      const maxNodeHits = Math.max(...gNodes.map(n => n.totalHits), 1);
       gNodes.forEach(n => {
         if (n.x == null || n.y == null) return;
         const x = n.x;
@@ -1109,10 +1101,3 @@ function NetworkGraph({ nodes, edges, width, height }: {
   return <canvas ref={canvasRef} style={{ width, height, display: 'block' }} />;
 }
 
-/** Lighten a hex color by mixing with white */
-function lighten(hex: string, amount: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgb(${Math.round(r + (255 - r) * amount)},${Math.round(g + (255 - g) * amount)},${Math.round(b + (255 - b) * amount)})`;
-}

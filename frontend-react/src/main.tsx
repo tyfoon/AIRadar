@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ScreenTime from './ScreenTime';
 import GeoMap from './geo/GeoMap';
 import IotOverview from './iot/IotOverview';
+import Dashboard from './dashboard/Dashboard';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -105,6 +106,18 @@ mountIsland('react-geo-root', 'data-active', (el, active) => {
 mountIsland('react-iot-root', 'data-active', (el, active) => {
   if (active) {
     renderInto(el, <IotOverview />);
+  } else {
+    unmountFrom(el);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Island: Dashboard (dashboard page)
+// Same mount/unmount pattern — frees globe WebGL resources when off-page.
+// ---------------------------------------------------------------------------
+mountIsland('react-dashboard-root', 'data-active', (el, active) => {
+  if (active) {
+    renderInto(el, <Dashboard />);
   } else {
     unmountFrom(el);
   }
