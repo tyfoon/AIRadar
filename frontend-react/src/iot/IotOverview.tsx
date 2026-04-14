@@ -1,11 +1,13 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip,
   ResponsiveContainer,
 } from 'recharts';
+import ForceGraph2D from 'react-force-graph-2d';
 import { fetchFleet, fetchAnomalies, fetchTrafficHistory, fetchNetworkGraph, dismissAnomaly } from './api';
 import type { FleetDevice, Anomaly, IotTab, TrafficHistoryResponse, NetworkNode, NetworkEdge } from './types';
+import type { NetworkGraphResponse } from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,11 +33,9 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(d / 86400000)}d ago`;
 }
 
-function flagEmoji(cc: string): string {
-  if (!cc || cc.length !== 2) return '';
-  return String.fromCodePoint(
-    ...cc.toUpperCase().split('').map(c => 0x1F1E6 + c.charCodeAt(0) - 65),
-  );
+function FlagIcon({ cc, size = '1em' }: { cc: string; size?: string }) {
+  if (!cc || cc.length !== 2) return null;
+  return <span className={`fi fi-${cc.toLowerCase()} rounded-sm shadow-sm inline-block`} style={{ fontSize: size }} />;
 }
 
 function deviceName(d: { display_name?: string | null; hostname?: string | null; mac_address?: string; ips?: string[] }): string {
@@ -214,7 +214,7 @@ function AnomaliesPanel({ anomalies, onDismiss }: { anomalies: Anomaly[]; onDism
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-3">
       {sorted.map((a, i) => <AnomalyCard key={`${a.source_ip}-${a.detection_type}-${a.detail}-${i}`} anomaly={a} onDismiss={onDismiss} />)}
     </div>
   );
@@ -226,6 +226,7 @@ function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (
 
   // Parse detail for human-readable info
   let detailLine = a.detail;
+  let newCountryCC: string | null = null;
   if (a.detection_type === 'iot_lateral_movement') {
     const m = a.detail.match(/lateral_(\d+)_(.+)/);
     if (m) detailLine = `→ ${m[2]} on port ${m[1]} (${PORT_LABELS[+m[1]] || 'unknown'})`;
@@ -234,7 +235,7 @@ function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (
     if (m) detailLine = `Port ${m[1]} (${PORT_LABELS[+m[1]] || 'unusual'})`;
   } else if (a.detection_type === 'iot_new_country') {
     const m = a.detail.match(/country_([A-Z]{2})/);
-    if (m) detailLine = `${flagEmoji(m[1])} New country: ${m[1]}`;
+    if (m) newCountryCC = m[1];
   }
 
   return (
@@ -243,14 +244,36 @@ function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (
         ? 'border-slate-200 dark:border-white/[0.04] opacity-50'
         : 'border-red-200 dark:border-red-800/40 shadow-sm'
     }`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-3">
+        {/* Icon */}
+        <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+          a.dismissed ? 'bg-slate-100 dark:bg-white/[0.04]' : 'bg-red-50 dark:bg-red-900/20'
+        }`}>
           <i className={`ph-duotone ${meta.icon} text-lg ${meta.color}`} />
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{meta.label}</p>
-            <p className="text-[10px] text-slate-400 truncate">{name}</p>
-          </div>
         </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{meta.label}</p>
+            {a.dismissed && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-400 font-medium">dismissed</span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            <span className="font-medium text-slate-600 dark:text-slate-300">{name}</span>
+            {' — '}
+            {newCountryCC ? <><FlagIcon cc={newCountryCC} /> New country: {newCountryCC}</> : detailLine}
+          </p>
+        </div>
+
+        {/* Stats */}
+        <div className="flex-shrink-0 text-right text-[10px] text-slate-400">
+          <p className="tabular-nums">{fmtNumber(a.hits)} hits</p>
+          <p>{timeAgo(a.last_seen)}</p>
+        </div>
+
+        {/* Dismiss */}
         {!a.dismissed && (
           <button onClick={() => onDismiss(a)}
             className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -259,14 +282,6 @@ function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (
           </button>
         )}
       </div>
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">{detailLine}</p>
-      <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400">
-        <span>{fmtNumber(a.hits)} hits</span>
-        <span>{timeAgo(a.last_seen)}</span>
-      </div>
-      {a.dismissed && (
-        <span className="inline-block mt-2 text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-400 font-medium">dismissed</span>
-      )}
     </div>
   );
 }
@@ -364,7 +379,7 @@ function FleetCard({ device: d }: { device: FleetDevice }) {
       <div className="flex items-center justify-between mt-2">
         <div className="flex gap-0.5">
           {d.top_countries.slice(0, 3).map(c => (
-            <span key={c.cc} className="text-xs" title={`${c.cc}: ${fmtBytes(c.bytes)}`}>{flagEmoji(c.cc)}</span>
+            <span key={c.cc} title={`${c.cc}: ${fmtBytes(c.bytes)}`}><FlagIcon cc={c.cc} size="1.1em" /></span>
           ))}
         </div>
         <div className="flex items-center gap-2 text-[10px] text-slate-400">
@@ -449,7 +464,7 @@ function Sparkline({ mac }: { mac: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Network panel — internal lateral movement graph
+// Network panel — force-directed graph of internal device traffic
 // ---------------------------------------------------------------------------
 function NetworkPanel({ data, hours, onHoursChange }: {
   data: NetworkGraphResponse | null;
@@ -458,13 +473,32 @@ function NetworkPanel({ data, hours, onHoursChange }: {
 }) {
   const nodes = data?.nodes || [];
   const edges = data?.edges || [];
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ w: 800, h: 500 });
+
+  // Track container width for responsive sizing
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width } = entries[0].contentRect;
+      if (width > 0) setDimensions({ w: width, h: Math.max(400, Math.min(600, width * 0.55)) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div className="space-y-3">
-      <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/[0.05]">
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
             <i className="ph-duotone ph-graph text-indigo-500" /> Internal device-to-device traffic
+            {edges.length > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 font-medium">
+                {nodes.length} devices · {edges.length} connections
+              </span>
+            )}
           </h3>
           <select
             value={hours}
@@ -479,86 +513,190 @@ function NetworkPanel({ data, hours, onHoursChange }: {
           </select>
         </div>
 
-        {edges.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">
-            <i className="ph-duotone ph-shield-check text-3xl block mb-2 opacity-40" />
-            No internal device-to-device traffic detected
-          </div>
-        ) : (
-          <NetworkTable nodes={nodes} edges={edges} />
-        )}
+        <div ref={containerRef}>
+          {edges.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-400">
+              <i className="ph-duotone ph-shield-check text-3xl block mb-2 opacity-40" />
+              No internal device-to-device traffic detected
+            </div>
+          ) : (
+            <NetworkGraph nodes={nodes} edges={edges} width={dimensions.w} height={dimensions.h} />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function NetworkTable({ nodes, edges }: { nodes: NetworkNode[]; edges: NetworkEdge[] }) {
-  const nodeMap = useMemo(() => {
-    const m: Record<string, NetworkNode> = {};
-    nodes.forEach(n => { m[n.ip] = n; });
-    return m;
-  }, [nodes]);
+interface GraphNode {
+  id: string;
+  label: string;
+  online: boolean;
+  ip: string;
+  deviceClass: string | null;
+}
+interface GraphLink {
+  source: string;
+  target: string;
+  port: number;
+  portLabel: string;
+  hits: number;
+}
 
-  const sorted = useMemo(() =>
-    [...edges].sort((a, b) => b.hits - a.hits),
-  [edges]);
+function NetworkGraph({ nodes, edges, width, height }: {
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  width: number;
+  height: number;
+}) {
+  const fgRef = useRef<any>(null);
 
-  const nodeName = (ip: string) => {
-    const n = nodeMap[ip];
-    if (!n) return ip;
-    return n.display_name || n.hostname || ip;
-  };
+  const graphData = useMemo(() => {
+    const nodeMap = new Map<string, NetworkNode>();
+    nodes.forEach(n => nodeMap.set(n.ip, n));
 
-  const isOnline = (ip: string) => {
-    const n = nodeMap[ip];
-    if (!n?.last_seen) return false;
-    return Date.now() - new Date(n.last_seen).getTime() < 300000;
-  };
+    const graphNodes: GraphNode[] = nodes.map(n => ({
+      id: n.ip,
+      label: n.display_name || n.hostname || n.ip,
+      online: n.last_seen ? Date.now() - new Date(n.last_seen).getTime() < 300000 : false,
+      ip: n.ip,
+      deviceClass: n.device_class,
+    }));
+
+    // Add any IPs in edges that aren't in nodes
+    const nodeIds = new Set(graphNodes.map(n => n.id));
+    edges.forEach(e => {
+      if (!nodeIds.has(e.source_ip)) {
+        graphNodes.push({ id: e.source_ip, label: e.source_ip, online: false, ip: e.source_ip, deviceClass: null });
+        nodeIds.add(e.source_ip);
+      }
+      if (!nodeIds.has(e.target_ip)) {
+        graphNodes.push({ id: e.target_ip, label: e.target_ip, online: false, ip: e.target_ip, deviceClass: null });
+        nodeIds.add(e.target_ip);
+      }
+    });
+
+    const maxHits = Math.max(...edges.map(e => e.hits), 1);
+    const graphLinks: GraphLink[] = edges.map(e => ({
+      source: e.source_ip,
+      target: e.target_ip,
+      port: e.port,
+      portLabel: e.port_label,
+      hits: e.hits,
+    }));
+
+    return { nodes: graphNodes, links: graphLinks, maxHits };
+  }, [nodes, edges]);
+
+  // Zoom to fit after initial layout
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fgRef.current?.zoomToFit(400, 50);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [graphData]);
+
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  const maxHits = graphData.maxHits;
 
   return (
-    <div className="space-y-2">
-      {/* Summary stats */}
-      <div className="flex gap-4 text-xs text-slate-500 dark:text-slate-400 mb-3">
-        <span><strong className="text-slate-700 dark:text-slate-200">{nodes.length}</strong> devices</span>
-        <span><strong className="text-slate-700 dark:text-slate-200">{edges.length}</strong> connections</span>
-        <span><strong className="text-slate-700 dark:text-slate-200">{edges.reduce((s, e) => s + e.hits, 0)}</strong> total hits</span>
-      </div>
+    <ForceGraph2D
+      ref={fgRef}
+      graphData={graphData}
+      width={width}
+      height={height}
+      backgroundColor="transparent"
+      // Node rendering
+      nodeRelSize={6}
+      nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        const n = node as GraphNode;
+        const r = 6;
+        const fontSize = Math.max(10 / globalScale, 1.5);
 
-      {/* Connection cards */}
-      <div className="grid gap-2 sm:grid-cols-2">
-        {sorted.map((e, i) => (
-          <div key={`${e.source_ip}-${e.target_ip}-${e.port}-${i}`}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.04]"
-          >
-            {/* Source */}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1">
-                {isOnline(e.source_ip) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{nodeName(e.source_ip)}</p>
-              </div>
-              <p className="text-[10px] text-slate-400 truncate">{e.source_ip}</p>
-            </div>
+        // Node circle
+        ctx.beginPath();
+        ctx.arc(node.x!, node.y!, r, 0, 2 * Math.PI);
+        ctx.fillStyle = n.online
+          ? '#10b981'  // emerald-500
+          : isDark ? '#475569' : '#94a3b8'; // slate-600 / slate-400
+        ctx.fill();
 
-            {/* Arrow + port */}
-            <div className="flex flex-col items-center flex-shrink-0">
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-mono font-medium">
-                {e.port_label}
-              </span>
-              <i className="ph-bold ph-arrow-right text-xs text-red-400 mt-0.5" />
-              <span className="text-[9px] text-slate-400 tabular-nums">{fmtNumber(e.hits)}×</span>
-            </div>
+        // Border ring
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
 
-            {/* Target */}
-            <div className="min-w-0 flex-1 text-right">
-              <div className="flex items-center justify-end gap-1">
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{nodeName(e.target_ip)}</p>
-                {isOnline(e.target_ip) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />}
-              </div>
-              <p className="text-[10px] text-slate-400 truncate">{e.target_ip}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+        // Label
+        ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = isDark ? '#e2e8f0' : '#334155';
+        ctx.fillText(n.label, node.x!, node.y! + r + 2);
+      }}
+      nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+        ctx.beginPath();
+        ctx.arc(node.x!, node.y!, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }}
+      // Link rendering
+      linkWidth={(link: any) => Math.max(1, Math.min(5, (link.hits / maxHits) * 5))}
+      linkColor={() => isDark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.2)'}
+      linkDirectionalArrowLength={4}
+      linkDirectionalArrowRelPos={0.85}
+      linkDirectionalArrowColor={() => isDark ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.4)'}
+      linkCanvasObjectMode={() => 'after'}
+      linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        // Draw port label at midpoint
+        if (globalScale < 0.6) return; // skip labels when zoomed out too far
+        const l = link as GraphLink;
+        const src = link.source;
+        const tgt = link.target;
+        if (!src?.x || !tgt?.x) return;
+        const mx = (src.x + tgt.x) / 2;
+        const my = (src.y + tgt.y) / 2;
+
+        const fontSize = Math.max(8 / globalScale, 1.2);
+        ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
+        const text = l.portLabel;
+        const textWidth = ctx.measureText(text).width;
+        const pad = 2 / globalScale;
+
+        // Background pill
+        ctx.fillStyle = isDark ? 'rgba(127,29,29,0.7)' : 'rgba(254,226,226,0.9)';
+        ctx.beginPath();
+        const rr = (fontSize + pad * 2) / 2;
+        ctx.roundRect(mx - textWidth / 2 - pad, my - rr, textWidth + pad * 2, rr * 2, rr);
+        ctx.fill();
+
+        // Text
+        ctx.fillStyle = isDark ? '#fca5a5' : '#dc2626';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, mx, my);
+      }}
+      // Tooltip
+      nodeLabel={(node: any) => {
+        const n = node as GraphNode;
+        return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.4">
+          <strong>${n.label}</strong><br/>
+          <span style="opacity:.7">${n.ip}</span><br/>
+          ${n.online ? '<span style="color:#10b981">● online</span>' : '<span style="opacity:.5">○ offline</span>'}
+        </div>`;
+      }}
+      linkLabel={(link: any) => {
+        const l = link as GraphLink;
+        return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.4">
+          <strong>${l.portLabel}</strong> (port ${l.port})<br/>
+          ${fmtNumber(l.hits)} connections
+        </div>`;
+      }}
+      // Physics
+      d3AlphaDecay={0.03}
+      d3VelocityDecay={0.3}
+      cooldownTicks={100}
+      enableNodeDrag={true}
+      enableZoomInteraction={true}
+    />
   );
 }
