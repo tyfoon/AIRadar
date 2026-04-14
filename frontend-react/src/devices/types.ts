@@ -24,6 +24,7 @@ export interface Policy {
   action: 'block' | 'alert' | 'allow';
   scope: string;
   category?: string;
+  expires_at?: string | null;
 }
 
 export interface DeviceMatrix {

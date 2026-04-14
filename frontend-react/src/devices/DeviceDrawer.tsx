@@ -19,6 +19,7 @@ interface Props {
   allEvents: DeviceEvent[];
   svcCategoryMap: Record<string, string>;
   policyByService: Record<string, string>;
+  policyExpiresByService: Record<string, string>;
   onClose: () => void;
   onDevicesRefetch: () => void;
 }
@@ -45,7 +46,7 @@ function estimateActiveTime(timestamps: string[]): number {
   return total;
 }
 
-export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, policyByService, onClose, onDevicesRefetch }: Props) {
+export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, policyByService, policyExpiresByService, onClose, onDevicesRefetch }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('report');
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -227,11 +228,11 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
         {/* Content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {activeTab === 'report' && <ReportTab mac={mac} />}
-          {activeTab === 'summary' && <SummaryTab events={deviceEvents} mac={mac} policyByService={policyByService} />}
+          {activeTab === 'summary' && <SummaryTab events={deviceEvents} mac={mac} policyByService={policyByService} policyExpiresByService={policyExpiresByService} />}
           {activeTab === 'connections' && <ConnectionsTab mac={mac} />}
           {activeTab === 'screentime' && <div className="p-0"><ScreenTime macAddress={mac} /></div>}
           {['ai', 'cloud', 'tracking', 'other'].includes(activeTab) && (
-            <EventsTab events={deviceEvents} category={activeTab} serviceFilter={serviceFilter} policyByService={policyByService} />
+            <EventsTab events={deviceEvents} category={activeTab} serviceFilter={serviceFilter} policyByService={policyByService} policyExpiresByService={policyExpiresByService} />
           )}
         </div>
       </div>
@@ -385,7 +386,7 @@ function renderSimpleMarkdown(md: string): string {
 }
 
 // --- Summary Tab ---
-function SummaryTab({ events, mac, policyByService }: { events: DeviceEvent[]; mac: string; policyByService: Record<string, string> }) {
+function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { events: DeviceEvent[]; mac: string; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
   const iotQuery = useQuery({
     queryKey: ['iotProfile', mac],
     queryFn: () => fetchIotProfile(mac),
@@ -439,7 +440,7 @@ function SummaryTab({ events, mac, policyByService }: { events: DeviceEvent[]; m
               </div>
             </div>
             <div className="mt-2 ml-8">
-              <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} />
+              <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[svc] || null} />
             </div>
           </div>
         ))}
@@ -575,7 +576,7 @@ function collapseEvents(events: DeviceEvent[], keyFn: (e: DeviceEvent) => string
   return out;
 }
 
-function EventsTab({ events, category, serviceFilter, policyByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string> }) {
+function EventsTab({ events, category, serviceFilter, policyByService, policyExpiresByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
 
@@ -605,7 +606,7 @@ function EventsTab({ events, category, serviceFilter, policyByService }: { event
               <SvcLogo service={svc} size={16} />
               <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 min-w-[80px] truncate">{svcDisplayName(svc)}</span>
               <div className="flex-1">
-                <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} />
+                <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[svc] || null} />
               </div>
             </div>
           ))}
@@ -644,7 +645,7 @@ function EventsTab({ events, category, serviceFilter, policyByService }: { event
                 {/* Inline policy segment when expanded */}
                 {uniqueServices.length > 5 && expandedPolicy === e.ai_service && (
                   <div className="mt-1.5">
-                    <PolicySegment serviceName={e.ai_service} currentAction={(policyByService[e.ai_service] as 'allow' | 'alert' | 'block') || null} />
+                    <PolicySegment serviceName={e.ai_service} currentAction={(policyByService[e.ai_service] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[e.ai_service] || null} />
                   </div>
                 )}
               </td>

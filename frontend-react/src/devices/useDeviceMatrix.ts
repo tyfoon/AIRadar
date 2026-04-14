@@ -9,6 +9,7 @@ interface MatrixResult {
   matrix: DeviceMatrix;
   allEvents: DeviceEvent[];
   policyByService: Record<string, string>;
+  policyExpiresByService: Record<string, string>;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -56,9 +57,11 @@ export function useDeviceMatrix(periodMinutes: number): MatrixResult {
 
   // Build policy lookup
   const policyByService: Record<string, string> = {};
+  const policyExpiresByService: Record<string, string> = {};
   policies.forEach(p => {
     if (p.scope === 'global' && p.service_name && !p.category) {
       policyByService[p.service_name] = p.action;
+      if (p.expires_at) policyExpiresByService[p.service_name] = p.expires_at;
     }
   });
 
@@ -102,6 +105,7 @@ export function useDeviceMatrix(periodMinutes: number): MatrixResult {
     matrix,
     allEvents,
     policyByService,
+    policyExpiresByService,
     isLoading: devicesQuery.isLoading || eventsQuery.isLoading,
     isError: devicesQuery.isError || eventsQuery.isError,
     refetch: () => { devicesQuery.refetch(); eventsQuery.refetch(); },

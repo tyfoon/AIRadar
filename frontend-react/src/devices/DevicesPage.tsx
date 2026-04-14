@@ -31,7 +31,7 @@ export default function DevicesPage() {
   const [drawerMac, setDrawerMac] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { deviceMap, ipToMac, matrix, allEvents, policyByService, isLoading, isError, refetch } = useDeviceMatrix(period);
+  const { deviceMap, ipToMac, matrix, allEvents, policyByService, policyExpiresByService, isLoading, isError, refetch } = useDeviceMatrix(period);
 
   // Expose deviceMap/ipToMac to vanilla JS pages that still need it
   useEffect(() => {
@@ -146,6 +146,7 @@ export default function DevicesPage() {
         allEvents={allEvents}
         svcCategoryMap={matrix.svcCategoryMap}
         policyByService={policyByService}
+        policyExpiresByService={policyExpiresByService}
         onClose={closeDrawer}
         onDevicesRefetch={refetch}
       />
