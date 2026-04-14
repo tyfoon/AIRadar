@@ -75,15 +75,15 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Globe + Category Donuts ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Globe (50%) */}
+      {/* ── Globe + Category Donut Cards ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+        {/* Globe */}
         <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-200 dark:border-white/[0.05]" style={{ minHeight: 380 }}>
           <GeoMap initialDirection="inbound" compact />
         </div>
 
-        {/* Donuts grid (50%) */}
-        <DonutGrid events={events.data ?? []} privacy={privacy.data} />
+        {/* Donut cards grid — fills full space next to globe */}
+        <DonutCardGrid events={events.data ?? []} privacy={privacy.data} />
       </div>
 
       {/* ── IoT Fleet — top 3 devices, full width ── */}
@@ -135,86 +135,175 @@ function MetricCard({ icon, iconColor, label, value, sub, subColor }: {
 }
 
 // ---------------------------------------------------------------------------
-// DonutGrid — AI, Cloud, 7 content categories, Trackers
+// Service logo helpers — favicon-based icons matching app.js SERVICE_LOGO_*
 // ---------------------------------------------------------------------------
-const CONTENT_CATEGORIES = ['streaming', 'gaming', 'social', 'shopping', 'news', 'adult', 'communication'] as const;
+const SERVICE_LOGO_DOMAIN: Record<string, string> = {
+  openai:'openai.com', anthropic_claude:'claude.ai', google_gemini:'gemini.google.com',
+  microsoft_copilot:'copilot.microsoft.com', perplexity:'perplexity.ai', huggingface:'huggingface.co',
+  mistral:'mistral.ai', dropbox:'dropbox.com', wetransfer:'wetransfer.com',
+  google_drive:'drive.google.com', google_device_sync:'android.com', google_generic_cdn:'cloud.google.com',
+  google_api:'developers.google.com', onedrive:'onedrive.live.com', icloud:'icloud.com',
+  box:'box.com', mega:'mega.nz', google_ads:'ads.google.com', google_analytics:'analytics.google.com',
+  google_telemetry:'firebase.google.com', meta_tracking:'meta.com', apple_ads:'searchads.apple.com',
+  microsoft_ads:'ads.microsoft.com', hotjar:'hotjar.com', datadog:'datadoghq.com',
+  facebook:'facebook.com', instagram:'instagram.com', tiktok:'tiktok.com', twitter:'x.com',
+  snapchat:'snapchat.com', pinterest:'pinterest.com', linkedin:'linkedin.com', reddit:'reddit.com',
+  tumblr:'tumblr.com', steam:'steampowered.com', epic_games:'epicgames.com', roblox:'roblox.com',
+  twitch:'twitch.tv', discord:'discord.com', nintendo:'nintendo.com', playstation:'playstation.com',
+  xbox_live:'xbox.com', signal:'signal.org', whatsapp:'whatsapp.com',
+  netflix:'netflix.com', youtube:'youtube.com', spotify:'spotify.com', disney_plus:'disneyplus.com',
+  hbo_max:'max.com', prime_video:'primevideo.com', apple_tv:'tv.apple.com',
+  amazon:'amazon.com', bol:'bol.com', coolblue:'coolblue.nl', mediamarkt:'mediamarkt.nl',
+  zalando:'zalando.com', shein:'shein.com', temu:'temu.com', aliexpress:'aliexpress.com',
+  marktplaats:'marktplaats.nl', vinted:'vinted.com', ikea:'ikea.com', ebay:'ebay.com', etsy:'etsy.com',
+  nos:'nos.nl', nu_nl:'nu.nl', telegraaf:'telegraaf.nl', ad_nl:'ad.nl', nrc:'nrc.nl',
+  volkskrant:'volkskrant.nl', bbc:'bbc.com', nytimes:'nytimes.com', reuters:'reuters.com',
+  guardian:'theguardian.com', ea_games:'ea.com',
+  pornhub:'pornhub.com', xvideos:'xvideos.com', xhamster:'xhamster.com', onlyfans:'onlyfans.com',
+  tinder:'tinder.com', bumble:'bumble.com',
+};
 
-function DonutGrid({ events, privacy }: { events: DashEvent[]; privacy: any }) {
-  const donuts = useMemo(() => {
+const SERVICE_LOGO_URL: Record<string, string> = {
+  google_drive: 'https://ssl.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png',
+  google_gemini: 'https://ssl.gstatic.com/images/branding/product/2x/gemini_48dp.png',
+  google_device_sync: 'https://ssl.gstatic.com/images/branding/product/2x/android_48dp.png',
+};
+
+function svcLogoUrl(s: string): string {
+  if (SERVICE_LOGO_URL[s]) return SERVICE_LOGO_URL[s];
+  const domain = SERVICE_LOGO_DOMAIN[s] || s.replace(/_/g, '') + '.com';
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+}
+
+function SvcLogo({ svc, size = 14 }: { svc: string; size?: number }) {
+  return (
+    <img
+      src={svcLogoUrl(svc)}
+      alt={svc}
+      width={size}
+      height={size}
+      className="rounded-sm"
+      style={{ width: size, height: size, objectFit: 'contain' }}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DonutCardGrid — individual category cards with donut + legend
+// ---------------------------------------------------------------------------
+const ALL_CATEGORIES = ['ai', 'cloud', 'streaming', 'gaming', 'social', 'shopping', 'news', 'adult', 'communication'] as const;
+
+const SERVICE_COLORS: Record<string, string> = {
+  openai:'#10b981', anthropic_claude:'#6366f1', google_gemini:'#f59e0b',
+  google_api:'#4285f4', microsoft_copilot:'#0078d4', perplexity:'#22d3ee',
+  huggingface:'#ff6f00', mistral:'#7c3aed',
+  dropbox:'#0061fe', wetransfer:'#409fff', google_drive:'#22c55e',
+  google_device_sync:'#34a853', google_generic_cdn:'#94a3b8',
+  onedrive:'#0ea5e9', icloud:'#6b7280', box:'#0075c9', mega:'#d0021b',
+  facebook:'#1877f2', instagram:'#e4405f', tiktok:'#010101', snapchat:'#fffc00',
+  twitter:'#1da1f2', pinterest:'#e60023', linkedin:'#0a66c2', reddit:'#ff4500',
+  tumblr:'#35465c', whatsapp:'#25d366', signal:'#3a76f0', discord:'#5865f2',
+  steam:'#1b2838', epic_games:'#2f2d2e', roblox:'#e2231a', twitch:'#9146ff',
+  xbox_live:'#107c10', playstation:'#003791', nintendo:'#e60012', ea_games:'#000',
+  netflix:'#e50914', youtube:'#ff0000', spotify:'#1db954', disney_plus:'#113ccf',
+  hbo_max:'#5822b4', prime_video:'#00a8e1', apple_tv:'#555',
+  amazon:'#ff9900', bol:'#0000a4', coolblue:'#0090e3',
+  nos:'#ff6600', nu_nl:'#c30000', bbc:'#bb1919', nytimes:'#111',
+  google_ads:'#fbbc04', google_analytics:'#e37400', meta_tracking:'#1877f2',
+  hotjar:'#fd3a5c', datadog:'#632ca6',
+};
+
+function svcColor(s: string): string {
+  return SERVICE_COLORS[s] || `hsl(${Math.abs([...s].reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 0)) % 360}, 55%, 50%)`;
+}
+
+function DonutCardGrid({ events, privacy }: { events: DashEvent[]; privacy: any }) {
+  const cards = useMemo(() => {
     const byCat: Record<string, Record<string, number>> = {};
     events.forEach(e => {
       if (!byCat[e.category]) byCat[e.category] = {};
       byCat[e.category][e.ai_service] = (byCat[e.category][e.ai_service] || 0) + 1;
     });
 
-    const make = (cat: string) => {
+    return ALL_CATEGORIES.map(cat => {
       const m = byCat[cat] || {};
-      const data = Object.entries(m).map(([name, value]) => ({ name: serviceName(name), value, key: name }));
-      const total = data.reduce((s, d) => s + d.value, 0);
-      return { data, total };
-    };
-
-    return {
-      ai: make('ai'),
-      cloud: make('cloud'),
-      content: CONTENT_CATEGORIES.map(c => ({ cat: c, ...make(c) })),
-    };
+      const entries = Object.entries(m)
+        .map(([key, value]) => ({ key, name: serviceName(key), value, color: svcColor(key) }))
+        .sort((a, b) => b.value - a.value);
+      const total = entries.reduce((s, d) => s + d.value, 0);
+      return { cat, entries, total };
+    });
   }, [events]);
 
+  // Tracker card from privacy data
+  const trackerEntries = useMemo(() => {
+    const topT = (privacy?.trackers?.top_trackers ?? []).slice(0, 6);
+    return topT.map((t: any) => ({
+      key: t.service, name: serviceName(t.service), value: t.hits, color: svcColor(t.service),
+    }));
+  }, [privacy]);
   const trackerTotal = privacy?.trackers?.total_detected ?? 0;
-  const trackerData = (privacy?.trackers?.top_trackers ?? []).slice(0, 5).map((t: any) => ({
-    name: serviceName(t.service), value: t.hits, key: t.service,
-  }));
 
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
-      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wide mb-3">Traffic by Category</p>
-      <div className="grid grid-cols-5 gap-2">
-        {/* AI + Cloud — first row, slightly larger */}
-        <TinyDonut label="AI" data={donuts.ai.data} total={donuts.ai.total} color={categoryColor('ai')} />
-        <TinyDonut label="Cloud" data={donuts.cloud.data} total={donuts.cloud.total} color={categoryColor('cloud')} />
-        {/* Content categories */}
-        {donuts.content.map(c => (
-          <TinyDonut key={c.cat} label={categoryName(c.cat)} data={c.data} total={c.total} color={categoryColor(c.cat)} />
-        ))}
-        {/* Trackers */}
-        <TinyDonut label="Trackers" data={trackerData} total={trackerTotal} color={categoryColor('tracking')} />
-      </div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 content-start">
+      {cards.map(c => (
+        <DonutCard key={c.cat} label={categoryName(c.cat)} entries={c.entries} total={c.total} accent={categoryColor(c.cat)} />
+      ))}
+      <DonutCard label="Trackers" entries={trackerEntries} total={trackerTotal} accent={categoryColor('tracking')} />
     </div>
   );
 }
 
-function TinyDonut({ label, data, total, color }: {
-  label: string; data: { name: string; value: number; key: string }[];
-  total: number; color: string;
+function DonutCard({ label, entries, total, accent }: {
+  label: string;
+  entries: { key: string; name: string; value: number; color: string }[];
+  total: number;
+  accent: string;
 }) {
-  const COLORS = useMemo(() => {
-    if (!data.length) return ['#334155'];
-    const base = color;
-    // Generate shades from the base color
-    return data.map((_, i) => {
-      const opacity = 1 - (i * 0.15);
-      return i === 0 ? base : base + Math.round(opacity * 255).toString(16).padStart(2, '0').slice(0, 2);
-    });
-  }, [data, color]);
-
-  const displayData = data.length ? data.slice(0, 6) : [{ name: 'None', value: 1, key: '_empty' }];
-  const isEmpty = !data.length;
+  const displayData = entries.length ? entries.slice(0, 6) : [{ key: '_empty', name: 'None', value: 1, color: '#334155' }];
+  const isEmpty = !entries.length;
 
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div style={{ width: 56, height: 56 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
-              innerRadius={16} outerRadius={26} strokeWidth={0} paddingAngle={1}>
-              {displayData.map((_, i) => <Cell key={i} fill={isEmpty ? '#334155' : COLORS[i % COLORS.length]} />)}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-1.5 mb-1">
+        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: accent }} />
+        <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+        <span className="ml-auto text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</span>
       </div>
-      <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 text-center leading-tight">{label}</p>
-      <p className="text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</p>
+
+      {/* Donut + legend side by side */}
+      <div className="flex items-start gap-2 flex-1">
+        {/* Donut */}
+        <div style={{ width: 60, height: 60, flexShrink: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
+                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}>
+                {displayData.map((d, i) => <Cell key={i} fill={isEmpty ? '#334155' : d.color} />)}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Legend with service icons */}
+        <div className="flex-1 min-w-0 space-y-0.5 pt-0.5">
+          {entries.length === 0 && (
+            <p className="text-[10px] text-slate-500 italic">No events</p>
+          )}
+          {entries.slice(0, 4).map(e => (
+            <div key={e.key} className="flex items-center gap-1 min-w-0">
+              <SvcLogo svc={e.key} size={12} />
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex-1">{e.name}</span>
+              <span className="text-[10px] font-semibold tabular-nums text-slate-600 dark:text-slate-200 flex-shrink-0">{e.value}</span>
+            </div>
+          ))}
+          {entries.length > 4 && (
+            <p className="text-[9px] text-slate-400">+{entries.length - 4} more</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
