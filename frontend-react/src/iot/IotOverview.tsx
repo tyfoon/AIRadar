@@ -489,7 +489,7 @@ function NetworkPanel({ data, hours, onHoursChange }: {
     if (!el) return;
     const ro = new ResizeObserver(entries => {
       const { width } = entries[0].contentRect;
-      if (width > 0) setDimensions({ w: width, h: Math.max(400, Math.min(600, width * 0.55)) });
+      if (width > 0) setDimensions({ w: width, h: Math.max(300, Math.min(450, width * 0.4)) });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -593,7 +593,7 @@ function drawDeviceIcon(ctx: CanvasRenderingContext2D, type: IconType, cx: numbe
   ctx.save();
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.lineWidth = size * 0.08;
+  ctx.lineWidth = size * 0.1;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const s = size * 0.4; // half-size
@@ -982,11 +982,11 @@ function NetworkGraph({ nodes, edges, width, height }: {
         const r = n.radius;
         const colors = getNodeColor(n.deviceClass, n.online);
 
-        // Outer glow (pulsing for online)
+        // Subtle glow behind icon (pulsing for online)
         if (n.online) {
-          const pulse = Math.sin(frameRef.current * 0.04) * 0.15 + 0.85;
-          const glowR = r + 8;
-          const grad = ctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
+          const pulse = Math.sin(frameRef.current * 0.04) * 0.12 + 0.88;
+          const glowR = r * 0.9;
+          const grad = ctx.createRadialGradient(x, y, 0, x, y, glowR * pulse);
           grad.addColorStop(0, colors.glow);
           grad.addColorStop(1, 'transparent');
           ctx.beginPath();
@@ -995,42 +995,17 @@ function NetworkGraph({ nodes, edges, width, height }: {
           ctx.fill();
         }
 
-        // Gradient body
-        const bodyGrad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
-        bodyGrad.addColorStop(0, lighten(colors.main, isDark ? 0.25 : 0.15));
-        bodyGrad.addColorStop(1, colors.main);
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = bodyGrad;
-        ctx.fill();
-
-        // Glass highlight
-        const hlGrad = ctx.createRadialGradient(x - r * 0.25, y - r * 0.35, 0, x, y, r);
-        hlGrad.addColorStop(0, 'rgba(255,255,255,0.28)');
-        hlGrad.addColorStop(0.5, 'rgba(255,255,255,0.04)');
-        hlGrad.addColorStop(1, 'transparent');
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = hlGrad;
-        ctx.fill();
-
-        // Device icon inside the node
-        drawDeviceIcon(ctx, n.iconType, x, y, r * 1.3, 'rgba(255,255,255,0.85)');
-
-        // Border
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+        // Device icon — drawn directly, no circle background
+        const iconColor = n.online ? colors.main : (isDark ? '#64748b' : '#94a3b8');
+        drawDeviceIcon(ctx, n.iconType, x, y, r * 1.1, iconColor);
 
         // Online dot
         if (n.online) {
-          const dotR = Math.max(2.5, r * 0.2);
-          const dx = x + r * 0.65;
-          const dy = y - r * 0.65;
+          const dotR = Math.max(2, r * 0.15);
+          const dx = x + r * 0.45;
+          const dy = y - r * 0.45;
           ctx.beginPath();
-          ctx.arc(dx, dy, dotR + 1.2, 0, Math.PI * 2);
+          ctx.arc(dx, dy, dotR + 1, 0, Math.PI * 2);
           ctx.fillStyle = isDark ? '#0f1117' : '#fff';
           ctx.fill();
           ctx.beginPath();
