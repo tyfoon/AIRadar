@@ -235,10 +235,12 @@ function navigate(page) {
   });
 
   // Unmount the React 3D globe when navigating away from geo to free
-  // WebGL resources. Re-mounting is cheap compared to leaking GPU memory.
-  const reactGeo = document.getElementById('react-geo-root');
-  if (page !== 'geo' && reactGeo && reactGeo.getAttribute('data-active')) {
-    reactGeo.setAttribute('data-active', '');
+  // WebGL resources. Re-mount happens via refreshGeo() when user returns.
+  if (page !== 'geo') {
+    const reactGeo = document.getElementById('react-geo-root');
+    if (reactGeo && reactGeo.getAttribute('data-active')) {
+      reactGeo.setAttribute('data-active', '');
+    }
   }
 
   // Load data for this page
@@ -5836,9 +5838,8 @@ async function refreshOther() {
 // ================================================================
 // GEO TRAFFIC — world map + country table with inbound/outbound tabs
 // ================================================================
+// Legacy: kept for openCountryDrawer which reads _geoDirection
 let _geoDirection = 'outbound';
-let _geoMap = null;
-let _geoData = null;
 
 // Convert a 2-letter ISO country code to a flag emoji using Unicode
 // regional indicator symbols (0x1F1E6 + letter offset).
@@ -5861,8 +5862,12 @@ function _geoFmtBytes(b) {
 }
 
 async function refreshGeo() {
-  loadGeoBlockRules();  // load blocked countries panel in parallel
-  return loadGeoTraffic(_geoDirection);
+  // The React GeoMap handles its own data fetching via React Query.
+  // Just ensure the island is mounted.
+  const reactView = document.getElementById('react-geo-root');
+  if (reactView && !reactView.getAttribute('data-active')) {
+    reactView.setAttribute('data-active', 'true');
+  }
 }
 
 // Build filter params for the Geo and Other pages. Mirrors the AI
@@ -5916,320 +5921,12 @@ function _populateDeviceFilter(selectId) {
   sel.value = cur;
 }
 
-async function loadGeoTraffic(direction) {
-  _geoDirection = direction;
-  try {
-    const filters = _buildInsightFilters('geo');
-    filters.set('direction', direction);
-    const res = await fetch(`/api/analytics/geo?${filters}`);
-    const data = await res.json();
-    _geoData = data;
-    _renderGeoStats(data);
-    _renderGeoMap(data);
-    _renderGeoTable(data);
 
-    // Populate filter dropdowns from the device list + the services
-    // we see in the conversations table (via a second lightweight
-    // request the first time). Only runs once per page visit.
-    if (!_geoFiltersPopulated) {
-      _geoFiltersPopulated = true;
-      _populateDeviceFilter('geo-filter-device');
-
-      // Services list: pull from a quick /api/events scan (any category)
-      try {
-        const evs = await fetch('/api/events?limit=1000').then(r => r.json());
-        _populateFilterSelect('geo-filter-service',
-          (evs || []).map(e => e.ai_service),
-          t('ai.allServices') || 'All services',
-          svc => svcDisplayName(svc));
-      } catch (e) { console.warn('geo service filter:', e); }
-    }
-  } catch (err) {
-    console.error('loadGeoTraffic:', err);
-  }
-}
-let _geoFiltersPopulated = false;
-
-function switchGeoView(view) {
-  const classicView = document.getElementById('geo-classic-view');
-  const reactView = document.getElementById('react-geo-root');
-  const btnClassic = document.getElementById('geo-view-classic');
-  const btnReact = document.getElementById('geo-view-react');
-  const base = 'px-3 py-1 rounded-md text-[11px] font-medium transition-colors';
-  if (view === 'react') {
-    if (classicView) classicView.classList.add('hidden');
-    if (reactView) { reactView.classList.remove('hidden'); reactView.setAttribute('data-active', 'true'); }
-    if (btnClassic) btnClassic.className = `${base} text-slate-500 dark:text-slate-400`;
-    if (btnReact) btnReact.className = `${base} bg-blue-700 text-white shadow-sm`;
-  } else {
-    if (classicView) classicView.classList.remove('hidden');
-    // Unmount the React globe tree so Three.js resources are freed.
-    // Setting data-active="" signals main.tsx to unmount the root.
-    if (reactView) { reactView.classList.add('hidden'); reactView.setAttribute('data-active', ''); }
-    if (btnClassic) btnClassic.className = `${base} bg-blue-700 text-white shadow-sm`;
-    if (btnReact) btnReact.className = `${base} text-slate-500 dark:text-slate-400`;
-  }
-}
-window.switchGeoView = switchGeoView;
-
-function switchGeoTab(direction) {
-  const outBtn = document.getElementById('geo-tab-outbound');
-  const inBtn  = document.getElementById('geo-tab-inbound');
-  // Shared tab classes — match the Rules / AI / Settings style
-  // so every sub-tab in the app looks identical.
-  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
-  const active = `${base} bg-blue-700 text-white shadow-sm`;
-  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
-  // Preserve the icon+label markup by only rewriting className.
-  if (direction === 'outbound') {
-    if (outBtn) outBtn.className = active;
-    if (inBtn) inBtn.className = inactive;
-  } else {
-    if (outBtn) outBtn.className = inactive;
-    if (inBtn) inBtn.className = active;
-  }
-  loadGeoTraffic(direction);
-}
-window.switchGeoTab = switchGeoTab;
-
-function _renderGeoStats(data) {
-  const container = document.getElementById('geo-stats');
-  if (!container) return;
-  const countries = data.countries || [];
-  const totalBytes = countries.reduce((s, c) => s + c.bytes, 0);
-  const totalHits = countries.reduce((s, c) => s + c.hits, 0);
-  const top = countries[0];
-  const topLabel = top ? `${_flagEmoji(top.country_code)} ${top.country_code}` : '—';
-  const dirLabel = data.direction === 'outbound'
-    ? (t('geo.outboundShort') || 'Outbound')
-    : (t('geo.inboundShort') || 'Inbound');
-
-  container.innerHTML = `
-    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statCountries') || 'Countries'}</p>
-      <p class="text-2xl font-bold mt-2 tabular-nums">${countries.length}</p>
-    </div>
-    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statBandwidth') || 'Total bandwidth'} (${dirLabel})</p>
-      <p class="text-2xl font-bold mt-2 tabular-nums">${_geoFmtBytes(totalBytes)}</p>
-    </div>
-    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statConnections') || 'Connections'}</p>
-      <p class="text-2xl font-bold mt-2 tabular-nums">${formatNumber(totalHits)}</p>
-    </div>
-    <div class="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5 card-hover">
-      <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${t('geo.statTop') || 'Top destination'}</p>
-      <p class="text-2xl font-bold mt-2">${topLabel}</p>
-      <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">${top ? _geoFmtBytes(top.bytes) : ''}</p>
-    </div>
-  `;
-}
-
-function _renderGeoMap(data) {
-  const wrap = document.getElementById('geo-map-wrap');
-  const empty = document.getElementById('geo-map-empty');
-  if (!wrap || !empty) return;
-
-  const countries = data.countries || [];
-  if (countries.length === 0) {
-    wrap.classList.add('hidden');
-    empty.classList.remove('hidden');
-    return;
-  }
-  wrap.classList.remove('hidden');
-  empty.classList.add('hidden');
-
-  // Build country → bytes map for jsVectorMap. jsVectorMap uses uppercase
-  // ISO-3166-1 alpha-2 codes to identify countries on the world map.
-  const values = {};
-  countries.forEach(c => { values[c.country_code] = c.bytes; });
-
-  // Legend
-  const max = countries[0]?.bytes || 0;
-  const legend = document.getElementById('geo-map-legend');
-  if (legend) legend.textContent = `${t('geo.scaleMax') || 'Darker = more traffic'} (max ${_geoFmtBytes(max)})`;
-
-  // Tear down previous map if present (jsVectorMap doesn't support data swap)
-  const container = document.getElementById('geo-map');
-  if (!container) return;
-  if (_geoMap) {
-    try { _geoMap.destroy(); } catch (e) { /* ignore */ }
-    _geoMap = null;
-  }
-  container.innerHTML = '';
-
-  const dark = isDark();
-  const bg = dark ? '#0B0C10' : '#f8fafc';
-  const scaleColors = dark ? ['#334155', '#7c3aed', '#ef4444'] : ['#e2e8f0', '#a78bfa', '#dc2626'];
-
-  // jsVectorMap v1.x uses jsVectorMap global. Some builds expose it as
-  // window.jsVectorMap or as a default export.
-  const JVM = window.jsVectorMap || window.jsvectormap;
-  if (!JVM) {
-    console.warn('jsVectorMap not loaded');
-    return;
-  }
-
-  try {
-    _geoMap = new JVM({
-      selector: '#geo-map',
-      map: 'world',
-      backgroundColor: bg,
-      zoomOnScroll: false,
-      zoomButtons: true,
-      regionStyle: {
-        initial: {
-          fill: dark ? '#1e293b' : '#e2e8f0',
-          stroke: dark ? '#0f172a' : '#cbd5e1',
-          strokeWidth: 0.4,
-        },
-        hover: {
-          fill: dark ? '#6366f1' : '#818cf8',
-          cursor: 'pointer',
-        },
-      },
-      visualizeData: {
-        scale: scaleColors,
-        values: values,
-      },
-      onRegionTooltipShow(event, tooltip, code) {
-        const bytes = values[code] || 0;
-        const entry = countries.find(c => c.country_code === code);
-        const hits = entry ? entry.hits : 0;
-        const name = tooltip.text();
-        if (bytes > 0) {
-          tooltip.text(
-            `<div class="font-semibold">${_flagEmoji(code)} ${name}</div>` +
-            `<div class="text-xs">${_geoFmtBytes(bytes)} &middot; ${formatNumber(hits)} conn.</div>` +
-            `<div class="text-[10px] opacity-70 mt-0.5">${t('geo.clickForDetails') || 'Click for details'}</div>`,
-            true
-          );
-        } else {
-          tooltip.text(`${_flagEmoji(code)} ${name}`, true);
-        }
-      },
-      onRegionClick(event, code) {
-        if (!code) return;
-        // Only drill into countries we actually have data for.
-        if (!values[code] || values[code] <= 0) return;
-        openCountryDrawer(code);
-      },
-    });
-  } catch (err) {
-    console.error('jsVectorMap init failed:', err);
-    container.innerHTML = `<p class="text-center text-sm text-red-500 py-12">Map error: ${err.message}</p>`;
-  }
-}
-
-// Classify a country row by its inbound/outbound ratio into one of
-// three buckets used for left-border coloring on the geo table.
-//   outbound >> inbound (>3x) → orange  (upload / push / sync heavy)
-//   inbound  >> outbound (>3x) → blue    (streaming / download heavy)
-//   otherwise                  → slate   (balanced)
-// Called with the row's bytes (matches the currently-selected
-// direction) and opposite_bytes from the API.
-function _geoRatioClass(bytes, opposite, direction) {
-  const a = bytes || 0;
-  const b = opposite || 0;
-  if (a === 0 && b === 0) return 'border-l-2 border-slate-200 dark:border-white/[0.04]';
-  const outBytes = direction === 'outbound' ? a : b;
-  const inBytes  = direction === 'outbound' ? b : a;
-  if (outBytes > inBytes * 3) return 'border-l-2 border-orange-400';
-  if (inBytes  > outBytes * 3) return 'border-l-2 border-sky-400';
-  return 'border-l-2 border-slate-300 dark:border-slate-600';
-}
-
-function _renderGeoTable(data) {
-  const tbody = document.getElementById('geo-table-body');
-  if (!tbody) return;
-  const countries = data.countries || [];
-  if (countries.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs text-slate-400 dark:text-slate-500">${t('geo.noData') || 'No geo traffic data yet.'}</td></tr>`;
-    return;
-  }
-  const totalBytes = countries.reduce((s, c) => s + c.bytes, 0) || 1;
-  tbody.innerHTML = countries.map((c, i) => {
-    const pct = (c.bytes / totalBytes) * 100;
-    const pctLabel = pct.toFixed(1);
-    const barColor = i === 0 ? 'from-red-500 to-orange-500'
-                   : i < 3 ? 'from-orange-500 to-amber-500'
-                   : 'from-blue-500 to-blue-700';
-    const ratioCls = _geoRatioClass(c.bytes, c.opposite_bytes, data.direction);
-    // Top-3 devices line — stacked chips with truncation
-    const devChips = (c.top_devices || []).slice(0, 3).map(d => {
-      const name = (d.name || d.mac || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      return `<span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-[10px] text-slate-600 dark:text-slate-300 truncate max-w-[120px]" title="${name}">${name}</span>`;
-    }).join(' ');
-    const devCell = devChips || `<span class="text-[10px] text-slate-400 dark:text-slate-600">—</span>`;
-    return `<tr class="${ratioCls} border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors cursor-pointer" onclick="openCountryDrawer('${c.country_code}')">
-      <td class="py-3 px-4 text-xs tabular-nums text-slate-400 dark:text-slate-500">#${i + 1}</td>
-      <td class="py-3 px-4">
-        <span class="inline-flex items-center gap-2">
-          <span class="text-lg leading-none">${_flagEmoji(c.country_code)}</span>
-          <span class="font-mono font-semibold text-slate-700 dark:text-slate-200">${c.country_code}</span>
-        </span>
-      </td>
-      <td class="py-3 px-4 text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(c.bytes)}</td>
-      <td class="py-3 px-4 text-xs tabular-nums text-slate-500 dark:text-slate-400">${formatNumber(c.hits)}</td>
-      <td class="py-3 px-4 hidden md:table-cell"><div class="flex flex-wrap gap-1">${devCell}</div></td>
-      <td class="py-3 px-4 min-w-[140px]">
-        <div class="flex items-center gap-2">
-          <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.04] overflow-hidden">
-            <div class="h-full rounded-full bg-gradient-to-r ${barColor}" style="width:${Math.max(2, pct).toFixed(1)}%"></div>
-          </div>
-          <span class="text-[10px] tabular-nums text-slate-500 dark:text-slate-400 w-10 text-right">${pctLabel}%</span>
-        </div>
-      </td>
-      <td class="py-3 px-2 text-center">
-        <button onclick="event.stopPropagation(); blockCountry('${c.country_code}', 'both')" title="Block ${c.country_code}" class="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 transition-colors">
-          <i class="ph-duotone ph-shield-slash text-sm"></i>
-        </button>
-      </td>
-    </tr>`;
-  }).join('');
-}
 
 // ---------------------------------------------------------------------------
 // GeoIP Blocking — blocked countries panel + actions
 // ---------------------------------------------------------------------------
 
-let _geoBlockRules = [];
-
-async function loadGeoBlockRules() {
-  try {
-    const res = await fetch('/api/geo/block-rules');
-    _geoBlockRules = await res.json();
-    _renderGeoBlockList();
-  } catch (err) {
-    console.error('loadGeoBlockRules:', err);
-  }
-}
-
-function _renderGeoBlockList() {
-  const el = document.getElementById('geo-block-list');
-  const countEl = document.getElementById('geo-block-count');
-  if (!el) return;
-  if (countEl) countEl.textContent = _geoBlockRules.length > 0 ? `${_geoBlockRules.length} blocked` : '';
-
-  if (_geoBlockRules.length === 0) {
-    el.innerHTML = '<p class="text-sm text-slate-400 dark:text-slate-500 text-center py-4">No countries blocked.</p>';
-    return;
-  }
-
-  el.innerHTML = _geoBlockRules.map(r => {
-    const dirLabel = r.direction === 'both' ? 'all traffic' : r.direction;
-    return `<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
-      <span class="flex items-center gap-2">
-        <span class="text-base">${_flagEmoji(r.country_code)}</span>
-        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">${r.country_code}</span>
-        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">${dirLabel}</span>
-      </span>
-      <button onclick="unblockCountry('${r.country_code}')" class="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-400 hover:text-red-600 transition-colors" title="Unblock ${r.country_code}">
-        <i class="ph-duotone ph-x-circle text-lg"></i>
-      </button>
-    </div>`;
-  }).join('');
-}
 
 async function blockCountry(cc, direction) {
   if (!confirm(`Block all ${direction} traffic from/to ${cc}? This will apply iptables rules on the bridge.`)) return;
@@ -6248,7 +5945,7 @@ async function blockCountry(cc, direction) {
       alert(`Failed to block ${cc}: ${err.detail || 'Unknown error'}`);
       return;
     }
-    await loadGeoBlockRules();
+    // React GeoMap refreshes its own block-rules query via React Query
   } catch (err) {
     console.error('blockCountry:', err);
     alert('Failed to block country: ' + err.message);
@@ -6265,7 +5962,7 @@ async function unblockCountry(cc) {
       alert(`Failed to unblock ${cc}: ${err.detail || 'Unknown error'}`);
       return;
     }
-    await loadGeoBlockRules();
+    // React GeoMap refreshes its own block-rules query via React Query
   } catch (err) {
     console.error('unblockCountry:', err);
     alert('Failed to unblock country: ' + err.message);
