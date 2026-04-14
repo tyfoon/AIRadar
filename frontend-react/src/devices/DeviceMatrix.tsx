@@ -292,7 +292,8 @@ function DeviceRow({
   const dt = detectDeviceType(device);
   const online = device ? isDeviceOnline(device) : false;
   const name = bestDeviceName(mac, device);
-  const ipInfo = device ? ipSummary(device) : { primary: mac.replace('_ip_', ''), extra: 0 };
+  const ip = device ? latestIp(device) : mac.replace('_ip_', '');
+  const extraIps = device?.ips ? device.ips.length - 1 : 0;
 
   return (
     <tr className={`border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors group ${isQuiet ? 'opacity-50' : ''}`}>
@@ -327,7 +328,7 @@ function DeviceRow({
           )}
         </div>
         <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-          {ipInfo.primary}{ipInfo.extra > 0 && <span className="text-[10px] text-slate-400 dark:text-slate-500"> (+{ipInfo.extra} other{ipInfo.extra > 1 ? 's' : ''})</span>}
+          {ip}{extraIps > 0 && <span className="text-[10px] text-slate-400 dark:text-slate-500"> (+{extraIps} other{extraIps > 1 ? 's' : ''})</span>}
         </p>
         {/* Device type tag */}
         <span className="inline-flex items-center flex-wrap gap-x-1.5 gap-y-0 text-[10px] text-slate-400 dark:text-slate-500">

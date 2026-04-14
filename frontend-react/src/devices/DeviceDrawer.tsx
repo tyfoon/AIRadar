@@ -4,10 +4,10 @@ import type { DeviceEvent, DeviceMap, ReportData, Connection } from './types';
 import type { Device } from '../utils/devices';
 import { detectDeviceType, isDeviceOnline, bestDeviceName, latestIp, saveFriendlyName } from '../utils/devices';
 import { getCategoryGroups, categorizeService } from '../utils/categories';
-import { svcDisplayName, svcColor } from '../utils/services';
-import { fmtBytes, fmtDuration, fmtDurationSec, fmtTime, formatNumber, todayLocalISO, formatLocalDateLabel } from '../utils/format';
+import { svcDisplayName } from '../utils/services';
+import { fmtBytes, fmtDuration, fmtTime, formatNumber } from '../utils/format';
 import { t, getLocale } from '../utils/i18n';
-import { fetchConnections, fetchActivity, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice } from './api';
+import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice } from './api';
 import SvcLogo from './SvcLogo';
 import PhIcon from './PhIcon';
 import ScreenTime from '../ScreenTime';
@@ -21,7 +21,7 @@ interface Props {
   onDevicesRefetch: () => void;
 }
 
-type TabKey = 'report' | 'summary' | 'connections' | 'activity' | 'screentime' | 'ai' | 'cloud' | 'tracking' | 'other';
+type TabKey = 'report' | 'summary' | 'connections' | 'screentime' | 'ai' | 'cloud' | 'tracking' | 'other';
 
 const SESSION_GAP_MS = 5 * 60 * 1000;
 const MIN_SESSION_MS = 60 * 1000;
@@ -146,7 +146,6 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
     { key: 'report', icon: 'ph-sparkle', label: t('dev.drawerReportTab') || 'AI Recap' },
     { key: 'summary', icon: 'ph-chart-bar', label: t('dev.drawerSummaryTab') || 'Summary' },
     { key: 'connections', icon: 'ph-swap', label: t('dev.drawerConnectionsTab') || 'Connections' },
-    { key: 'activity', icon: 'ph-hourglass-medium', label: t('dev.drawerActivityTab') || 'Activity' },
     { key: 'screentime', icon: 'ph-timer', label: 'Sessions' },
   ];
 
@@ -228,7 +227,6 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
           {activeTab === 'report' && <ReportTab mac={mac} />}
           {activeTab === 'summary' && <SummaryTab events={deviceEvents} mac={mac} />}
           {activeTab === 'connections' && <ConnectionsTab mac={mac} />}
-          {activeTab === 'activity' && <ActivityTab mac={mac} />}
           {activeTab === 'screentime' && <div className="p-0"><ScreenTime macAddress={mac} /></div>}
           {['ai', 'cloud', 'tracking', 'other'].includes(activeTab) && (
             <EventsTab events={deviceEvents} category={activeTab} serviceFilter={serviceFilter} />
@@ -540,162 +538,6 @@ function ConnectionsTab({ mac }: { mac: string }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// --- Activity Tab ---
-function ActivityTab({ mac }: { mac: string }) {
-  const [date, setDate] = useState(todayLocalISO);
-  const [showSessions, setShowSessions] = useState(false);
-  const isToday = date === todayLocalISO();
-
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['deviceActivity', mac, date],
-    queryFn: () => fetchActivity(mac, date),
-    staleTime: 30_000,
-  });
-
-  const shiftDate = (delta: number) => {
-    setDate(prev => {
-      const d = new Date(`${prev}T12:00:00`);
-      d.setDate(d.getDate() + delta);
-      const today = new Date(); today.setHours(23, 59, 59, 999);
-      if (d > today) return prev;
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    });
-    setShowSessions(false);
-  };
-
-  const sessions = data?.sessions || [];
-  const totalsCat = data?.totals_by_category || [];
-  const totalsSvc = data?.totals_by_service || [];
-  const label = formatLocalDateLabel(date, getLocale());
-
-  return (
-    <div className="p-5 space-y-4">
-      {/* Date nav */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('dev.activityTitle') || 'Daily usage'}</h3>
-        <div className="flex items-center gap-1">
-          <button onClick={() => shiftDate(-1)} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500">
-            <i className="ph-bold ph-caret-left text-sm" />
-          </button>
-          <span className="text-xs font-medium text-slate-600 dark:text-slate-300 min-w-[80px] text-center tabular-nums">{label}</span>
-          <button onClick={() => shiftDate(1)} disabled={isToday} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500 disabled:opacity-30">
-            <i className="ph-bold ph-caret-right text-sm" />
-          </button>
-          <button onClick={() => { setDate(todayLocalISO()); setShowSessions(false); }} disabled={isToday} className={`ml-1 px-2 h-7 text-[11px] font-medium rounded-md ${isToday ? 'text-slate-400 cursor-default' : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}>
-            {t('dev.activityToday') || 'Today'}
-          </button>
-        </div>
-      </div>
-
-      {isLoading && (
-        <div className="flex items-center gap-2 text-slate-400 py-6 justify-center">
-          <i className="ph-duotone ph-circle-notch animate-spin text-lg" />
-          <span className="text-sm">Loading...</span>
-        </div>
-      )}
-
-      {isError && <p className="text-sm text-red-500 text-center py-6">{(error as Error)?.message}</p>}
-
-      {data && !isLoading && sessions.length === 0 && (
-        <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
-          <i className="ph-duotone ph-hourglass text-3xl mb-2 block" />
-          {t('dev.activityEmpty') || 'No usage recorded on this day.'}
-        </div>
-      )}
-
-      {data && !isLoading && sessions.length > 0 && (
-        <>
-          {/* Grand total */}
-          <div className="flex items-baseline justify-between">
-            <div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{t('dev.activityTotal') || 'Total usage'}</span>
-              <span className="ml-2 text-base font-semibold text-slate-700 dark:text-slate-200 tabular-nums">{fmtDurationSec(data.grand_total_seconds)}</span>
-            </div>
-            <span className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums">{sessions.length} sessions</span>
-          </div>
-
-          {/* Timeline */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-[9px] text-slate-400 dark:text-slate-500 px-1 tabular-nums select-none">
-              <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
-            </div>
-            {totalsCat.map(catTotal => {
-              const cat = catTotal.category;
-              const catSessions = sessions.filter(s => s.category === cat);
-              return (
-                <div key={cat} className="flex items-center gap-2 mb-1.5">
-                  <div className="w-16 flex-shrink-0 text-[10px] font-medium text-slate-600 dark:text-slate-400 truncate">
-                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                  </div>
-                  <div className="flex-1 relative h-6 rounded bg-slate-100 dark:bg-white/[0.04] overflow-hidden">
-                    {[6, 12, 18].map(h => (
-                      <div key={h} className="absolute top-0 bottom-0 border-l border-slate-200 dark:border-white/[0.08]" style={{ left: `${(h / 24) * 100}%` }} />
-                    ))}
-                    {catSessions.map((s, i) => {
-                      const start = new Date(s.start);
-                      const end = new Date(s.end);
-                      const startMin = start.getHours() * 60 + start.getMinutes() + start.getSeconds() / 60;
-                      const endMin = end.getHours() * 60 + end.getMinutes() + end.getSeconds() / 60;
-                      const left = (startMin / 1440) * 100;
-                      const width = Math.max(((endMin - startMin) / 1440) * 100, 0.4);
-                      const color = svcColor(s.service);
-                      return (
-                        <div
-                          key={i}
-                          className="absolute top-0 bottom-0 hover:ring-2 ring-white/50 cursor-default rounded-sm"
-                          style={{ left: `${left}%`, width: `${width}%`, background: color }}
-                          title={`${svcDisplayName(s.service)} · ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${fmtDurationSec(s.duration_seconds)}`}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Service chips */}
-          <div className="flex flex-wrap gap-1.5">
-            {totalsSvc.map(svc => {
-              const color = svcColor(svc.service);
-              return (
-                <div key={svc.service} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-50 dark:bg-white/[0.03] text-[11px]">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                  <span className="font-medium text-slate-600 dark:text-slate-300">{svcDisplayName(svc.service)}</span>
-                  <span className="tabular-nums text-slate-500 dark:text-slate-400">{fmtDurationSec(svc.duration_seconds)}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Collapsible session list */}
-          <div className="border-t border-slate-200 dark:border-white/[0.05] pt-3">
-            <button onClick={() => setShowSessions(s => !s)} className="w-full flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-              <span>{showSessions ? 'Hide sessions' : 'Show all sessions'}</span>
-              <i className={`ph-bold ${showSessions ? 'ph-caret-up' : 'ph-caret-down'}`} />
-            </button>
-            {showSessions && (
-              <div className="mt-3 space-y-1">
-                {sessions.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-slate-50 dark:hover:bg-white/[0.03]">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: svcColor(s.service) }} />
-                    <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 w-24 flex-shrink-0">
-                      {new Date(s.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–{new Date(s.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate flex-1">{svcDisplayName(s.service)}</span>
-                    <span className="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">{fmtDurationSec(s.duration_seconds)}</span>
-                    {s.bytes > 0 && <span className="text-[10px] tabular-nums text-slate-400 dark:text-slate-500 w-14 text-right flex-shrink-0">{fmtBytes(s.bytes)}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
     </div>
   );
 }
