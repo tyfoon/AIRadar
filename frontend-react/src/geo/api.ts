@@ -1,16 +1,16 @@
-import type { GeoTrafficResponse, CountryDetailResponse, Direction } from './types';
+import type { GeoTrafficResponse, CountryDetailResponse, Direction, BlockRule } from './types';
 
 export async function fetchGeoTraffic(
   direction: Direction,
   period?: string,
   service?: string,
-  sourceIp?: string,
+  device?: string,
 ): Promise<GeoTrafficResponse> {
   const p = new URLSearchParams();
   p.set('direction', direction);
   if (period) p.set('start', new Date(Date.now() - parseInt(period) * 60000).toISOString());
   if (service) p.set('service', service);
-  if (sourceIp) p.set('source_ip', sourceIp);
+  if (device) p.set('source_ip', device);
   const res = await fetch(`/api/analytics/geo?${p}`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
@@ -23,4 +23,24 @@ export async function fetchCountryDetail(
   const res = await fetch(`/api/analytics/geo/country/${cc}?direction=${direction}`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+export async function fetchBlockRules(): Promise<BlockRule[]> {
+  const res = await fetch('/api/geo/block-rules');
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+export async function blockCountry(cc: string, direction: string): Promise<void> {
+  const res = await fetch('/api/geo/block-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ country_code: cc, direction }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+}
+
+export async function unblockCountry(cc: string): Promise<void> {
+  const res = await fetch(`/api/geo/block-rules/${cc}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
 }

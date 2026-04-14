@@ -49,4 +49,9 @@ export interface CountryDetailResponse {
   top_ips: CountryDetailIP[];
 }
 
+export interface BlockRule {
+  country_code: string;
+  direction: string;
+}
+
 export type Direction = 'outbound' | 'inbound';
