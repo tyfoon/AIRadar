@@ -6,7 +6,6 @@ import {
   Geography,
   ZoomableGroup,
 } from 'react-simple-maps';
-import { scaleLinear } from 'd3-scale';
 import { fetchGeoTraffic, fetchBlockRules, blockCountry, unblockCountry } from './api';
 import { formatBytes, formatNumber, countryName, flagClass, ratioColor } from './utils';
 import type { Direction, GeoCountry } from './types';
@@ -138,11 +137,28 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
 
   const maxBytes = useMemo(() => Math.max(1, ...countries.map(c => c.bytes)), [countries]);
 
-  const colorScale = useMemo(() => {
+  // Single-hue blue scale: light → dark with more traffic (log scale for better distribution)
+  const countryColor = useMemo(() => {
     const dark = document.documentElement.classList.contains('dark');
-    return scaleLinear<string>()
-      .domain([0, maxBytes * 0.3, maxBytes])
-      .range(dark ? ['#1e293b', '#7c3aed', '#ef4444'] : ['#e2e8f0', '#a78bfa', '#dc2626']);
+    const logMax = Math.log10(maxBytes + 1);
+    return (bytes: number) => {
+      if (bytes <= 0) return dark ? '#1e293b' : '#e2e8f0';
+      const t = Math.log10(bytes + 1) / logMax; // 0..1 on log scale
+      // Interpolate opacity on a blue base
+      if (dark) {
+        // dark mode: from dim blue to bright blue
+        const r = Math.round(30 + t * 29);   // 30→59
+        const g = Math.round(58 + t * 72);   // 58→130
+        const b = Math.round(138 + t * 108); // 138→246
+        return `rgb(${r},${g},${b})`;
+      } else {
+        // light mode: from light blue to saturated blue
+        const r = Math.round(219 - t * 180); // 219→39
+        const g = Math.round(234 - t * 136); // 234→98
+        const b = Math.round(254 - t * 8);   // 254→246
+        return `rgb(${r},${g},${b})`;
+      }
+    };
   }, [maxBytes]);
 
   async function handleBlock(cc: string) {
@@ -243,9 +259,9 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
             />
           )}
           <ComposableMap
-            projectionConfig={{ rotate: [-10, 0, 0], scale: 147 }}
+            projectionConfig={{ rotate: [-10, 0, 0], scale: 120 }}
             width={800}
-            height={450}
+            height={340}
             style={{ width: '100%', height: 'auto', display: 'block' }}
           >
             <ZoomableGroup>
@@ -259,7 +275,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
                       <Geography
                         key={geo.rsmKey}
                         geography={geo}
-                        fill={bytes > 0 ? colorScale(bytes) : (dark ? '#1e293b' : '#e2e8f0')}
+                        fill={countryColor(bytes)}
                         stroke={dark ? '#334155' : '#cbd5e1'}
                         strokeWidth={0.4}
                         style={{
