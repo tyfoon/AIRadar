@@ -213,14 +213,9 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
               key={c.key}
               className={activeTab === c.key ? tabActive : tabInactive}
               onClick={() => { setActiveTab(c.key as TabKey); setServiceFilter(null); }}
-              title={`${c.label} (${tabCounts[c.key]})`}
+              title={c.label}
             >
               <i className={`ph-duotone ${c.icon}`} />
-              {tabCounts[c.key] > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 text-[9px] font-semibold leading-4 text-center tabular-nums">
-                  {tabCounts[c.key] > 999 ? '999+' : tabCounts[c.key]}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -422,28 +417,28 @@ function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { 
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t('dev.summaryTitle') || 'Top Services'}</h3>
       </div>
       <div className="space-y-2.5">
-        {rows.map(([svc, info]) => (
-          <div key={svc} className="py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
-            <div className="flex items-center gap-3">
-              <SvcLogo service={svc} size={20} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
-                  <span className="text-xs tabular-nums flex-shrink-0 flex items-center gap-2">
-                    <span className="text-blue-600 dark:text-blue-400 font-semibold"><i className="ph-duotone ph-clock text-[10px]" /> {fmtDuration(info.activeMs)}</span>
-                    {info.bytes > 0 && <span className="text-slate-400 dark:text-slate-500">{fmtBytes(info.bytes)}</span>}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${maxTime > 0 ? (info.activeMs / maxTime * 100) : 0}%` }} />
-                </div>
+        {rows.map(([svc, info]) => {
+          const action = (policyByService[svc] as 'allow' | 'alert' | 'block') || null;
+          const borderCls = action === 'block' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10'
+            : action === 'alert' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10'
+            : 'border-slate-200 dark:border-white/[0.05]';
+          return (
+            <div key={svc} className={`border ${borderCls} rounded-xl p-3 bg-white dark:bg-white/[0.03] transition-colors`}>
+              <div className="flex items-center gap-2 mb-2">
+                <SvcLogo service={svc} size={20} />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
+                <span className="ml-auto text-xs tabular-nums flex items-center gap-2 flex-shrink-0">
+                  <span className="text-blue-600 dark:text-blue-400 font-semibold"><i className="ph-duotone ph-clock text-[10px]" /> {fmtDuration(info.activeMs)}</span>
+                  {info.bytes > 0 && <span className="text-slate-400 dark:text-slate-500">{fmtBytes(info.bytes)}</span>}
+                </span>
               </div>
+              <div className="mb-2 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${maxTime > 0 ? (info.activeMs / maxTime * 100) : 0}%` }} />
+              </div>
+              <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
             </div>
-            <div className="mt-2 ml-8">
-              <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[svc] || null} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/[0.05] flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
         <span>{Object.keys(svcAgg).length} services</span>
@@ -578,14 +573,13 @@ function collapseEvents(events: DeviceEvent[], keyFn: (e: DeviceEvent) => string
 
 function EventsTab({ events, category, serviceFilter, policyByService, policyExpiresByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
-  const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
 
   let filtered = events.filter(e => e._cat === category);
   if (serviceFilter) filtered = filtered.filter(e => e.ai_service === serviceFilter);
 
   const collapsed = collapseEvents(filtered, e => `${e.ai_service}|${e.detection_type}`);
 
-  useEffect(() => { setVisible(PAGE_SIZE); setExpandedPolicy(null); }, [category, serviceFilter]);
+  useEffect(() => setVisible(PAGE_SIZE), [category, serviceFilter]);
 
   if (collapsed.length === 0) {
     return <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">{t('dev.noActivity') || 'No events'}</div>;
@@ -593,25 +587,36 @@ function EventsTab({ events, category, serviceFilter, policyByService, policyExp
 
   const shown = collapsed.slice(0, visible);
 
-  // Unique services in this view
-  const uniqueServices = [...new Set(filtered.map(e => e.ai_service))];
+  // Unique services with event counts
+  const svcCounts: Record<string, number> = {};
+  filtered.forEach(e => { svcCounts[e.ai_service] = (svcCounts[e.ai_service] || 0) + 1; });
+  const uniqueServices = Object.keys(svcCounts).sort((a, b) => svcCounts[b] - svcCounts[a]);
 
   return (
     <div className="p-0">
-      {/* Per-service policy controls at top */}
-      {uniqueServices.length <= 5 && (
-        <div className="px-4 py-3 space-y-2 border-b border-slate-100 dark:border-white/[0.04]">
-          {uniqueServices.map(svc => (
-            <div key={svc} className="flex items-center gap-2">
-              <SvcLogo service={svc} size={16} />
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 min-w-[80px] truncate">{svcDisplayName(svc)}</span>
-              <div className="flex-1">
-                <PolicySegment serviceName={svc} currentAction={(policyByService[svc] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[svc] || null} />
+      {/* Service cards with policy controls — matching Content/Cloud layout */}
+      <div className="px-4 py-3 space-y-2">
+        {uniqueServices.map(svc => {
+          const action = (policyByService[svc] as 'allow' | 'alert' | 'block') || null;
+          const borderCls = action === 'block' ? 'border-red-300 dark:border-red-700/50 bg-red-50/30 dark:bg-red-900/10'
+            : action === 'alert' ? 'border-amber-300 dark:border-amber-700/50 bg-amber-50/30 dark:bg-amber-900/10'
+            : 'border-slate-200 dark:border-white/[0.05]';
+          return (
+            <div key={svc} className={`border ${borderCls} rounded-xl p-3 bg-white dark:bg-white/[0.03] transition-colors`}>
+              <div className="flex items-center gap-2 mb-2">
+                <SvcLogo service={svc} size={20} />
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
+                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> {svcCounts[svc]}
+                </span>
               </div>
+              <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+
+      {/* Event table */}
       <table className="w-full text-left striped-rows">
         <tbody>
           {shown.map((e, i) => (
@@ -631,23 +636,7 @@ function EventsTab({ events, category, serviceFilter, policyByService, policyExp
                       ×{e._count}
                     </span>
                   )}
-                  {/* Shield icon — expand inline policy for this service (when >5 unique services) */}
-                  {uniqueServices.length > 5 && (
-                    <button
-                      onClick={ev => { ev.stopPropagation(); setExpandedPolicy(expandedPolicy === e.ai_service ? null : e.ai_service); }}
-                      className="ml-1 text-slate-400 hover:text-blue-500 transition-colors"
-                      title={t('rules.manageRules') || 'Set policy'}
-                    >
-                      <i className="ph-duotone ph-shield-check text-sm" />
-                    </button>
-                  )}
                 </span>
-                {/* Inline policy segment when expanded */}
-                {uniqueServices.length > 5 && expandedPolicy === e.ai_service && (
-                  <div className="mt-1.5">
-                    <PolicySegment serviceName={e.ai_service} currentAction={(policyByService[e.ai_service] as 'allow' | 'alert' | 'block') || null} expiresAt={policyExpiresByService[e.ai_service] || null} />
-                  </div>
-                )}
               </td>
               <td className="py-2.5 px-4 text-xs text-right tabular-nums whitespace-nowrap">
                 {e.bytes_transferred ? fmtBytes(e.bytes_transferred) : '0 B'}
