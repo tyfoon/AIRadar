@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Component } from 'react';
+import type { ReactNode, ErrorInfo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ComposableMap, Geographies, Geography, ZoomableGroup,
@@ -6,6 +7,27 @@ import {
 import Globe from 'react-globe.gl';
 import { fetchGeoTraffic, fetchBlockRules, blockCountry, unblockCountry } from './api';
 import { formatBytes, formatNumber, countryName, flagClass, ratioColor } from './utils';
+
+// Error boundary to catch WebGL/three.js crashes gracefully
+class GlobeBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
+  state = { error: false };
+  static getDerivedStateFromError() { return { error: true }; }
+  componentDidCatch(err: Error, info: ErrorInfo) { console.warn('Globe failed (WebGL?):', err, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex items-center justify-center h-full text-xs text-slate-400 p-4 text-center">
+          <div>
+            <i className="ph-duotone ph-globe text-2xl mb-2 block opacity-40" />
+            3D globe not available<br />
+            <span className="text-[10px] opacity-60">(WebGL not supported)</span>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import type { Direction, GeoCountry } from './types';
 
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
@@ -117,7 +139,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     c.autoRotateSpeed = 0.4;
     c.enableZoom = true;
     // Focus on user's location with a smooth animation
-    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.5 }, 1000);
+    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.8 }, 1000);
   }, [geoJson, globeSize]);
 
   // --- Data queries ---
@@ -327,7 +349,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
             style={{ aspectRatio: '1' }}
           >
             {geoJson && globeSize > 0 && (
-              <Globe ref={globeRef}
+              <GlobeBoundary><Globe ref={globeRef}
                 width={globeSize} height={globeSize}
                 backgroundColor="rgba(0,0,0,0)"
                 showAtmosphere={true}
@@ -353,7 +375,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
                 pointsData={[{ lat: HOME.lat, lng: HOME.lng, size: 0.4, color: '#3b82f6' }]}
                 pointLat="lat" pointLng="lng" pointColor="color"
                 pointAltitude={0.03} pointRadius="size"
-              />
+              /></GlobeBoundary>
             )}
           </div>
         </div>
