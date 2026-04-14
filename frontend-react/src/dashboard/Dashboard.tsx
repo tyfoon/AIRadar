@@ -12,6 +12,7 @@ import type { DashEvent } from './types';
 import { categoryColor, categoryName, formatBytes, serviceName } from '../colors';
 import { formatNumber, countryName, flagClass } from '../geo/utils';
 import GeoMap from '../geo/GeoMap';
+import { fetchGeoTraffic } from '../geo/api';
 import { FleetCard } from '../iot/FleetCard';
 import type { FleetDevice } from '../iot/types';
 
@@ -26,6 +27,8 @@ export default function Dashboard() {
   const ips = useQuery({ queryKey: ['dash-ips'], queryFn: fetchIpsStatus, refetchInterval: 30_000 });
   const fleet = useQuery({ queryKey: ['dash-fleet'], queryFn: fetchFleetSummary, refetchInterval: 60_000 });
   const events = useQuery({ queryKey: ['dash-events'], queryFn: fetchDashEvents, refetchInterval: 30_000 });
+  const geoOut = useQuery({ queryKey: ['dash-geo-out'], queryFn: () => fetchGeoTraffic('outbound'), refetchInterval: 60_000 });
+  const geoIn = useQuery({ queryKey: ['dash-geo-in'], queryFn: () => fetchGeoTraffic('inbound'), refetchInterval: 60_000 });
 
   const deviceCount = fleet.data?.total_devices ?? 0;
   const onlineCount = fleet.data?.devices?.filter(d => d.online).length ?? 0;
@@ -83,7 +86,12 @@ export default function Dashboard() {
         </div>
 
         {/* Donut cards grid — fills full space next to globe */}
-        <DonutCardGrid events={events.data ?? []} privacy={privacy.data} />
+        <DonutCardGrid
+          events={events.data ?? []}
+          privacy={privacy.data}
+          geoOutCountries={geoOut.data?.countries ?? []}
+          geoInCountries={geoIn.data?.countries ?? []}
+        />
       </div>
 
       {/* ── IoT Fleet — top 3 devices, full width ── */}
@@ -218,7 +226,14 @@ function svcColor(s: string): string {
   return SERVICE_COLORS[s] || `hsl(${Math.abs([...s].reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 0)) % 360}, 55%, 50%)`;
 }
 
-function DonutCardGrid({ events, privacy }: { events: DashEvent[]; privacy: any }) {
+// Country color palette — stable colors for top countries
+const COUNTRY_COLORS = ['#3b82f6','#ef4444','#f59e0b','#10b981','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+
+function DonutCardGrid({ events, privacy, geoOutCountries, geoInCountries }: {
+  events: DashEvent[]; privacy: any;
+  geoOutCountries: { country_code: string; bytes: number; hits: number }[];
+  geoInCountries: { country_code: string; bytes: number; hits: number }[];
+}) {
   const cards = useMemo(() => {
     const byCat: Record<string, Record<string, number>> = {};
     events.forEach(e => {
@@ -245,12 +260,27 @@ function DonutCardGrid({ events, privacy }: { events: DashEvent[]; privacy: any 
   }, [privacy]);
   const trackerTotal = privacy?.trackers?.total_detected ?? 0;
 
+  // Country donut data
+  const outCountries = useMemo(() => {
+    const top = [...geoOutCountries].sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const total = top.reduce((s, c) => s + c.bytes, 0);
+    return { entries: top.map((c, i) => ({ cc: c.country_code, value: c.bytes, color: COUNTRY_COLORS[i % COUNTRY_COLORS.length] })), total };
+  }, [geoOutCountries]);
+
+  const inCountries = useMemo(() => {
+    const top = [...geoInCountries].sort((a, b) => b.bytes - a.bytes).slice(0, 6);
+    const total = top.reduce((s, c) => s + c.bytes, 0);
+    return { entries: top.map((c, i) => ({ cc: c.country_code, value: c.bytes, color: COUNTRY_COLORS[i % COUNTRY_COLORS.length] })), total };
+  }, [geoInCountries]);
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 content-start">
       {cards.map(c => (
         <DonutCard key={c.cat} label={categoryName(c.cat)} entries={c.entries} total={c.total} accent={categoryColor(c.cat)} />
       ))}
       <DonutCard label="Trackers" entries={trackerEntries} total={trackerTotal} accent={categoryColor('tracking')} />
+      <CountryDonutCard label="Outbound" entries={outCountries.entries} total={outCountries.total} accent="#3b82f6" icon="ph-arrow-up-right" />
+      <CountryDonutCard label="Inbound" entries={inCountries.entries} total={inCountries.total} accent="#ef4444" icon="ph-arrow-down-left" />
     </div>
   );
 }
@@ -295,8 +325,54 @@ function DonutCard({ label, entries, total, accent }: {
           {entries.slice(0, 4).map(e => (
             <div key={e.key} className="flex items-center gap-1 min-w-0">
               <SvcLogo svc={e.key} size={12} />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex-1">{e.name}</span>
-              <span className="text-[10px] font-semibold tabular-nums text-slate-600 dark:text-slate-200 flex-shrink-0">{e.value}</span>
+              <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{e.name}</span>
+              <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{e.value}</span>
+            </div>
+          ))}
+          {entries.length > 4 && (
+            <p className="text-[9px] text-slate-400">+{entries.length - 4} more</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CountryDonutCard({ label, entries, total, accent, icon }: {
+  label: string;
+  entries: { cc: string; value: number; color: string }[];
+  total: number;
+  accent: string;
+  icon: string;
+}) {
+  const displayData = entries.length ? entries : [{ cc: '_empty', value: 1, color: '#334155' }];
+  const isEmpty = !entries.length;
+
+  return (
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col">
+      <div className="flex items-center gap-1.5 mb-1">
+        <i className={`ph-duotone ${icon} text-xs`} style={{ color: accent }} />
+        <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+        <span className="ml-auto text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatBytes(total)}</span>
+      </div>
+      <div className="flex items-start gap-2 flex-1">
+        <div style={{ width: 60, height: 60, flexShrink: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
+                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}>
+                {displayData.map((d, i) => <Cell key={i} fill={isEmpty ? '#334155' : d.color} />)}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex-1 min-w-0 space-y-0.5 pt-0.5">
+          {isEmpty && <p className="text-[10px] text-slate-500 italic">No data</p>}
+          {entries.slice(0, 4).map(e => (
+            <div key={e.cc} className="flex items-center gap-1 min-w-0">
+              <span className={`${flagClass(e.cc)} text-[11px]`} />
+              <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{countryName(e.cc)}</span>
+              <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{formatBytes(e.value)}</span>
             </div>
           ))}
           {entries.length > 4 && (
@@ -404,18 +480,18 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
     const devList = [...top8].sort((a, b) => (dFlows[b] || 0) - (dFlows[a] || 0));
     const catList = Object.entries(cFlows).sort((a, b) => b[1] - a[1]).map(([c]) => c);
 
-    // Compact height
-    const H = Math.max(200, Math.max(devList.length, catList.length) * 32);
-    const nodeW = 12;
-    const padL = 8;
-    const padR = 8;
-    const gap = 5;
+    // Compact height — reduced for dashboard overview
+    const H = Math.max(150, Math.max(devList.length, catList.length) * 24);
+    const nodeW = 10;
+    const padL = 4;
+    const padR = 4;
+    const gap = 3;
 
     const totalDevVal = devList.reduce((s, d) => s + Math.sqrt(dFlows[d] || 0), 0);
     const devAvailH = H - gap * (devList.length - 1);
     let dy = 0;
     const devNodes: SankeyNode[] = devList.map(d => {
-      const h = Math.max(10, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
+      const h = Math.max(8, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
       const node: SankeyNode = { name: d, isDevice: true, value: dFlows[d] || 0, y: dy, h };
       dy += h + gap;
       return node;
@@ -425,7 +501,7 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
     const catAvailH = H - gap * (catList.length - 1);
     let cy = 0;
     const catNodes: SankeyNode[] = catList.map(c => {
-      const h = Math.max(10, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
+      const h = Math.max(8, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
       const node: SankeyNode = { name: c, isDevice: false, value: cFlows[c] || 0, y: cy, h };
       cy += h + gap;
       return node;
@@ -468,11 +544,11 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
   if (!layout || !events.length) return null;
 
   const { devNodes, catNodes, links, topDevName, height, nodeW, padL, padR, dFlows, cFlows } = layout;
-  const labelW = 110;
+  const labelW = 100;
   const svgW = width;
   const leftX = padL + labelW;
   const rightX = svgW - padR - labelW - nodeW;
-  const svgH = height + 20;
+  const svgH = height + 10;
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
@@ -513,10 +589,10 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
             const x0 = leftX + nodeW;
             const x1 = rightX;
             const midX = (x0 + x1) / 2;
-            const y0s = l.sy + 10;
-            const y0e = l.sy + l.sh + 10;
-            const y1s = l.ty + 10;
-            const y1e = l.ty + l.th + 10;
+            const y0s = l.sy + 5;
+            const y0e = l.sy + l.sh + 5;
+            const y1s = l.ty + 5;
+            const y1e = l.ty + l.th + 5;
             const isHigh = hovered === l.source || hovered === l.target;
             const isDim = hovered && !isHigh;
             const d = `M${x0},${y0s} C${midX},${y0s} ${midX},${y1s} ${x1},${y1s} L${x1},${y1e} C${midX},${y1e} ${midX},${y0e} ${x0},${y0e} Z`;
@@ -540,18 +616,18 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
                 onMouseLeave={() => setHovered(null)}
                 className="cursor-pointer"
               >
-                <rect x={leftX} y={n.y + 10} width={nodeW} height={n.h} rx={3}
+                <rect x={leftX} y={n.y + 5} width={nodeW} height={n.h} rx={3}
                   fill="#3b82f6"
                   opacity={isDim ? 0.3 : 1}
                   className="transition-opacity duration-200" />
-                <text x={leftX - 6} y={n.y + 10 + n.h / 2} textAnchor="end" dominantBaseline="central"
-                  className="text-[11px] fill-slate-600 dark:fill-slate-300 font-medium"
+                <text x={leftX - 6} y={n.y + 5 + n.h / 2} textAnchor="end" dominantBaseline="central"
+                  className="text-[10px] fill-slate-600 dark:fill-slate-300 font-medium"
                   style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
                   opacity={isDim ? 0.4 : 1}>
                   {n.name.length > 16 ? n.name.slice(0, 15) + '…' : n.name}
                 </text>
                 {isHigh && (
-                  <text x={leftX - 6} y={n.y + 10 + n.h / 2 + 13} textAnchor="end" dominantBaseline="central"
+                  <text x={leftX - 6} y={n.y + 5 + n.h / 2 + 12} textAnchor="end" dominantBaseline="central"
                     className="text-[9px] fill-slate-400"
                     style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
                     {modeHits ? `${(dFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(dFlows[n.name] || 0)}
@@ -571,18 +647,18 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
                 onMouseLeave={() => setHovered(null)}
                 className="cursor-pointer"
               >
-                <rect x={rightX} y={n.y + 10} width={nodeW} height={n.h} rx={3}
+                <rect x={rightX} y={n.y + 5} width={nodeW} height={n.h} rx={3}
                   fill={color}
                   opacity={isDim ? 0.3 : 1}
                   className="transition-opacity duration-200" />
-                <text x={rightX + nodeW + 6} y={n.y + 10 + n.h / 2} dominantBaseline="central"
-                  className="text-[11px] fill-slate-600 dark:fill-slate-300 font-medium"
+                <text x={rightX + nodeW + 6} y={n.y + 5 + n.h / 2} dominantBaseline="central"
+                  className="text-[10px] fill-slate-600 dark:fill-slate-300 font-medium"
                   style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
                   opacity={isDim ? 0.4 : 1}>
                   {n.name}
                 </text>
                 {isHigh && (
-                  <text x={rightX + nodeW + 6} y={n.y + 10 + n.h / 2 + 13} dominantBaseline="central"
+                  <text x={rightX + nodeW + 6} y={n.y + 5 + n.h / 2 + 12} dominantBaseline="central"
                     className="text-[9px] fill-slate-400"
                     style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
                     {modeHits ? `${(cFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(cFlows[n.name] || 0)}
