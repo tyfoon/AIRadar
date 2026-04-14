@@ -359,19 +359,21 @@ function DonutCard({ label, entries, total, accent }: {
           {entries.length === 0 && (
             <p className="text-[10px] text-slate-500 italic">No events</p>
           )}
-          {entries.slice(0, 4).map((e, i) => (
-            <div key={e.key}
-              className="flex items-center gap-1 min-w-0 cursor-pointer rounded px-0.5 -mx-0.5 transition-opacity"
-              style={{ opacity: active !== null && active !== i ? 0.35 : 1 }}
-              onClick={() => toggle(i)}
-            >
-              <SvcLogo svc={e.key} size={12} />
-              <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{e.name}</span>
-              <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{e.value}</span>
-            </div>
-          ))}
-          {entries.length > 4 && (
-            <p className="text-[9px] text-slate-400">+{entries.length - 4} more</p>
+          <div className="flex flex-wrap gap-1">
+            {entries.slice(0, 6).map((e, i) => (
+              <div key={e.key}
+                className="inline-flex items-center gap-0.5 cursor-pointer rounded transition-opacity"
+                style={{ opacity: active !== null && active !== i ? 0.35 : 1 }}
+                onClick={() => toggle(i)}
+                title={e.name}
+              >
+                <SvcLogo svc={e.key} size={14} />
+                <span className="text-[10px] font-semibold tabular-nums" style={{ color: e.color }}>{e.value}</span>
+              </div>
+            ))}
+          </div>
+          {entries.length > 6 && (
+            <p className="text-[9px] text-slate-400">+{entries.length - 6} more</p>
           )}
         </div>
       </div>
