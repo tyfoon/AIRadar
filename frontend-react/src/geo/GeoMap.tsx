@@ -7,12 +7,76 @@ import {
 import Globe from 'react-globe.gl';
 import { fetchGeoTraffic, fetchBlockRules, blockCountry, unblockCountry } from './api';
 import { formatBytes, formatNumber, countryName, flagClass, ratioColor } from './utils';
+import type { Direction, GeoCountry } from './types';
 
-// Error boundary to catch WebGL/three.js crashes gracefully
-class GlobeBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
+// ---------------------------------------------------------------------------
+// Dispose helper — walk the Three.js scene graph and release GPU resources
+// ---------------------------------------------------------------------------
+function disposeGlobe(globeRef: React.MutableRefObject<any>) {
+  try {
+    const inst = globeRef.current;
+    if (!inst) return;
+
+    // Pause the internal animation loop first
+    if (typeof inst.pauseAnimation === 'function') inst.pauseAnimation();
+
+    // Stop OrbitControls auto-rotate so the rAF callback is a no-op
+    try { const c = inst.controls(); if (c) c.autoRotate = false; } catch (_) {}
+
+    // Dispose the Three.js renderer (frees WebGL context + GPU memory)
+    try {
+      const renderer = inst.renderer();
+      if (renderer) {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        // Remove the canvas element so it can be GC'd
+        const canvas = renderer.domElement;
+        if (canvas?.parentNode) canvas.parentNode.removeChild(canvas);
+      }
+    } catch (_) {}
+
+    // Walk scene and dispose geometries + materials + textures
+    try {
+      const scene = inst.scene();
+      if (scene) {
+        scene.traverse((obj: any) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+            mats.forEach((m: any) => {
+              if (m.map) m.map.dispose();
+              if (m.lightMap) m.lightMap.dispose();
+              if (m.bumpMap) m.bumpMap.dispose();
+              if (m.normalMap) m.normalMap.dispose();
+              if (m.specularMap) m.specularMap.dispose();
+              if (m.envMap) m.envMap.dispose();
+              m.dispose();
+            });
+          }
+        });
+      }
+    } catch (_) {}
+
+    globeRef.current = null;
+  } catch (e) {
+    console.warn('Globe dispose error (non-fatal):', e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Error boundary — catch WebGL/Three.js crashes and dispose before fallback
+// ---------------------------------------------------------------------------
+class GlobeBoundary extends Component<
+  { children: ReactNode; globeRef: React.MutableRefObject<any> },
+  { error: boolean }
+> {
   state = { error: false };
   static getDerivedStateFromError() { return { error: true }; }
-  componentDidCatch(err: Error, info: ErrorInfo) { console.warn('Globe failed (WebGL?):', err, info); }
+  componentDidCatch(err: Error, info: ErrorInfo) {
+    console.warn('Globe failed (WebGL?):', err, info);
+    // Dispose all GPU resources so they don't leak after the fallback renders
+    disposeGlobe(this.props.globeRef);
+  }
   render() {
     if (this.state.error) {
       return (
@@ -28,7 +92,6 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { error: boolean 
     return this.props.children;
   }
 }
-import type { Direction, GeoCountry } from './types';
 
 const TOPO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 const GEO_JSON_URL =
@@ -102,16 +165,36 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const [visible, setVisible] = useState(false);
   const [geoJson, setGeoJson] = useState<any>(null);
 
-  // Detect when the component becomes visible (parent toggling hidden class)
+  // Detect when the component becomes visible / hidden (parent toggling
+  // hidden class or scrolling off-screen). We track BOTH directions so we
+  // can pause the Three.js animation loop when the globe isn't visible,
+  // which is the main fix for the "runs forever in the background" leak.
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setVisible(true);
+      setVisible(entry.isIntersecting);
     }, { threshold: 0.01 });
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  // Pause / resume the Globe animation when visibility changes
+  useEffect(() => {
+    const inst = globeRef.current;
+    if (!inst) return;
+    try {
+      if (visible) {
+        if (typeof inst.resumeAnimation === 'function') inst.resumeAnimation();
+        const c = inst.controls();
+        if (c) c.autoRotate = true;
+      } else {
+        if (typeof inst.pauseAnimation === 'function') inst.pauseAnimation();
+        const c = inst.controls();
+        if (c) c.autoRotate = false;
+      }
+    } catch (_) {}
+  }, [visible]);
 
   // Measure globe container once visible
   useEffect(() => {
@@ -122,25 +205,35 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
         if (w > 0) setGlobeSize(w);
       }
     }
-    // Small delay to let layout settle after hidden→visible
     const t = setTimeout(measure, 50);
     window.addEventListener('resize', measure);
     return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
   }, [visible]);
 
+  // Fetch GeoJSON with AbortController so we can cancel on unmount
   useEffect(() => {
-    fetch(GEO_JSON_URL).then(r => r.json()).then(d => setGeoJson(d.features));
+    const ac = new AbortController();
+    fetch(GEO_JSON_URL, { signal: ac.signal })
+      .then(r => r.json())
+      .then(d => setGeoJson(d.features))
+      .catch(e => { if (e.name !== 'AbortError') console.warn('GeoJSON fetch failed:', e); });
+    return () => ac.abort();
   }, []);
 
+  // Configure controls once globe + data are ready
   useEffect(() => {
     if (!globeRef.current || !globeSize) return;
     const c = globeRef.current.controls();
     c.autoRotate = true;
     c.autoRotateSpeed = 0.4;
     c.enableZoom = true;
-    // Focus on user's location with a smooth animation
     globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.8 }, 1000);
   }, [geoJson, globeSize]);
+
+  // Dispose all Three.js / WebGL resources on unmount
+  useEffect(() => {
+    return () => disposeGlobe(globeRef);
+  }, []);
 
   // --- Data queries ---
   const { data, isLoading, isError } = useQuery({
@@ -349,7 +442,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
             style={{ aspectRatio: '1' }}
           >
             {geoJson && globeSize > 0 && (
-              <GlobeBoundary><Globe ref={globeRef}
+              <GlobeBoundary globeRef={globeRef}><Globe ref={globeRef}
                 width={globeSize} height={globeSize}
                 backgroundColor="rgba(0,0,0,0)"
                 showAtmosphere={true}

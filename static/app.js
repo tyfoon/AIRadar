@@ -234,6 +234,13 @@ function navigate(page) {
     a.classList.toggle('dark:text-slate-500', !isActive);
   });
 
+  // Unmount the React 3D globe when navigating away from geo to free
+  // WebGL resources. Re-mounting is cheap compared to leaking GPU memory.
+  const reactGeo = document.getElementById('react-geo-root');
+  if (page !== 'geo' && reactGeo && reactGeo.getAttribute('data-active')) {
+    reactGeo.setAttribute('data-active', '');
+  }
+
   // Load data for this page
   refreshPage(page);
 }
@@ -5956,7 +5963,9 @@ function switchGeoView(view) {
     if (btnReact) btnReact.className = `${base} bg-blue-700 text-white shadow-sm`;
   } else {
     if (classicView) classicView.classList.remove('hidden');
-    if (reactView) reactView.classList.add('hidden');
+    // Unmount the React globe tree so Three.js resources are freed.
+    // Setting data-active="" signals main.tsx to unmount the root.
+    if (reactView) { reactView.classList.add('hidden'); reactView.setAttribute('data-active', ''); }
     if (btnClassic) btnClassic.className = `${base} bg-blue-700 text-white shadow-sm`;
     if (btnReact) btnReact.className = `${base} text-slate-500 dark:text-slate-400`;
   }

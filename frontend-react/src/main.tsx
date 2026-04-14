@@ -69,6 +69,14 @@ function renderInto(el: HTMLElement, component: React.ReactNode) {
   );
 }
 
+function unmountFrom(el: HTMLElement) {
+  const root = (el as any).__reactRoot as Root | undefined;
+  if (root) {
+    root.unmount();
+    (el as any).__reactRoot = undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Island: ScreenTime (device drawer Sessions tab)
 // ---------------------------------------------------------------------------
@@ -78,7 +86,13 @@ mountIsland('react-screentime-root', 'data-mac', (el, mac) => {
 
 // ---------------------------------------------------------------------------
 // Island: GeoMap (geo page)
+// Unmount when data-active becomes empty so Three.js / WebGL resources are
+// freed. Re-mount fresh when the user navigates back.
 // ---------------------------------------------------------------------------
-mountIsland('react-geo-root', 'data-active', (el, _active) => {
-  renderInto(el, <GeoMap />);
+mountIsland('react-geo-root', 'data-active', (el, active) => {
+  if (active) {
+    renderInto(el, <GeoMap />);
+  } else {
+    unmountFrom(el);
+  }
 });
