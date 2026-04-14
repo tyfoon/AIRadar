@@ -382,6 +382,7 @@ function renderSimpleMarkdown(md: string): string {
 
 // --- Summary Tab ---
 function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { events: DeviceEvent[]; mac: string; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
+  const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
   const iotQuery = useQuery({
     queryKey: ['iotProfile', mac],
     queryFn: () => fetchIotProfile(mac),
@@ -424,18 +425,29 @@ function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { 
             : 'border-slate-200 dark:border-white/[0.05]';
           return (
             <div key={svc} className={`border ${borderCls} rounded-xl p-3 bg-white dark:bg-white/[0.03] transition-colors`}>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2">
                 <SvcLogo service={svc} size={20} />
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
+                <button
+                  onClick={() => setExpandedPolicy(expandedPolicy === svc ? null : svc)}
+                  className={`ml-1 transition-colors ${expandedPolicy === svc ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}
+                  title={t('rules.manageRules') || 'Set policy'}
+                >
+                  <i className="ph-duotone ph-shield-check text-sm" />
+                </button>
                 <span className="ml-auto text-xs tabular-nums flex items-center gap-2 flex-shrink-0">
                   <span className="text-blue-600 dark:text-blue-400 font-semibold"><i className="ph-duotone ph-clock text-[10px]" /> {fmtDuration(info.activeMs)}</span>
                   {info.bytes > 0 && <span className="text-slate-400 dark:text-slate-500">{fmtBytes(info.bytes)}</span>}
                 </span>
               </div>
-              <div className="mb-2 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
+              <div className="mt-2 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${maxTime > 0 ? (info.activeMs / maxTime * 100) : 0}%` }} />
               </div>
-              <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
+              {expandedPolicy === svc && (
+                <div className="mt-2">
+                  <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
+                </div>
+              )}
             </div>
           );
         })}
@@ -573,13 +585,14 @@ function collapseEvents(events: DeviceEvent[], keyFn: (e: DeviceEvent) => string
 
 function EventsTab({ events, category, serviceFilter, policyByService, policyExpiresByService }: { events: DeviceEvent[]; category: string; serviceFilter: string | null; policyByService: Record<string, string>; policyExpiresByService: Record<string, string> }) {
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const [expandedPolicy, setExpandedPolicy] = useState<string | null>(null);
 
   let filtered = events.filter(e => e._cat === category);
   if (serviceFilter) filtered = filtered.filter(e => e.ai_service === serviceFilter);
 
   const collapsed = collapseEvents(filtered, e => `${e.ai_service}|${e.detection_type}`);
 
-  useEffect(() => setVisible(PAGE_SIZE), [category, serviceFilter]);
+  useEffect(() => { setVisible(PAGE_SIZE); setExpandedPolicy(null); }, [category, serviceFilter]);
 
   if (collapsed.length === 0) {
     return <div className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">{t('dev.noActivity') || 'No events'}</div>;
@@ -594,7 +607,7 @@ function EventsTab({ events, category, serviceFilter, policyByService, policyExp
 
   return (
     <div className="p-0">
-      {/* Service cards with policy controls — matching Content/Cloud layout */}
+      {/* Service list — policy folds out on shield click */}
       <div className="px-4 py-3 space-y-2">
         {uniqueServices.map(svc => {
           const action = (policyByService[svc] as 'allow' | 'alert' | 'block') || null;
@@ -603,14 +616,25 @@ function EventsTab({ events, category, serviceFilter, policyByService, policyExp
             : 'border-slate-200 dark:border-white/[0.05]';
           return (
             <div key={svc} className={`border ${borderCls} rounded-xl p-3 bg-white dark:bg-white/[0.03] transition-colors`}>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2">
                 <SvcLogo service={svc} size={20} />
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{svcDisplayName(svc)}</span>
-                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                <button
+                  onClick={() => setExpandedPolicy(expandedPolicy === svc ? null : svc)}
+                  className={`ml-1 transition-colors ${expandedPolicy === svc ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}
+                  title={t('rules.manageRules') || 'Set policy'}
+                >
+                  <i className="ph-duotone ph-shield-check text-sm" />
+                </button>
+                <span className="ml-auto inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> {svcCounts[svc]}
                 </span>
               </div>
-              <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
+              {expandedPolicy === svc && (
+                <div className="mt-2">
+                  <PolicySegment serviceName={svc} currentAction={action} expiresAt={policyExpiresByService[svc] || null} />
+                </div>
+              )}
             </div>
           );
         })}
