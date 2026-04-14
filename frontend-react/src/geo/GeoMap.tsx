@@ -17,23 +17,13 @@ const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
 // react-simple-maps uses numeric codes in the topojson
 // We'll match by country name as fallback
 
-// Access vanilla JS globals for device names and service display
-function getDeviceMap(): Record<string, any> {
-  return (window as any).deviceMap || {};
-}
+// Access vanilla JS globals for service display
 function svcDisplayName(svc: string): string {
   if (typeof (window as any).svcDisplayName === 'function') {
     return (window as any).svcDisplayName(svc);
   }
   return svc.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
-function bestDeviceName(mac: string, dev: any): string {
-  if (typeof (window as any)._bestDeviceName === 'function') {
-    return (window as any)._bestDeviceName(mac, dev);
-  }
-  return dev?.display_name || dev?.hostname || mac;
-}
-
 interface Props {
   initialDirection?: Direction;
 }
@@ -76,6 +66,17 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     staleTime: 120_000,
   });
 
+  // Fetch devices directly from API (don't rely on vanilla JS window.deviceMap)
+  const { data: devicesRaw } = useQuery({
+    queryKey: ['devices-list'],
+    queryFn: async () => {
+      const res = await fetch('/api/devices');
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
   const countries = data?.countries || [];
   const blockedSet = useMemo(() => new Set(blockRules.map(r => r.country_code)), [blockRules]);
 
@@ -89,21 +90,20 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     return [...svcs].sort();
   }, [eventsForServices]);
 
-  // Build device options from vanilla deviceMap
+  // Build device options from API data
   const deviceOptions = useMemo(() => {
-    const dm = getDeviceMap();
-    return Object.entries(dm)
-      .map(([mac, dev]: [string, any]) => {
-        const name = bestDeviceName(mac, dev);
-        // Pick first non-link-local IPv4 or IPv6
+    if (!devicesRaw || !Array.isArray(devicesRaw)) return [];
+    return devicesRaw
+      .map((dev: any) => {
+        const name = dev.display_name || dev.hostname || dev.mac_address;
         const ip = (dev.ips || [])
           .map((i: any) => i.ip)
           .find((ip: string) => !ip.startsWith('fe80') && !ip.startsWith('fd')) || '';
-        return { mac, name, ip };
+        return { mac: dev.mac_address, name, ip };
       })
       .filter(d => d.ip)
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data]); // re-derive when data refreshes
+  }, [devicesRaw]);
 
   // Color scale for map
   const bytesByCC = useMemo(() => {
@@ -219,8 +219,11 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
             />
           )}
           <ComposableMap
-            projectionConfig={{ scale: 147 }}
-            style={{ width: '100%', height: 'auto', maxHeight: 420 }}
+            projection="geoMercator"
+            projectionConfig={{ scale: 120, center: [10, 30] }}
+            width={800}
+            height={400}
+            style={{ width: '100%', height: 'auto' }}
           >
             <ZoomableGroup>
               <Geographies geography={GEO_URL}>
