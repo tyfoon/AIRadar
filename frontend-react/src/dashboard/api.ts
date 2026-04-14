@@ -46,6 +46,6 @@ export async function fetchFleetSummary(): Promise<FleetResponse> {
 }
 
 export async function fetchDashEvents(hours: number): Promise<DashEvent[]> {
-  const r = await fetch(`/api/events?limit=5000&include_heartbeats=true&start=${hoursAgo(hours)}`);
+  const r = await fetch(`/api/events?limit=1000&include_heartbeats=true&start=${hoursAgo(hours)}`);
   return r.json();
 }
