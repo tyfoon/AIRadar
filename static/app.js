@@ -5943,6 +5943,26 @@ async function loadGeoTraffic(direction) {
 }
 let _geoFiltersPopulated = false;
 
+function switchGeoView(view) {
+  const classicView = document.getElementById('geo-classic-view');
+  const reactView = document.getElementById('react-geo-root');
+  const btnClassic = document.getElementById('geo-view-classic');
+  const btnReact = document.getElementById('geo-view-react');
+  const base = 'px-3 py-1 rounded-md text-[11px] font-medium transition-colors';
+  if (view === 'react') {
+    if (classicView) classicView.classList.add('hidden');
+    if (reactView) { reactView.classList.remove('hidden'); reactView.setAttribute('data-active', 'true'); }
+    if (btnClassic) btnClassic.className = `${base} text-slate-500 dark:text-slate-400`;
+    if (btnReact) btnReact.className = `${base} bg-blue-700 text-white shadow-sm`;
+  } else {
+    if (classicView) classicView.classList.remove('hidden');
+    if (reactView) reactView.classList.add('hidden');
+    if (btnClassic) btnClassic.className = `${base} bg-blue-700 text-white shadow-sm`;
+    if (btnReact) btnReact.className = `${base} text-slate-500 dark:text-slate-400`;
+  }
+}
+window.switchGeoView = switchGeoView;
+
 function switchGeoTab(direction) {
   const outBtn = document.getElementById('geo-tab-outbound');
   const inBtn  = document.getElementById('geo-tab-inbound');

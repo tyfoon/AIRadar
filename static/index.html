@@ -885,6 +885,20 @@
     <!-- ============================================================= -->
     <section id="page-geo" class="page space-y-6">
 
+      <!-- View toggle: Vanilla vs React -->
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1">
+          <button id="geo-view-classic" onclick="switchGeoView('classic')" class="px-3 py-1 rounded-md text-[11px] font-medium transition-colors bg-blue-700 text-white shadow-sm">Classic</button>
+          <button id="geo-view-react" onclick="switchGeoView('react')" class="px-3 py-1 rounded-md text-[11px] font-medium transition-colors text-slate-500 dark:text-slate-400">React</button>
+        </div>
+      </div>
+
+      <!-- React GeoMap island (hidden by default) -->
+      <div id="react-geo-root" class="hidden" data-active="true"></div>
+
+      <!-- Classic view wrapper -->
+      <div id="geo-classic-view" class="space-y-6">
+
       <!-- Direction tabs (uses shared tab pattern — see Rules) -->
       <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
         <button id="geo-tab-outbound" onclick="switchGeoTab('outbound')"
@@ -968,6 +982,8 @@
           </table>
         </div>
       </div>
+
+      </div><!-- /geo-classic-view -->
 
     </section>
 
