@@ -116,11 +116,16 @@ export interface FleetDevice {
   health: 'green' | 'orange' | 'red';
   bytes_24h: number;
   hits_24h: number;
+  orig_bytes_24h: number;
+  resp_bytes_24h: number;
   destinations: number;
   anomalies: number;
   last_seen: string | null;
   online: boolean;
   baseline_status: 'learning' | 'building' | 'ready';
+  baseline_days: number;
+  baseline_avg_bytes_24h: number | null;
+  top_countries: { cc: string; bytes: number }[];
 }
 
 export interface FleetResponse {

@@ -81,24 +81,18 @@ export default function Dashboard() {
       </div>
 
       {/* ── Main Grid: Globe + Right Stack ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Globe (3 cols) */}
-        <div className="lg:col-span-3 bg-slate-950 rounded-xl overflow-hidden border border-slate-200 dark:border-white/[0.05]" style={{ minHeight: 400 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Globe (50%) */}
+        <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-200 dark:border-white/[0.05]" style={{ minHeight: 380 }}>
           <GeoMap initialDirection="inbound" compact />
         </div>
 
-        {/* Right stack (2 cols) */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
+        {/* Right stack (50%) */}
+        <div className="flex flex-col gap-4">
           {/* Donut Row */}
           <DonutRow events={events.data ?? []} />
-          {/* IoT Fleet Summary */}
-          <IotSummaryPanel
-            total={fleet.data?.total_devices ?? 0}
-            online={onlineCount}
-            anomalies={fleet.data?.anomaly_devices ?? 0}
-            topTalker={fleet.data?.top_talker ?? null}
-            totalBytes={fleet.data?.total_bytes_24h ?? 0}
-          />
+          {/* IoT Fleet — top active devices */}
+          <IotFleetPanel devices={fleet.data?.devices ?? []} />
         </div>
       </div>
 
@@ -188,24 +182,24 @@ function MiniDonut({ label, data, total, category }: {
   const displayData = data.length ? data : [{ name: 'None', value: 1, key: '_empty' }];
 
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3">
-      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mb-1">{label}</p>
-      <div className="flex items-center gap-2">
-        <div style={{ width: 72, height: 72 }}>
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mb-2">{label}</p>
+      <div className="flex items-center gap-3">
+        <div style={{ width: 100, height: 100, flexShrink: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
-                innerRadius={22} outerRadius={34} strokeWidth={0} paddingAngle={1}>
+                innerRadius={30} outerRadius={46} strokeWidth={0} paddingAngle={1}>
                 {displayData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-lg font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</p>
-          <p className="text-[10px] text-slate-400">events today</p>
-          {data.slice(0, 3).map(d => (
-            <p key={d.key} className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{d.name}: {d.value}</p>
+          <p className="text-2xl font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</p>
+          <p className="text-[11px] text-slate-400 mb-1">events today</p>
+          {data.slice(0, 4).map(d => (
+            <p key={d.key} className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{d.name}: {d.value}</p>
           ))}
         </div>
       </div>
@@ -214,183 +208,251 @@ function MiniDonut({ label, data, total, category }: {
 }
 
 // ---------------------------------------------------------------------------
-// IoT Fleet Summary
+// IoT Fleet Panel — top active device cards
 // ---------------------------------------------------------------------------
-function IotSummaryPanel({ total, online, anomalies, topTalker, totalBytes }: {
-  total: number; online: number; anomalies: number; topTalker: string | null; totalBytes: number;
-}) {
+import type { FleetDevice } from './types';
+
+const HEALTH_RING: Record<string, string> = {
+  green: 'ring-emerald-500/30',
+  orange: 'ring-amber-500/50',
+  red: 'ring-red-500/50',
+};
+
+function IotFleetPanel({ devices }: { devices: FleetDevice[] }) {
+  // Sort by bytes_24h descending, take top 3 most active
+  const top = useMemo(() =>
+    [...devices].sort((a, b) => b.bytes_24h - a.bytes_24h).slice(0, 3),
+  [devices]);
+
+  const total = devices.length;
+  const online = devices.filter(d => d.online).length;
+  const anomalies = devices.reduce((s, d) => s + d.anomalies, 0);
+
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 flex-1">
-      <div className="flex items-center gap-2 mb-3">
-        <i className="ph-duotone ph-cpu text-lg text-teal-500" />
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">IoT Fleet</span>
-      </div>
-      <div className="grid grid-cols-3 gap-3 mb-3">
-        <div className="text-center">
-          <p className="text-xl font-bold tabular-nums text-slate-700 dark:text-slate-100">{total}</p>
-          <p className="text-[10px] text-slate-400">devices</p>
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 flex-1 flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <i className="ph-duotone ph-cpu text-lg text-teal-500" />
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">IoT Fleet</span>
         </div>
-        <div className="text-center">
-          <p className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{online}</p>
-          <p className="text-[10px] text-slate-400">online</p>
-        </div>
-        <div className="text-center">
-          <p className={`text-xl font-bold tabular-nums ${anomalies > 0 ? 'text-amber-500' : 'text-slate-700 dark:text-slate-100'}`}>{anomalies}</p>
-          <p className="text-[10px] text-slate-400">anomalies</p>
+        <div className="flex items-center gap-3 text-[11px] text-slate-400">
+          <span>{total} devices</span>
+          <span className="text-emerald-500">{online} online</span>
+          {anomalies > 0 && <span className="text-amber-500">{anomalies} anomalies</span>}
         </div>
       </div>
-      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-white/[0.05] pt-2">
-        <span>{formatBytes(totalBytes)} /24h</span>
-        {topTalker && <span className="truncate ml-2">Top: {topTalker}</span>}
+      <div className="grid grid-cols-1 gap-2 flex-1">
+        {top.map(d => <MiniFleetCard key={d.mac_address} device={d} />)}
+        {top.length === 0 && (
+          <div className="flex items-center justify-center text-xs text-slate-400 py-4">No IoT devices detected</div>
+        )}
       </div>
     </div>
   );
 }
 
+function MiniFleetCard({ device: d }: { device: FleetDevice }) {
+  const name = d.display_name || d.hostname || d.mac_address;
+  const ring = HEALTH_RING[d.health] || HEALTH_RING.green;
+  const ratio = d.baseline_avg_bytes_24h && d.baseline_avg_bytes_24h > 0
+    ? d.bytes_24h / d.baseline_avg_bytes_24h : null;
+  const barPct = ratio ? Math.min(ratio * 100, 300) / 3 : null;
+  const barColor = ratio && ratio > 3 ? 'bg-red-500' : ratio && ratio > 2 ? 'bg-amber-500' : 'bg-blue-500';
+
+  return (
+    <div
+      className={`bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-lg px-3 py-2.5 ring-1 ${ring} cursor-pointer hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors`}
+      onClick={() => {
+        if (typeof (window as any).openDeviceDrawer === 'function') {
+          (window as any).openDeviceDrawer(d.mac_address, null, null);
+        }
+      }}
+    >
+      <div className="flex items-center gap-2">
+        {/* Icon + online dot */}
+        <div className="relative flex-shrink-0">
+          <i className="ph-duotone ph-cpu text-base text-slate-500 dark:text-slate-400" />
+          {d.online && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white dark:ring-slate-900" />
+          )}
+        </div>
+
+        {/* Name + vendor */}
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{name}</p>
+        </div>
+
+        {/* Traffic stats */}
+        <div className="flex items-center gap-2 text-[10px] text-slate-400 flex-shrink-0 tabular-nums">
+          <span>{formatBytes(d.bytes_24h)}</span>
+          <span className="text-amber-500">↑{formatBytes(d.orig_bytes_24h)}</span>
+          <span className="text-blue-500">↓{formatBytes(d.resp_bytes_24h)}</span>
+        </div>
+
+        {/* Flags */}
+        <div className="flex gap-0.5 flex-shrink-0">
+          {d.top_countries?.slice(0, 3).map(c => (
+            <span key={c.cc} className={`fi fi-${c.cc.toLowerCase()} text-xs`} title={`${c.cc}: ${formatBytes(c.bytes)}`} />
+          ))}
+        </div>
+
+        {/* Anomaly badge */}
+        {d.anomalies > 0 && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/20 text-red-500 font-medium flex-shrink-0">
+            {d.anomalies} <i className="ph-duotone ph-warning" />
+          </span>
+        )}
+      </div>
+
+      {/* Throughput bar */}
+      {barPct !== null && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="flex-1 h-1 bg-slate-200 dark:bg-white/[0.04] rounded-full overflow-hidden">
+            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.max(2, barPct)}%` }} />
+          </div>
+          <span className="text-[9px] text-slate-400 tabular-nums flex-shrink-0">{(ratio! * 100).toFixed(0)}%</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Sankey Flow — ECharts-based device → category flow
+// Sankey Flow — Pure SVG with gradient flows and hover effects
 // ---------------------------------------------------------------------------
+const CAT_COLORS: Record<string, string> = {
+  AI: '#6366f1', Cloud: '#3b82f6', Streaming: '#e50914', Gaming: '#10b981',
+  Social: '#f59e0b', Tracking: '#ef4444', Shopping: '#8b5cf6', News: '#06b6d4',
+  Adult: '#64748b', Communication: '#0ea5e9',
+};
+
+interface SankeyNode { name: string; isDevice: boolean; value: number; y: number; h: number }
+interface SankeyLink { source: string; target: string; raw: number; value: number; sy: number; ty: number; sh: number; th: number }
+
 function SankeyFlow({ events }: { events: DashEvent[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<any>(null);
   const [modeHits, setModeHits] = useState(false);
   const [excludeTop, setExcludeTop] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(800);
 
-  const { nodes, links, rawValues, devFlows, catFlows, topDevName } = useMemo(() => {
-    if (!events.length) return { nodes: [], links: [], rawValues: {}, devFlows: {}, catFlows: {}, topDevName: '' };
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const measure = () => { if (containerRef.current) setWidth(containerRef.current.clientWidth); };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const layout = useMemo(() => {
+    if (!events.length) return null;
 
     const metric = modeHits ? () => 1 : (e: DashEvent) => (e.bytes_transferred || 1);
-
-    // Get device name via window.deviceName if available
     const devName = (ip: string) => {
       if (typeof (window as any).deviceName === 'function') return (window as any).deviceName(ip);
       return ip;
     };
 
+    // Aggregate
     const devTotals: Record<string, number> = {};
-    events.forEach(e => {
-      const dev = devName(e.source_ip);
-      devTotals[dev] = (devTotals[dev] || 0) + metric(e);
-    });
+    events.forEach(e => { const d = devName(e.source_ip); devTotals[d] = (devTotals[d] || 0) + metric(e); });
     const topDev = Object.entries(devTotals).sort((a, b) => b[1] - a[1])[0];
     const topDevNameVal = topDev?.[0] ?? '';
 
     let filtered = events;
-    if (excludeTop && topDevNameVal) {
-      filtered = events.filter(e => devName(e.source_ip) !== topDevNameVal);
-    }
+    if (excludeTop && topDevNameVal) filtered = events.filter(e => devName(e.source_ip) !== topDevNameVal);
 
     const flowMap: Record<string, number> = {};
     const dFlows: Record<string, number> = {};
     const cFlows: Record<string, number> = {};
-
     filtered.forEach(e => {
       const dev = devName(e.source_ip);
       const cat = categoryName(e.category);
       const val = metric(e);
-      const key = dev + '\0' + cat;
-      flowMap[key] = (flowMap[key] || 0) + val;
+      flowMap[`${dev}\0${cat}`] = (flowMap[`${dev}\0${cat}`] || 0) + val;
       dFlows[dev] = (dFlows[dev] || 0) + val;
       cFlows[cat] = (cFlows[cat] || 0) + val;
     });
 
-    // Top 10 devices
-    const top10 = new Set(
-      Object.entries(dFlows).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([d]) => d)
-    );
+    // Top 8 devices
+    const top8 = new Set(Object.entries(dFlows).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([d]) => d));
+    const devList = [...top8].sort((a, b) => (dFlows[b] || 0) - (dFlows[a] || 0));
+    const catList = Object.entries(cFlows).sort((a, b) => b[1] - a[1]).map(([c]) => c);
 
-    const lnks: any[] = [];
-    const rVals: Record<string, number> = {};
-    const usedDevs = new Set<string>();
-    const usedCats = new Set<string>();
+    // Layout parameters
+    const H = Math.max(280, Math.max(devList.length, catList.length) * 40);
+    const nodeW = 14;
+    const padL = 8;
+    const padR = 8;
+    const gap = 6;
 
-    Object.entries(flowMap).forEach(([key, raw]) => {
-      const [dev, cat] = key.split('\0');
-      if (!top10.has(dev)) return;
-      lnks.push({ source: dev, target: cat, value: Math.max(1, Math.sqrt(raw)) });
-      rVals[`${dev} \u2192 ${cat}`] = raw;
-      usedDevs.add(dev);
-      usedCats.add(cat);
+    // Position device nodes (left)
+    const totalDevVal = devList.reduce((s, d) => s + Math.sqrt(dFlows[d] || 0), 0);
+    const devAvailH = H - gap * (devList.length - 1);
+    let dy = 0;
+    const devNodes: SankeyNode[] = devList.map(d => {
+      const h = Math.max(12, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
+      const node: SankeyNode = { name: d, isDevice: true, value: dFlows[d] || 0, y: dy, h };
+      dy += h + gap;
+      return node;
     });
 
-    const nds: any[] = [];
-    usedDevs.forEach(d => nds.push({ name: d, isDevice: true }));
-    usedCats.forEach(c => nds.push({ name: c, isDevice: false }));
+    // Position category nodes (right)
+    const totalCatVal = catList.reduce((s, c) => s + Math.sqrt(cFlows[c] || 0), 0);
+    const catAvailH = H - gap * (catList.length - 1);
+    let cy = 0;
+    const catNodes: SankeyNode[] = catList.map(c => {
+      const h = Math.max(12, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
+      const node: SankeyNode = { name: c, isDevice: false, value: cFlows[c] || 0, y: cy, h };
+      cy += h + gap;
+      return node;
+    });
 
-    return { nodes: nds, links: lnks, rawValues: rVals, devFlows: dFlows, catFlows: cFlows, topDevName: topDevNameVal };
+    // Build links with sub-positioning
+    const devUsed: Record<string, number> = {};
+    const catUsed: Record<string, number> = {};
+    const links: SankeyLink[] = [];
+
+    // Sort flows for each device by their target category order
+    devList.forEach(dev => {
+      const devFlowsForDev = Object.entries(flowMap)
+        .filter(([k]) => k.startsWith(dev + '\0') && top8.has(dev))
+        .sort((a, b) => b[1] - a[1]);
+
+      const dn = devNodes.find(n => n.name === dev)!;
+      const devTotal = Math.sqrt(dFlows[dev] || 0);
+
+      devFlowsForDev.forEach(([key, raw]) => {
+        const cat = key.split('\0')[1];
+        const cn = catNodes.find(n => n.name === cat);
+        if (!cn) return;
+
+        const scaledVal = Math.sqrt(raw);
+        const sh = (scaledVal / devTotal) * dn.h;
+        const catTotal = Math.sqrt(cFlows[cat] || 0);
+        const th = (scaledVal / catTotal) * cn.h;
+
+        const sy = dn.y + (devUsed[dev] || 0);
+        const ty = cn.y + (catUsed[cat] || 0);
+        devUsed[dev] = (devUsed[dev] || 0) + sh;
+        catUsed[cat] = (catUsed[cat] || 0) + th;
+
+        links.push({ source: dev, target: cat, raw, value: scaledVal, sy, ty, sh, th });
+      });
+    });
+
+    return { devNodes, catNodes, links, topDevName: topDevNameVal, height: H, nodeW, padL, padR, modeHits, dFlows, cFlows };
   }, [events, modeHits, excludeTop]);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
+  if (!layout || !events.length) return null;
 
-    // Dynamically load echarts
-    const echarts = (window as any).echarts;
-    if (!echarts) return;
-
-    if (chartRef.current) chartRef.current.dispose();
-    if (!nodes.length) { containerRef.current.style.display = 'none'; return; }
-    containerRef.current.style.display = '';
-
-    const dark = document.documentElement.classList.contains('dark');
-    const textColor = dark ? '#94a3b8' : '#475569';
-    const unit = modeHits ? 'hits' : null;
-
-    const CATEGORY_COLORS: Record<string, string> = {
-      AI: '#6366f1', Cloud: '#3b82f6', Streaming: '#e50914', Gaming: '#10b981',
-      Social: '#f59e0b', Tracking: '#ef4444', Shopping: '#8b5cf6', News: '#06b6d4',
-      Adult: '#64748b', Communication: '#0ea5e9',
-    };
-
-    const inst = echarts.init(containerRef.current, null, { renderer: 'canvas' });
-    chartRef.current = inst;
-
-    inst.setOption({
-      tooltip: {
-        trigger: 'item',
-        triggerOn: 'mousemove',
-        backgroundColor: dark ? '#1e293b' : '#fff',
-        borderColor: dark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-        textStyle: { color: dark ? '#e2e8f0' : '#1e293b', fontSize: 12, fontFamily: 'Inter' },
-        formatter: (params: any) => {
-          if (params.dataType === 'edge') {
-            const raw = rawValues[`${params.data.source} \u2192 ${params.data.target}`] || 0;
-            const display = unit ? raw.toLocaleString() + ' ' + unit : formatBytes(raw);
-            return `${params.data.source} \u2192 ${params.data.target}<br/><b>${display}</b>`;
-          }
-          const raw = devFlows[params.name] || catFlows[params.name] || 0;
-          const display = unit ? raw.toLocaleString() + ' ' + unit : formatBytes(raw);
-          return `<b>${params.name}</b><br/>${display}`;
-        },
-      },
-      series: [{
-        type: 'sankey',
-        layout: 'none',
-        emphasis: { focus: 'adjacency' },
-        nodeAlign: 'justify',
-        layoutIterations: 32,
-        nodeGap: 12,
-        nodeWidth: 20,
-        data: nodes.map((n: any) => ({
-          name: n.name,
-          itemStyle: {
-            color: n.isDevice ? '#3b82f6' : (CATEGORY_COLORS[n.name] || '#6366f1'),
-            borderColor: 'transparent',
-          },
-          label: { color: textColor, fontSize: 11, fontFamily: 'Inter' },
-        })),
-        links,
-        lineStyle: { color: 'gradient', curveness: 0.5, opacity: dark ? 0.25 : 0.35 },
-        label: { position: 'right', color: textColor, fontSize: 11, fontFamily: 'Inter' },
-        left: 40, right: 100, top: 10, bottom: 10,
-      }],
-    });
-
-    const ro = new ResizeObserver(() => inst?.resize());
-    ro.observe(containerRef.current);
-    return () => { ro.disconnect(); inst.dispose(); chartRef.current = null; };
-  }, [nodes, links, rawValues, devFlows, catFlows, modeHits]);
-
-  if (!events.length) return null;
+  const { devNodes, catNodes, links, topDevName, height, nodeW, padL, padR, dFlows, cFlows } = layout;
+  const labelW = 110;
+  const svgW = width;
+  const leftX = padL + labelW;
+  const rightX = svgW - padR - labelW - nodeW;
+  const svgH = height + 20;
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
@@ -412,7 +474,108 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
           </button>
         </div>
       </div>
-      <div ref={containerRef} style={{ height: 320, width: '100%' }} />
+      <div ref={containerRef} style={{ width: '100%' }}>
+        <svg width={svgW} height={svgH} className="overflow-visible">
+          <defs>
+            {links.map((l, i) => {
+              const srcColor = '#3b82f6';
+              const tgtColor = CAT_COLORS[l.target] || '#6366f1';
+              return (
+                <linearGradient key={`lg-${i}`} id={`sankey-g-${i}`} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor={srcColor} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={tgtColor} stopOpacity={0.5} />
+                </linearGradient>
+              );
+            })}
+          </defs>
+
+          {/* Links */}
+          {links.map((l, i) => {
+            const x0 = leftX + nodeW;
+            const x1 = rightX;
+            const midX = (x0 + x1) / 2;
+            const y0s = l.sy + 10;
+            const y0e = l.sy + l.sh + 10;
+            const y1s = l.ty + 10;
+            const y1e = l.ty + l.th + 10;
+            const isHigh = hovered === l.source || hovered === l.target;
+            const isDim = hovered && !isHigh;
+            const d = `M${x0},${y0s} C${midX},${y0s} ${midX},${y1s} ${x1},${y1s} L${x1},${y1e} C${midX},${y1e} ${midX},${y0e} ${x0},${y0e} Z`;
+            return (
+              <path key={`link-${i}`} d={d} fill={`url(#sankey-g-${i})`}
+                opacity={isDim ? 0.08 : isHigh ? 0.6 : 0.25}
+                className="transition-opacity duration-200"
+                onMouseEnter={() => setHovered(l.source)}
+                onMouseLeave={() => setHovered(null)}>
+                <title>{`${l.source} → ${l.target}: ${modeHits ? l.raw.toLocaleString() + ' hits' : formatBytes(l.raw)}`}</title>
+              </path>
+            );
+          })}
+
+          {/* Device nodes (left) */}
+          {devNodes.map(n => {
+            const isHigh = hovered === n.name;
+            const isDim = hovered && !isHigh && !links.some(l => l.source === n.name && l.target === hovered);
+            return (
+              <g key={`dn-${n.name}`}
+                onMouseEnter={() => setHovered(n.name)}
+                onMouseLeave={() => setHovered(null)}
+                className="cursor-pointer"
+              >
+                <rect x={leftX} y={n.y + 10} width={nodeW} height={n.h} rx={3}
+                  fill="#3b82f6"
+                  opacity={isDim ? 0.3 : 1}
+                  className="transition-opacity duration-200" />
+                <text x={leftX - 6} y={n.y + 10 + n.h / 2} textAnchor="end" dominantBaseline="central"
+                  className="text-[11px] fill-slate-600 dark:fill-slate-300 font-medium"
+                  style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                  opacity={isDim ? 0.4 : 1}>
+                  {n.name.length > 16 ? n.name.slice(0, 15) + '…' : n.name}
+                </text>
+                {isHigh && (
+                  <text x={leftX - 6} y={n.y + 10 + n.h / 2 + 13} textAnchor="end" dominantBaseline="central"
+                    className="text-[9px] fill-slate-400"
+                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+                    {modeHits ? `${(dFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(dFlows[n.name] || 0)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Category nodes (right) */}
+          {catNodes.map(n => {
+            const color = CAT_COLORS[n.name] || '#6366f1';
+            const isHigh = hovered === n.name;
+            const isDim = hovered && !isHigh && !links.some(l => l.target === n.name && l.source === hovered);
+            return (
+              <g key={`cn-${n.name}`}
+                onMouseEnter={() => setHovered(n.name)}
+                onMouseLeave={() => setHovered(null)}
+                className="cursor-pointer"
+              >
+                <rect x={rightX} y={n.y + 10} width={nodeW} height={n.h} rx={3}
+                  fill={color}
+                  opacity={isDim ? 0.3 : 1}
+                  className="transition-opacity duration-200" />
+                <text x={rightX + nodeW + 6} y={n.y + 10 + n.h / 2} dominantBaseline="central"
+                  className="text-[11px] fill-slate-600 dark:fill-slate-300 font-medium"
+                  style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                  opacity={isDim ? 0.4 : 1}>
+                  {n.name}
+                </text>
+                {isHigh && (
+                  <text x={rightX + nodeW + 6} y={n.y + 10 + n.h / 2 + 13} dominantBaseline="central"
+                    className="text-[9px] fill-slate-400"
+                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+                    {modeHits ? `${(cFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(cFlows[n.name] || 0)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </div>
   );
 }
