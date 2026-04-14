@@ -60,6 +60,10 @@ const DETECTION_LABELS: Record<string, { label: string; icon: string; color: str
   iot_volume_spike: { label: 'Volume spike', icon: 'ph-chart-line-up', color: 'text-orange-500' },
 };
 
+function isDarkMode(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+}
+
 const PORT_LABELS: Record<number, string> = {
   22: 'SSH', 23: 'Telnet', 25: 'SMTP', 80: 'HTTP', 443: 'HTTPS',
   445: 'SMB', 3306: 'MySQL', 3389: 'RDP', 5432: 'Postgres', 5900: 'VNC',
@@ -513,7 +517,11 @@ function NetworkPanel({ data, hours, onHoursChange }: {
           </select>
         </div>
 
-        <div ref={containerRef}>
+        <div ref={containerRef} style={{
+          background: isDarkMode()
+            ? 'radial-gradient(circle at 50% 50%, rgba(99,102,241,0.03) 0%, transparent 70%), repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.02) 39px, rgba(255,255,255,0.02) 40px)'
+            : 'radial-gradient(circle at 50% 50%, rgba(99,102,241,0.02) 0%, transparent 70%), repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,0,0,0.03) 39px, rgba(0,0,0,0.03) 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,0,0,0.03) 39px, rgba(0,0,0,0.03) 40px)',
+        }}>
           {edges.length === 0 ? (
             <div className="py-12 text-center text-sm text-slate-400">
               <i className="ph-duotone ph-shield-check text-3xl block mb-2 opacity-40" />
@@ -528,12 +536,36 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Network graph — styled force-directed visualization
+// ---------------------------------------------------------------------------
+
+// Node accent colors by device class for visual variety
+const NODE_COLORS: Record<string, { main: string; glow: string }> = {
+  camera:  { main: '#f59e0b', glow: 'rgba(245,158,11,0.35)' },
+  doorbell:{ main: '#f59e0b', glow: 'rgba(245,158,11,0.35)' },
+  speaker: { main: '#8b5cf6', glow: 'rgba(139,92,246,0.35)' },
+  router:  { main: '#6366f1', glow: 'rgba(99,102,241,0.4)'  },
+  gateway: { main: '#6366f1', glow: 'rgba(99,102,241,0.4)'  },
+  default: { main: '#3b82f6', glow: 'rgba(59,130,246,0.3)'  },
+};
+
+function getNodeColor(deviceClass: string | null, online: boolean) {
+  if (!online) return { main: '#64748b', glow: 'rgba(100,116,139,0.15)' };
+  const key = (deviceClass || '').toLowerCase();
+  for (const [k, v] of Object.entries(NODE_COLORS)) {
+    if (key.includes(k)) return v;
+  }
+  return NODE_COLORS.default;
+}
+
 interface GraphNode {
   id: string;
   label: string;
   online: boolean;
   ip: string;
   deviceClass: string | null;
+  totalHits: number;
 }
 interface GraphLink {
   source: string;
@@ -550,10 +582,26 @@ function NetworkGraph({ nodes, edges, width, height }: {
   height: number;
 }) {
   const fgRef = useRef<any>(null);
+  const frameRef = useRef(0);
+
+  // Animate a pulsing frame counter for glow effects
+  useEffect(() => {
+    let raf: number;
+    const tick = () => {
+      frameRef.current++;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const graphData = useMemo(() => {
-    const nodeMap = new Map<string, NetworkNode>();
-    nodes.forEach(n => nodeMap.set(n.ip, n));
+    // Count total hits per node to scale size
+    const hitsByNode = new Map<string, number>();
+    edges.forEach(e => {
+      hitsByNode.set(e.source_ip, (hitsByNode.get(e.source_ip) || 0) + e.hits);
+      hitsByNode.set(e.target_ip, (hitsByNode.get(e.target_ip) || 0) + e.hits);
+    });
 
     const graphNodes: GraphNode[] = nodes.map(n => ({
       id: n.ip,
@@ -561,22 +609,23 @@ function NetworkGraph({ nodes, edges, width, height }: {
       online: n.last_seen ? Date.now() - new Date(n.last_seen).getTime() < 300000 : false,
       ip: n.ip,
       deviceClass: n.device_class,
+      totalHits: hitsByNode.get(n.ip) || 0,
     }));
 
-    // Add any IPs in edges that aren't in nodes
     const nodeIds = new Set(graphNodes.map(n => n.id));
     edges.forEach(e => {
       if (!nodeIds.has(e.source_ip)) {
-        graphNodes.push({ id: e.source_ip, label: e.source_ip, online: false, ip: e.source_ip, deviceClass: null });
+        graphNodes.push({ id: e.source_ip, label: e.source_ip, online: false, ip: e.source_ip, deviceClass: null, totalHits: hitsByNode.get(e.source_ip) || 0 });
         nodeIds.add(e.source_ip);
       }
       if (!nodeIds.has(e.target_ip)) {
-        graphNodes.push({ id: e.target_ip, label: e.target_ip, online: false, ip: e.target_ip, deviceClass: null });
+        graphNodes.push({ id: e.target_ip, label: e.target_ip, online: false, ip: e.target_ip, deviceClass: null, totalHits: hitsByNode.get(e.target_ip) || 0 });
         nodeIds.add(e.target_ip);
       }
     });
 
     const maxHits = Math.max(...edges.map(e => e.hits), 1);
+    const maxNodeHits = Math.max(...graphNodes.map(n => n.totalHits), 1);
     const graphLinks: GraphLink[] = edges.map(e => ({
       source: e.source_ip,
       target: e.target_ip,
@@ -585,19 +634,18 @@ function NetworkGraph({ nodes, edges, width, height }: {
       hits: e.hits,
     }));
 
-    return { nodes: graphNodes, links: graphLinks, maxHits };
+    return { nodes: graphNodes, links: graphLinks, maxHits, maxNodeHits };
   }, [nodes, edges]);
 
-  // Zoom to fit after initial layout
   useEffect(() => {
     const timer = setTimeout(() => {
-      fgRef.current?.zoomToFit(400, 50);
-    }, 500);
+      fgRef.current?.zoomToFit(400, 60);
+    }, 600);
     return () => clearTimeout(timer);
   }, [graphData]);
 
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-  const maxHits = graphData.maxHits;
+  const { maxHits, maxNodeHits } = graphData;
 
   return (
     <ForceGraph2D
@@ -606,49 +654,127 @@ function NetworkGraph({ nodes, edges, width, height }: {
       width={width}
       height={height}
       backgroundColor="transparent"
-      // Node rendering
-      nodeRelSize={6}
+      nodeRelSize={8}
+      // --- Custom node rendering: glowing circles with labels ---
       nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const n = node as GraphNode;
-        const r = 6;
-        const fontSize = Math.max(10 / globalScale, 1.5);
+        const x = node.x!;
+        const y = node.y!;
+        const colors = getNodeColor(n.deviceClass, n.online);
 
-        // Node circle
+        // Scale node radius by traffic volume (min 8, max 22)
+        const sizeRatio = maxNodeHits > 0 ? n.totalHits / maxNodeHits : 0;
+        const r = 8 + sizeRatio * 14;
+
+        // Outer glow ring (animated pulse for online nodes)
+        if (n.online) {
+          const pulse = Math.sin(frameRef.current * 0.03) * 0.15 + 0.85;
+          const glowR = r + 6;
+          const grad = ctx.createRadialGradient(x, y, r * 0.6, x, y, glowR);
+          grad.addColorStop(0, colors.glow);
+          grad.addColorStop(1, 'transparent');
+          ctx.beginPath();
+          ctx.arc(x, y, glowR * pulse, 0, 2 * Math.PI);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        }
+
+        // Main node: gradient fill
+        const bodyGrad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+        bodyGrad.addColorStop(0, isDark ? lighten(colors.main, 0.25) : lighten(colors.main, 0.15));
+        bodyGrad.addColorStop(1, colors.main);
         ctx.beginPath();
-        ctx.arc(node.x!, node.y!, r, 0, 2 * Math.PI);
-        ctx.fillStyle = n.online
-          ? '#10b981'  // emerald-500
-          : isDark ? '#475569' : '#94a3b8'; // slate-600 / slate-400
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = bodyGrad;
         ctx.fill();
 
-        // Border ring
-        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-        ctx.lineWidth = 1.5;
+        // Subtle inner highlight (glass effect)
+        const hlGrad = ctx.createRadialGradient(x - r * 0.25, y - r * 0.35, 0, x, y, r);
+        hlGrad.addColorStop(0, 'rgba(255,255,255,0.30)');
+        hlGrad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+        hlGrad.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = hlGrad;
+        ctx.fill();
+
+        // Thin border ring
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Label
-        ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+        // Online indicator dot (small green dot at top-right)
+        if (n.online) {
+          const dotR = Math.max(2.5, r * 0.2);
+          const dotX = x + r * 0.65;
+          const dotY = y - r * 0.65;
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, dotR + 1, 0, 2 * Math.PI);
+          ctx.fillStyle = isDark ? '#0f1117' : '#ffffff';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, dotR, 0, 2 * Math.PI);
+          ctx.fillStyle = '#10b981';
+          ctx.fill();
+        }
+
+        // Label below node
+        const fontSize = Math.max(11 / globalScale, 2);
+        ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = isDark ? '#e2e8f0' : '#334155';
-        ctx.fillText(n.label, node.x!, node.y! + r + 2);
+
+        // Label background pill
+        const labelY = y + r + 3;
+        const textW = ctx.measureText(n.label).width;
+        const padX = 3 / globalScale;
+        const padY = 1.5 / globalScale;
+        ctx.fillStyle = isDark ? 'rgba(15,17,23,0.75)' : 'rgba(255,255,255,0.85)';
+        const pillH = fontSize + padY * 2;
+        const pillR = pillH / 2;
+        ctx.beginPath();
+        ctx.roundRect(x - textW / 2 - padX, labelY - padY, textW + padX * 2, pillH, pillR);
+        ctx.fill();
+
+        ctx.fillStyle = isDark ? '#e2e8f0' : '#1e293b';
+        ctx.fillText(n.label, x, labelY);
       }}
       nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+        const n = node as GraphNode;
+        const sizeRatio = maxNodeHits > 0 ? n.totalHits / maxNodeHits : 0;
+        const r = 10 + sizeRatio * 14;
         ctx.beginPath();
-        ctx.arc(node.x!, node.y!, 8, 0, 2 * Math.PI);
+        ctx.arc(node.x!, node.y!, r, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
       }}
-      // Link rendering
-      linkWidth={(link: any) => Math.max(1, Math.min(5, (link.hits / maxHits) * 5))}
-      linkColor={() => isDark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.2)'}
-      linkDirectionalArrowLength={4}
-      linkDirectionalArrowRelPos={0.85}
-      linkDirectionalArrowColor={() => isDark ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.4)'}
+      // --- Link rendering: styled lines with animated particles ---
+      linkWidth={(link: any) => Math.max(1.5, Math.min(6, (link.hits / maxHits) * 6))}
+      linkColor={(link: any) => {
+        const intensity = Math.min(1, (link.hits / maxHits) * 0.8 + 0.2);
+        return isDark
+          ? `rgba(239,68,68,${intensity * 0.3})`
+          : `rgba(239,68,68,${intensity * 0.25})`;
+      }}
+      linkLineDash={(link: any) => {
+        // Dashed lines for low-traffic connections
+        if (link.hits / maxHits < 0.15) return [4, 3];
+        return null;
+      }}
+      linkDirectionalArrowLength={5}
+      linkDirectionalArrowRelPos={0.82}
+      linkDirectionalArrowColor={() => isDark ? 'rgba(239,68,68,0.6)' : 'rgba(239,68,68,0.5)'}
+      // Animated particles flowing along links
+      linkDirectionalParticles={(link: any) => Math.max(1, Math.ceil((link.hits / maxHits) * 4))}
+      linkDirectionalParticleWidth={(link: any) => Math.max(2, Math.min(4.5, (link.hits / maxHits) * 5))}
+      linkDirectionalParticleSpeed={(link: any) => 0.004 + (link.hits / maxHits) * 0.008}
+      linkDirectionalParticleColor={() => isDark ? 'rgba(248,113,113,0.8)' : 'rgba(220,38,38,0.6)'}
+      // Port label on link
       linkCanvasObjectMode={() => 'after'}
       linkCanvasObject={(link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-        // Draw port label at midpoint
-        if (globalScale < 0.6) return; // skip labels when zoomed out too far
+        if (globalScale < 0.5) return;
         const l = link as GraphLink;
         const src = link.source;
         const tgt = link.target;
@@ -656,47 +782,79 @@ function NetworkGraph({ nodes, edges, width, height }: {
         const mx = (src.x + tgt.x) / 2;
         const my = (src.y + tgt.y) / 2;
 
-        const fontSize = Math.max(8 / globalScale, 1.2);
-        ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
+        const fontSize = Math.max(8.5 / globalScale, 1.5);
+        ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
         const text = l.portLabel;
         const textWidth = ctx.measureText(text).width;
-        const pad = 2 / globalScale;
+        const padX = 3 / globalScale;
+        const padY = 2 / globalScale;
 
-        // Background pill
-        ctx.fillStyle = isDark ? 'rgba(127,29,29,0.7)' : 'rgba(254,226,226,0.9)';
+        // Background pill with subtle shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = isDark ? 'rgba(127,29,29,0.8)' : 'rgba(254,226,226,0.95)';
+        const pillH = fontSize + padY * 2;
+        const rr = pillH / 2;
         ctx.beginPath();
-        const rr = (fontSize + pad * 2) / 2;
-        ctx.roundRect(mx - textWidth / 2 - pad, my - rr, textWidth + pad * 2, rr * 2, rr);
+        ctx.roundRect(mx - textWidth / 2 - padX, my - pillH / 2, textWidth + padX * 2, pillH, rr);
         ctx.fill();
+        ctx.restore();
 
-        // Text
-        ctx.fillStyle = isDark ? '#fca5a5' : '#dc2626';
+        // Border
+        ctx.strokeStyle = isDark ? 'rgba(248,113,113,0.3)' : 'rgba(220,38,38,0.2)';
+        ctx.lineWidth = 0.5 / globalScale;
+        ctx.beginPath();
+        ctx.roundRect(mx - textWidth / 2 - padX, my - pillH / 2, textWidth + padX * 2, pillH, rr);
+        ctx.stroke();
+
+        ctx.fillStyle = isDark ? '#fca5a5' : '#b91c1c';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, mx, my);
+
+        // Hits count below the port label
+        if (globalScale > 0.8) {
+          const hitsSize = fontSize * 0.75;
+          ctx.font = `500 ${hitsSize}px Inter, system-ui, sans-serif`;
+          ctx.fillStyle = isDark ? 'rgba(248,113,113,0.5)' : 'rgba(185,28,28,0.4)';
+          ctx.fillText(`${fmtNumber(l.hits)}×`, mx, my + pillH / 2 + hitsSize * 0.8);
+        }
       }}
-      // Tooltip
+      // Tooltips
       nodeLabel={(node: any) => {
         const n = node as GraphNode;
-        return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.4">
-          <strong>${n.label}</strong><br/>
-          <span style="opacity:.7">${n.ip}</span><br/>
-          ${n.online ? '<span style="color:#10b981">● online</span>' : '<span style="opacity:.5">○ offline</span>'}
+        return `<div style="background:rgba(15,17,23,.92);color:#fff;padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.5;border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(8px)">
+          <strong style="font-size:12px">${n.label}</strong><br/>
+          <span style="opacity:.6;font-family:monospace">${n.ip}</span><br/>
+          ${n.online ? '<span style="color:#10b981">● online</span>' : '<span style="opacity:.4">○ offline</span>'}
+          ${n.totalHits > 0 ? `<br/><span style="opacity:.6">${fmtNumber(n.totalHits)} connections</span>` : ''}
         </div>`;
       }}
       linkLabel={(link: any) => {
         const l = link as GraphLink;
-        return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:11px;line-height:1.4">
-          <strong>${l.portLabel}</strong> (port ${l.port})<br/>
-          ${fmtNumber(l.hits)} connections
+        return `<div style="background:rgba(15,17,23,.92);color:#fff;padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.5;border:1px solid rgba(255,255,255,0.08)">
+          <strong>${l.portLabel}</strong> <span style="opacity:.5">port ${l.port}</span><br/>
+          <span style="color:#fca5a5">${fmtNumber(l.hits)} connections</span>
         </div>`;
       }}
-      // Physics
-      d3AlphaDecay={0.03}
-      d3VelocityDecay={0.3}
-      cooldownTicks={100}
+      // Physics — springy and responsive
+      d3AlphaDecay={0.025}
+      d3VelocityDecay={0.25}
+      cooldownTicks={120}
       enableNodeDrag={true}
       enableZoomInteraction={true}
     />
   );
+}
+
+/** Lighten a hex color by mixing with white */
+function lighten(hex: string, amount: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.round(r + (255 - r) * amount);
+  const ng = Math.round(g + (255 - g) * amount);
+  const nb = Math.round(b + (255 - b) * amount);
+  return `rgb(${nr},${ng},${nb})`;
 }
