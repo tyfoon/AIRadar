@@ -1,40 +1,59 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ComposableMap, Geographies, Geography, ZoomableGroup,
+} from 'react-simple-maps';
 import Globe from 'react-globe.gl';
 import { fetchGeoTraffic, fetchBlockRules, blockCountry, unblockCountry } from './api';
 import { formatBytes, formatNumber, countryName, flagClass, ratioColor } from './utils';
 import type { Direction, GeoCountry } from './types';
 
+const TOPO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 const GEO_JSON_URL =
   'https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson';
 
-// Home location (Netherlands) for initial view + arc origin
 const HOME = { lat: 52.1, lng: 5.3 };
 
-// Rough country centroids for arc endpoints (top traffic countries)
+// ISO-3166-1 numeric → alpha-2 (for the topojson flat map)
+const NUM_TO_ALPHA2: Record<string, string> = {
+  '004':'AF','008':'AL','012':'DZ','016':'AS','020':'AD','024':'AO','028':'AG','031':'AZ',
+  '032':'AR','036':'AU','040':'AT','044':'BS','048':'BH','050':'BD','051':'AM','052':'BB',
+  '056':'BE','060':'BM','064':'BT','068':'BO','070':'BA','072':'BW','076':'BR','084':'BZ',
+  '090':'SB','096':'BN','100':'BG','104':'MM','108':'BI','112':'BY','116':'KH','120':'CM',
+  '124':'CA','140':'CF','144':'LK','148':'TD','152':'CL','156':'CN','158':'TW','170':'CO',
+  '174':'KM','178':'CG','180':'CD','188':'CR','191':'HR','192':'CU','196':'CY','203':'CZ',
+  '204':'BJ','208':'DK','214':'DO','218':'EC','222':'SV','226':'GQ','231':'ET','232':'ER',
+  '233':'EE','242':'FJ','246':'FI','250':'FR','262':'DJ','266':'GA','268':'GE','270':'GM',
+  '275':'PS','276':'DE','288':'GH','296':'KI','300':'GR','304':'GL','308':'GD','320':'GT',
+  '324':'GN','328':'GY','332':'HT','340':'HN','348':'HU','352':'IS','356':'IN','360':'ID',
+  '364':'IR','368':'IQ','372':'IE','376':'IL','380':'IT','384':'CI','388':'JM','392':'JP',
+  '398':'KZ','400':'JO','404':'KE','408':'KP','410':'KR','414':'KW','417':'KG','418':'LA',
+  '422':'LB','426':'LS','428':'LV','430':'LR','434':'LY','440':'LT','442':'LU','450':'MG',
+  '454':'MW','458':'MY','462':'MV','466':'ML','470':'MT','478':'MR','480':'MU','484':'MX',
+  '496':'MN','498':'MD','499':'ME','504':'MA','508':'MZ','512':'OM','516':'NA','520':'NR',
+  '524':'NP','528':'NL','540':'NC','554':'NZ','558':'NI','562':'NE','566':'NG','578':'NO',
+  '586':'PK','591':'PA','598':'PG','600':'PY','604':'PE','608':'PH','616':'PL','620':'PT',
+  '624':'GW','626':'TL','634':'QA','642':'RO','643':'RU','646':'RW','682':'SA','686':'SN',
+  '688':'RS','694':'SL','702':'SG','703':'SK','704':'VN','705':'SI','706':'SO','710':'ZA',
+  '716':'ZW','724':'ES','728':'SS','729':'SD','740':'SR','748':'SZ','752':'SE','756':'CH',
+  '760':'SY','762':'TJ','764':'TH','768':'TG','776':'TO','780':'TT','784':'AE','788':'TN',
+  '792':'TR','795':'TM','800':'UG','804':'UA','807':'MK','818':'EG','826':'GB','834':'TZ',
+  '840':'US','854':'BF','858':'UY','860':'UZ','862':'VE','887':'YE','894':'ZM',
+  '010':'AQ','-99':'XK','732':'EH',
+};
+
 const CENTROIDS: Record<string, { lat: number; lng: number }> = {
-  US: { lat: 39.8, lng: -98.6 }, CA: { lat: 56.1, lng: -106.3 },
-  GB: { lat: 54.0, lng: -2.0 }, DE: { lat: 51.2, lng: 10.4 },
-  FR: { lat: 46.6, lng: 2.2 }, IE: { lat: 53.4, lng: -8.2 },
-  NL: { lat: 52.1, lng: 5.3 }, ES: { lat: 40.5, lng: -3.7 },
-  IT: { lat: 41.9, lng: 12.6 }, SE: { lat: 60.1, lng: 18.6 },
-  NO: { lat: 60.5, lng: 8.5 }, PL: { lat: 51.9, lng: 19.1 },
-  CH: { lat: 46.8, lng: 8.2 }, BE: { lat: 50.5, lng: 4.5 },
-  AT: { lat: 47.5, lng: 14.6 }, CZ: { lat: 49.8, lng: 15.5 },
-  DK: { lat: 56.3, lng: 9.5 }, FI: { lat: 61.9, lng: 25.7 },
-  AU: { lat: -25.3, lng: 133.8 }, JP: { lat: 36.2, lng: 138.3 },
-  KR: { lat: 35.9, lng: 127.8 }, CN: { lat: 35.9, lng: 104.2 },
-  IN: { lat: 20.6, lng: 79.0 }, SG: { lat: 1.4, lng: 103.8 },
-  BR: { lat: -14.2, lng: -51.9 }, RU: { lat: 61.5, lng: 105.3 },
-  ZA: { lat: -30.6, lng: 22.9 }, MX: { lat: 23.6, lng: -102.6 },
-  HK: { lat: 22.4, lng: 114.1 }, RO: { lat: 45.9, lng: 25.0 },
-  BG: { lat: 42.7, lng: 25.5 }, UA: { lat: 48.4, lng: 31.2 },
-  PT: { lat: 39.4, lng: -8.2 }, LU: { lat: 49.8, lng: 6.1 },
-  SK: { lat: 48.7, lng: 19.7 }, HU: { lat: 47.2, lng: 19.5 },
-  KE: { lat: -0.02, lng: 37.9 }, SA: { lat: 23.9, lng: 45.1 },
-  AE: { lat: 23.4, lng: 53.8 }, IL: { lat: 31.0, lng: 34.9 },
-  TW: { lat: 23.7, lng: 121.0 }, AR: { lat: -38.4, lng: -63.6 },
-  CO: { lat: 4.6, lng: -74.3 }, GE: { lat: 42.3, lng: 43.4 },
+  US:{lat:39.8,lng:-98.6},CA:{lat:56.1,lng:-106.3},GB:{lat:54,lng:-2},DE:{lat:51.2,lng:10.4},
+  FR:{lat:46.6,lng:2.2},IE:{lat:53.4,lng:-8.2},NL:{lat:52.1,lng:5.3},ES:{lat:40.5,lng:-3.7},
+  IT:{lat:41.9,lng:12.6},SE:{lat:60.1,lng:18.6},NO:{lat:60.5,lng:8.5},PL:{lat:51.9,lng:19.1},
+  CH:{lat:46.8,lng:8.2},BE:{lat:50.5,lng:4.5},AT:{lat:47.5,lng:14.6},CZ:{lat:49.8,lng:15.5},
+  DK:{lat:56.3,lng:9.5},FI:{lat:61.9,lng:25.7},AU:{lat:-25.3,lng:133.8},JP:{lat:36.2,lng:138.3},
+  KR:{lat:35.9,lng:127.8},CN:{lat:35.9,lng:104.2},IN:{lat:20.6,lng:79},SG:{lat:1.4,lng:103.8},
+  BR:{lat:-14.2,lng:-51.9},RU:{lat:61.5,lng:105.3},ZA:{lat:-30.6,lng:22.9},MX:{lat:23.6,lng:-102.6},
+  HK:{lat:22.4,lng:114.1},RO:{lat:45.9,lng:25},BG:{lat:42.7,lng:25.5},UA:{lat:48.4,lng:31.2},
+  PT:{lat:39.4,lng:-8.2},LU:{lat:49.8,lng:6.1},SK:{lat:48.7,lng:19.7},HU:{lat:47.2,lng:19.5},
+  KE:{lat:-0.02,lng:37.9},SA:{lat:23.9,lng:45.1},AE:{lat:23.4,lng:53.8},IL:{lat:31,lng:34.9},
+  TW:{lat:23.7,lng:121},AR:{lat:-38.4,lng:-63.6},CO:{lat:4.6,lng:-74.3},GE:{lat:42.3,lng:43.4},
 };
 
 function svcDisplayName(svc: string): string {
@@ -44,27 +63,27 @@ function svcDisplayName(svc: string): string {
   return svc.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface Props {
-  initialDirection?: Direction;
-}
+interface Props { initialDirection?: Direction }
 
 export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [period, setPeriod] = useState('1440');
   const [serviceFilter, setServiceFilter] = useState('');
   const [deviceFilter, setDeviceFilter] = useState('');
+  const [hoveredCC, setHoveredCC] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState({ html: '', x: 0, y: 0 });
   const queryClient = useQueryClient();
   const globeRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [globeSize, setGlobeSize] = useState({ w: 600, h: 380 });
+  const globeWrapRef = useRef<HTMLDivElement>(null);
+  const [globeSize, setGlobeSize] = useState(320);
   const [geoJson, setGeoJson] = useState<any>(null);
 
-  // Responsive sizing
+  // Measure globe container (square)
   useEffect(() => {
     function measure() {
-      if (containerRef.current) {
-        const w = containerRef.current.clientWidth;
-        setGlobeSize({ w, h: Math.min(380, Math.round(w * 0.5)) });
+      if (globeWrapRef.current) {
+        const w = globeWrapRef.current.clientWidth;
+        setGlobeSize(w);
       }
     }
     measure();
@@ -72,202 +91,147 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     return () => window.removeEventListener('resize', measure);
   }, []);
 
-  // Fetch GeoJSON
   useEffect(() => {
     fetch(GEO_JSON_URL).then(r => r.json()).then(d => setGeoJson(d.features));
   }, []);
 
-  // Auto-rotate + initial view
   useEffect(() => {
     if (!globeRef.current) return;
-    const controls = globeRef.current.controls();
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.3;
-    controls.enableZoom = true;
-    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 2.2 }, 0);
+    const c = globeRef.current.controls();
+    c.autoRotate = true;
+    c.autoRotateSpeed = 0.4;
+    c.enableZoom = true;
+    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 2.0 }, 0);
   }, [geoJson]);
 
+  // --- Data queries ---
   const { data, isLoading, isError } = useQuery({
     queryKey: ['geo-traffic', direction, period, serviceFilter, deviceFilter],
-    queryFn: () => fetchGeoTraffic(
-      direction, period || undefined, serviceFilter || undefined, deviceFilter || undefined,
-    ),
+    queryFn: () => fetchGeoTraffic(direction, period || undefined, serviceFilter || undefined, deviceFilter || undefined),
     staleTime: 30_000,
   });
-
-  const { data: blockRules = [] } = useQuery({
-    queryKey: ['geo-block-rules'],
-    queryFn: fetchBlockRules,
-    staleTime: 60_000,
-  });
-
+  const { data: blockRules = [] } = useQuery({ queryKey: ['geo-block-rules'], queryFn: fetchBlockRules, staleTime: 60_000 });
   const { data: eventsForServices } = useQuery({
     queryKey: ['events-for-service-list'],
-    queryFn: async () => {
-      const res = await fetch('/api/events?limit=1000');
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: async () => { const r = await fetch('/api/events?limit=1000'); return r.ok ? r.json() : []; },
     staleTime: 120_000,
   });
-
   const { data: devicesRaw } = useQuery({
     queryKey: ['devices-list'],
-    queryFn: async () => {
-      const res = await fetch('/api/devices');
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: async () => { const r = await fetch('/api/devices'); return r.ok ? r.json() : []; },
     staleTime: 60_000,
   });
 
   const countries = data?.countries || [];
   const blockedSet = useMemo(() => new Set(blockRules.map(r => r.country_code)), [blockRules]);
-
   const serviceOptions = useMemo(() => {
     if (!eventsForServices || !Array.isArray(eventsForServices)) return [];
-    const svcs = new Set<string>();
-    eventsForServices.forEach((e: any) => {
-      if (e.ai_service && e.ai_service !== 'unknown') svcs.add(e.ai_service);
-    });
-    return [...svcs].sort();
+    const s = new Set<string>();
+    eventsForServices.forEach((e: any) => { if (e.ai_service && e.ai_service !== 'unknown') s.add(e.ai_service); });
+    return [...s].sort();
   }, [eventsForServices]);
-
   const deviceOptions = useMemo(() => {
     if (!devicesRaw || !Array.isArray(devicesRaw)) return [];
-    return devicesRaw
-      .map((dev: any) => {
-        const name = dev.display_name || dev.hostname || dev.mac_address;
-        const ip = (dev.ips || [])
-          .map((i: any) => i.ip)
-          .find((ip: string) => !ip.startsWith('fe80') && !ip.startsWith('fd')) || '';
-        return { mac: dev.mac_address, name, ip };
-      })
-      .filter(d => d.ip)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return devicesRaw.map((d: any) => ({
+      mac: d.mac_address,
+      name: d.display_name || d.hostname || d.mac_address,
+      ip: (d.ips || []).map((i: any) => i.ip).find((ip: string) => !ip.startsWith('fe80') && !ip.startsWith('fd')) || '',
+    })).filter(d => d.ip).sort((a, b) => a.name.localeCompare(b.name));
   }, [devicesRaw]);
 
-  // Build bytes lookup and color function
+  // --- Color logic ---
   const bytesByCC = useMemo(() => {
     const m: Record<string, number> = {};
     countries.forEach(c => { m[c.country_code] = c.bytes; });
     return m;
   }, [countries]);
-
   const maxBytes = useMemo(() => Math.max(1, ...countries.map(c => c.bytes)), [countries]);
+  const logMax = Math.log10(maxBytes + 1);
 
-  const countryColor = useCallback((cc: string) => {
+  const flatColor = useCallback((bytes: number) => {
+    const dark = document.documentElement.classList.contains('dark');
+    if (bytes <= 0) return dark ? '#1e293b' : '#e2e8f0';
+    const t = Math.log10(bytes + 1) / logMax;
+    if (dark) return `rgb(${Math.round(30 + t * 29)},${Math.round(58 + t * 72)},${Math.round(138 + t * 108)})`;
+    return `rgb(${Math.round(219 - t * 180)},${Math.round(234 - t * 136)},${Math.round(254 - t * 8)})`;
+  }, [logMax]);
+
+  const globeColor = useCallback((cc: string) => {
     const bytes = bytesByCC[cc] || 0;
-    if (bytes <= 0) return 'rgba(30, 58, 100, 0.3)';
-    const t = Math.log10(bytes + 1) / Math.log10(maxBytes + 1);
-    // Blue hue: dim → bright
-    const r = Math.round(20 + t * 40);
-    const g = Math.round(60 + t * 100);
-    const b = Math.round(160 + t * 90);
-    return `rgb(${r},${g},${b})`;
-  }, [bytesByCC, maxBytes]);
+    if (bytes <= 0) return 'rgba(30,58,100,0.3)';
+    const t = Math.log10(bytes + 1) / logMax;
+    return `rgb(${Math.round(20 + t * 40)},${Math.round(60 + t * 100)},${Math.round(160 + t * 90)})`;
+  }, [bytesByCC, logMax]);
 
-  // Polygon cap color accessor
-  const polygonCapColor = useCallback((feat: any) => {
-    const cc = feat?.properties?.ISO_A2;
-    return countryColor(cc || '');
-  }, [countryColor]);
-
-  const polygonLabel = useCallback((feat: any) => {
-    const cc = feat?.properties?.ISO_A2 || '';
-    const name = feat?.properties?.NAME || cc;
+  // --- Globe accessors ---
+  const polygonCapColor = useCallback((f: any) => globeColor(f?.properties?.ISO_A2 || ''), [globeColor]);
+  const polygonLabel = useCallback((f: any) => {
+    const cc = f?.properties?.ISO_A2 || '';
+    const name = f?.properties?.NAME || cc;
     const c = countries.find(x => x.country_code === cc);
-    if (c) {
-      return `<div style="background:rgba(0,0,0,0.8);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;line-height:1.4">
-        <b>${name}</b><br/>${formatBytes(c.bytes)} &middot; ${formatNumber(c.hits)} connections
-      </div>`;
-    }
-    return `<div style="background:rgba(0,0,0,0.7);color:#ccc;padding:4px 8px;border-radius:4px;font-size:11px">${name}</div>`;
+    if (c) return `<div style="background:rgba(0,0,0,.85);color:#fff;padding:6px 10px;border-radius:6px;font-size:12px"><b>${name}</b><br/>${formatBytes(c.bytes)} &middot; ${formatNumber(c.hits)} conn.</div>`;
+    return `<div style="background:rgba(0,0,0,.7);color:#ccc;padding:4px 8px;border-radius:4px;font-size:11px">${name}</div>`;
   }, [countries]);
-
-  const handlePolygonClick = useCallback((feat: any) => {
-    const cc = feat?.properties?.ISO_A2;
-    if (cc && typeof (window as any).openCountryDrawer === 'function') {
-      (window as any).openCountryDrawer(cc);
-    }
+  const handlePolygonClick = useCallback((f: any) => {
+    const cc = f?.properties?.ISO_A2;
+    if (cc && typeof (window as any).openCountryDrawer === 'function') (window as any).openCountryDrawer(cc);
   }, []);
 
-  // Arcs from home to top countries
-  const arcsData = useMemo(() => {
-    return countries
-      .filter(c => c.country_code !== 'NL' && CENTROIDS[c.country_code])
-      .slice(0, 15)
-      .map(c => {
-        const dest = CENTROIDS[c.country_code];
-        const t = Math.log10(c.bytes + 1) / Math.log10(maxBytes + 1);
-        return {
-          startLat: HOME.lat,
-          startLng: HOME.lng,
-          endLat: dest.lat,
-          endLng: dest.lng,
-          color: [`rgba(59,130,246,${0.3 + t * 0.5})`, `rgba(59,130,246,${0.1 + t * 0.2})`],
-          stroke: 0.3 + t * 1.5,
-          label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}`,
-        };
-      });
-  }, [countries, maxBytes]);
+  const arcsData = useMemo(() => countries
+    .filter(c => c.country_code !== 'NL' && CENTROIDS[c.country_code])
+    .slice(0, 15)
+    .map(c => {
+      const d = CENTROIDS[c.country_code];
+      const t = Math.log10(c.bytes + 1) / logMax;
+      return {
+        startLat: HOME.lat, startLng: HOME.lng, endLat: d.lat, endLng: d.lng,
+        color: [`rgba(59,130,246,${(.3 + t * .5).toFixed(2)})`, `rgba(59,130,246,${(.1 + t * .2).toFixed(2)})`],
+        stroke: 0.3 + t * 1.5,
+        label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}`,
+      };
+    }), [countries, logMax]);
 
   async function handleBlock(cc: string) {
-    try {
-      await blockCountry(cc, 'both');
-      queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] });
-    } catch (e) { console.error('Block failed:', e); }
+    try { await blockCountry(cc, 'both'); queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] }); } catch (e) { console.error(e); }
   }
-
   async function handleUnblock(cc: string) {
-    try {
-      await unblockCountry(cc);
-      queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] });
-    } catch (e) { console.error('Unblock failed:', e); }
+    try { await unblockCountry(cc); queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] }); } catch (e) { console.error(e); }
   }
 
   const totalCountries = countries.length;
   const totalBytes = countries.reduce((s, c) => s + c.bytes, 0);
   const totalHits = countries.reduce((s, c) => s + c.hits, 0);
   const topCountry = countries[0];
-
   const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
   return (
     <div className="space-y-4">
       {/* Direction tabs */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
-        <TabButton active={direction === 'outbound'} onClick={() => setDirection('outbound')} icon="ph-duotone ph-arrow-up-right" label="Outbound" />
-        <TabButton active={direction === 'inbound'} onClick={() => setDirection('inbound')} icon="ph-duotone ph-arrow-down-left" label="Inbound" />
+        <TabBtn active={direction === 'outbound'} onClick={() => setDirection('outbound')} icon="ph-duotone ph-arrow-up-right" label="Outbound" />
+        <TabBtn active={direction === 'inbound'} onClick={() => setDirection('inbound')} icon="ph-duotone ph-arrow-down-left" label="Inbound" />
       </div>
 
-      {/* Stats cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Countries" value={totalCountries} />
-        <StatCard label="Bandwidth" value={formatBytes(totalBytes)} />
-        <StatCard label="Connections" value={formatNumber(totalHits)} />
-        <StatCard
-          label="Top Destination"
-          value={topCountry ? countryName(topCountry.country_code) : '—'}
-          sub={topCountry ? formatBytes(topCountry.bytes) : undefined}
-        />
+        <Stat label="Countries" value={totalCountries} />
+        <Stat label="Bandwidth" value={formatBytes(totalBytes)} />
+        <Stat label="Connections" value={formatNumber(totalHits)} />
+        <Stat label="Top Destination" value={topCountry ? countryName(topCountry.country_code) : '—'} sub={topCountry ? formatBytes(topCountry.bytes) : undefined} />
       </div>
 
-      {/* Filter bar */}
+      {/* Filters */}
       <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Filters</span>
-        <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)}
-          className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
+        <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
           <option value="">All services</option>
           {serviceOptions.map(s => <option key={s} value={s}>{svcDisplayName(s)}</option>)}
         </select>
-        <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)}
-          className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
+        <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)} className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
           <option value="">All devices</option>
           {deviceOptions.map(d => <option key={d.mac} value={d.ip}>{d.name}</option>)}
         </select>
-        <select value={period} onChange={e => setPeriod(e.target.value)}
-          className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
+        <select value={period} onChange={e => setPeriod(e.target.value)} className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300">
           <option value="">All time</option>
           <option value="60">Last hour</option>
           <option value="1440">Last 24h</option>
@@ -275,65 +239,106 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
         </select>
       </div>
 
-      {/* Loading */}
       {isLoading && (
         <div className="py-10 text-center text-sm text-slate-400">
           <div className="inline-block w-5 h-5 border-2 border-slate-300 dark:border-slate-600 border-t-indigo-500 rounded-full animate-spin mb-2" />
           <p>Loading geo data...</p>
         </div>
       )}
-
       {isError && <div className="py-8 text-center text-sm text-red-500">Failed to load geo data</div>}
 
-      {/* Globe */}
-      {geoJson && !isLoading && (
-        <div ref={containerRef}
-          className="bg-slate-950 border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden"
-        >
-          <Globe
-            ref={globeRef}
-            width={globeSize.w}
-            height={globeSize.h}
-            backgroundColor="rgba(0,0,0,0)"
-            showAtmosphere={true}
-            atmosphereColor={dark ? '#1e3a8a' : '#3b82f6'}
-            atmosphereAltitude={0.15}
-            showGraticules={false}
-            polygonsData={geoJson}
-            polygonGeoJsonGeometry="geometry"
-            polygonCapColor={polygonCapColor}
-            polygonSideColor={() => 'rgba(30,58,100,0.15)'}
-            polygonStrokeColor={() => 'rgba(100,140,200,0.2)'}
-            polygonAltitude={(feat: any) => {
-              const cc = feat?.properties?.ISO_A2 || '';
-              const bytes = bytesByCC[cc] || 0;
-              return bytes > 0 ? 0.005 + (Math.log10(bytes + 1) / Math.log10(maxBytes + 1)) * 0.02 : 0.003;
-            }}
-            polygonLabel={polygonLabel}
-            onPolygonClick={handlePolygonClick}
-            arcsData={arcsData}
-            arcStartLat="startLat"
-            arcStartLng="startLng"
-            arcEndLat="endLat"
-            arcEndLng="endLng"
-            arcColor="color"
-            arcStroke="stroke"
-            arcDashLength={0.5}
-            arcDashGap={0.3}
-            arcDashAnimateTime={2000}
-            arcLabel="label"
-            arcsTransitionDuration={500}
-            pointsData={[{ lat: HOME.lat, lng: HOME.lng, size: 0.4, color: '#3b82f6' }]}
-            pointLat="lat"
-            pointLng="lng"
-            pointColor="color"
-            pointAltitude={0.03}
-            pointRadius="size"
-          />
+      {/* ===== Side-by-side: Flat map (left ~2/3) + Globe (right ~1/3 square) ===== */}
+      {!isLoading && (
+        <div className="flex gap-3" style={{ minHeight: 320 }}>
+          {/* Flat map */}
+          <div className="flex-[2] min-w-0 bg-white dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden relative">
+            {hoveredCC && tooltip.html && (
+              <div className="absolute z-10 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs shadow-lg pointer-events-none"
+                style={{ left: tooltip.x + 10, top: tooltip.y - 10 }}
+                dangerouslySetInnerHTML={{ __html: tooltip.html }} />
+            )}
+            <ComposableMap
+              projection="geoNaturalEarth1"
+              projectionConfig={{ rotate: [-10, 0, 0], scale: 140 }}
+              width={800}
+              height={380}
+              style={{ width: '100%', height: '100%', display: 'block' }}
+            >
+              <ZoomableGroup>
+                <Geographies geography={TOPO_URL}>
+                  {({ geographies }: { geographies: any[] }) =>
+                    geographies.map((geo: any) => {
+                      const cc = NUM_TO_ALPHA2[geo.id] || '';
+                      const bytes = bytesByCC[cc] || 0;
+                      const isDark = document.documentElement.classList.contains('dark');
+                      return (
+                        <Geography key={geo.rsmKey} geography={geo}
+                          fill={flatColor(bytes)}
+                          stroke={isDark ? '#334155' : '#cbd5e1'}
+                          strokeWidth={0.4}
+                          style={{
+                            default: { outline: 'none' },
+                            hover: { outline: 'none', stroke: isDark ? '#e2e8f0' : '#334155', strokeWidth: 1.2, cursor: 'pointer' },
+                            pressed: { outline: 'none' },
+                          }}
+                          onMouseEnter={(evt: any) => {
+                            setHoveredCC(cc);
+                            const c = countries.find(x => x.country_code === cc);
+                            const html = c
+                              ? `<b>${countryName(cc)}</b><br/>${formatBytes(c.bytes)} · ${formatNumber(c.hits)} connections`
+                              : `<b>${geo.properties?.name || cc}</b><br/>No traffic`;
+                            const rect = (evt.target as SVGElement).closest('svg')?.getBoundingClientRect();
+                            setTooltip({ html, x: rect ? evt.clientX - rect.left : 0, y: rect ? evt.clientY - rect.top : 0 });
+                          }}
+                          onMouseLeave={() => { setHoveredCC(null); setTooltip({ html: '', x: 0, y: 0 }); }}
+                          onClick={() => { if (cc && typeof (window as any).openCountryDrawer === 'function') (window as any).openCountryDrawer(cc); }}
+                        />
+                      );
+                    })
+                  }
+                </Geographies>
+              </ZoomableGroup>
+            </ComposableMap>
+          </div>
+
+          {/* Globe (square) */}
+          <div ref={globeWrapRef}
+            className="flex-[1] min-w-0 bg-slate-950 border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden flex items-center justify-center"
+            style={{ aspectRatio: '1' }}
+          >
+            {geoJson && (
+              <Globe ref={globeRef}
+                width={globeSize} height={globeSize}
+                backgroundColor="rgba(0,0,0,0)"
+                showAtmosphere={true}
+                atmosphereColor={dark ? '#1e3a8a' : '#3b82f6'}
+                atmosphereAltitude={0.15}
+                polygonsData={geoJson}
+                polygonGeoJsonGeometry="geometry"
+                polygonCapColor={polygonCapColor}
+                polygonSideColor={() => 'rgba(30,58,100,0.15)'}
+                polygonStrokeColor={() => 'rgba(100,140,200,0.2)'}
+                polygonAltitude={(f: any) => {
+                  const bytes = bytesByCC[f?.properties?.ISO_A2 || ''] || 0;
+                  return bytes > 0 ? 0.005 + (Math.log10(bytes + 1) / logMax) * 0.02 : 0.003;
+                }}
+                polygonLabel={polygonLabel}
+                onPolygonClick={handlePolygonClick}
+                arcsData={arcsData}
+                arcStartLat="startLat" arcStartLng="startLng"
+                arcEndLat="endLat" arcEndLng="endLng"
+                arcColor="color" arcStroke="stroke"
+                arcDashLength={0.5} arcDashGap={0.3} arcDashAnimateTime={2000}
+                arcLabel="label" arcsTransitionDuration={500}
+                pointsData={[{ lat: HOME.lat, lng: HOME.lng, size: 0.4, color: '#3b82f6' }]}
+                pointLat="lat" pointLng="lng" pointColor="color"
+                pointAltitude={0.03} pointRadius="size"
+              />
+            )}
+          </div>
         </div>
       )}
 
-      {/* Empty state */}
       {!isLoading && !isError && countries.length === 0 && (
         <div className="py-12 text-center text-sm text-slate-400">No geo traffic data for this period.</div>
       )}
@@ -343,8 +348,7 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
         <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <i className="ph-duotone ph-shield-warning text-red-500" />
-              Blocked Countries
+              <i className="ph-duotone ph-shield-warning text-red-500" /> Blocked Countries
             </h3>
             <span className="text-xs text-slate-400">{blockRules.length} blocked</span>
           </div>
@@ -371,18 +375,15 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
 
 // --- Sub-components ---
 
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: string; label: string }) {
+function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: string; label: string }) {
   return (
-    <button onClick={onClick}
-      className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${
-        active ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-      }`}>
+    <button onClick={onClick} className={`px-4 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${active ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>
       <i className={`${icon} text-sm`} /> {label}
     </button>
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Stat({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
       <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">{label}</p>
@@ -433,11 +434,9 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
                   </div>
                 </td>
                 <td className="py-2.5 px-2 text-center">
-                  <button
-                    onClick={e => { e.stopPropagation(); isBlocked ? onUnblock(c.country_code) : onBlock(c.country_code); }}
+                  <button onClick={e => { e.stopPropagation(); isBlocked ? onUnblock(c.country_code) : onBlock(c.country_code); }}
                     className={`p-1.5 rounded-lg transition-colors ${isBlocked ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20' : 'text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-white/[0.05]'}`}
-                    title={isBlocked ? `Unblock ${countryName(c.country_code)}` : `Block ${countryName(c.country_code)}`}
-                  >
+                    title={isBlocked ? `Unblock ${countryName(c.country_code)}` : `Block ${countryName(c.country_code)}`}>
                     <i className={`ph-duotone ${isBlocked ? 'ph-shield-slash' : 'ph-shield-warning'} text-base`} />
                   </button>
                 </td>
