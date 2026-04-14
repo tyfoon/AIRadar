@@ -319,39 +319,52 @@ function DonutCard({ label, entries, total, accent }: {
   total: number;
   accent: string;
 }) {
+  const [active, setActive] = useState<number | null>(null);
   const displayData = entries.length ? entries.slice(0, 6) : [{ key: '_empty', name: 'None', value: 1, color: '#334155' }];
   const isEmpty = !entries.length;
+  const toggle = (i: number) => setActive(prev => prev === i ? null : i);
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col">
-      {/* Header */}
       <div className="flex items-center gap-1.5 mb-1">
         <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: accent }} />
         <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
         <span className="ml-auto text-xs font-bold tabular-nums text-slate-700 dark:text-slate-100">{formatNumber(total)}</span>
       </div>
 
-      {/* Donut + legend side by side */}
       <div className="flex items-start gap-2 flex-1">
-        {/* Donut */}
         <div style={{ width: 60, height: 60, flexShrink: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
-                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}>
-                {displayData.map((d, i) => <Cell key={i} fill={isEmpty ? '#334155' : d.color} />)}
+                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}
+                onClick={(_, i) => { if (!isEmpty) toggle(i); }}
+                style={{ cursor: isEmpty ? 'default' : 'pointer', outline: 'none' }}
+              >
+                {displayData.map((d, i) => (
+                  <Cell key={i}
+                    fill={isEmpty ? '#334155' : d.color}
+                    opacity={active !== null && active !== i ? 0.3 : 1}
+                    stroke={active === i ? d.color : 'none'}
+                    strokeWidth={active === i ? 2 : 0}
+                    style={{ transition: 'opacity 150ms', outline: 'none' }}
+                  />
+                ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Legend with service icons */}
         <div className="flex-1 min-w-0 space-y-0.5 pt-0.5">
           {entries.length === 0 && (
             <p className="text-[10px] text-slate-500 italic">No events</p>
           )}
-          {entries.slice(0, 4).map(e => (
-            <div key={e.key} className="flex items-center gap-1 min-w-0">
+          {entries.slice(0, 4).map((e, i) => (
+            <div key={e.key}
+              className="flex items-center gap-1 min-w-0 cursor-pointer rounded px-0.5 -mx-0.5 transition-opacity"
+              style={{ opacity: active !== null && active !== i ? 0.35 : 1 }}
+              onClick={() => toggle(i)}
+            >
               <SvcLogo svc={e.key} size={12} />
               <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{e.name}</span>
               <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{e.value}</span>
@@ -373,8 +386,10 @@ function CountryDonutCard({ label, entries, total, accent, icon }: {
   accent: string;
   icon: string;
 }) {
+  const [active, setActive] = useState<number | null>(null);
   const displayData = entries.length ? entries : [{ cc: '_empty', value: 1, color: '#334155' }];
   const isEmpty = !entries.length;
+  const toggle = (i: number) => setActive(prev => prev === i ? null : i);
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-3 flex flex-col">
@@ -388,16 +403,31 @@ function CountryDonutCard({ label, entries, total, accent, icon }: {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={displayData} dataKey="value" cx="50%" cy="50%"
-                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}>
-                {displayData.map((d, i) => <Cell key={i} fill={isEmpty ? '#334155' : d.color} />)}
+                innerRadius={17} outerRadius={28} strokeWidth={0} paddingAngle={1}
+                onClick={(_, i) => { if (!isEmpty) toggle(i); }}
+                style={{ cursor: isEmpty ? 'default' : 'pointer', outline: 'none' }}
+              >
+                {displayData.map((d, i) => (
+                  <Cell key={i}
+                    fill={isEmpty ? '#334155' : d.color}
+                    opacity={active !== null && active !== i ? 0.3 : 1}
+                    stroke={active === i ? d.color : 'none'}
+                    strokeWidth={active === i ? 2 : 0}
+                    style={{ transition: 'opacity 150ms', outline: 'none' }}
+                  />
+                ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
         </div>
         <div className="flex-1 min-w-0 space-y-0.5 pt-0.5">
           {isEmpty && <p className="text-[10px] text-slate-500 italic">No data</p>}
-          {entries.slice(0, 4).map(e => (
-            <div key={e.cc} className="flex items-center gap-1 min-w-0">
+          {entries.slice(0, 4).map((e, i) => (
+            <div key={e.cc}
+              className="flex items-center gap-1 min-w-0 cursor-pointer rounded px-0.5 -mx-0.5 transition-opacity"
+              style={{ opacity: active !== null && active !== i ? 0.35 : 1 }}
+              onClick={() => toggle(i)}
+            >
               <span className={`${flagClass(e.cc)} text-[11px]`} />
               <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{countryName(e.cc)}</span>
               <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{formatBytes(e.value)}</span>
