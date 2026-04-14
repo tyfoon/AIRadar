@@ -3,7 +3,7 @@ declare module 'react-simple-maps' {
 
   interface ComposableMapProps {
     projection?: string;
-    projectionConfig?: { scale?: number; center?: [number, number] };
+    projectionConfig?: { scale?: number; center?: [number, number]; rotate?: [number, number, number] };
     width?: number;
     height?: number;
     style?: CSSProperties;
