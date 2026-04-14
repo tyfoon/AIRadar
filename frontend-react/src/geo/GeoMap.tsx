@@ -183,13 +183,17 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
     .map(c => {
       const d = CENTROIDS[c.country_code];
       const t = Math.log10(c.bytes + 1) / logMax;
+      const outbound = direction === 'outbound';
       return {
-        startLat: HOME.lat, startLng: HOME.lng, endLat: d.lat, endLng: d.lng,
+        startLat: outbound ? HOME.lat : d.lat,
+        startLng: outbound ? HOME.lng : d.lng,
+        endLat: outbound ? d.lat : HOME.lat,
+        endLng: outbound ? d.lng : HOME.lng,
         color: [`rgba(59,130,246,${(.3 + t * .5).toFixed(2)})`, `rgba(59,130,246,${(.1 + t * .2).toFixed(2)})`],
         stroke: 0.3 + t * 1.5,
         label: `${countryName(c.country_code)}: ${formatBytes(c.bytes)}`,
       };
-    }), [countries, logMax]);
+    }), [countries, logMax, direction]);
 
   async function handleBlock(cc: string) {
     try { await blockCountry(cc, 'both'); queryClient.invalidateQueries({ queryKey: ['geo-block-rules'] }); } catch (e) { console.error(e); }
