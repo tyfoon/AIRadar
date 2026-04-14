@@ -7,7 +7,7 @@ import { getCategoryGroups, categorizeService } from '../utils/categories';
 import { svcDisplayName } from '../utils/services';
 import { fmtBytes, fmtDuration, fmtTime, formatNumber } from '../utils/format';
 import { t, getLocale } from '../utils/i18n';
-import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice } from './api';
+import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice, fetchReputationBulk, type ReputationResult } from './api';
 import SvcLogo from './SvcLogo';
 import PhIcon from './PhIcon';
 import ScreenTime from '../ScreenTime';
@@ -485,12 +485,61 @@ function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { 
 }
 
 // --- Connections Tab ---
+
+// Bridge to vanilla JS reputation modal (still in index.html + app.js)
+declare global {
+  interface Window {
+    _openReputationCheck?: (target: string) => void;
+  }
+}
+
+function ReputationBadge({ ip, cache }: { ip: string; cache: Record<string, ReputationResult> }) {
+  const r = cache[ip];
+  if (!r) return null;
+  const badges: { cls: string; label: string }[] = [];
+  if (r.urlhaus_status === 'malware') badges.push({ cls: 'bg-red-600 text-white', label: `Malware${r.urlhaus_threat ? ` (${r.urlhaus_threat})` : ''}` });
+  if (r.threatfox_status === 'c2') badges.push({ cls: 'bg-red-700 text-white', label: `C2${r.threatfox_malware ? ` (${r.threatfox_malware})` : ''}` });
+  if (r.abuseipdb_score != null) {
+    const sc = r.abuseipdb_score;
+    const bg = sc >= 75 ? 'bg-red-600' : sc >= 25 ? 'bg-amber-600' : 'bg-emerald-600';
+    badges.push({ cls: `${bg} text-white`, label: `Abuse: ${sc}%` });
+  }
+  if (r.vt_malicious != null && r.vt_total != null) {
+    const bg = r.vt_malicious >= 5 ? 'bg-red-600' : r.vt_malicious >= 1 ? 'bg-amber-600' : 'bg-emerald-600';
+    badges.push({ cls: `${bg} text-white`, label: `VT: ${r.vt_malicious}/${r.vt_total}` });
+  }
+  if (!badges.length) return null;
+  return (
+    <>
+      {badges.map((b, i) => (
+        <span key={i} className={`inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-bold ${b.cls}`}>{b.label}</span>
+      ))}
+    </>
+  );
+}
+
 function ConnectionsTab({ mac }: { mac: string }) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deviceConnections', mac],
     queryFn: () => fetchConnections(mac),
     staleTime: 30_000,
   });
+
+  // Pre-fetch reputation for all connection IPs
+  const connIps = (data?.connections || []).map(c => c.resp_ip).filter(Boolean);
+  const { data: repCache } = useQuery({
+    queryKey: ['reputationBulk', mac, connIps.join(',')],
+    queryFn: () => fetchReputationBulk(connIps),
+    enabled: connIps.length > 0,
+    staleTime: 120_000,
+  });
+  const reputation = repCache || {};
+
+  const openRepCheck = (ip: string) => {
+    if (typeof window._openReputationCheck === 'function') {
+      window._openReputationCheck(ip);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -519,7 +568,11 @@ function ConnectionsTab({ mac }: { mac: string }) {
       </div>
       <div className="space-y-1">
         {conns.map((c, i) => (
-          <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+          <div
+            key={i}
+            className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer"
+            onClick={() => openRepCheck(c.resp_ip)}
+          >
             <span className="flex-shrink-0">
               {c.direction === 'outbound'
                 ? <i className="ph-duotone ph-arrow-up-right text-xs text-blue-500" title="Outbound" />
@@ -542,9 +595,12 @@ function ConnectionsTab({ mac }: { mac: string }) {
               ) : (
                 <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{c.resp_ip}</span>
               )}
-              {(c.ptr || c.asn_org) && (
-                <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">{c.resp_ip}</div>
-              )}
+              <div className="flex items-center gap-1.5">
+                {(c.ptr || c.asn_org) && (
+                  <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate hover:text-slate-300 cursor-pointer">{c.resp_ip}</span>
+                )}
+                <ReputationBadge ip={c.resp_ip} cache={reputation} />
+              </div>
             </div>
             <div className="flex-shrink-0 text-right">
               <div className="text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">{fmtBytes(c.bytes)}</div>
