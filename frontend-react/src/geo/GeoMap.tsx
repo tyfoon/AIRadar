@@ -111,13 +111,14 @@ export default function GeoMap({ initialDirection = 'outbound' }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!globeRef.current) return;
+    if (!globeRef.current || !globeSize) return;
     const c = globeRef.current.controls();
     c.autoRotate = true;
     c.autoRotateSpeed = 0.4;
     c.enableZoom = true;
-    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.5 }, 0);
-  }, [geoJson]);
+    // Focus on user's location with a smooth animation
+    globeRef.current.pointOfView({ lat: HOME.lat, lng: HOME.lng, altitude: 1.5 }, 1000);
+  }, [geoJson, globeSize]);
 
   // --- Data queries ---
   const { data, isLoading, isError } = useQuery({
