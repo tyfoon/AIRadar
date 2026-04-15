@@ -127,11 +127,10 @@ export default function AppShell() {
         onToggleCollapse={toggleCollapse}
         onToggleTheme={toggleTheme}
         badges={badges}
+        mobileOpen={mobileOpen}
+        onToggleMobile={toggleMobileSidebar}
+        onCloseMobile={() => { setMobileOpen(false); document.body.classList.remove('overflow-hidden'); }}
       />
-
-      {mobileOpen && (
-        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={toggleMobileSidebar} />
-      )}
 
       {/* Header — always rendered by React */}
       <div className="transition-all duration-300 desktop-margin">

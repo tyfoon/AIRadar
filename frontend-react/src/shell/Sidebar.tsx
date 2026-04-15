@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROUTES, MOBILE_NAV, GROUP_LABELS } from './routes';
 import { t } from '../utils/i18n';
@@ -8,33 +8,24 @@ interface Props {
   onToggleCollapse: () => void;
   onToggleTheme: () => void;
   badges: Record<string, number | boolean>;
+  mobileOpen: boolean;
+  onToggleMobile: () => void;
+  onCloseMobile: () => void;
 }
 
-export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, badges }: Props) {
+export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, badges, mobileOpen, onToggleMobile, onCloseMobile }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const currentPath = location.pathname.replace(/^\//, '') || 'summary';
 
-  const closeMobile = () => {
-    setMobileOpen(false);
-    document.body.classList.remove('overflow-hidden');
-  };
-
   const handleNav = (path: string) => {
     navigate(`/${path}`);
-    closeMobile();
-  };
-
-  const toggleMobile = () => {
-    const next = !mobileOpen;
-    setMobileOpen(next);
-    document.body.classList.toggle('overflow-hidden', next);
+    onCloseMobile();
   };
 
   // Close mobile sidebar on route change
-  useEffect(() => { closeMobile(); }, [location.pathname]);
+  useEffect(() => { onCloseMobile(); }, [location.pathname]);
 
   const groups: ('monitor' | 'protect' | 'manage')[] = ['monitor', 'protect', 'manage'];
 
@@ -110,7 +101,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
             <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">AR</div>
             <span className="font-semibold text-sm tracking-tight text-slate-800 dark:text-white">AI-Radar</span>
           </div>
-          <button onClick={closeMobile} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <button onClick={onCloseMobile} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
             <i className="ph-duotone ph-x text-lg" />
           </button>
         </div>
@@ -127,7 +118,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
 
       {/* Mobile backdrop */}
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={closeMobile} />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onCloseMobile} />
       )}
 
       {/* Mobile bottom nav — full width, fixed */}
@@ -148,7 +139,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
             );
           })}
           <button
-            onClick={toggleMobile}
+            onClick={onToggleMobile}
             className="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs"
           >
             <i className="ph-duotone ph-list text-xl" />
