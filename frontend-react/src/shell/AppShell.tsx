@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ROUTES } from './routes';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
@@ -17,36 +18,46 @@ export default function AppShell() {
   const location = useLocation();
   const nav = useNavigate();
 
-  // Expose navigate for vanilla JS code (e.g. GroupsTab calling window.navigate('rules'))
+  // Expose navigate for vanilla JS code
   useEffect(() => {
     (window as any).navigate = (page: string) => {
-      const path = page === 'other' || page === 'content' ? '/content' : `/${page}`;
+      const path = page === 'other' || page === 'content' ? '/content'
+        : page === 'family' ? '/content'
+        : `/${page}`;
       nav(path);
     };
   }, [nav]);
 
-  // On first mount: hide the old vanilla sidebar/header/mobile-nav,
-  // reset the old main wrapper margin so it doesn't conflict.
+  // On first mount: hide old sidebar/header/mobile-nav
   useEffect(() => {
-    // Hide old sidebar
-    const oldSidebar = document.getElementById('sidebar');
-    if (oldSidebar) oldSidebar.style.display = 'none';
-    // Hide old mobile nav
-    const oldMobileNav = document.getElementById('mobile-nav');
-    if (oldMobileNav) oldMobileNav.style.display = 'none';
-    // Hide old sidebar backdrop
-    const oldBackdrop = document.getElementById('sidebar-backdrop');
-    if (oldBackdrop) oldBackdrop.style.display = 'none';
-    // Reset old main wrapper — remove margin-left and let React control layout
+    const hide = (id: string) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    };
+    hide('sidebar');
+    hide('mobile-nav');
+    hide('sidebar-backdrop');
+    // Hide old header inside the old main wrapper
     const oldMain = document.getElementById('main');
     if (oldMain) {
-      oldMain.style.marginLeft = '0';
-      oldMain.style.paddingBottom = '0';
+      const oldHeader = oldMain.querySelector('header');
+      if (oldHeader) (oldHeader as HTMLElement).style.display = 'none';
     }
-
     // Load devices for pages that depend on window.deviceMap
     window.loadDevices?.();
   }, []);
+
+  // Keep old <div id="main"> margin in sync with sidebar collapse
+  const marginLeft = collapsed ? 64 : 240;
+  useEffect(() => {
+    const oldMain = document.getElementById('main');
+    if (oldMain) oldMain.style.marginLeft = `${marginLeft}px`;
+  }, [marginLeft]);
+
+  // Determine if current route is a React page or vanilla
+  const currentPath = location.pathname.replace(/^\//, '') || 'summary';
+  const route = ROUTES.find(r => r.path === currentPath || r.pageId === currentPath);
+  const isReactPage = route?.type === 'react';
 
   // Persist sidebar collapse state
   const toggleCollapse = useCallback(() => {
@@ -75,7 +86,6 @@ export default function AppShell() {
     });
   }, []);
 
-  // Close mobile on route change
   useEffect(() => {
     setMobileOpen(false);
     document.body.classList.remove('overflow-hidden');
@@ -102,8 +112,6 @@ export default function AppShell() {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   }, [location.pathname]);
 
-  const marginLeft = collapsed ? 64 : 240;
-
   return (
     <>
       <Sidebar
@@ -117,20 +125,26 @@ export default function AppShell() {
         <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={toggleMobileSidebar} />
       )}
 
-      {/* Main content area */}
-      <div
-        className="transition-all duration-300 min-h-screen pb-16 md:pb-0"
-        style={{ marginLeft }}
-      >
+      {/* Header — always rendered by React */}
+      <div style={{ marginLeft }} className="transition-all duration-300">
         <Header onToggleMobileSidebar={toggleMobileSidebar} />
-
-        {/* Killswitch banner — keep using the existing DOM element */}
-
-        {/* Page content */}
-        <main className="p-4 sm:p-6 max-w-[1600px] mx-auto">
-          <Outlet />
-        </main>
       </div>
+
+      {/* React pages render in their own container with correct margin */}
+      {isReactPage && (
+        <div
+          className="transition-all duration-300 min-h-screen pb-16 md:pb-0"
+          style={{ marginLeft }}
+        >
+          <main className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+            <Outlet />
+          </main>
+        </div>
+      )}
+
+      {/* Vanilla pages: Outlet renders VanillaPage (returns null) which
+          shows/hides the <section> in the old <div id="main"> */}
+      {!isReactPage && <Outlet />}
     </>
   );
 }
