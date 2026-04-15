@@ -26,7 +26,7 @@ export const ROUTES: RouteConfig[] = [
   { path: 'rules',     pageId: 'rules',     icon: 'ph-faders',                 labelKey: 'nav.rules',     label: 'Rules',         group: 'protect', type: 'react' },
   // Manage
   { path: 'devices',   pageId: 'devices',   icon: 'ph-devices',                labelKey: 'nav.devices',   label: 'Devices',       group: 'manage',  type: 'react' },
-  { path: 'settings',  pageId: 'settings',  icon: 'ph-gear',                   labelKey: 'nav.settings',  label: 'Settings',      group: 'manage',  type: 'vanilla', badgeId: 'settings' },
+  { path: 'settings',  pageId: 'settings',  icon: 'ph-gear',                   labelKey: 'nav.settings',  label: 'Settings',      group: 'manage',  type: 'react',   badgeId: 'settings' },
 ];
 
 export const MOBILE_NAV: { path: string; icon: string; labelKey: string; label: string; badgeId?: string }[] = [

@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from './shell/AppShell';
-import VanillaPage from './shell/VanillaPage';
 import Dashboard from './dashboard/Dashboard';
 import GeoMap from './geo/GeoMap';
 import IotOverview from './iot/IotOverview';
@@ -15,6 +14,7 @@ import ContentPage from './content/ContentPage';
 import SummaryPage from './summary/SummaryPage';
 import IpsPage from './ips/IpsPage';
 import RulesPage from './rules/RulesPage';
+import SettingsPage from './settings/SettingsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,10 +58,8 @@ waitForElement('react-app-root', (el) => {
               <Route path="/summary" element={<SummaryPage />} />
               <Route path="/ips" element={<IpsPage />} />
               <Route path="/rules" element={<RulesPage />} />
-
-              {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
-              <Route path="/settings" element={<VanillaPage pageId="settings" />} />
-              <Route path="/settings/:tab" element={<VanillaPage pageId="settings" />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/settings/:tab" element={<SettingsPage />} />
 
               {/* Default redirect */}
               <Route path="/" element={<Navigate to="/summary" replace />} />

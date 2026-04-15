@@ -8654,8 +8654,11 @@ function renderLegalComponents() {
   }).join('');
 }
 
-// Render on page load
+// Render on page load. Also expose on window so the React SettingsPage can
+// call it once its #legal-components node mounts (DOMContentLoaded fires
+// before React builds the page, so the initial listener can be a no-op).
 document.addEventListener('DOMContentLoaded', renderLegalComponents);
+window.renderLegalComponents = renderLegalComponents;
 
 // ================================================================
 // KILLSWITCH
