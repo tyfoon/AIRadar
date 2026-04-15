@@ -71,13 +71,14 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
   const { grid, devices, maxVal } = processed;
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Ultra-compact layout
-  const cellW = 14;
+  // Compact layout — narrow heatmap, generous device labels
+  const cellW = 8;
   const cellH = 5;
   const gap = 1;
-  const padLeft = 36;
+  const padLeft = 64;
+  const padRight = 4;
   const padTop = 1;
-  const svgW = padLeft + 24 * (cellW + gap) + 10;
+  const svgW = padLeft + 24 * (cellW + gap) + padRight;
   const svgH = padTop + devices.length * (cellH + gap) + 10;
 
   function getColor(cell: HeatmapCell | undefined): string {
@@ -115,11 +116,11 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
           viewBox={`0 0 ${svgW} ${svgH}`}
           preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ minWidth: 380 }}
+          style={{ minWidth: 280 }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
-            const label = dev.name.length > 9 ? dev.name.slice(0, 8) + '…' : dev.name;
+            const label = dev.name.length > 15 ? dev.name.slice(0, 14) + '…' : dev.name;
             return (
               <g key={dev.ip}>
                 <text
@@ -128,7 +129,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                   textAnchor="end"
                   dominantBaseline="central"
                   fill={isDark ? 'rgba(148,163,184,0.7)' : 'rgba(71,85,105,0.8)'}
-                  fontSize={4}
+                  fontSize={5}
                   fontFamily="Inter, system-ui, sans-serif"
                 >
                   {label}
@@ -178,7 +179,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
               y={padTop + devices.length * (cellH + gap) + 7}
               textAnchor="middle"
               fill={isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.6)'}
-              fontSize={6}
+              fontSize={5}
               fontFamily="Inter, system-ui, sans-serif"
             >
               {h % 3 === 0 ? `${h}:00` : ''}
