@@ -8,6 +8,8 @@ import Dashboard from './dashboard/Dashboard';
 import GeoMap from './geo/GeoMap';
 import IotOverview from './iot/IotOverview';
 import DevicesPage from './devices/DevicesPage';
+import AiPage from './category/AiPage';
+import CloudPage from './category/CloudPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,11 +42,11 @@ waitForElement('react-app-root', (el) => {
               <Route path="/devices" element={<DevicesPage />} />
               <Route path="/geo" element={<GeoMap />} />
               <Route path="/iot" element={<IotOverview />} />
+              <Route path="/ai" element={<AiPage />} />
+              <Route path="/cloud" element={<CloudPage />} />
 
               {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
               <Route path="/summary" element={<VanillaPage pageId="summary" />} />
-              <Route path="/ai" element={<VanillaPage pageId="ai" />} />
-              <Route path="/cloud" element={<VanillaPage pageId="cloud" />} />
               <Route path="/privacy" element={<VanillaPage pageId="privacy" />} />
               <Route path="/content" element={<VanillaPage pageId="family" />} />
               <Route path="/family" element={<VanillaPage pageId="family" />} />
