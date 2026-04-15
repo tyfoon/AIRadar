@@ -7914,6 +7914,13 @@ function _filterIpsTable() {
   });
 }
 window._filterIpsTable = _filterIpsTable;
+// React IpsPage delegates alert-card rendering + reputation lookups to vanilla
+// so the deep closures over _ipsInboundAlerts / _reputationCache stay intact.
+window._renderAlertCard = _renderAlertCard;
+window._fetchReputationBulk = _fetchReputationBulk;
+window.renderBeaconAlerts = renderBeaconAlerts;
+window.renderSecurityStats = renderSecurityStats;
+window._renderIpsThreats = _renderIpsThreats;
 
 async function _deleteInboundAttack(idx) {
   const a = _ipsInboundAlerts[idx]; if (!a) return;

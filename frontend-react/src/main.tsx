@@ -13,6 +13,7 @@ import CloudPage from './category/CloudPage';
 import PrivacyPage from './privacy/PrivacyPage';
 import ContentPage from './content/ContentPage';
 import SummaryPage from './summary/SummaryPage';
+import IpsPage from './ips/IpsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,9 +55,9 @@ waitForElement('react-app-root', (el) => {
               <Route path="/other" element={<ContentPage />} />
 
               <Route path="/summary" element={<SummaryPage />} />
+              <Route path="/ips" element={<IpsPage />} />
 
               {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
-              <Route path="/ips" element={<VanillaPage pageId="ips" />} />
               <Route path="/rules" element={<VanillaPage pageId="rules" />} />
               <Route path="/settings" element={<VanillaPage pageId="settings" />} />
               <Route path="/settings/:tab" element={<VanillaPage pageId="settings" />} />

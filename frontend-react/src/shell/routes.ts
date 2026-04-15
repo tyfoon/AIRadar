@@ -22,7 +22,7 @@ export const ROUTES: RouteConfig[] = [
   { path: 'content',   pageId: 'family',    icon: 'ph-squares-four',           labelKey: 'nav.family',    label: 'Content',       group: 'monitor', type: 'react' },
   { path: 'geo',       pageId: 'geo',       icon: 'ph-globe-hemisphere-west',  labelKey: 'nav.geo',       label: 'Geo Traffic',   group: 'monitor', type: 'react' },
   // Protect
-  { path: 'ips',       pageId: 'ips',       icon: 'ph-warning-octagon',        labelKey: 'nav.attacks',   label: 'Attacks',       group: 'protect', type: 'vanilla', badgeId: 'ips' },
+  { path: 'ips',       pageId: 'ips',       icon: 'ph-warning-octagon',        labelKey: 'nav.attacks',   label: 'Attacks',       group: 'protect', type: 'react',   badgeId: 'ips' },
   { path: 'rules',     pageId: 'rules',     icon: 'ph-faders',                 labelKey: 'nav.rules',     label: 'Rules',         group: 'protect', type: 'vanilla' },
   // Manage
   { path: 'devices',   pageId: 'devices',   icon: 'ph-devices',                labelKey: 'nav.devices',   label: 'Devices',       group: 'manage',  type: 'react' },
