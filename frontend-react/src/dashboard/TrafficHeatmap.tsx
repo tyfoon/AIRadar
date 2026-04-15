@@ -71,14 +71,14 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
   const { grid, devices, maxVal } = processed;
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Compact layout
-  const cellW = 18;
-  const cellH = 11;
+  // Ultra-compact layout
+  const cellW = 14;
+  const cellH = 8;
   const gap = 1;
-  const padLeft = 100;
-  const padTop = 2;
-  const svgW = padLeft + 24 * (cellW + gap) + 10;
-  const svgH = padTop + devices.length * (cellH + gap) + 14;
+  const padLeft = 72;
+  const padTop = 1;
+  const svgW = padLeft + 24 * (cellW + gap) + 4;
+  const svgH = padTop + devices.length * (cellH + gap) + 10;
 
   function getColor(cell: HeatmapCell | undefined): string {
     if (!cell || cell.hits === 0) return isDark ? 'rgba(148,163,184,0.06)' : 'rgba(148,163,184,0.08)';
@@ -115,11 +115,11 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
           viewBox={`0 0 ${svgW} ${svgH}`}
           preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ minWidth: 480 }}
+          style={{ minWidth: 380 }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
-            const label = dev.name.length > 14 ? dev.name.slice(0, 13) + '…' : dev.name;
+            const label = dev.name.length > 11 ? dev.name.slice(0, 10) + '…' : dev.name;
             return (
               <g key={dev.ip}>
                 <text
@@ -128,7 +128,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                   textAnchor="end"
                   dominantBaseline="central"
                   fill={isDark ? 'rgba(148,163,184,0.7)' : 'rgba(71,85,105,0.8)'}
-                  fontSize={8}
+                  fontSize={6.5}
                   fontFamily="Inter, system-ui, sans-serif"
                 >
                   {label}
@@ -175,10 +175,10 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
             <text
               key={h}
               x={padLeft + h * (cellW + gap) + cellW / 2}
-              y={padTop + devices.length * (cellH + gap) + 9}
+              y={padTop + devices.length * (cellH + gap) + 7}
               textAnchor="middle"
               fill={isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.6)'}
-              fontSize={7}
+              fontSize={6}
               fontFamily="Inter, system-ui, sans-serif"
             >
               {h % 3 === 0 ? `${h}:00` : ''}
