@@ -10,6 +10,7 @@ import IotOverview from './iot/IotOverview';
 import DevicesPage from './devices/DevicesPage';
 import AiPage from './category/AiPage';
 import CloudPage from './category/CloudPage';
+import PrivacyPage from './privacy/PrivacyPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,10 +45,10 @@ waitForElement('react-app-root', (el) => {
               <Route path="/iot" element={<IotOverview />} />
               <Route path="/ai" element={<AiPage />} />
               <Route path="/cloud" element={<CloudPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
 
               {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
               <Route path="/summary" element={<VanillaPage pageId="summary" />} />
-              <Route path="/privacy" element={<VanillaPage pageId="privacy" />} />
               <Route path="/content" element={<VanillaPage pageId="family" />} />
               <Route path="/family" element={<VanillaPage pageId="family" />} />
               <Route path="/other" element={<VanillaPage pageId="family" />} />

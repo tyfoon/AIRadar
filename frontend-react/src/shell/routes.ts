@@ -17,7 +17,7 @@ export const ROUTES: RouteConfig[] = [
   { path: 'dashboard', pageId: 'dashboard', icon: 'ph-squares-four',           labelKey: 'nav.dashboard', label: 'Dashboard',     group: 'monitor', type: 'react' },
   { path: 'ai',        pageId: 'ai',        icon: 'ph-brain',                  labelKey: 'nav.ai',        label: 'AI Radar',      group: 'monitor', type: 'react' },
   { path: 'cloud',     pageId: 'cloud',     icon: 'ph-cloud',                  labelKey: 'nav.cloud',     label: 'Cloud Storage', group: 'monitor', type: 'react' },
-  { path: 'privacy',   pageId: 'privacy',   icon: 'ph-shield-check',           labelKey: 'nav.privacy',   label: 'Privacy',       group: 'monitor', type: 'vanilla' },
+  { path: 'privacy',   pageId: 'privacy',   icon: 'ph-shield-check',           labelKey: 'nav.privacy',   label: 'Privacy',       group: 'monitor', type: 'react' },
   { path: 'iot',       pageId: 'iot',       icon: 'ph-cpu',                    labelKey: 'nav.iot',        label: 'IoT Overview',  group: 'monitor', type: 'react' },
   { path: 'content',   pageId: 'family',    icon: 'ph-squares-four',           labelKey: 'nav.family',    label: 'Content',       group: 'monitor', type: 'vanilla' },
   { path: 'geo',       pageId: 'geo',       icon: 'ph-globe-hemisphere-west',  labelKey: 'nav.geo',       label: 'Geo Traffic',   group: 'monitor', type: 'react' },
