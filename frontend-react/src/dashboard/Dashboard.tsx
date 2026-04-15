@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -484,7 +484,7 @@ function IotFleetRow({ devices }: { devices: FleetDevice[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Sankey Flow — Pure SVG with gradient flows and hover effects
+// Sankey Flow — @nivo/sankey (responsive, mobile-friendly)
 // ---------------------------------------------------------------------------
 const CAT_COLORS: Record<string, string> = {
   AI: '#6366f1', Cloud: '#3b82f6', Streaming: '#e50914', Gaming: '#10b981',
@@ -492,26 +492,26 @@ const CAT_COLORS: Record<string, string> = {
   Adult: '#64748b', Communication: '#0ea5e9',
 };
 
-interface SankeyNode { name: string; isDevice: boolean; value: number; y: number; h: number }
-interface SankeyLink { source: string; target: string; raw: number; value: number; sy: number; ty: number; sh: number; th: number }
-
 function SankeyFlow({ events }: { events: DashEvent[] }) {
   const [modeHits, setModeHits] = useState(false);
   const [excludeTop, setExcludeTop] = useState(false);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(800);
+  const [isMobile, setIsMobile] = useState(false);
+  // Lazy-load @nivo/sankey to avoid SSR issues and keep initial bundle lean
+  const [SankeyComponent, setSankeyComponent] = useState<any>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const measure = () => { if (containerRef.current) setWidth(containerRef.current.clientWidth); };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
+    import('@nivo/sankey').then(mod => setSankeyComponent(() => mod.ResponsiveSankey));
   }, []);
 
-  const layout = useMemo(() => {
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  const sankeyData = useMemo(() => {
     if (!events.length) return null;
 
     const metric = modeHits ? () => 1 : (e: DashEvent) => (e.bytes_transferred || 1);
@@ -540,92 +540,53 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
       cFlows[cat] = (cFlows[cat] || 0) + val;
     });
 
-    const top8 = new Set(Object.entries(dFlows).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([d]) => d));
-    const devList = [...top8].sort((a, b) => (dFlows[b] || 0) - (dFlows[a] || 0));
-    const catList = Object.entries(cFlows).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    const maxDevices = isMobile ? 5 : 8;
+    const topN = new Set(Object.entries(dFlows).sort((a, b) => b[1] - a[1]).slice(0, maxDevices).map(([d]) => d));
 
-    // Compact height — reduced for dashboard overview
-    const H = Math.max(150, Math.max(devList.length, catList.length) * 24);
-    const nodeW = 10;
-    const padL = 4;
-    const padR = 4;
-    const gap = 3;
+    // Build nivo nodes and links
+    const nodeIds = new Set<string>();
+    const links: { source: string; target: string; value: number; startColor?: string; endColor?: string }[] = [];
 
-    const totalDevVal = devList.reduce((s, d) => s + Math.sqrt(dFlows[d] || 0), 0);
-    const devAvailH = H - gap * (devList.length - 1);
-    let dy = 0;
-    const devNodes: SankeyNode[] = devList.map(d => {
-      const h = Math.max(8, (Math.sqrt(dFlows[d] || 0) / totalDevVal) * devAvailH);
-      const node: SankeyNode = { name: d, isDevice: true, value: dFlows[d] || 0, y: dy, h };
-      dy += h + gap;
-      return node;
-    });
-
-    const totalCatVal = catList.reduce((s, c) => s + Math.sqrt(cFlows[c] || 0), 0);
-    const catAvailH = H - gap * (catList.length - 1);
-    let cy = 0;
-    const catNodes: SankeyNode[] = catList.map(c => {
-      const h = Math.max(8, (Math.sqrt(cFlows[c] || 0) / totalCatVal) * catAvailH);
-      const node: SankeyNode = { name: c, isDevice: false, value: cFlows[c] || 0, y: cy, h };
-      cy += h + gap;
-      return node;
-    });
-
-    const devUsed: Record<string, number> = {};
-    const catUsed: Record<string, number> = {};
-    const links: SankeyLink[] = [];
-
-    devList.forEach(dev => {
-      const devFlowsForDev = Object.entries(flowMap)
-        .filter(([k]) => k.startsWith(dev + '\0') && top8.has(dev))
-        .sort((a, b) => b[1] - a[1]);
-
-      const dn = devNodes.find(n => n.name === dev)!;
-      const devTotal = Math.sqrt(dFlows[dev] || 0);
-
-      devFlowsForDev.forEach(([key, raw]) => {
-        const cat = key.split('\0')[1];
-        const cn = catNodes.find(n => n.name === cat);
-        if (!cn) return;
-
-        const scaledVal = Math.sqrt(raw);
-        const sh = (scaledVal / devTotal) * dn.h;
-        const catTotal = Math.sqrt(cFlows[cat] || 0);
-        const th = (scaledVal / catTotal) * cn.h;
-
-        const sy = dn.y + (devUsed[dev] || 0);
-        const ty = cn.y + (catUsed[cat] || 0);
-        devUsed[dev] = (devUsed[dev] || 0) + sh;
-        catUsed[cat] = (catUsed[cat] || 0) + th;
-
-        links.push({ source: dev, target: cat, raw, value: scaledVal, sy, ty, sh, th });
+    Object.entries(flowMap).forEach(([key, val]) => {
+      const [dev, cat] = key.split('\0');
+      if (!topN.has(dev)) return;
+      const devId = `dev_${dev}`;
+      const catId = `cat_${cat}`;
+      nodeIds.add(devId);
+      nodeIds.add(catId);
+      links.push({
+        source: devId,
+        target: catId,
+        value: Math.max(1, Math.round(Math.sqrt(val))),
+        startColor: '#3b82f6',
+        endColor: CAT_COLORS[cat] || '#6366f1',
       });
     });
 
-    return { devNodes, catNodes, links, topDevName: topDevNameVal, height: H, nodeW, padL, padR, modeHits, dFlows, cFlows };
-  }, [events, modeHits, excludeTop]);
+    const nodes = [...nodeIds].map(id => ({ id }));
 
-  if (!layout || !events.length) return null;
+    return { data: { nodes, links }, topDevName: topDevNameVal };
+  }, [events, modeHits, excludeTop, isMobile]);
 
-  const { devNodes, catNodes, links, topDevName, height, nodeW, padL, padR, dFlows, cFlows } = layout;
-  const labelW = 100;
-  const svgW = width;
-  const leftX = padL + labelW;
-  const rightX = svgW - padR - labelW - nodeW;
-  const svgH = height + 10;
+  if (!sankeyData || !events.length) return null;
+
+  const isDark = document.documentElement.classList.contains('dark');
+  const nodeCount = sankeyData.data.nodes.length;
+  const chartHeight = Math.max(200, nodeCount * 22);
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
           <i className="ph-duotone ph-flow-arrow text-blue-500" /> Network Flow
         </h3>
         <div className="flex items-center gap-3">
-          {topDevName && (
+          {sankeyData.topDevName && (
             <label className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 cursor-pointer">
               <input type="checkbox" checked={excludeTop} onChange={e => setExcludeTop(e.target.checked)}
                 className="rounded border-slate-300 dark:border-slate-600 text-blue-600" />
-              Exclude {topDevName}
+              <span className="hidden sm:inline">Exclude {sankeyData.topDevName}</span>
+              <span className="sm:hidden">Excl. top</span>
             </label>
           )}
           <button onClick={() => setModeHits(!modeHits)}
@@ -634,104 +595,101 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
           </button>
         </div>
       </div>
-      <div ref={containerRef} style={{ width: '100%' }}>
-        <svg width={svgW} height={svgH} className="overflow-visible">
-          <defs>
-            {links.map((l, i) => {
-              const srcColor = '#3b82f6';
-              const tgtColor = CAT_COLORS[l.target] || '#6366f1';
-              return (
-                <linearGradient key={`lg-${i}`} id={`sankey-g-${i}`} x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor={srcColor} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={tgtColor} stopOpacity={0.5} />
-                </linearGradient>
-              );
-            })}
-          </defs>
-
-          {links.map((l, i) => {
-            const x0 = leftX + nodeW;
-            const x1 = rightX;
-            const midX = (x0 + x1) / 2;
-            const y0s = l.sy + 5;
-            const y0e = l.sy + l.sh + 5;
-            const y1s = l.ty + 5;
-            const y1e = l.ty + l.th + 5;
-            const isHigh = hovered === l.source || hovered === l.target;
-            const isDim = hovered && !isHigh;
-            const d = `M${x0},${y0s} C${midX},${y0s} ${midX},${y1s} ${x1},${y1s} L${x1},${y1e} C${midX},${y1e} ${midX},${y0e} ${x0},${y0e} Z`;
-            return (
-              <path key={`link-${i}`} d={d} fill={`url(#sankey-g-${i})`}
-                opacity={isDim ? 0.08 : isHigh ? 0.6 : 0.25}
-                className="transition-opacity duration-200"
-                onMouseEnter={() => setHovered(l.source)}
-                onMouseLeave={() => setHovered(null)}>
-                <title>{`${l.source} → ${l.target}: ${modeHits ? l.raw.toLocaleString() + ' hits' : formatBytes(l.raw)}`}</title>
-              </path>
-            );
-          })}
-
-          {devNodes.map(n => {
-            const isHigh = hovered === n.name;
-            const isDim = hovered && !isHigh && !links.some(l => l.source === n.name && l.target === hovered);
-            return (
-              <g key={`dn-${n.name}`}
-                onMouseEnter={() => setHovered(n.name)}
-                onMouseLeave={() => setHovered(null)}
-                className="cursor-pointer"
-              >
-                <rect x={leftX} y={n.y + 5} width={nodeW} height={n.h} rx={3}
-                  fill="#3b82f6"
-                  opacity={isDim ? 0.3 : 1}
-                  className="transition-opacity duration-200" />
-                <text x={leftX - 6} y={n.y + 5 + n.h / 2} textAnchor="end" dominantBaseline="central"
-                  className="text-[10px] fill-slate-600 dark:fill-slate-300 font-medium"
-                  style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
-                  opacity={isDim ? 0.4 : 1}>
-                  {n.name.length > 16 ? n.name.slice(0, 15) + '…' : n.name}
-                </text>
-                {isHigh && (
-                  <text x={leftX - 6} y={n.y + 5 + n.h / 2 + 12} textAnchor="end" dominantBaseline="central"
-                    className="text-[9px] fill-slate-400"
-                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-                    {modeHits ? `${(dFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(dFlows[n.name] || 0)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {catNodes.map(n => {
-            const color = CAT_COLORS[n.name] || '#6366f1';
-            const isHigh = hovered === n.name;
-            const isDim = hovered && !isHigh && !links.some(l => l.target === n.name && l.source === hovered);
-            return (
-              <g key={`cn-${n.name}`}
-                onMouseEnter={() => setHovered(n.name)}
-                onMouseLeave={() => setHovered(null)}
-                className="cursor-pointer"
-              >
-                <rect x={rightX} y={n.y + 5} width={nodeW} height={n.h} rx={3}
-                  fill={color}
-                  opacity={isDim ? 0.3 : 1}
-                  className="transition-opacity duration-200" />
-                <text x={rightX + nodeW + 6} y={n.y + 5 + n.h / 2} dominantBaseline="central"
-                  className="text-[10px] fill-slate-600 dark:fill-slate-300 font-medium"
-                  style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
-                  opacity={isDim ? 0.4 : 1}>
-                  {n.name}
-                </text>
-                {isHigh && (
-                  <text x={rightX + nodeW + 6} y={n.y + 5 + n.h / 2 + 12} dominantBaseline="central"
-                    className="text-[9px] fill-slate-400"
-                    style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-                    {modeHits ? `${(cFlows[n.name] || 0).toLocaleString()} hits` : formatBytes(cFlows[n.name] || 0)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+      <div style={{ height: chartHeight }}>
+        {SankeyComponent ? (
+          <SankeyComponent
+            data={sankeyData.data}
+            margin={isMobile
+              ? { top: 4, right: 80, bottom: 4, left: 80 }
+              : { top: 4, right: 120, bottom: 4, left: 120 }
+            }
+            align="justify"
+            sort="descending"
+            colors={(node: any) => {
+              const id = node.id as string;
+              if (id.startsWith('dev_')) return '#3b82f6';
+              const cat = id.replace('cat_', '');
+              return CAT_COLORS[cat] || '#6366f1';
+            }}
+            nodeOpacity={1}
+            nodeHoverOpacity={1}
+            nodeHoverOthersOpacity={0.3}
+            nodeThickness={10}
+            nodeSpacing={isMobile ? 4 : 6}
+            nodeInnerPadding={0}
+            nodeBorderWidth={0}
+            nodeBorderRadius={3}
+            linkOpacity={0.3}
+            linkHoverOpacity={0.6}
+            linkHoverOthersOpacity={0.08}
+            linkContract={1}
+            enableLinkGradient={true}
+            enableLabels={true}
+            label={(node: any) => {
+              const id = node.id as string;
+              const name = id.startsWith('dev_') ? id.slice(4) : id.slice(4);
+              if (isMobile && name.length > 10) return name.slice(0, 9) + '…';
+              if (name.length > 18) return name.slice(0, 17) + '…';
+              return name;
+            }}
+            labelPosition="outside"
+            labelPadding={isMobile ? 4 : 8}
+            labelOrientation="horizontal"
+            labelTextColor={isDark ? '#cbd5e1' : '#475569'}
+            animate={true}
+            motionConfig="gentle"
+            theme={{
+              text: {
+                fontSize: isMobile ? 9 : 11,
+                fontFamily: 'Inter, system-ui, sans-serif',
+              },
+              tooltip: {
+                container: {
+                  background: isDark ? '#1e293b' : '#fff',
+                  color: isDark ? '#e2e8f0' : '#334155',
+                  fontSize: 12,
+                  borderRadius: 8,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+              },
+            }}
+            nodeTooltip={({ node }: any) => (
+              <div style={{
+                padding: '6px 10px',
+                background: isDark ? '#1e293b' : '#fff',
+                borderRadius: 8,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                fontSize: 12,
+                color: isDark ? '#e2e8f0' : '#334155',
+              }}>
+                <strong>{(node.id as string).replace(/^(dev_|cat_)/, '')}</strong>
+                <br />
+                {modeHits
+                  ? `${node.value.toLocaleString()} hits`
+                  : formatBytes(node.value * node.value)}
+              </div>
+            )}
+            linkTooltip={({ link }: any) => (
+              <div style={{
+                padding: '6px 10px',
+                background: isDark ? '#1e293b' : '#fff',
+                borderRadius: 8,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                fontSize: 12,
+                color: isDark ? '#e2e8f0' : '#334155',
+              }}>
+                {(link.source.id as string).replace('dev_', '')} → {(link.target.id as string).replace('cat_', '')}
+                <br />
+                <strong>{modeHits
+                  ? `${link.value.toLocaleString()} hits`
+                  : formatBytes(link.value * link.value)
+                }</strong>
+              </div>
+            )}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-xs text-slate-400">Loading chart…</div>
+        )}
       </div>
     </div>
   );
