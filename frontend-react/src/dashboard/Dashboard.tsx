@@ -623,6 +623,7 @@ function SankeyFlow({ events }: { events: DashEvent[] }) {
             linkHoverOpacity={0.6}
             linkHoverOthersOpacity={0.08}
             linkContract={1}
+            linkBlendMode="normal"
             enableLinkGradient={true}
             enableLabels={true}
             label={(node: any) => {
