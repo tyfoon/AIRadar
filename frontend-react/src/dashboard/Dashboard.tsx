@@ -15,6 +15,7 @@ import GeoMap from '../geo/GeoMap';
 import { fetchGeoTraffic } from '../geo/api';
 import { FleetCard } from '../iot/FleetCard';
 import type { FleetDevice } from '../iot/types';
+import NetworkGraph3D from './NetworkGraph3D';
 
 // ---------------------------------------------------------------------------
 // Dashboard — System Overview
@@ -127,6 +128,9 @@ export default function Dashboard() {
 
       {/* ── Sankey — full width, compact ── */}
       <SankeyFlow events={events.data ?? []} />
+
+      {/* ── 3D Network Constellation ── */}
+      <NetworkGraph3D events={events.data ?? []} />
 
       {/* ── Bottom Grid: IPS + Privacy + Network Perf ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
