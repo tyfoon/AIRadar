@@ -89,7 +89,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
   const cellW = 8;
   const cellH = 5;
   const gap = 1;
-  const padLeft = 58;
+  const padLeft = 50;
   const padRight = 2;
   const padTop = 1;
   const svgW = padLeft + 24 * (cellW + gap) + padRight;
@@ -157,11 +157,11 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
           viewBox={`0 0 ${svgW} ${svgH}`}
           preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ width: '100%' }}
+          style={{ width: '70%' }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
-            const label = dev.name.length > 14 ? dev.name.slice(0, 13) + '…' : dev.name;
+            const label = dev.name.length > 12 ? dev.name.slice(0, 11) + '…' : dev.name;
             return (
               <g key={dev.ip}>
                 <text
