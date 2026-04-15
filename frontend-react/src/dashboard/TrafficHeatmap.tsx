@@ -29,7 +29,7 @@ function buildHeatmap(events: DashEvent[]) {
 
   const topDevs = Object.entries(devTotals)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
+    .slice(0, 20)
     .map(([d]) => d);
   const topDevSet = new Set(topDevs);
 
@@ -63,19 +63,17 @@ function buildHeatmap(events: DashEvent[]) {
     }
   });
 
-  // Find max bytes for intensity scaling
-  let maxBytes = 0;
-  Object.values(grid).forEach(c => { if (c.bytes > maxBytes) maxBytes = c.bytes; });
+  // Compute intensity metric per cell: use hits (every event counts equally)
+  // Bytes have extreme outliers (e.g. 14GB vs 176KB median) that make the
+  // heatmap useless. Hits give a much better distribution.
+  const allVals = Object.values(grid).map(c => c.hits).filter(v => v > 0).sort((a, b) => a - b);
+  if (allVals.length === 0) return null;
 
-  // If no bytes at all, fall back to hits for intensity
-  const useHits = maxBytes === 0;
-  let maxVal = maxBytes;
-  if (useHits) {
-    Object.values(grid).forEach(c => { if (c.hits > maxVal) maxVal = c.hits; });
-  }
-  if (maxVal === 0) return null;
+  // Cap at P95 so outliers don't wash out everything
+  const p95Idx = Math.min(allVals.length - 1, Math.floor(allVals.length * 0.95));
+  const maxVal = Math.max(1, allVals[p95Idx]);
 
-  return { grid, devices: topDevs, maxVal, useHits };
+  return { grid, devices: topDevs, maxVal };
 }
 
 export default function TrafficHeatmap({ events }: { events: DashEvent[] }) {
@@ -85,9 +83,9 @@ export default function TrafficHeatmap({ events }: { events: DashEvent[] }) {
 
   if (!data) return null;
 
-  const { grid, devices, maxVal, useHits } = data;
+  const { grid, devices, maxVal } = data;
 
-  // Layout
+  // Layout — 20 devices
   const cellW = 20;
   const cellH = 22;
   const gap = 2;
@@ -98,9 +96,8 @@ export default function TrafficHeatmap({ events }: { events: DashEvent[] }) {
 
   // Color intensity — uses category color with varying brightness
   function cellColor(cell: HeatCell | undefined): string {
-    if (!cell || (cell.bytes === 0 && cell.hits === 0)) return 'rgba(148,163,184,0.06)';
-    const val = useHits ? cell.hits : cell.bytes;
-    const t = Math.sqrt(val / maxVal); // 0–1, sqrt for better distribution
+    if (!cell || cell.hits === 0) return 'rgba(148,163,184,0.06)';
+    const t = Math.min(1, Math.sqrt(cell.hits / maxVal)); // capped at 1, sqrt for distribution
     const base = categoryColor(cell.dominantCategory);
     // Parse hex to RGB and interpolate with dark background
     const r = parseInt(base.slice(1, 3), 16);
@@ -114,9 +111,8 @@ export default function TrafficHeatmap({ events }: { events: DashEvent[] }) {
   }
 
   function cellColorLight(cell: HeatCell | undefined): string {
-    if (!cell || (cell.bytes === 0 && cell.hits === 0)) return 'rgba(148,163,184,0.08)';
-    const val = useHits ? cell.hits : cell.bytes;
-    const t = Math.sqrt(val / maxVal);
+    if (!cell || cell.hits === 0) return 'rgba(148,163,184,0.08)';
+    const t = Math.min(1, Math.sqrt(cell.hits / maxVal));
     const base = categoryColor(cell.dominantCategory);
     const r = parseInt(base.slice(1, 3), 16);
     const g = parseInt(base.slice(3, 5), 16);
@@ -194,7 +190,7 @@ export default function TrafficHeatmap({ events }: { events: DashEvent[] }) {
                         (e.target as SVGRectElement).style.stroke = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.3)';
                         const rect = (e.target as SVGRectElement).getBoundingClientRect();
                         const val = cell
-                          ? (cell.bytes > 0 ? formatBytes(cell.bytes) : `${cell.hits} hits`)
+                          ? `${cell.hits} hits` + (cell.bytes > 0 ? ` · ${formatBytes(cell.bytes)}` : '')
                           : 'No activity';
                         const cat = cell?.dominantCategory ? ` · ${categoryName(cell.dominantCategory)}` : '';
                         setTip({
