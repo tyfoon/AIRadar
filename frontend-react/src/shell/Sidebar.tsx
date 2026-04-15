@@ -52,7 +52,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-full bg-white dark:bg-[#0f1117] border-r border-slate-200 dark:border-white/[0.04] z-40 flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'} ${mobileOpen ? 'mobile-open' : ''}`}
+        className={`fixed left-0 top-0 h-full bg-white dark:bg-[#0f1117] border-r border-slate-200 dark:border-white/[0.04] z-40 hidden md:flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'} ${mobileOpen ? 'mobile-open' : ''}`}
         style={{ width: collapsed ? 64 : 240 }}
       >
         {/* Logo — h-14 (was h-16) to reclaim 8px for the nav list */}

@@ -128,7 +128,7 @@ export default function AppShell() {
       )}
 
       {/* Header — always rendered by React */}
-      <div style={{ marginLeft }} className="transition-all duration-300">
+      <div className="transition-all duration-300 desktop-margin">
         <Header onToggleMobileSidebar={toggleMobileSidebar} />
       </div>
 
@@ -136,16 +136,21 @@ export default function AppShell() {
           The guard stays as a safety net in case a future route is added
           before its React component is wired. */}
       {isReactPage && (
-        <div
-          className="transition-all duration-300 min-h-screen pb-16 md:pb-0"
-          style={{ marginLeft }}
-        >
+        <div className="transition-all duration-300 min-h-screen pb-16 md:pb-0 desktop-margin">
           <main className="p-4 sm:p-6 max-w-[1600px] mx-auto">
             <Outlet />
           </main>
         </div>
       )}
       {!isReactPage && <Outlet />}
+
+      {/* Inject responsive margin — 0 on mobile, sidebar width on desktop */}
+      <style>{`
+        .desktop-margin { margin-left: 0; }
+        @media (min-width: 768px) {
+          .desktop-margin { margin-left: ${marginLeft}px; }
+        }
+      `}</style>
     </>
   );
 }
