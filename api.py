@@ -9520,31 +9520,39 @@ def get_device_destination_history(
     """
     cutoff = _utc_now_naive() - timedelta(hours=hours)
 
-    # Get per-destination-per-hour aggregations from geo_conversations
+    # Get per-destination-per-hour aggregations from geo_conversations,
+    # joined with IpMetadata for human-readable labels (asn_org, ptr).
     bucket = func.strftime('%H', GeoConversation.last_seen).label("hour_of_day")
 
     rows = (
         db.query(
             GeoConversation.resp_ip,
             GeoConversation.ai_service,
+            IpMetadata.asn_org,
+            IpMetadata.ptr,
             bucket,
             func.sum(GeoConversation.orig_bytes + GeoConversation.resp_bytes).label("total_bytes"),
         )
+        .outerjoin(IpMetadata, IpMetadata.ip == GeoConversation.resp_ip)
         .filter(
             GeoConversation.mac_address == mac,
             GeoConversation.last_seen >= cutoff,
         )
-        .group_by(GeoConversation.resp_ip, GeoConversation.ai_service, bucket)
+        .group_by(GeoConversation.resp_ip, GeoConversation.ai_service,
+                   IpMetadata.asn_org, IpMetadata.ptr, bucket)
         .all()
     )
 
-    # Aggregate by destination label (prefer ai_service > asn_org > IP)
+    # Aggregate by destination label: ai_service > asn_org > ptr > IP
     from collections import defaultdict
     dest_hours: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
     dest_totals: dict[str, int] = defaultdict(int)
 
     for r in rows:
-        label = r.ai_service if r.ai_service and r.ai_service != "unknown" else r.resp_ip
+        svc = r.ai_service if r.ai_service and r.ai_service != "unknown" else None
+        asn = r.asn_org if r.asn_org else None
+        ptr = r.ptr if r.ptr else None
+        label = svc or asn or ptr or r.resp_ip
         h = int(r.hour_of_day)
         bytes_val = int(r.total_bytes or 0)
         dest_hours[label][h] += bytes_val
