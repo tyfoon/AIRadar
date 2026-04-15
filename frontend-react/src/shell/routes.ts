@@ -19,7 +19,7 @@ export const ROUTES: RouteConfig[] = [
   { path: 'cloud',     pageId: 'cloud',     icon: 'ph-cloud',                  labelKey: 'nav.cloud',     label: 'Cloud Storage', group: 'monitor', type: 'react' },
   { path: 'privacy',   pageId: 'privacy',   icon: 'ph-shield-check',           labelKey: 'nav.privacy',   label: 'Privacy',       group: 'monitor', type: 'react' },
   { path: 'iot',       pageId: 'iot',       icon: 'ph-cpu',                    labelKey: 'nav.iot',        label: 'IoT Overview',  group: 'monitor', type: 'react' },
-  { path: 'content',   pageId: 'family',    icon: 'ph-squares-four',           labelKey: 'nav.family',    label: 'Content',       group: 'monitor', type: 'vanilla' },
+  { path: 'content',   pageId: 'family',    icon: 'ph-squares-four',           labelKey: 'nav.family',    label: 'Content',       group: 'monitor', type: 'react' },
   { path: 'geo',       pageId: 'geo',       icon: 'ph-globe-hemisphere-west',  labelKey: 'nav.geo',       label: 'Geo Traffic',   group: 'monitor', type: 'react' },
   // Protect
   { path: 'ips',       pageId: 'ips',       icon: 'ph-warning-octagon',        labelKey: 'nav.attacks',   label: 'Attacks',       group: 'protect', type: 'vanilla', badgeId: 'ips' },
