@@ -12,8 +12,9 @@
   "dependencies": {
     "@nivo/core": "^0.99.0",
     "@nivo/sankey": "^0.99.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.0",
     "@tanstack/react-query": "^5.99.0",
-    "3d-force-graph": "^1.80.0",
     "d3-force": "^3.0.0",
     "d3-scale": "^4.0.2",
     "prop-types": "^15.8.1",
@@ -22,8 +23,7 @@
     "react-globe.gl": "^2.37.1",
     "react-router-dom": "^7.14.1",
     "react-simple-maps": "^3.0.0",
-    "recharts": "^3.8.1",
-    "three": "^0.183.2"
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
