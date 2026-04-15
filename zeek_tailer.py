@@ -79,6 +79,19 @@ VPN_PORTS: dict[tuple[str, int], str] = {
 # handshakes to the carrier. Real IPsec tunnels rapidly cross 500 KB.
 VPN_BYTE_THRESHOLD = 500_000  # 500 KB
 
+# ---------------------------------------------------------------------------
+# Infrastructure protocol detection — well-known low-level services
+# ---------------------------------------------------------------------------
+# These (proto, port) pairs identify harmless background protocols that an
+# IoT device or OS produces automatically.  When matched, the flow is
+# labelled with the given (service, category) instead of "unknown", so the
+# dashboard shows them as identified traffic.
+INFRA_PORTS: dict[tuple[str, int], tuple[str, str]] = {
+    ("udp", 123):  ("ntp", "infrastructure"),
+    ("udp", 5353): ("mdns", "infrastructure"),
+    ("udp", 1900): ("ssdp", "infrastructure"),
+}
+
 # Dedup VPN events per (src_ip, dest_port) — avoid flooding dashboard
 VPN_DEDUP_SECONDS = 300  # 5-minute window
 _vpn_last_seen: dict[tuple[str, int], float] = {}  # (src_ip, resp_port) → ts
@@ -801,7 +814,7 @@ _ASN_CATEGORY: dict[int, str] = {
     19679: "cloud",        # Dropbox
     14618: "cloud",        # Amazon (too broad for streaming)
     16509: "cloud",        # Amazon AWS
-    13335: "cloud",        # Cloudflare
+    13335: "infrastructure",  # Cloudflare (DNS/CDN infra)
     20940: "cloud",        # Akamai
     54113: "cloud",        # Fastly
     63949: "cloud",        # Akamai Technologies
@@ -3217,13 +3230,24 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # fall into the 'unknown' bucket.
                                 conv_mac = _normalize_mac(l2_mac) if l2_mac else None
                                 conv_svc = "unknown"
+                                conv_cat = None
+
+                                # --- Infrastructure protocol short-circuit ---
+                                # NTP, mDNS, SSDP etc. are identifiable by
+                                # port alone.  Label them immediately so they
+                                # don't pollute the "unknown" bucket and skip
+                                # the expensive DNS/nDPI/PTR fallback chain.
+                                infra = INFRA_PORTS.get((proto, resp_port))
+                                if infra:
+                                    conv_svc, conv_cat = infra
+
                                 # Day 2.4 per-client scoping: only accept
                                 # a label from (this device, this public
                                 # IP). If conv_mac is unknown, the label
                                 # stays "unknown" rather than inheriting
                                 # whatever service some OTHER device
                                 # happened to tag this IP with.
-                                if conv_mac:
+                                if conv_svc == "unknown" and conv_mac:
                                     svc_info = _known_ips.get((conv_mac, public_ip))
                                     if svc_info:
                                         conv_svc = svc_info[0] or "unknown"
@@ -3235,7 +3259,6 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # volumetric-upload path, but applied BEFORE
                                 # geo_conversation recording so the row gets
                                 # a service label instead of "unknown".
-                                conv_cat = None
                                 if conv_svc == "unknown" and conv_mac:
                                     dns_label = _label_flow_via_dns(
                                         src_ip, public_ip,

@@ -10,6 +10,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   news: '#06b6d4',
   adult: '#64748b',
   communication: '#0ea5e9',
+  infrastructure: '#78716c',
 };
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -23,6 +24,7 @@ const CATEGORY_NAMES: Record<string, string> = {
   news: 'News',
   adult: 'Adult',
   communication: 'Communication',
+  infrastructure: 'Infrastructure',
 };
 
 // Per-service distinct colors. Services within the same category get
