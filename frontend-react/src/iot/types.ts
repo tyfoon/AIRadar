@@ -91,4 +91,16 @@ export interface NetworkGraphResponse {
   edges: NetworkEdge[];
 }
 
+export interface DestinationHour {
+  dest: string;
+  hours: number[];       // 24 elements, bytes per hour-of-day
+  total_bytes: number;
+}
+
+export interface DestinationHistoryResponse {
+  mac_address: string;
+  hours: number;
+  destinations: DestinationHour[];
+}
+
 export type IotTab = 'anomalies' | 'fleet' | 'network';

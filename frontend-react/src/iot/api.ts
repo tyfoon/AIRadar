@@ -3,6 +3,7 @@ import type {
   AnomalyResponse,
   TrafficHistoryResponse,
   NetworkGraphResponse,
+  DestinationHistoryResponse,
 } from './types';
 
 export async function fetchFleet(): Promise<FleetResponse> {
@@ -33,6 +34,17 @@ export async function fetchNetworkGraph(
 ): Promise<NetworkGraphResponse> {
   const r = await fetch(`/api/network/graph?hours=${hours}`);
   if (!r.ok) throw new Error(`Network graph API ${r.status}`);
+  return r.json();
+}
+
+export async function fetchDestinationHistory(
+  mac: string,
+  hours = 24,
+): Promise<DestinationHistoryResponse> {
+  const r = await fetch(
+    `/api/iot/device/${encodeURIComponent(mac)}/destination-history?hours=${hours}`,
+  );
+  if (!r.ok) throw new Error(`Destination history API ${r.status}`);
   return r.json();
 }
 
