@@ -107,10 +107,12 @@ export default function AppShell() {
     return () => clearInterval(interval);
   }, []);
 
-  // Hide all vanilla page sections on route change
+  // When navigating to a React page, hide all vanilla page sections
   useEffect(() => {
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  }, [location.pathname]);
+    if (isReactPage) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    }
+  }, [location.pathname, isReactPage]);
 
   return (
     <>

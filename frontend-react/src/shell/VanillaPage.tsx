@@ -31,7 +31,8 @@ export default function VanillaPage({ pageId }: Props) {
   const params = useParams<{ tab?: string }>();
 
   useEffect(() => {
-    // Show this page's section
+    // Hide all pages first, then show this one
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     const el = document.getElementById(`page-${pageId}`);
     if (el) el.classList.add('active');
 
@@ -44,7 +45,6 @@ export default function VanillaPage({ pageId }: Props) {
     }
 
     return () => {
-      // Hide on unmount
       if (el) el.classList.remove('active');
     };
   }, [pageId, params.tab]);
