@@ -15,8 +15,8 @@ export const ROUTES: RouteConfig[] = [
   // Monitor
   { path: 'summary',   pageId: 'summary',   icon: 'ph-tray',                   labelKey: 'nav.summary',   label: 'Summary',       group: 'monitor', type: 'vanilla' },
   { path: 'dashboard', pageId: 'dashboard', icon: 'ph-squares-four',           labelKey: 'nav.dashboard', label: 'Dashboard',     group: 'monitor', type: 'react' },
-  { path: 'ai',        pageId: 'ai',        icon: 'ph-brain',                  labelKey: 'nav.ai',        label: 'AI Radar',      group: 'monitor', type: 'vanilla' },
-  { path: 'cloud',     pageId: 'cloud',     icon: 'ph-cloud',                  labelKey: 'nav.cloud',     label: 'Cloud Storage', group: 'monitor', type: 'vanilla' },
+  { path: 'ai',        pageId: 'ai',        icon: 'ph-brain',                  labelKey: 'nav.ai',        label: 'AI Radar',      group: 'monitor', type: 'react' },
+  { path: 'cloud',     pageId: 'cloud',     icon: 'ph-cloud',                  labelKey: 'nav.cloud',     label: 'Cloud Storage', group: 'monitor', type: 'react' },
   { path: 'privacy',   pageId: 'privacy',   icon: 'ph-shield-check',           labelKey: 'nav.privacy',   label: 'Privacy',       group: 'monitor', type: 'vanilla' },
   { path: 'iot',       pageId: 'iot',       icon: 'ph-cpu',                    labelKey: 'nav.iot',        label: 'IoT Overview',  group: 'monitor', type: 'react' },
   { path: 'content',   pageId: 'family',    icon: 'ph-squares-four',           labelKey: 'nav.family',    label: 'Content',       group: 'monitor', type: 'vanilla' },
