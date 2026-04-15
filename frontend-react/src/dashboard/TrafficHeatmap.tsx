@@ -120,47 +120,43 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-          <i className="ph-duotone ph-chart-bar text-indigo-500" /> Traffic Heatmap
-        </h3>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
-          {/* "All" button */}
+      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mb-1.5">
+        <i className="ph-duotone ph-chart-bar text-indigo-500" /> Traffic Heatmap
+      </h3>
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[10px] mb-2 relative z-10">
+        <button
+          onClick={() => setFilter(null)}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+            filter === null
+              ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: ALL_COLOR }} />
+          All
+        </button>
+        {visibleCats.map(cat => (
           <button
-            onClick={() => setFilter(null)}
+            key={cat}
+            onClick={() => setFilter(filter === cat ? null : cat)}
             className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-              filter === null
-                ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+              filter === cat
+                ? 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200'
                 : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
             }`}
           >
-            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: ALL_COLOR }} />
-            All
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: categoryColor(cat) }} />
+            {categoryName(cat)}
           </button>
-          {visibleCats.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setFilter(filter === cat ? null : cat)}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                filter === cat
-                  ? 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200'
-                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: categoryColor(cat) }} />
-              {categoryName(cat)}
-            </button>
-          ))}
-        </div>
+        ))}
       </div>
 
       <div className="relative overflow-x-auto">
         <svg
-          width="100%"
           viewBox={`0 0 ${svgW} ${svgH}`}
           preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ minWidth: 280 }}
+          style={{ width: '100%', maxWidth: svgW * 2.5 }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
