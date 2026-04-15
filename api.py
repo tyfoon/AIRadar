@@ -1587,13 +1587,12 @@ def events_heatmap(
         if ip not in top_dev_set:
             continue
         # Dominant category
-        dom_cat = max(data["catHits"], key=data["catHits"].get) if data["catHits"] else "other"
         cells.append({
             "ip": ip,
             "hour": int(hour),
             "hits": data["hits"],
             "bytes": data["bytes"],
-            "category": dom_cat,
+            "cats": data["catHits"],
         })
 
     return {"devices": top_dev_ips, "cells": cells}

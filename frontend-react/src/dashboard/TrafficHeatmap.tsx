@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { categoryColor, categoryName, formatBytes } from '../colors';
 
 // ---------------------------------------------------------------------------
-// Traffic Heatmap — devices (Y) × hours (X), color = category, brightness = hits
-// Uses server-side aggregation to avoid fetching 10k+ raw events.
+// Traffic Heatmap — devices (Y) × hours (X)
+// Default: all categories summed, teal color. Click category to filter.
 // ---------------------------------------------------------------------------
 
 interface HeatmapCell {
@@ -12,13 +12,17 @@ interface HeatmapCell {
   hour: number;
   hits: number;
   bytes: number;
-  category: string;
+  cats: Record<string, number>;  // category → hits
 }
 
 interface HeatmapResponse {
-  devices: string[];   // top 20 device IPs, sorted by total hits
+  devices: string[];
   cells: HeatmapCell[];
 }
+
+const ALL_COLOR = '#14b8a6'; // teal-500 — not used by any category
+
+const LEGEND_CATS = ['ai', 'cloud', 'streaming', 'tracking', 'social', 'gaming', 'infrastructure', 'communication'];
 
 async function fetchHeatmap(hours: number): Promise<HeatmapResponse> {
   const r = await fetch(`/api/events/heatmap?hours=${hours}`);
@@ -27,6 +31,7 @@ async function fetchHeatmap(hours: number): Promise<HeatmapResponse> {
 
 export default function TrafficHeatmap({ hours }: { hours: number }) {
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [filter, setFilter] = useState<string | null>(null); // null = all
 
   const { data, isLoading } = useQuery({
     queryKey: ['dash-heatmap', hours],
@@ -43,20 +48,29 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
       return ip;
     };
 
-    // Build lookup: "ip\0hour" → cell
     const grid: Record<string, HeatmapCell> = {};
     data.cells.forEach(c => { grid[`${c.ip}\0${c.hour}`] = c; });
 
-    // Map IPs to display names
     const devices = data.devices.map(ip => ({ ip, name: devName(ip) }));
 
-    // P95 cap for intensity
-    const allHits = data.cells.map(c => c.hits).sort((a, b) => a - b);
-    const p95Idx = Math.min(allHits.length - 1, Math.floor(allHits.length * 0.95));
-    const maxVal = Math.max(1, allHits[p95Idx]);
+    // Collect which categories actually exist in data
+    const seenCats = new Set<string>();
+    data.cells.forEach(c => { Object.keys(c.cats).forEach(cat => seenCats.add(cat)); });
 
-    return { grid, devices, maxVal };
+    return { grid, devices, seenCats };
   }, [data]);
+
+  // Compute maxVal based on filter
+  const maxVal = useMemo(() => {
+    if (!data) return 1;
+    const vals = data.cells.map(c => {
+      if (!filter) return c.hits;
+      return c.cats[filter] || 0;
+    }).filter(v => v > 0).sort((a, b) => a - b);
+    if (vals.length === 0) return 1;
+    const p95 = Math.min(vals.length - 1, Math.floor(vals.length * 0.95));
+    return Math.max(1, vals[p95]);
+  }, [data, filter]);
 
   if (isLoading) {
     return (
@@ -68,10 +82,10 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
 
   if (!processed) return null;
 
-  const { grid, devices, maxVal } = processed;
+  const { grid, devices, seenCats } = processed;
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Compact layout — narrow heatmap, generous device labels
+  // Layout
   const cellW = 8;
   const cellH = 5;
   const gap = 1;
@@ -81,10 +95,17 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
   const svgW = padLeft + 24 * (cellW + gap) + padRight;
   const svgH = padTop + devices.length * (cellH + gap) + 10;
 
+  function getCellValue(cell: HeatmapCell | undefined): number {
+    if (!cell) return 0;
+    if (!filter) return cell.hits;
+    return cell.cats[filter] || 0;
+  }
+
   function getColor(cell: HeatmapCell | undefined): string {
-    if (!cell || cell.hits === 0) return isDark ? 'rgba(148,163,184,0.06)' : 'rgba(148,163,184,0.08)';
-    const t = Math.min(1, Math.sqrt(cell.hits / maxVal));
-    const base = categoryColor(cell.category);
+    const val = getCellValue(cell);
+    if (val === 0) return isDark ? 'rgba(148,163,184,0.06)' : 'rgba(148,163,184,0.08)';
+    const t = Math.min(1, Math.sqrt(val / maxVal));
+    const base = filter ? categoryColor(filter) : ALL_COLOR;
     const r = parseInt(base.slice(1, 3), 16);
     const g = parseInt(base.slice(3, 5), 16);
     const b = parseInt(base.slice(5, 7), 16);
@@ -94,18 +115,41 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
     return `rgb(${Math.round(240 + t * (r - 240))},${Math.round(244 + t * (g - 244))},${Math.round(248 + t * (b - 248))})`;
   }
 
+  // Only show categories that exist in data
+  const visibleCats = LEGEND_CATS.filter(c => seenCats.has(c));
+
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
           <i className="ph-duotone ph-chart-bar text-indigo-500" /> Traffic Heatmap
         </h3>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-400">
-          {['ai', 'cloud', 'streaming', 'tracking', 'social', 'gaming'].map(cat => (
-            <span key={cat} className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+          {/* "All" button */}
+          <button
+            onClick={() => setFilter(null)}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+              filter === null
+                ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300'
+                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: ALL_COLOR }} />
+            All
+          </button>
+          {visibleCats.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setFilter(filter === cat ? null : cat)}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                filter === cat
+                  ? 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+            >
               <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: categoryColor(cat) }} />
               {categoryName(cat)}
-            </span>
+            </button>
           ))}
         </div>
       </div>
@@ -136,6 +180,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                 </text>
                 {Array.from({ length: 24 }, (_, hi) => {
                   const cell = grid[`${dev.ip}\0${hi}`];
+                  const val = getCellValue(cell);
                   return (
                     <rect
                       key={hi}
@@ -151,12 +196,10 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                         (e.target as SVGRectElement).style.stroke = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.3)';
                         (e.target as SVGRectElement).style.strokeWidth = '0.5';
                         const rect = (e.target as SVGRectElement).getBoundingClientRect();
-                        const val = cell
-                          ? `${cell.hits} hits` + (cell.bytes > 0 ? ` · ${formatBytes(cell.bytes)}` : '')
-                          : 'No activity';
-                        const cat = cell ? ` · ${categoryName(cell.category)}` : '';
+                        const valText = val > 0 ? `${val} hits` : 'No activity';
+                        const catText = filter ? ` · ${categoryName(filter)}` : '';
                         setTip({
-                          text: `${dev.name} @ ${hi}:00–${hi + 1}:00 — ${val}${cat}`,
+                          text: `${dev.name} @ ${hi}:00–${hi + 1}:00 — ${valText}${catText}`,
                           x: rect.x + rect.width / 2,
                           y: rect.y,
                         });
@@ -179,7 +222,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
               y={padTop + devices.length * (cellH + gap) + 7}
               textAnchor="middle"
               fill={isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.6)'}
-              fontSize={5}
+              fontSize={2.5}
               fontFamily="Inter, system-ui, sans-serif"
             >
               {h % 3 === 0 ? `${h}:00` : ''}
