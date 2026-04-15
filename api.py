@@ -9507,6 +9507,62 @@ def get_device_traffic_history(
     }
 
 
+@app.get("/api/iot/device/{mac}/destination-history")
+def get_device_destination_history(
+    mac: str,
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Per-destination hourly traffic for heatmap visualization.
+
+    Returns top destinations (by total bytes) with per-hour byte counts,
+    suitable for rendering a heatmap grid.
+    """
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
+
+    # Get per-destination-per-hour aggregations from geo_conversations
+    bucket = func.strftime('%H', GeoConversation.last_seen).label("hour_of_day")
+
+    rows = (
+        db.query(
+            GeoConversation.resp_ip,
+            GeoConversation.ai_service,
+            bucket,
+            func.sum(GeoConversation.orig_bytes + GeoConversation.resp_bytes).label("total_bytes"),
+        )
+        .filter(
+            GeoConversation.mac_address == mac,
+            GeoConversation.last_seen >= cutoff,
+        )
+        .group_by(GeoConversation.resp_ip, GeoConversation.ai_service, bucket)
+        .all()
+    )
+
+    # Aggregate by destination label (prefer ai_service > asn_org > IP)
+    from collections import defaultdict
+    dest_hours: dict[str, list[int]] = defaultdict(lambda: [0] * 24)
+    dest_totals: dict[str, int] = defaultdict(int)
+
+    for r in rows:
+        label = r.ai_service if r.ai_service and r.ai_service != "unknown" else r.resp_ip
+        h = int(r.hour_of_day)
+        bytes_val = int(r.total_bytes or 0)
+        dest_hours[label][h] += bytes_val
+        dest_totals[label] += bytes_val
+
+    # Sort by total bytes, take top 8
+    top_dests = sorted(dest_totals.keys(), key=lambda d: dest_totals[d], reverse=True)[:8]
+
+    return {
+        "mac_address": mac,
+        "hours": hours,
+        "destinations": [
+            {"dest": d, "hours": dest_hours[d], "total_bytes": dest_totals[d]}
+            for d in top_dests
+        ],
+    }
+
+
 # Volume spike checker — runs every 15 minutes
 VOLUME_SPIKE_CHECK_INTERVAL = 900
 VOLUME_SPIKE_DEDUP_SECONDS = 86400  # 24h — one alert per device per day
