@@ -115,27 +115,40 @@ const RADAR_DIMS = [
   { key: 'deviation',    short: 'ANO', label: 'Deviation' },
 ] as const;
 
+/** Health → colour mapping for radar/heatmap. */
+const HEALTH_COLOR: Record<string, { stroke: string; fill: string; dot: string }> = {
+  green: { stroke: '#10b981', fill: 'rgba(16,185,129,0.15)', dot: '#10b981' },
+  orange: { stroke: '#f59e0b', fill: 'rgba(245,158,11,0.15)', dot: '#f59e0b' },
+  red:    { stroke: '#ef4444', fill: 'rgba(239,68,68,0.15)',  dot: '#ef4444' },
+};
+
 /** Derive 0-100 radar dimensions from existing FleetDevice fields. */
 function computeRadar(d: FleetDevice): Record<string, number> {
-  // Volume: log scale, 0 = 0 bytes, 100 = 10 GB+
-  const vol = d.bytes_24h > 0 ? Math.min(100, (Math.log10(d.bytes_24h) / 10) * 100) : 0;
+  // Volume: log scale — 1 KB=20, 1 MB=40, 100 MB=60, 1 GB=70, 10 GB=85, 100 GB=100
+  const vol = d.bytes_24h > 0
+    ? Math.min(100, Math.max(5, (Math.log10(d.bytes_24h) - 3) / 8 * 100))
+    : 0;
 
-  // Frequency: hits normalised, 0 = 0, 100 = 10k+
-  const freq = Math.min(100, (d.hits_24h / 10000) * 100);
+  // Frequency: sqrt scale — 100 hits=10, 1k=32, 5k=71, 10k=100
+  const freq = Math.min(100, Math.sqrt(d.hits_24h / 10000) * 100);
 
-  // Regularity: inverse of deviation from baseline (high = regular)
+  // Regularity: how close to baseline (100 = exactly on baseline, 0 = 5x deviation)
   const ratio = d.baseline_avg_bytes_24h && d.baseline_avg_bytes_24h > 0
     ? d.bytes_24h / d.baseline_avg_bytes_24h : 1;
-  const reg = Math.max(0, 100 - Math.abs(ratio - 1) * 50);
+  const deviation = Math.abs(ratio - 1);  // 0 = perfect, 4.8 = 580%
+  const reg = Math.max(0, 100 - deviation * 25);
 
-  // Upload ratio: orig / total (high upload is unusual for most IoT)
+  // Upload ratio: direct percentage (0-100)
   const upRatio = d.bytes_24h > 0 ? (d.orig_bytes_24h / d.bytes_24h) * 100 : 0;
 
-  // Destinations: 0 = 0, 100 = 50+
-  const dests = Math.min(100, (d.destinations / 50) * 100);
+  // Destinations: sqrt scale — 5=45, 10=63, 25=100, 50+=100
+  const dests = Math.min(100, Math.sqrt(d.destinations / 25) * 100);
 
-  // Deviation: anomaly score, 0 = none, 100 = 5+
-  const dev = Math.min(100, (d.anomalies / 5) * 100);
+  // Deviation from normal: combines baseline deviation + anomaly count
+  // 580% baseline alone should score high, anomalies add more
+  const baselineDev = Math.min(50, deviation * 12);
+  const anomalyDev = Math.min(50, d.anomalies * 20);
+  const dev = Math.min(100, baselineDev + anomalyDev);
 
   return { volume: vol, frequency: freq, regularity: reg, uploadRatio: upRatio, destinations: dests, deviation: dev };
 }
@@ -146,9 +159,9 @@ export function RadarChart({ device, size = 120 }: { device: FleetDevice; size?:
   const n = RADAR_DIMS.length;
   const cx = size / 2, cy = size / 2, maxR = size / 2 - 18;
   const angleStep = (2 * Math.PI) / n;
-  const isRed = device.health === 'red';
-  const color = isRed ? '#ef4444' : '#3b82f6';
-  const fill = isRed ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)';
+  const hc = HEALTH_COLOR[device.health] || HEALTH_COLOR.green;
+  const color = hc.stroke;
+  const fill = hc.fill;
 
   // Grid rings
   const rings = [0.25, 0.5, 0.75, 1].map(r => {
@@ -211,7 +224,7 @@ export function RadarChart({ device, size = 120 }: { device: FleetDevice; size?:
 // ---------------------------------------------------------------------------
 // Heatmap — per-destination hourly traffic grid
 // ---------------------------------------------------------------------------
-export function Heatmap({ mac }: { mac: string }) {
+export function Heatmap({ mac, health = 'green' }: { mac: string; health?: string }) {
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['iot-heatmap', mac],
@@ -227,51 +240,47 @@ export function Heatmap({ mac }: { mac: string }) {
   if (dests.length === 0) {
     return (
       <div className="h-16 flex items-center justify-center text-[10px] text-slate-400">
-        No destination data yet
+        No destination data
       </div>
     );
   }
 
-  const cellW = 9, cellH = 12, padLeft = 58, gap = 2;
-  const svgW = padLeft + 24 * cellW + 4;
-  const svgH = dests.length * (cellH + gap) + 16;
+  // Compact cells: fit 24 hours in small space
+  const cellW = 6, cellH = 10, padLeft = 48, gap = 1;
+  const svgW = padLeft + 24 * cellW + 2;
+  const svgH = dests.length * (cellH + gap) + 14;
 
   // Max for colour scale
   const maxVal = Math.max(1, ...dests.flatMap(d => d.hours));
 
-  function intensity(v: number, health: boolean): string {
+  // Colour scale based on device health
+  const useWarm = health === 'red' || health === 'orange';
+  function intensity(v: number): string {
     const t = Math.sqrt(v / maxVal);
-    if (health) {
-      return `rgb(${Math.round(30 + t * 225)},${Math.round(20 + t * 30)},${Math.round(20 + t * 30)})`;
+    if (useWarm) {
+      return `rgb(${Math.round(30 + t * 225)},${Math.round(20 + t * 50)},${Math.round(10 + t * 20)})`;
     }
     return `rgb(${Math.round(15 + t * 30)},${Math.round(25 + t * 80)},${Math.round(60 + t * 196)})`;
   }
 
-  // Detect "suspicious" if any dest has very uneven distribution (high stddev)
-  const isSuspicious = dests.some(d => {
-    const mean = d.total_bytes / 24;
-    const variance = d.hours.reduce((s, v) => s + (v - mean) ** 2, 0) / 24;
-    return Math.sqrt(variance) > mean * 2 && d.total_bytes > 1_000_000;
-  });
-
   return (
-    <div className="relative overflow-x-auto">
-      <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="overflow-visible">
+    <div className="relative">
+      <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMinYMin meet" className="overflow-visible">
         {dests.map((dest, ri) => {
           const y = ri * (cellH + gap);
-          const label = dest.dest.length > 9 ? dest.dest.slice(0, 8) + '…' : dest.dest;
+          const label = dest.dest.length > 7 ? dest.dest.slice(0, 6) + '…' : dest.dest;
           return (
             <g key={dest.dest}>
-              <text x={padLeft - 4} y={y + cellH / 2} textAnchor="end" dominantBaseline="central"
-                className="fill-slate-500" fontSize={9}>{label}</text>
+              <text x={padLeft - 3} y={y + cellH / 2} textAnchor="end" dominantBaseline="central"
+                fill="rgba(148,163,184,0.6)" fontSize={7}>{label}</text>
               {dest.hours.map((val, hi) => (
                 <rect
                   key={hi}
                   x={padLeft + hi * cellW} y={y}
                   width={cellW - 1} height={cellH}
-                  rx={1.5} ry={1.5}
-                  fill={val > 0 ? intensity(val, isSuspicious) : 'rgba(255,255,255,0.02)'}
-                  className="cursor-pointer transition-opacity hover:opacity-80 hover:stroke-white hover:stroke-1"
+                  rx={1} ry={1}
+                  fill={val > 0 ? intensity(val) : 'rgba(255,255,255,0.02)'}
+                  className="cursor-pointer hover:stroke-white hover:[stroke-width:0.5]"
                   onMouseEnter={(e) => {
                     const rect = (e.target as SVGRectElement).getBoundingClientRect();
                     setTip({ text: `${dest.dest} @ ${hi}:00 — ${fmtBytes(val)}`, x: rect.x, y: rect.y });
@@ -283,9 +292,9 @@ export function Heatmap({ mac }: { mac: string }) {
           );
         })}
         {/* Hour labels */}
-        {[0, 3, 6, 9, 12, 15, 18, 21].map(h => (
-          <text key={h} x={padLeft + h * cellW + cellW / 2} y={dests.length * (cellH + gap) + 10}
-            textAnchor="middle" className="fill-slate-600" fontSize={8}>{h}h</text>
+        {[0, 6, 12, 18].map(h => (
+          <text key={h} x={padLeft + h * cellW + cellW / 2} y={dests.length * (cellH + gap) + 9}
+            textAnchor="middle" fill="rgba(148,163,184,0.5)" fontSize={7}>{h}h</text>
         ))}
       </svg>
       {tip && (
@@ -299,32 +308,39 @@ export function Heatmap({ mac }: { mac: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// DeviceViz — tabbed Radar / Heatmap / Sparkline toggle
+// DeviceViz — radar + heatmap side-by-side, sparkline toggle
 // ---------------------------------------------------------------------------
-type VizTab = 'radar' | 'heatmap' | 'sparkline';
-
 function DeviceViz({ device }: { device: FleetDevice }) {
-  const [tab, setTab] = useState<VizTab>('radar');
+  const [showTraffic, setShowTraffic] = useState(false);
+
+  if (showTraffic) {
+    return (
+      <div>
+        <button onClick={() => setShowTraffic(false)}
+          className="text-[9px] text-slate-500 hover:text-slate-300 mb-1">
+          ← Back to radar
+        </button>
+        <Sparkline mac={device.mac_address} />
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* Tab pills */}
-      <div className="flex gap-1 mb-1.5">
-        {(['radar', 'heatmap', 'sparkline'] as VizTab[]).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`text-[9px] px-1.5 py-0.5 rounded transition-colors ${
-              tab === t
-                ? 'bg-blue-600/20 text-blue-400 font-medium'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}>
-            {t === 'radar' ? '⬡ Radar' : t === 'heatmap' ? '▦ Heatmap' : '〰 Traffic'}
-          </button>
-        ))}
+      <div className="flex gap-2 items-start">
+        {/* Radar — left side */}
+        <div className="flex-shrink-0">
+          <RadarChart device={device} size={110} />
+        </div>
+        {/* Heatmap — right side, fills remaining space */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <Heatmap mac={device.mac_address} health={device.health} />
+        </div>
       </div>
-      {/* Content */}
-      {tab === 'radar' && <RadarChart device={device} size={120} />}
-      {tab === 'heatmap' && <Heatmap mac={device.mac_address} />}
-      {tab === 'sparkline' && <Sparkline mac={device.mac_address} />}
+      <button onClick={() => setShowTraffic(true)}
+        className="text-[9px] text-slate-500 hover:text-slate-300 mt-1">
+        〰 Traffic history
+      </button>
     </div>
   );
 }
