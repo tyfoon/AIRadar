@@ -1536,6 +1536,70 @@ def list_events(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/events/heatmap — aggregated device×hour grid for traffic heatmap
+# ---------------------------------------------------------------------------
+@app.get("/api/events/heatmap")
+def events_heatmap(
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Return per-device per-hour aggregation: hits + bytes + dominant category."""
+    from sqlalchemy import func, case, Integer
+    from collections import defaultdict
+
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    rows = (
+        db.query(
+            DetectionEvent.source_ip,
+            func.strftime('%H', DetectionEvent.timestamp).label('hour'),
+            func.count().label('hits'),
+            func.sum(DetectionEvent.bytes_transferred).label('bytes'),
+            DetectionEvent.category,
+        )
+        .filter(DetectionEvent.timestamp >= cutoff)
+        .group_by(DetectionEvent.source_ip, 'hour', DetectionEvent.category)
+        .all()
+    )
+
+    # Aggregate: device → hour → { hits, bytes, catHits }
+    dev_totals: dict[str, int] = defaultdict(int)
+    grid: dict[str, dict] = {}
+
+    for source_ip, hour_str, hits, total_bytes, category in rows:
+        dev_totals[source_ip] += hits
+        key = f"{source_ip}\0{int(hour_str)}"
+        if key not in grid:
+            grid[key] = {"hits": 0, "bytes": 0, "catHits": {}}
+        grid[key]["hits"] += hits
+        grid[key]["bytes"] += (total_bytes or 0)
+        grid[key]["catHits"][category] = grid[key]["catHits"].get(category, 0) + hits
+
+    # Top 20 devices by hit count
+    top_devs = sorted(dev_totals.items(), key=lambda x: -x[1])[:20]
+    top_dev_ips = [ip for ip, _ in top_devs]
+    top_dev_set = set(top_dev_ips)
+
+    # Build response
+    cells = []
+    for key, data in grid.items():
+        ip, hour = key.split("\0")
+        if ip not in top_dev_set:
+            continue
+        # Dominant category
+        dom_cat = max(data["catHits"], key=data["catHits"].get) if data["catHits"] else "other"
+        cells.append({
+            "ip": ip,
+            "hour": int(hour),
+            "hits": data["hits"],
+            "bytes": data["bytes"],
+            "category": dom_cat,
+        })
+
+    return {"devices": top_dev_ips, "cells": cells}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/events/export — CSV download
 # ---------------------------------------------------------------------------
 @app.get("/api/events/export")

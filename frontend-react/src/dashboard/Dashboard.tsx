@@ -130,7 +130,7 @@ export default function Dashboard() {
       <SankeyFlow events={events.data ?? []} />
 
       {/* ── Traffic Heatmap ── */}
-      <TrafficHeatmap events={events.data ?? []} />
+      <TrafficHeatmap hours={hours} />
 
       {/* ── Bottom Grid: IPS + Privacy + Network Perf ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
