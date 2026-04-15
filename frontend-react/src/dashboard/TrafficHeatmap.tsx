@@ -129,7 +129,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                   textAnchor="end"
                   dominantBaseline="central"
                   fill={isDark ? 'rgba(148,163,184,0.7)' : 'rgba(71,85,105,0.8)'}
-                  fontSize={5}
+                  fontSize={2.5}
                   fontFamily="Inter, system-ui, sans-serif"
                 >
                   {label}
