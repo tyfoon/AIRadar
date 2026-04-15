@@ -9270,6 +9270,11 @@ window.refreshPrivacy = refreshPrivacy;
 window.refreshFamily = refreshFamily;
 window.refreshIps = refreshIps;
 window.refreshRules = refreshRules;
+// React RulesPage wires its buttons through window.* — keep these explicit
+// so that delegating to vanilla survives any future IIFE wrapping of app.js.
+window.switchRulesTab = switchRulesTab;
+window.toggleGlobalFilter = toggleGlobalFilter;
+window.toggleIps = toggleIps;
 window.loadDevices = loadDevices;
 window.loadKillswitchState = loadKillswitchState;
 window.manualRefresh = manualRefresh;
