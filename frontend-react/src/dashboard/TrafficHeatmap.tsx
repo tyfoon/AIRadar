@@ -73,11 +73,11 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
 
   // Ultra-compact layout
   const cellW = 14;
-  const cellH = 8;
+  const cellH = 5;
   const gap = 1;
-  const padLeft = 72;
+  const padLeft = 36;
   const padTop = 1;
-  const svgW = padLeft + 24 * (cellW + gap) + 4;
+  const svgW = padLeft + 24 * (cellW + gap) + 10;
   const svgH = padTop + devices.length * (cellH + gap) + 10;
 
   function getColor(cell: HeatmapCell | undefined): string {
@@ -119,7 +119,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
-            const label = dev.name.length > 11 ? dev.name.slice(0, 10) + '…' : dev.name;
+            const label = dev.name.length > 9 ? dev.name.slice(0, 8) + '…' : dev.name;
             return (
               <g key={dev.ip}>
                 <text
@@ -128,7 +128,7 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                   textAnchor="end"
                   dominantBaseline="central"
                   fill={isDark ? 'rgba(148,163,184,0.7)' : 'rgba(71,85,105,0.8)'}
-                  fontSize={6.5}
+                  fontSize={4}
                   fontFamily="Inter, system-ui, sans-serif"
                 >
                   {label}
