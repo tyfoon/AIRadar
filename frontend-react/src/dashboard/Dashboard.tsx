@@ -425,14 +425,18 @@ function CountryDonutCard({ label, entries, total, accent, icon }: {
         <div className="flex-1 min-w-0 space-y-0.5 pt-0.5">
           {isEmpty && <p className="text-[10px] text-slate-500 italic">No data</p>}
           {entries.slice(0, 4).map((e, i) => (
+            // Flag + bytes only; country name removed per user feedback —
+            // the flag is self-explanatory and full names (esp. "United
+            // Kingdom", "United States") crowded the compact card.
+            // title={countryName} keeps the full name available on hover.
             <div key={e.cc}
               className="flex items-center gap-1 min-w-0 cursor-pointer rounded px-0.5 -mx-0.5 transition-opacity"
               style={{ opacity: active !== null && active !== i ? 0.35 : 1 }}
               onClick={() => toggle(i)}
+              title={countryName(e.cc)}
             >
-              <span className={`${flagClass(e.cc)} text-[11px]`} />
-              <span className="text-[10px] font-medium truncate flex-1" style={{ color: e.color }}>{countryName(e.cc)}</span>
-              <span className="text-[10px] font-semibold tabular-nums flex-shrink-0" style={{ color: e.color }}>{formatBytes(e.value)}</span>
+              <span className={`${flagClass(e.cc)} text-[11px] flex-shrink-0`} />
+              <span className="text-[10px] font-semibold tabular-nums ml-auto flex-shrink-0" style={{ color: e.color }}>{formatBytes(e.value)}</span>
             </div>
           ))}
           {entries.length > 4 && (
