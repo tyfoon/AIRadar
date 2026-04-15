@@ -85,15 +85,16 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
   const { grid, devices, seenCats } = processed;
   const isDark = document.documentElement.classList.contains('dark');
 
-  // Layout
+  // Layout — font sizes match Sankey (11px rendered ≈ 4px in viewBox coords)
   const cellW = 8;
   const cellH = 5;
   const gap = 1;
-  const padLeft = 64;
-  const padRight = 4;
+  const padLeft = 50;
+  const padRight = 2;
   const padTop = 1;
   const svgW = padLeft + 24 * (cellW + gap) + padRight;
-  const svgH = padTop + devices.length * (cellH + gap) + 10;
+  const svgH = padTop + devices.length * (cellH + gap) + 8;
+  const labelFont = 3.5;
 
   function getCellValue(cell: HeatmapCell | undefined): number {
     if (!cell) return 0;
@@ -156,11 +157,11 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
           viewBox={`0 0 ${svgW} ${svgH}`}
           preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ width: '100%', maxWidth: svgW * 2.5 }}
+          style={{ width: '70%' }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
-            const label = dev.name.length > 15 ? dev.name.slice(0, 14) + '…' : dev.name;
+            const label = dev.name.length > 12 ? dev.name.slice(0, 11) + '…' : dev.name;
             return (
               <g key={dev.ip}>
                 <text
@@ -168,8 +169,8 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
                   y={y + cellH / 2}
                   textAnchor="end"
                   dominantBaseline="central"
-                  fill={isDark ? 'rgba(148,163,184,0.7)' : 'rgba(71,85,105,0.8)'}
-                  fontSize={2.5}
+                  fill={isDark ? '#cbd5e1' : '#475569'}
+                  fontSize={labelFont}
                   fontFamily="Inter, system-ui, sans-serif"
                 >
                   {label}
@@ -217,8 +218,8 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
               x={padLeft + h * (cellW + gap) + cellW / 2}
               y={padTop + devices.length * (cellH + gap) + 7}
               textAnchor="middle"
-              fill={isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.6)'}
-              fontSize={2.5}
+              fill={isDark ? '#cbd5e1' : '#475569'}
+              fontSize={labelFont}
               fontFamily="Inter, system-ui, sans-serif"
             >
               {h % 3 === 0 ? `${h}:00` : ''}
