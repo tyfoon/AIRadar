@@ -107,12 +107,12 @@ export function Sparkline({ mac }: { mac: string }) {
 // RadarChart — pure SVG behaviour fingerprint (6 axes)
 // ---------------------------------------------------------------------------
 const RADAR_DIMS = [
-  { key: 'volume',       short: 'VOL', label: 'Volume' },
-  { key: 'frequency',    short: 'FRQ', label: 'Frequency' },
-  { key: 'regularity',   short: 'REG', label: 'Regularity' },
-  { key: 'uploadRatio',  short: 'UP%', label: 'Upload %' },
-  { key: 'destinations', short: 'DST', label: 'Destinations' },
-  { key: 'deviation',    short: 'ANO', label: 'Deviation' },
+  { key: 'volume',       short: 'VOL', label: 'Traffic Volume' },
+  { key: 'frequency',    short: 'FRQ', label: 'Connection Frequency' },
+  { key: 'regularity',   short: 'REG', label: 'Pattern Regularity' },
+  { key: 'uploadRatio',  short: 'UP%', label: 'Upload Ratio' },
+  { key: 'destinations', short: 'DST', label: 'Unique Destinations' },
+  { key: 'deviation',    short: 'ANO', label: 'Anomaly Score' },
 ] as const;
 
 /** Health → colour mapping for radar/heatmap. */
@@ -196,13 +196,20 @@ export function RadarChart({ device, size = 120 }: { device: FleetDevice; size?:
     );
   });
 
-  // Labels
+  // Labels — hoverable with full name + value
   const labels = RADAR_DIMS.map((dim, i) => {
     const a = -Math.PI / 2 + i * angleStep;
     const lx = cx + Math.cos(a) * (maxR + 12);
     const ly = cy + Math.sin(a) * (maxR + 12);
     const anchor = Math.abs(Math.cos(a)) < 0.1 ? 'middle' : Math.cos(a) > 0 ? 'start' : 'end';
-    return <text key={dim.key} x={lx} y={ly} textAnchor={anchor} dominantBaseline="central" fill="rgba(148,163,184,0.7)" fontSize={9} fontWeight={500}>{dim.short}</text>;
+    return (
+      <text key={dim.key} x={lx} y={ly} textAnchor={anchor} dominantBaseline="central"
+        fill="rgba(148,163,184,0.7)" fontSize={9} fontWeight={500}
+        className="cursor-pointer hover:fill-slate-300 transition-colors"
+        onMouseEnter={() => setTip(`${dim.label}: ${Math.round(radar[dim.key])}%`)}
+        onMouseLeave={() => setTip(null)}
+      >{dim.short}</text>
+    );
   });
 
   return (
