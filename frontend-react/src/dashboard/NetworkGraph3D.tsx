@@ -55,14 +55,18 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
   const nodes: GraphNode[] = [];
   const nodeIds = new Set<string>();
 
+  // Normalize node sizes to a small range (1–6) so no single node dominates
+  const maxDevBytes = Math.max(...topDevs.map(d => devTotals[d] || 1));
+
   topDevs.forEach(dev => {
     const id = `dev_${dev}`;
     nodeIds.add(id);
+    const ratio = (devTotals[dev] || 1) / maxDevBytes; // 0–1
     nodes.push({
       id,
       name: dev,
       type: 'device',
-      val: Math.max(2, Math.sqrt(devTotals[dev] || 1) / 100),
+      val: 1 + ratio * 4, // range: 1–5
       color: '#3b82f6',
     });
   });
@@ -73,14 +77,17 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
     if (topDevSet.has(dev)) usedCats.add(cat);
   });
 
+  const maxCatBytes = Math.max(...[...usedCats].map(c => catTotals[c] || 1));
+
   usedCats.forEach(cat => {
     const id = `cat_${cat}`;
     nodeIds.add(id);
+    const ratio = (catTotals[cat] || 1) / maxCatBytes; // 0–1
     nodes.push({
       id,
       name: categoryName(cat),
       type: 'category',
-      val: Math.max(3, Math.sqrt(catTotals[cat] || 1) / 80),
+      val: 2 + ratio * 4, // range: 2–6 (slightly bigger than devices)
       color: CAT_COLORS[cat] || categoryColor(cat),
     });
   });
@@ -153,19 +160,30 @@ export default function NetworkGraph3D({ events }: { events: DashEvent[] }) {
           return `<b>${n.name}</b>`;
         })
         .nodeOpacity(0.9)
-        // Links
+        // Links — normalize widths to 0.3–3 range
         .linkColor((l: any) => l.color)
-        .linkWidth((l: any) => Math.max(0.3, Math.sqrt(l.value) / 500))
-        .linkOpacity(0.4)
-        // Animated particles
-        .linkDirectionalParticles((l: any) => Math.max(1, Math.min(6, Math.sqrt(l.value) / 300)))
-        .linkDirectionalParticleSpeed(0.006)
-        .linkDirectionalParticleWidth((l: any) => Math.max(0.5, Math.sqrt(l.value) / 600))
+        .linkWidth((l: any) => {
+          const maxVal = Math.max(...graphData!.links.map((x: any) => x.value));
+          return 0.3 + (l.value / maxVal) * 2.7;
+        })
+        .linkOpacity(0.5)
+        // Animated particles — 1–4 particles, speed relative to traffic
+        .linkDirectionalParticles((l: any) => {
+          const maxVal = Math.max(...graphData!.links.map((x: any) => x.value));
+          return 1 + Math.round((l.value / maxVal) * 3);
+        })
+        .linkDirectionalParticleSpeed(0.005)
+        .linkDirectionalParticleWidth(1.5)
         .linkDirectionalParticleColor((l: any) => l.color)
         // Hover
         .onNodeHover((node: any) => {
           if (container) container.style.cursor = node ? 'pointer' : 'default';
         })
+        // Force layout tuning — prevent oscillation
+        .d3AlphaDecay(0.03)
+        .d3VelocityDecay(0.4)
+        .warmupTicks(80)
+        .cooldownTicks(100)
         // Data
         .graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
 
@@ -174,14 +192,14 @@ export default function NetworkGraph3D({ events }: { events: DashEvent[] }) {
         const controls = graph.controls() as any;
         if (controls?.autoRotate !== undefined) {
           controls.autoRotate = true;
-          controls.autoRotateSpeed = 0.5;
+          controls.autoRotateSpeed = 0.4;
         }
       } catch {}
 
       // Zoom to fit after layout settles
       setTimeout(() => {
-        try { graph.zoomToFit(1000, isMobile ? 80 : 50); } catch {}
-      }, 2000);
+        try { graph.zoomToFit(800, isMobile ? 100 : 60); } catch {}
+      }, 1500);
 
       graphRef.current = graph;
       setError(null);
