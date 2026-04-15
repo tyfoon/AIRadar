@@ -6,6 +6,7 @@ import type {
   HonestyInfo, DeviceGroup,
 } from './types';
 import { SvcLogo, svcDisplayName } from '../category/serviceHelpers';
+import { detectDeviceType } from '../utils/devices';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -37,6 +38,29 @@ function fmtBytes(b: number): string {
 
 function catLabel(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/** Render a device-type icon with online dot, using the shared detectDeviceType logic */
+function DeviceTypeIcon({ hostname, vendor, deviceClass, online, size = 'text-base' }: {
+  hostname?: string | null;
+  vendor?: string | null;
+  deviceClass?: string | null;
+  online?: boolean;
+  size?: string;
+}) {
+  const dt = detectDeviceType({
+    mac_address: '', hostname: hostname ?? undefined,
+    vendor: vendor ?? undefined, device_class: deviceClass ?? undefined, ips: [],
+  } as any);
+  const colorCls = online ? 'text-emerald-500 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-600';
+  return (
+    <span className={`relative inline-flex items-center justify-center w-5 h-5 ${size} leading-none flex-shrink-0 ${colorCls}`} title={`${dt.type}${online ? ' · online' : ' · offline'}`}>
+      <i className={`ph-duotone ${dt.icon}`} />
+      {online && (
+        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-white dark:border-[#0B0C10]" />
+      )}
+    </span>
+  );
 }
 
 /** Open the vanilla alert-action modal (still shared across vanilla + React) */
@@ -442,9 +466,7 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
             })}
           >
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="flex-shrink-0 w-5 h-5 inline-flex items-center justify-center">
-                <i className={`ph-duotone ph-device-mobile text-base ${d.online ? 'text-emerald-500' : 'text-slate-400'}`} />
-              </span>
+              <DeviceTypeIcon hostname={d.hostname} vendor={d.vendor} deviceClass={d.device_class} online={d.online} />
               <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex-1 text-xs" title={name}>
                 {name}
               </span>
@@ -487,11 +509,15 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
 }
 
 function DeviceChip({ dev, serviceName, category }: {
-  dev: { mac_address: string; display_name: string; hostname: string | null; online: boolean; bytes: number };
+  dev: { mac_address: string; display_name: string; hostname: string | null; vendor: string | null; device_class: string | null; online: boolean; bytes: number };
   serviceName: string;
   category: string;
 }) {
   const name = dev.display_name || dev.hostname || dev.mac_address || '?';
+  const dt = detectDeviceType({
+    mac_address: dev.mac_address, hostname: dev.hostname ?? undefined,
+    vendor: dev.vendor ?? undefined, device_class: dev.device_class ?? undefined, ips: [],
+  } as any);
   return (
     <button
       type="button"
@@ -508,7 +534,7 @@ function DeviceChip({ dev, serviceName, category }: {
       className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
       title={`${name} — ${fmtBytes(dev.bytes || 0)}`}
     >
-      <i className={`ph-duotone ph-device-mobile text-xs ${dev.online ? 'text-emerald-500' : 'text-slate-400'}`} />
+      <i className={`ph-duotone ${dt.icon} text-xs ${dev.online ? 'text-emerald-500' : 'text-slate-400'}`} />
       <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{name}</span>
     </button>
   );
