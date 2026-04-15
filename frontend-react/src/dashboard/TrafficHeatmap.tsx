@@ -155,9 +155,9 @@ export default function TrafficHeatmap({ hours }: { hours: number }) {
       <div className="relative overflow-x-auto">
         <svg
           viewBox={`0 0 ${svgW} ${svgH}`}
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMinYMin meet"
           className="overflow-visible"
-          style={{ width: '100%', height: devices.length * 7 + 16 }}
+          style={{ width: '100%' }}
         >
           {devices.map((dev, di) => {
             const y = padTop + di * (cellH + gap);
