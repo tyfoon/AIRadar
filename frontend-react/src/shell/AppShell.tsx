@@ -127,26 +127,23 @@ export default function AppShell() {
         <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={toggleMobileSidebar} />
       )}
 
-      {/* Header — always rendered by React */}
-      <div style={{ marginLeft }} className="transition-all duration-300">
+      {/* Main content area — header + page in same container so sticky works */}
+      <div
+        className="transition-all duration-300 min-h-screen"
+        style={{ marginLeft }}
+      >
         <Header onToggleMobileSidebar={toggleMobileSidebar} />
-      </div>
 
-      {/* React pages render in their own container with correct margin */}
-      {isReactPage && (
-        <div
-          className="transition-all duration-300 min-h-screen pb-16 md:pb-0"
-          style={{ marginLeft }}
-        >
-          <main className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+        {isReactPage ? (
+          <main className="p-4 sm:p-6 max-w-[1600px] mx-auto pb-16 md:pb-0">
             <Outlet />
           </main>
-        </div>
-      )}
-
-      {/* Vanilla pages: Outlet renders VanillaPage (returns null) which
-          shows/hides the <section> in the old <div id="main"> */}
-      {!isReactPage && <Outlet />}
+        ) : (
+          /* Vanilla pages: Outlet renders VanillaPage (returns null) which
+             shows/hides the <section> in the old <div id="main"> */
+          <Outlet />
+        )}
+      </div>
     </>
   );
 }
