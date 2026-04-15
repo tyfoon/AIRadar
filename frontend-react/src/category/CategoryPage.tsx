@@ -77,7 +77,7 @@ export default function CategoryPage({ category }: { category: 'ai' | 'cloud' })
   const title = isAi ? 'AI Services' : 'Cloud Services';
 
   return (
-    <div className="space-y-5 p-1">
+    <div className="space-y-5 p-1 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
