@@ -47,11 +47,17 @@ export default function AppShell() {
     window.loadDevices?.();
   }, []);
 
-  // Keep old <div id="main"> margin in sync with sidebar collapse
+  // Keep old <div id="main"> margin in sync with sidebar collapse (desktop only)
   const marginLeft = collapsed ? 64 : 240;
   useEffect(() => {
     const oldMain = document.getElementById('main');
-    if (oldMain) oldMain.style.marginLeft = `${marginLeft}px`;
+    if (oldMain) {
+      const mq = window.matchMedia('(min-width: 768px)');
+      const apply = () => { oldMain.style.marginLeft = mq.matches ? `${marginLeft}px` : '0'; };
+      apply();
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }
   }, [marginLeft]);
 
   // Determine if current route is a React page or vanilla

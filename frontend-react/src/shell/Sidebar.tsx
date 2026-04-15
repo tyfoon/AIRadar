@@ -48,50 +48,48 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
     return `${base} text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04]`;
   };
 
+  const navList = (showLabels: boolean, showBadges: boolean) => (
+    groups.map((group, gi) => (
+      <div key={group}>
+        {gi > 0 && <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />}
+        {showLabels && (
+          <p className="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5">
+            {t(GROUP_LABELS[group].key) || GROUP_LABELS[group].label}
+          </p>
+        )}
+        {ROUTES.filter(r => r.group === group).map(route => (
+          <a
+            key={route.path}
+            className={navCls(route.path, route.pageId)}
+            onClick={() => handleNav(route.path)}
+            title={!showLabels ? (t(route.labelKey) || route.label) : undefined}
+          >
+            <i className={`ph-duotone ${route.icon} text-base flex-shrink-0`} />
+            {showLabels && <span className="nav-label">{t(route.labelKey) || route.label}</span>}
+            {!showLabels && (
+              <span className="nav-tooltip">{t(route.labelKey) || route.label}</span>
+            )}
+            {showBadges && route.badgeId && <NavBadge id={route.badgeId} badges={badges} collapsed={!showLabels} />}
+          </a>
+        ))}
+      </div>
+    ))
+  );
+
   return (
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-full bg-white dark:bg-[#0f1117] border-r border-slate-200 dark:border-white/[0.04] z-40 hidden md:flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'} ${mobileOpen ? 'mobile-open' : ''}`}
+        className={`fixed left-0 top-0 h-full bg-white dark:bg-[#0f1117] border-r border-slate-200 dark:border-white/[0.04] z-40 hidden md:flex flex-col transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}
         style={{ width: collapsed ? 64 : 240 }}
       >
-        {/* Logo — h-14 (was h-16) to reclaim 8px for the nav list */}
         <div className="flex items-center gap-3 px-5 h-14 border-b border-slate-200 dark:border-white/[0.04] flex-shrink-0">
           <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">AR</div>
           {!collapsed && <span className="logo-text font-semibold text-sm tracking-tight text-slate-800 dark:text-white">AI-Radar</span>}
         </div>
-
-        {/* Navigation */}
         <nav className="flex-1 py-1 px-3 overflow-y-auto">
-          {groups.map((group, gi) => (
-            <div key={group}>
-              {gi > 0 && <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />}
-              {!collapsed && (
-                <p className="nav-group-label text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 px-3 mt-1.5 mb-0.5">
-                  {t(GROUP_LABELS[group].key) || GROUP_LABELS[group].label}
-                </p>
-              )}
-              {ROUTES.filter(r => r.group === group).map(route => (
-                <a
-                  key={route.path}
-                  className={navCls(route.path, route.pageId)}
-                  onClick={() => handleNav(route.path)}
-                  title={collapsed ? (t(route.labelKey) || route.label) : undefined}
-                >
-                  <i className={`ph-duotone ${route.icon} text-base flex-shrink-0`} />
-                  {!collapsed && <span className="nav-label">{t(route.labelKey) || route.label}</span>}
-                  {collapsed && (
-                    <span className="nav-tooltip">{t(route.labelKey) || route.label}</span>
-                  )}
-                  {/* Badge */}
-                  {route.badgeId && <NavBadge id={route.badgeId} badges={badges} collapsed={collapsed} />}
-                </a>
-              ))}
-            </div>
-          ))}
+          {navList(!collapsed, true)}
         </nav>
-
-        {/* Bottom utility row — tighter padding + smaller buttons */}
         <div className="flex items-center justify-center gap-2 py-1.5 border-t border-slate-200 dark:border-slate-700/50 flex-shrink-0">
           <button onClick={onToggleTheme} title="Toggle Theme" className="sidebar-util-btn w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <i className="ph-duotone ph-sun text-base hidden dark:inline-block" />
@@ -103,13 +101,37 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
         </div>
       </aside>
 
+      {/* Mobile slide-out drawer (hamburger menu) */}
+      <div
+        className={`fixed inset-y-0 left-0 w-72 bg-white dark:bg-[#0f1117] z-50 transform transition-transform duration-300 md:hidden flex flex-col ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="flex items-center justify-between px-5 h-14 border-b border-slate-200 dark:border-white/[0.04] flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">AR</div>
+            <span className="font-semibold text-sm tracking-tight text-slate-800 dark:text-white">AI-Radar</span>
+          </div>
+          <button onClick={closeMobile} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <i className="ph-duotone ph-x text-lg" />
+          </button>
+        </div>
+        <nav className="flex-1 py-2 px-3 overflow-y-auto">
+          {navList(true, true)}
+        </nav>
+        <div className="flex items-center justify-center gap-2 py-2 border-t border-slate-200 dark:border-slate-700/50 flex-shrink-0">
+          <button onClick={onToggleTheme} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <i className="ph-duotone ph-sun text-base hidden dark:inline-block" />
+            <i className="ph-duotone ph-moon text-base block dark:hidden" />
+          </button>
+        </div>
+      </div>
+
       {/* Mobile backdrop */}
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/50 z-30" onClick={closeMobile} />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={closeMobile} />
       )}
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#0f1117] border-t border-slate-200 dark:border-white/[0.04] z-40 md:hidden">
+      {/* Mobile bottom nav — full width, fixed */}
+      <nav className="fixed bottom-0 left-0 w-full bg-white dark:bg-[#0f1117] border-t border-slate-200 dark:border-white/[0.04] z-40 md:hidden">
         <div className="h-16 flex items-stretch">
           {MOBILE_NAV.map(item => {
             const active = currentPath === item.path;
