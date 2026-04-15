@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROUTES, MOBILE_NAV, GROUP_LABELS } from './routes';
 import { t } from '../utils/i18n';
@@ -121,32 +122,69 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onCloseMobile} />
       )}
 
-      {/* Mobile bottom nav — full width, fixed */}
-      <nav className="fixed bottom-0 left-0 w-full bg-white dark:bg-[#0f1117] border-t border-slate-200 dark:border-white/[0.04] z-40 md:hidden">
-        <div className="h-16 flex items-stretch">
-          {MOBILE_NAV.map(item => {
-            const active = currentPath === item.path;
-            return (
-              <a
-                key={item.path}
-                className={`mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-xs relative ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'}`}
-                onClick={() => handleNav(item.path)}
-              >
-                <i className={`ph-duotone ${item.icon} text-xl`} />
-                <span>{t(item.labelKey) || item.label}</span>
-                {item.badgeId && <MobileBadge id={item.badgeId} badges={badges} />}
-              </a>
-            );
-          })}
-          <button
-            onClick={onToggleMobile}
-            className="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs"
-          >
-            <i className="ph-duotone ph-list text-xl" />
-            <span>{t('mob.menu') || 'Menu'}</span>
-          </button>
-        </div>
-      </nav>
+      {/* Mobile bottom nav — portaled to body so no parent can constrain it */}
+      {createPortal(
+        <nav style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100vw',
+          zIndex: 9999,
+          borderTop: '1px solid',
+          borderColor: 'var(--mobile-nav-border, rgba(226,232,240,1))',
+        }}
+          className="bg-white dark:bg-[#0f1117] border-slate-200 dark:border-white/[0.04] md:hidden"
+        >
+          <div style={{ height: 56, display: 'flex', alignItems: 'stretch' }}>
+            {MOBILE_NAV.map(item => {
+              const active = currentPath === item.path;
+              return (
+                <a
+                  key={item.path}
+                  onClick={() => handleNav(item.path)}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 2,
+                    fontSize: 11,
+                    position: 'relative',
+                    cursor: 'pointer',
+                    color: active ? '#6366f1' : '#94a3b8',
+                  }}
+                >
+                  <i className={`ph-duotone ${item.icon}`} style={{ fontSize: 20 }} />
+                  <span>{t(item.labelKey) || item.label}</span>
+                  {item.badgeId && <MobileBadge id={item.badgeId} badges={badges} />}
+                </a>
+              );
+            })}
+            <button
+              onClick={onToggleMobile}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 2,
+                fontSize: 11,
+                color: '#94a3b8',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <i className="ph-duotone ph-list" style={{ fontSize: 20 }} />
+              <span>{t('mob.menu') || 'Menu'}</span>
+            </button>
+          </div>
+        </nav>,
+        document.body
+      )}
     </>
   );
 }
