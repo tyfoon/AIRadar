@@ -15,7 +15,7 @@ import GeoMap from '../geo/GeoMap';
 import { fetchGeoTraffic } from '../geo/api';
 import { FleetCard } from '../iot/FleetCard';
 import type { FleetDevice } from '../iot/types';
-import ActivityLandscape3D from './ActivityLandscape3D';
+import TrafficHeatmap from './TrafficHeatmap';
 
 // ---------------------------------------------------------------------------
 // Dashboard — System Overview
@@ -129,8 +129,8 @@ export default function Dashboard() {
       {/* ── Sankey — full width, compact ── */}
       <SankeyFlow events={events.data ?? []} />
 
-      {/* ── 3D Activity Landscape ── */}
-      <ActivityLandscape3D events={events.data ?? []} />
+      {/* ── Traffic Heatmap ── */}
+      <TrafficHeatmap events={events.data ?? []} />
 
       {/* ── Bottom Grid: IPS + Privacy + Network Perf ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
