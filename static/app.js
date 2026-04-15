@@ -196,6 +196,8 @@ const VALID_PAGES = ['summary','dashboard','ai','cloud','privacy','iot','family'
 let currentPage = 'summary';
 
 function navigate(page) {
+  // React Router owns navigation when active
+  if (window._reactRouterActive) return;
   if (!VALID_PAGES.includes(page)) page = 'summary';
   currentPage = page;
 
@@ -265,7 +267,9 @@ function navigate(page) {
 }
 
 function initRouter() {
+  if (window._reactRouterActive) return;
   window.addEventListener('hashchange', () => {
+    if (window._reactRouterActive) return;
     const raw = location.hash.replace('#/', '') || 'summary';
     _routeFromHash(raw);
   });
@@ -9181,7 +9185,13 @@ async function manualRefresh() {
 
   try {
     await loadDevices();
-    await refreshPage(currentPage);
+    // When React Router is active, read current page from hash
+    const page = window._reactRouterActive
+      ? (location.hash.replace('#/', '').split('/')[0] || 'summary')
+      : currentPage;
+    // Map hash aliases
+    const pageId = (page === 'content' || page === 'other') ? 'family' : page;
+    await refreshPage(pageId);
     updateRefreshTimestamp();
   } catch(err) { console.error('Refresh error:', err); }
   finally {
@@ -9195,9 +9205,14 @@ async function manualRefresh() {
 // ================================================================
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
-  initSidebar();
+  // React shell handles sidebar and routing when active
+  if (!window._reactRouterActive) {
+    initSidebar();
+  }
   await loadDevices();
-  initRouter();
+  if (!window._reactRouterActive) {
+    initRouter();
+  }
   updateRefreshTimestamp();
 
   // Quick health check for top bar
@@ -9240,6 +9255,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }).catch(() => {});
 });
 
+// Expose refresh functions for React VanillaPage bridge
+window.loadSummaryDashboard = loadSummaryDashboard;
+window.refreshAI = refreshAI;
+window.refreshCloud = refreshCloud;
+window.refreshPrivacy = refreshPrivacy;
+window.refreshFamily = refreshFamily;
+window.refreshIps = refreshIps;
+window.refreshRules = refreshRules;
+window.loadDevices = loadDevices;
+window.loadKillswitchState = loadKillswitchState;
+window.manualRefresh = manualRefresh;
+window._initThemeSelect = _initThemeSelect;
 
 // ===========================================================================
 // PAGE: PERFORMANCE — Network performance history

@@ -1,11 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import ScreenTime from './ScreenTime';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import AppShell from './shell/AppShell';
+import VanillaPage from './shell/VanillaPage';
+import Dashboard from './dashboard/Dashboard';
 import GeoMap from './geo/GeoMap';
 import IotOverview from './iot/IotOverview';
-import Dashboard from './dashboard/Dashboard';
 import DevicesPage from './devices/DevicesPage';
 
 const queryClient = new QueryClient({
@@ -15,118 +16,54 @@ const queryClient = new QueryClient({
 });
 
 // ---------------------------------------------------------------------------
-// Generic island helper: observe a data attribute and (re-)render on change
+// Mount the entire app into #react-app-root
 // ---------------------------------------------------------------------------
-
-function mountIsland(
-  elementId: string,
-  attrName: string,
-  renderFn: (el: HTMLElement, value: string) => void,
-) {
-  function tryMount() {
-    const el = document.getElementById(elementId);
-    if (!el) {
-      // Wait for element to appear in DOM
-      const obs = new MutationObserver(() => {
-        if (document.getElementById(elementId)) {
-          obs.disconnect();
-          tryMount();
-        }
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-      return;
-    }
-
-    // Initial render if attribute is already set
-    const val = el.getAttribute(attrName);
-    if (val) renderFn(el, val);
-
-    // Observe attribute changes
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        if (m.type === 'attributes' && m.attributeName === attrName) {
-          const newVal = el.getAttribute(attrName) || '';
-          if (newVal) renderFn(el, newVal);
-        }
-      }
-    });
-    observer.observe(el, { attributes: true, attributeFilter: [attrName] });
-  }
-
-  tryMount();
+function waitForElement(id: string, cb: (el: HTMLElement) => void) {
+  const el = document.getElementById(id);
+  if (el) { cb(el); return; }
+  const obs = new MutationObserver(() => {
+    const found = document.getElementById(id);
+    if (found) { obs.disconnect(); cb(found); }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
 }
 
-function renderInto(el: HTMLElement, component: React.ReactNode) {
-  // Reuse or create root
-  let root = (el as any).__reactRoot as Root | undefined;
-  if (!root) {
-    root = createRoot(el);
-    (el as any).__reactRoot = root;
-  }
-  root.render(
+waitForElement('react-app-root', (el) => {
+  createRoot(el).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        {component}
+        <HashRouter>
+          <Routes>
+            <Route element={<AppShell />}>
+              {/* React pages */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/devices" element={<DevicesPage />} />
+              <Route path="/geo" element={<GeoMap />} />
+              <Route path="/iot" element={<IotOverview />} />
+
+              {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
+              <Route path="/summary" element={<VanillaPage pageId="summary" />} />
+              <Route path="/ai" element={<VanillaPage pageId="ai" />} />
+              <Route path="/cloud" element={<VanillaPage pageId="cloud" />} />
+              <Route path="/privacy" element={<VanillaPage pageId="privacy" />} />
+              <Route path="/content" element={<VanillaPage pageId="family" />} />
+              <Route path="/family" element={<VanillaPage pageId="family" />} />
+              <Route path="/other" element={<VanillaPage pageId="family" />} />
+              <Route path="/ips" element={<VanillaPage pageId="ips" />} />
+              <Route path="/rules" element={<VanillaPage pageId="rules" />} />
+              <Route path="/settings" element={<VanillaPage pageId="settings" />} />
+              <Route path="/settings/:tab" element={<VanillaPage pageId="settings" />} />
+
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/summary" replace />} />
+              <Route path="*" element={<Navigate to="/summary" replace />} />
+            </Route>
+          </Routes>
+        </HashRouter>
       </QueryClientProvider>
     </StrictMode>,
   );
-}
 
-function unmountFrom(el: HTMLElement) {
-  const root = (el as any).__reactRoot as Root | undefined;
-  if (root) {
-    root.unmount();
-    (el as any).__reactRoot = undefined;
-  }
-}
-
-// ScreenTime island removed — now rendered inside DeviceDrawer via React.
-
-// ---------------------------------------------------------------------------
-// Island: GeoMap (geo page)
-// Unmount when data-active becomes empty so Three.js / WebGL resources are
-// freed. Re-mount fresh when the user navigates back.
-// ---------------------------------------------------------------------------
-mountIsland('react-geo-root', 'data-active', (el, active) => {
-  if (active) {
-    renderInto(el, <GeoMap />);
-  } else {
-    unmountFrom(el);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Island: IoT Overview (iot page)
-// Same mount/unmount pattern as GeoMap to free resources when off-page.
-// ---------------------------------------------------------------------------
-mountIsland('react-iot-root', 'data-active', (el, active) => {
-  if (active) {
-    renderInto(el, <IotOverview />);
-  } else {
-    unmountFrom(el);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Island: Dashboard (dashboard page)
-// Same mount/unmount pattern — frees globe WebGL resources when off-page.
-// ---------------------------------------------------------------------------
-mountIsland('react-dashboard-root', 'data-active', (el, active) => {
-  if (active) {
-    renderInto(el, <Dashboard />);
-  } else {
-    unmountFrom(el);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Island: Devices Page (devices page)
-// Full devices page: matrix, drawer, groups, ask network.
-// ---------------------------------------------------------------------------
-mountIsland('react-devices-root', 'data-active', (el, active) => {
-  if (active) {
-    renderInto(el, <DevicesPage />);
-  } else {
-    unmountFrom(el);
-  }
+  // Disable the vanilla JS router — React Router now owns navigation
+  (window as any)._reactRouterActive = true;
 });
