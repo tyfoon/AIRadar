@@ -132,7 +132,9 @@ export default function AppShell() {
         <Header onToggleMobileSidebar={toggleMobileSidebar} />
       </div>
 
-      {/* React pages render in their own container with correct margin */}
+      {/* All pages are React now; isReactPage is always true in practice.
+          The guard stays as a safety net in case a future route is added
+          before its React component is wired. */}
       {isReactPage && (
         <div
           className="transition-all duration-300 min-h-screen pb-16 md:pb-0"
@@ -143,9 +145,6 @@ export default function AppShell() {
           </main>
         </div>
       )}
-
-      {/* Vanilla pages: Outlet renders VanillaPage (returns null) which
-          shows/hides the <section> in the old <div id="main"> */}
       {!isReactPage && <Outlet />}
     </>
   );
