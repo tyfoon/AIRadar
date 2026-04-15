@@ -12,6 +12,7 @@ import AiPage from './category/AiPage';
 import CloudPage from './category/CloudPage';
 import PrivacyPage from './privacy/PrivacyPage';
 import ContentPage from './content/ContentPage';
+import SummaryPage from './summary/SummaryPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,8 +53,9 @@ waitForElement('react-app-root', (el) => {
               <Route path="/family" element={<ContentPage />} />
               <Route path="/other" element={<ContentPage />} />
 
+              <Route path="/summary" element={<SummaryPage />} />
+
               {/* Vanilla JS pages — wrapper shows/hides existing <section> elements */}
-              <Route path="/summary" element={<VanillaPage pageId="summary" />} />
               <Route path="/ips" element={<VanillaPage pageId="ips" />} />
               <Route path="/rules" element={<VanillaPage pageId="rules" />} />
               <Route path="/settings" element={<VanillaPage pageId="settings" />} />

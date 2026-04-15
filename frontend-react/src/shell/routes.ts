@@ -13,7 +13,7 @@ export interface RouteConfig {
 
 export const ROUTES: RouteConfig[] = [
   // Monitor
-  { path: 'summary',   pageId: 'summary',   icon: 'ph-tray',                   labelKey: 'nav.summary',   label: 'Summary',       group: 'monitor', type: 'vanilla' },
+  { path: 'summary',   pageId: 'summary',   icon: 'ph-tray',                   labelKey: 'nav.summary',   label: 'Summary',       group: 'monitor', type: 'react' },
   { path: 'dashboard', pageId: 'dashboard', icon: 'ph-squares-four',           labelKey: 'nav.dashboard', label: 'Dashboard',     group: 'monitor', type: 'react' },
   { path: 'ai',        pageId: 'ai',        icon: 'ph-brain',                  labelKey: 'nav.ai',        label: 'AI Radar',      group: 'monitor', type: 'react' },
   { path: 'cloud',     pageId: 'cloud',     icon: 'ph-cloud',                  labelKey: 'nav.cloud',     label: 'Cloud Storage', group: 'monitor', type: 'react' },
