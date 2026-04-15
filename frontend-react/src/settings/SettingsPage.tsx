@@ -88,7 +88,10 @@ export default function SettingsPage() {
   }, [tab]);
 
   return (
-    <section id="page-settings" className="page active space-y-6">
+    // Root intentionally omits the "page" class: AppShell strips `.active`
+    // from all .page elements on every React navigation and the global
+    // `.page { display:none }` rule would then hide the settings DOM.
+    <section className="space-y-6">
 
       {/* Tab navigation */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
