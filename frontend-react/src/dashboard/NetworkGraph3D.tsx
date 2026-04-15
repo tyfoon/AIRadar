@@ -1,15 +1,11 @@
-import { useRef, useEffect, useMemo, useState } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import type { DashEvent } from './types';
 import { categoryColor, categoryName, formatBytes } from '../colors';
 
-const DEVICE_TYPE_COLORS: Record<string, string> = {
-  computer: '#3b82f6',
-  phone: '#f59e0b',
-  tablet: '#f59e0b',
-  iot: '#10b981',
-  tv: '#e50914',
-  router: '#6366f1',
-  default: '#94a3b8',
+const CAT_COLORS: Record<string, string> = {
+  ai: '#6366f1', cloud: '#3b82f6', streaming: '#e50914', gaming: '#10b981',
+  social: '#f59e0b', tracking: '#ef4444', shopping: '#8b5cf6', news: '#06b6d4',
+  adult: '#64748b', communication: '#0ea5e9',
 };
 
 interface GraphNode {
@@ -35,7 +31,6 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
     return ip;
   };
 
-  // Aggregate flows: device → category
   const flowMap: Record<string, number> = {};
   const devTotals: Record<string, number> = {};
   const catTotals: Record<string, number> = {};
@@ -50,7 +45,6 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
     catTotals[cat] = (catTotals[cat] || 0) + bytes;
   });
 
-  // Top devices
   const maxDevices = isMobile ? 5 : 8;
   const topDevs = Object.entries(devTotals)
     .sort((a, b) => b[1] - a[1])
@@ -58,11 +52,9 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
     .map(([d]) => d);
   const topDevSet = new Set(topDevs);
 
-  // Build nodes
   const nodes: GraphNode[] = [];
   const nodeIds = new Set<string>();
 
-  // Device nodes
   topDevs.forEach(dev => {
     const id = `dev_${dev}`;
     nodeIds.add(id);
@@ -75,7 +67,6 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
     });
   });
 
-  // Category nodes (only categories that connect to top devices)
   const usedCats = new Set<string>();
   Object.keys(flowMap).forEach(key => {
     const [dev, cat] = key.split('\0');
@@ -90,11 +81,10 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
       name: categoryName(cat),
       type: 'category',
       val: Math.max(3, Math.sqrt(catTotals[cat] || 1) / 80),
-      color: categoryColor(cat),
+      color: CAT_COLORS[cat] || categoryColor(cat),
     });
   });
 
-  // Build links
   const links: GraphLink[] = [];
   Object.entries(flowMap).forEach(([key, bytes]) => {
     const [dev, cat] = key.split('\0');
@@ -106,22 +96,22 @@ function buildGraphData(events: DashEvent[], isMobile: boolean) {
       source: srcId,
       target: tgtId,
       value: bytes,
-      color: categoryColor(cat),
+      color: CAT_COLORS[cat] || categoryColor(cat),
     });
   });
 
+  if (nodes.length === 0 || links.length === 0) return null;
   return { nodes, links };
 }
 
 export default function NetworkGraph3D({ events }: { events: DashEvent[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
-  const [isMobile, setIsMobile] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 640px)');
-    setIsMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
@@ -129,100 +119,105 @@ export default function NetworkGraph3D({ events }: { events: DashEvent[] }) {
 
   const graphData = useMemo(() => buildGraphData(events, isMobile), [events, isMobile]);
 
-  // Initialize 3D graph
-  useEffect(() => {
-    if (!containerRef.current || !graphData) return;
+  const initGraph = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container || !graphData) return;
 
-    let destroyed = false;
-
-    import('3d-force-graph').then(({ default: ForceGraph3D }) => {
-      if (destroyed || !containerRef.current) return;
-
-      const isDark = document.documentElement.classList.contains('dark');
-      const container = containerRef.current;
-      const w = container.clientWidth;
-      const h = isMobile ? 300 : 400;
-
+    try {
       // Clean up previous instance
       if (graphRef.current) {
-        graphRef.current._destructor();
+        try { graphRef.current._destructor(); } catch {}
         graphRef.current = null;
       }
       container.innerHTML = '';
 
-      const graph = ForceGraph3D(container)
+      const mod = await import('3d-force-graph');
+      const ForceGraph3D = mod.default;
+
+      if (!containerRef.current) return; // unmounted during await
+
+      const isDark = document.documentElement.classList.contains('dark');
+      const w = container.clientWidth || 600;
+      const h = isMobile ? 300 : 400;
+
+      const graph = new ForceGraph3D(container)
         .width(w)
         .height(h)
         .backgroundColor(isDark ? '#0B0C10' : '#f8fafc')
         .showNavInfo(false)
-
         // Nodes
         .nodeVal((n: any) => n.val)
         .nodeColor((n: any) => n.color)
         .nodeLabel((n: any) => {
-          const node = n as GraphNode;
-          if (node.type === 'category') return `<b style="color:${node.color}">${node.name}</b>`;
-          return `<b>${node.name}</b>`;
+          if (n.type === 'category') return `<b style="color:${n.color}">${n.name}</b>`;
+          return `<b>${n.name}</b>`;
         })
         .nodeOpacity(0.9)
-
         // Links
         .linkColor((l: any) => l.color)
         .linkWidth((l: any) => Math.max(0.3, Math.sqrt(l.value) / 500))
         .linkOpacity(0.4)
-
-        // Animated particles flowing along links
+        // Animated particles
         .linkDirectionalParticles((l: any) => Math.max(1, Math.min(6, Math.sqrt(l.value) / 300)))
         .linkDirectionalParticleSpeed(0.006)
         .linkDirectionalParticleWidth((l: any) => Math.max(0.5, Math.sqrt(l.value) / 600))
         .linkDirectionalParticleColor((l: any) => l.color)
-
-        // Hover effects
+        // Hover
         .onNodeHover((node: any) => {
-          container.style.cursor = node ? 'pointer' : 'default';
+          if (container) container.style.cursor = node ? 'pointer' : 'default';
         })
-
         // Data
-        .graphData(graphData);
+        .graphData({ nodes: [...graphData.nodes], links: [...graphData.links] });
 
-      // Slow auto-rotation
-      const controls = graph.controls() as any;
-      if (controls && controls.autoRotate !== undefined) {
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.5;
-      }
+      // Auto-rotate
+      try {
+        const controls = graph.controls() as any;
+        if (controls?.autoRotate !== undefined) {
+          controls.autoRotate = true;
+          controls.autoRotateSpeed = 0.5;
+        }
+      } catch {}
 
       // Zoom to fit after layout settles
       setTimeout(() => {
-        if (!destroyed) graph.zoomToFit(1000, isMobile ? 80 : 50);
+        try { graph.zoomToFit(1000, isMobile ? 80 : 50); } catch {}
       }, 2000);
 
       graphRef.current = graph;
-      setLoaded(true);
-    });
+      setError(null);
+    } catch (err: any) {
+      console.error('3D Graph init failed:', err);
+      setError(err?.message || 'WebGL not available');
+    }
+  }, [graphData, isMobile]);
 
+  // Init graph when data is ready
+  useEffect(() => {
+    initGraph();
     return () => {
-      destroyed = true;
       if (graphRef.current) {
-        graphRef.current._destructor();
+        try { graphRef.current._destructor(); } catch {}
         graphRef.current = null;
       }
     };
-  }, [graphData, isMobile]);
+  }, [initGraph]);
 
-  // Handle resize
+  // Resize handler
   useEffect(() => {
-    if (!containerRef.current || !graphRef.current) return;
+    const container = containerRef.current;
+    if (!container || !graphRef.current) return;
     const ro = new ResizeObserver(() => {
-      if (containerRef.current && graphRef.current) {
-        graphRef.current.width(containerRef.current.clientWidth);
+      if (graphRef.current && container) {
+        graphRef.current.width(container.clientWidth);
       }
     });
-    ro.observe(containerRef.current);
+    ro.observe(container);
     return () => ro.disconnect();
-  }, [loaded]);
+  }, [graphRef.current]);
 
   if (!graphData) return null;
+
+  const chartH = isMobile ? 300 : 400;
 
   return (
     <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4">
@@ -235,10 +230,16 @@ export default function NetworkGraph3D({ events }: { events: DashEvent[] }) {
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" /> Categories</span>
         </div>
       </div>
-      <div
-        ref={containerRef}
-        style={{ width: '100%', height: isMobile ? 300 : 400, borderRadius: 8, overflow: 'hidden' }}
-      />
+      {error ? (
+        <div className="flex items-center justify-center text-xs text-slate-400" style={{ height: chartH }}>
+          3D visualization unavailable: {error}
+        </div>
+      ) : (
+        <div
+          ref={containerRef}
+          style={{ width: '100%', height: chartH, borderRadius: 8, overflow: 'hidden', position: 'relative' }}
+        />
+      )}
     </div>
   );
 }
