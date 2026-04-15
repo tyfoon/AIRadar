@@ -366,8 +366,12 @@ export function FleetCard({ device: d }: { device: FleetDevice }) {
   const barColor = ratio && ratio > 3 ? 'bg-red-500' : ratio && ratio > 2 ? 'bg-amber-500' : 'bg-blue-500';
 
   return (
+    // flex-col + h-full so the card fills the grid row height, and the
+    // footer row below can use mt-auto to stick to the bottom. Without
+    // this, cards with a short heatmap (few destinations) let the flags
+    // float up and misalign across the row.
     <div
-      className={`bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ring-2 ${healthRing} cursor-pointer hover:shadow-md transition-all`}
+      className={`bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 ring-2 ${healthRing} cursor-pointer hover:shadow-md transition-all flex flex-col h-full`}
       onClick={() => {
         if (typeof (window as any).openDeviceDrawer === 'function') {
           (window as any).openDeviceDrawer(d.mac_address, null, null);
@@ -394,8 +398,11 @@ export function FleetCard({ device: d }: { device: FleetDevice }) {
       {/* Radar / Heatmap / Sparkline */}
       <DeviceViz device={d} />
 
-      {/* Stats row */}
-      <div className="flex items-center justify-between mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+      {/* Stats row — mt-auto pushes this + everything below (throughput
+          bar + country/anomaly footer) to the bottom of the card so the
+          flag line aligns across all cards in the row regardless of how
+          tall the heatmap above ended up. */}
+      <div className="flex items-center justify-between mt-auto pt-2 text-[10px] text-slate-500 dark:text-slate-400">
         <span className="tabular-nums">{fmtBytes(d.bytes_24h)}</span>
         <span className="flex items-center gap-1">
           <span className="text-amber-500">↑{fmtBytes(d.orig_bytes_24h)}</span>
@@ -403,15 +410,24 @@ export function FleetCard({ device: d }: { device: FleetDevice }) {
         </span>
       </div>
 
-      {/* Throughput bar */}
-      {barPct !== null && (
-        <div className="mt-1.5">
-          <div className="w-full h-1 bg-slate-100 dark:bg-white/[0.04] rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.max(2, barPct)}%` }} />
-          </div>
-          <p className="text-[9px] text-slate-400 mt-0.5 tabular-nums">{(ratio! * 100).toFixed(0)}% of baseline</p>
-        </div>
-      )}
+      {/* Throughput bar — always renders a slot so cards without a
+          baseline yet don't shift the flag row up. Placeholder matches
+          the real bar's height (h-1 bar + mt-0.5 + 9px line) ≈ 18px. */}
+      <div className="mt-1.5">
+        {barPct !== null ? (
+          <>
+            <div className="w-full h-1 bg-slate-100 dark:bg-white/[0.04] rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.max(2, barPct)}%` }} />
+            </div>
+            <p className="text-[9px] text-slate-400 mt-0.5 tabular-nums">{(ratio! * 100).toFixed(0)}% of baseline</p>
+          </>
+        ) : (
+          <>
+            <div className="w-full h-1" />
+            <p className="text-[9px] text-slate-400 mt-0.5 tabular-nums invisible">placeholder</p>
+          </>
+        )}
+      </div>
 
       {/* Footer: countries + destinations + anomalies */}
       <div className="flex items-center justify-between mt-2">
