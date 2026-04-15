@@ -30,10 +30,11 @@ export const ROUTES: RouteConfig[] = [
 ];
 
 export const MOBILE_NAV: { path: string; icon: string; labelKey: string; label: string; badgeId?: string }[] = [
-  { path: 'summary',  icon: 'ph-tray',             labelKey: 'mob.home',     label: 'Home' },
-  { path: 'devices',  icon: 'ph-devices',           labelKey: 'mob.devices',  label: 'Devices' },
-  { path: 'ips',      icon: 'ph-warning-octagon',   labelKey: 'mob.attacks',  label: 'Attacks', badgeId: 'ips' },
-  { path: 'settings', icon: 'ph-gear',              labelKey: 'mob.settings', label: 'Settings', badgeId: 'settings' },
+  { path: 'summary',   icon: 'ph-tray',             labelKey: 'mob.home',      label: 'Home' },
+  { path: 'dashboard', icon: 'ph-squares-four',     labelKey: 'mob.dashboard', label: 'Dashboard' },
+  { path: 'devices',   icon: 'ph-devices',          labelKey: 'mob.devices',   label: 'Devices' },
+  { path: 'ips',       icon: 'ph-warning-octagon',  labelKey: 'mob.attacks',   label: 'Attacks', badgeId: 'ips' },
+  { path: 'settings',  icon: 'ph-gear',             labelKey: 'mob.settings',  label: 'Settings', badgeId: 'settings' },
 ];
 
 export const GROUP_LABELS: Record<string, { key: string; label: string }> = {

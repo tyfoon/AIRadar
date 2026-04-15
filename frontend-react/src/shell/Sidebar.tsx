@@ -131,10 +131,8 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
           right: 0,
           width: '100vw',
           zIndex: 9999,
-          borderTop: '1px solid',
-          borderColor: 'var(--mobile-nav-border, rgba(226,232,240,1))',
         }}
-          className="bg-white dark:bg-[#0f1117] border-slate-200 dark:border-white/[0.04] md:hidden"
+          className="bg-white dark:bg-[#0f1117] md:hidden"
         >
           <div style={{ height: 56, display: 'flex', alignItems: 'stretch' }}>
             {MOBILE_NAV.map(item => {
@@ -162,25 +160,6 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
                 </a>
               );
             })}
-            <button
-              onClick={onToggleMobile}
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 2,
-                fontSize: 11,
-                color: '#94a3b8',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <i className="ph-duotone ph-list" style={{ fontSize: 20 }} />
-              <span>{t('mob.menu') || 'Menu'}</span>
-            </button>
           </div>
         </nav>,
         document.body
