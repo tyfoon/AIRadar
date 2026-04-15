@@ -267,7 +267,7 @@ function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (
 function FleetPanel({ devices, loading }: { devices: FleetDevice[]; loading: boolean }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl p-4 h-48 animate-pulse" />
         ))}
@@ -285,7 +285,7 @@ function FleetPanel({ devices, loading }: { devices: FleetDevice[]; loading: boo
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       {devices.map(d => <FleetCard key={d.mac_address} device={d} />)}
     </div>
   );
