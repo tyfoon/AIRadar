@@ -7,6 +7,7 @@ import type {
   VpnAlert, BeaconAlert, BeaconStatus, SecurityStats,
 } from './types';
 import { svcColor, svcDisplayName, SvcBadge } from '../category/serviceHelpers';
+import { useDeviceLookup } from '../utils/useDeviceLookup';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,15 +82,10 @@ function collapseEvents(events: RecentTracker[]): (RecentTracker & { _count: num
   return result;
 }
 
-// Device name resolution from global window.deviceMap
-function deviceName(ip: string): string {
-  const dm = (window as any).deviceMap;
-  if (dm && dm[ip]) {
-    const d = dm[ip];
-    return d.display_name || d.hostname || ip;
-  }
-  return ip;
-}
+// Device-name lookup for this page is now handled by useDeviceLookup()
+// (see utils/useDeviceLookup.ts). The old helper read window.deviceMap
+// (which is MAC-keyed) with an IP, so it always missed and silently fell
+// back to the raw IP — that's why every device column showed IP numbers.
 
 // Periods
 const PERIODS = [
@@ -112,6 +108,9 @@ export default function PrivacyPage() {
   const [period, setPeriod] = useState(1440);
   const [serviceFilter, setServiceFilter] = useState('');
   const [deviceFilter, _setDeviceFilter] = useState('');
+
+  // IP → friendly device name lookup (shared cache with Devices page).
+  const { nameByIp } = useDeviceLookup();
 
   // Expandable panels
   const [showBlocked, setShowBlocked] = useState(false);
@@ -417,12 +416,9 @@ export default function PrivacyPage() {
                     <td className="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">
                       {e.detection_type === 'sni_hello' ? 'DNS Query' : e.detection_type}
                     </td>
-                    <td className="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">
-                      {deviceName(e.source_ip) !== e.source_ip ? (
-                        <>
-                          <span className="text-slate-700 dark:text-slate-200">{deviceName(e.source_ip)}</span>
-                          <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">{e.source_ip}</div>
-                        </>
+                    <td className="py-3 px-4 text-xs text-slate-500 dark:text-slate-400" title={e.source_ip}>
+                      {nameByIp(e.source_ip) !== e.source_ip ? (
+                        <span className="text-slate-700 dark:text-slate-200">{nameByIp(e.source_ip)}</span>
                       ) : (
                         <span className="font-mono">{e.source_ip}</span>
                       )}

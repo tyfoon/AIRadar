@@ -18,6 +18,7 @@ import type {
 } from './types';
 import { SvcLogo, SvcBadge, svcColor, svcDisplayName, svcLogoUrl } from './serviceHelpers';
 import { formatBytes } from '../colors';
+import { useDeviceLookup } from '../utils/useDeviceLookup';
 
 // ---------------------------------------------------------------------------
 // Time period options
@@ -326,6 +327,7 @@ function formatBucket(b: string): string {
 // ---------------------------------------------------------------------------
 function EventsTable({ events, isLoading }: { events: DetectionEvent[]; isLoading: boolean }) {
   const [limit, setLimit] = useState(50);
+  const { nameByIp } = useDeviceLookup();
 
   if (isLoading) {
     return (
@@ -398,8 +400,8 @@ function EventsTable({ events, isLoading }: { events: DetectionEvent[]; isLoadin
                 <td className="py-3 px-4 text-xs text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
                   {e.description || e.detection_type}
                 </td>
-                <td className="py-3 px-4 text-xs text-slate-500 hidden sm:table-cell">
-                  {e.source_ip}
+                <td className="py-3 px-4 text-xs text-slate-500 hidden sm:table-cell" title={e.source_ip}>
+                  {nameByIp(e.source_ip)}
                 </td>
                 <td className="py-3 px-4 text-right tabular-nums text-xs hidden sm:table-cell">
                   {e.bytes_transferred > 0 ? formatBytes(e.bytes_transferred) : '—'}
@@ -448,6 +450,7 @@ function collapseEvents(events: DetectionEvent[]): DetectionEvent[] {
 // Top Data Exporters (Cloud page)
 // ---------------------------------------------------------------------------
 function TopUploaders({ events }: { events: DetectionEvent[] }) {
+  const { nameByIp } = useDeviceLookup();
   const uploaders = useMemo<UploaderEntry[]>(() => {
     const byIp: Record<string, { bytes: number; events: number; services: Set<string> }> = {};
     events.forEach(e => {
@@ -459,13 +462,13 @@ function TopUploaders({ events }: { events: DetectionEvent[] }) {
     });
     return Object.entries(byIp)
       .map(([ip, a]) => ({
-        ip, name: ip, mac: null,
+        ip, name: nameByIp(ip), mac: null,
         bytes: a.bytes, events: a.events,
         services: [...a.services],
       }))
       .sort((a, b) => b.bytes - a.bytes)
       .slice(0, 10);
-  }, [events]);
+  }, [events, nameByIp]);
 
   const grandTotal = uploaders.reduce((s, u) => s + u.bytes, 0);
   const maxBytes = uploaders[0]?.bytes || 1;
@@ -495,7 +498,7 @@ function TopUploaders({ events }: { events: DetectionEvent[] }) {
                   <span className="text-[11px] tabular-nums text-slate-400 w-5 text-right flex-shrink-0">
                     #{i + 1}
                   </span>
-                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate" title={u.ip}>
                     {u.name}
                   </span>
                 </div>
@@ -524,6 +527,7 @@ function TopUploaders({ events }: { events: DetectionEvent[] }) {
 // Adoption panel (AI page only)
 // ---------------------------------------------------------------------------
 function AdoptionPanel({ events }: { events: DetectionEvent[] }) {
+  const { nameByIp } = useDeviceLookup();
   const metrics = useMemo<AdoptionMetrics>(() => {
     // Group by source IP (rough device proxy)
     const deviceEvents: Record<string, DetectionEvent[]> = {};
@@ -587,7 +591,7 @@ function AdoptionPanel({ events }: { events: DetectionEvent[] }) {
 
     const dr: DeviceBreakdown[] = Object.entries(devEvts).map(([ip, evts]) => ({
       mac: ip,
-      name: ip,
+      name: nameByIp(ip),
       icon: '💻',
       count: evts.length,
       services: [...new Set(evts.map(e => e.ai_service))],
@@ -646,7 +650,9 @@ function AdoptionPanel({ events }: { events: DetectionEvent[] }) {
         <div className="space-y-1.5">
           {deviceRows.slice(0, 15).map(d => (
             <div key={d.mac} className="flex items-center gap-2 text-[11px]">
-              <span className="w-[140px] truncate flex-shrink-0 text-slate-600 dark:text-slate-300" title={d.name}>
+              {/* d.mac is actually the IP here (see useMemo above); use it as the
+                  tooltip so users can hover to see the raw address. */}
+              <span className="w-[140px] truncate flex-shrink-0 text-slate-600 dark:text-slate-300" title={d.mac}>
                 {d.name}
               </span>
               <div className="flex-1 h-4 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden relative">
