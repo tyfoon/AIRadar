@@ -28,7 +28,7 @@
 // action, and the killswitch badge is already refreshed by AppShell's 5s
 // badge poll via window._killswitchActive.
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 
 declare global {
@@ -48,8 +48,6 @@ declare global {
     saveNotificationSettings?: () => Promise<void>;
     testHaNotification?: () => Promise<void>;
     loadReputationSettings?: () => Promise<void>;
-    saveReputationSettings?: () => Promise<void>;
-    testReputationKeys?: () => Promise<void>;
     renderLegalComponents?: () => void;
   }
 }
@@ -465,49 +463,7 @@ export default function SettingsPage() {
 
       {/* ── REPUTATION TAB ── */}
       <div id="settings-tab-reputation" className="space-y-6 hidden">
-        <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
-          <div className="p-5 border-b border-slate-100 dark:border-white/[0.05]">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                <i className="ph-duotone ph-shield-check text-xl text-indigo-600 dark:text-indigo-400"></i>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">IP &amp; Domain Reputation</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Threat intelligence from URLhaus, ThreatFox, AbuseIPDB &amp; VirusTotal</p>
-              </div>
-            </div>
-          </div>
-          <div className="p-5 space-y-4">
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 1 — Proactive (abuse.ch)</h4>
-              <p className="text-xs text-slate-400">URLhaus (malware) + ThreatFox (C2 servers) — checked automatically for every new IP.</p>
-              <div>
-                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">abuse.ch Auth-Key</label>
-                <input type="password" id="rep-abusech-key" placeholder="Enter Auth-Key..." className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">Free registration · <a href="https://auth.abuse.ch/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key at auth.abuse.ch</a></p>
-              </div>
-            </div>
-            <hr className="border-slate-200 dark:border-slate-700" />
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 2 — On-Demand (click to check)</h4>
-              <div>
-                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">AbuseIPDB API Key</label>
-                <input type="password" id="rep-abuseipdb-key" placeholder="Enter API key..." className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">Free: 1,000 checks/day · <a href="https://www.abuseipdb.com/account/api" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key</a></p>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">VirusTotal API Key</label>
-                <input type="password" id="rep-virustotal-key" placeholder="Enter API key..." className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono" />
-                <p className="text-[10px] text-slate-400 mt-1">Free: 500 checks/day · <a href="https://www.virustotal.com/gui/my-apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key</a></p>
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => window.saveReputationSettings?.()} className="px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition">Save Keys</button>
-              <button onClick={() => window.testReputationKeys?.()} className="px-4 py-2 text-xs font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition">Test Connection</button>
-            </div>
-            <div id="rep-test-result" className="hidden text-xs p-3 rounded-lg"></div>
-          </div>
-        </div>
+        <ReputationTab />
       </div>
 
       {/* ── ABOUT TAB ── */}
@@ -548,5 +504,165 @@ export default function SettingsPage() {
       </div>
 
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReputationTab — self-contained, no vanilla bridges
+// ---------------------------------------------------------------------------
+
+interface TestResult {
+  urlhaus?: string;
+  threatfox?: string;
+  abuseipdb?: string;
+  virustotal?: string;
+}
+
+function ReputationTab() {
+  const [abusechKey, setAbusechKey] = useState('');
+  const [abuseipdbKey, setAbuseipdbKey] = useState('');
+  const [vtKey, setVtKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ results: TestResult; errors: string[] } | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // Load current keys on mount
+  useEffect(() => {
+    fetch('/api/settings/reputation')
+      .then(r => r.json())
+      .then(data => {
+        setAbusechKey(data.abusech_key || '');
+        setAbuseipdbKey(data.abuseipdb_key || '');
+        setVtKey(data.virustotal_key || '');
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await fetch('/api/settings/reputation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abusech_key: abusechKey, abuseipdb_key: abuseipdbKey, virustotal_key: vtKey }),
+      });
+      setSaveMsg('Keys saved');
+      setTimeout(() => setSaveMsg(null), 3000);
+    } catch {
+      setSaveMsg('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }, [abusechKey, abuseipdbKey, vtKey]);
+
+  const handleTest = useCallback(async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/settings/reputation/test', { method: 'POST' });
+      const data = await res.json();
+      setTestResult({ results: data.results || {}, errors: data.errors || [] });
+    } catch (e: any) {
+      setTestResult({ results: {}, errors: [e.message || 'Connection failed'] });
+    } finally {
+      setTesting(false);
+    }
+  }, []);
+
+  const hasError = (testResult?.errors?.length ?? 0) > 0;
+
+  return (
+    <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden card-hover">
+      <div className="p-5 border-b border-slate-100 dark:border-white/[0.05]">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+            <i className="ph-duotone ph-shield-check text-xl text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">IP &amp; Domain Reputation</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Threat intelligence from URLhaus, ThreatFox, AbuseIPDB &amp; VirusTotal</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 1 — Proactive (abuse.ch)</h4>
+          <p className="text-xs text-slate-400">URLhaus (malware) + ThreatFox (C2 servers) — checked automatically for every new IP.</p>
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">abuse.ch Auth-Key</label>
+            <input
+              type="password"
+              value={abusechKey}
+              onChange={e => setAbusechKey(e.target.value)}
+              placeholder="Enter Auth-Key..."
+              className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Free registration · <a href="https://auth.abuse.ch/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key at auth.abuse.ch</a>
+            </p>
+          </div>
+        </div>
+        <hr className="border-slate-200 dark:border-slate-700" />
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300">Layer 2 — On-Demand (click to check)</h4>
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">AbuseIPDB API Key</label>
+            <input
+              type="password"
+              value={abuseipdbKey}
+              onChange={e => setAbuseipdbKey(e.target.value)}
+              placeholder="Enter API key..."
+              className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Free: 1,000 checks/day · <a href="https://www.abuseipdb.com/account/api" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key</a>
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">VirusTotal API Key</label>
+            <input
+              type="password"
+              value={vtKey}
+              onChange={e => setVtKey(e.target.value)}
+              placeholder="Enter API key..."
+              className="w-full text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-mono"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Free: 500 checks/day · <a href="https://www.virustotal.com/gui/my-apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get free key</a>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Keys'}
+          </button>
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="px-4 py-2 text-xs font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition disabled:opacity-50"
+          >
+            {testing ? 'Testing…' : 'Test Connection'}
+          </button>
+          {saveMsg && (
+            <span className="text-xs text-emerald-400">{saveMsg}</span>
+          )}
+        </div>
+        {testResult && (
+          <div className={`text-xs p-3 rounded-lg ${hasError ? 'bg-amber-900/30 border border-amber-700/50 text-amber-300' : 'bg-emerald-900/30 border border-emerald-700/50 text-emerald-300'}`}>
+            {testResult.results.urlhaus && <div>URLhaus: {testResult.results.urlhaus}</div>}
+            {testResult.results.threatfox && <div>ThreatFox: {testResult.results.threatfox}</div>}
+            {testResult.results.abuseipdb && <div>AbuseIPDB: {testResult.results.abuseipdb}</div>}
+            {testResult.results.virustotal && <div>VirusTotal: {testResult.results.virustotal}</div>}
+            {hasError && <div className="mt-2">⚠️ {testResult.errors.join(', ')}</div>}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

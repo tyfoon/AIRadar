@@ -5774,61 +5774,10 @@ window.saveNotificationSettings = saveNotificationSettings;
 window.testHaNotification = testHaNotification;
 
 // --- Reputation Settings ---
-async function loadReputationSettings() {
-  try {
-    const res = await fetch('/api/settings/reputation');
-    const data = await res.json();
-    const achKey = document.getElementById('rep-abusech-key');
-    const abKey = document.getElementById('rep-abuseipdb-key');
-    const vtKey = document.getElementById('rep-virustotal-key');
-    if (achKey) achKey.value = data.abusech_key || '';
-    if (abKey) abKey.value = data.abuseipdb_key || '';
-    if (vtKey) vtKey.value = data.virustotal_key || '';
-  } catch (e) { console.error('loadReputationSettings:', e); }
-}
-
-async function saveReputationSettings() {
-  const achKey = document.getElementById('rep-abusech-key')?.value || '';
-  const abKey = document.getElementById('rep-abuseipdb-key')?.value || '';
-  const vtKey = document.getElementById('rep-virustotal-key')?.value || '';
-  try {
-    await fetch('/api/settings/reputation', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({abusech_key: achKey, abuseipdb_key: abKey, virustotal_key: vtKey}),
-    });
-    _showToast('Reputation keys saved', 'success');
-  } catch (e) { _showToast('Failed to save keys', 'error'); }
-}
-
-async function testReputationKeys() {
-  const resultEl = document.getElementById('rep-test-result');
-  if (!resultEl) return;
-  resultEl.classList.remove('hidden');
-  resultEl.className = 'text-xs p-3 rounded-lg bg-slate-700 text-slate-300';
-  resultEl.innerHTML = '<span class="animate-pulse">Testing connections...</span>';
-  try {
-    const res = await fetch('/api/settings/reputation/test', {method: 'POST'});
-    const data = await res.json();
-    const r = data.results || {};
-    const lines = [
-      `URLhaus: ${r.urlhaus || 'error'}`,
-      `ThreatFox: ${r.threatfox || 'error'}`,
-      `AbuseIPDB: ${r.abuseipdb || 'error'}`,
-      `VirusTotal: ${r.virustotal || 'error'}`,
-    ];
-    const hasError = data.errors?.length > 0;
-    resultEl.className = `text-xs p-3 rounded-lg ${hasError ? 'bg-amber-900/30 border border-amber-700/50 text-amber-300' : 'bg-emerald-900/30 border border-emerald-700/50 text-emerald-300'}`;
-    resultEl.innerHTML = lines.join('<br>') + (hasError ? `<br><br>⚠️ ${data.errors.join(', ')}` : '');
-  } catch (e) {
-    resultEl.className = 'text-xs p-3 rounded-lg bg-red-900/30 border border-red-700/50 text-red-300';
-    resultEl.innerHTML = `Error: ${e.message}`;
-  }
-}
-
+// Save/test now handled by React (ReputationTab in SettingsPage.tsx).
+// loadReputationSettings kept as no-op for switchSettingsTab() call.
+async function loadReputationSettings() { /* React handles this */ }
 window.loadReputationSettings = loadReputationSettings;
-window.saveReputationSettings = saveReputationSettings;
-window.testReputationKeys = testReputationKeys;
 
 // --- Active Protect (IPS) ---
 // IPS — now a React page (IpsPage.tsx)
