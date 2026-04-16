@@ -2553,65 +2553,14 @@ function _renderContentKaderDevices(devices, category) {
   }).join('');
 }
 
-// ── Modal entry points ─────────────────────────────────────────────
-//
-// Three distinct scopes, each mapped to the shared #alert-action-modal
-// with the right default_scope pre-selected. The user can still flip
-// the scope inside the modal — these are just sensible defaults.
-
-// Clicking a service row (its logo/name area) in Kader 1: default to
-// GLOBAL scope because the user is authoring a network-wide rule.
-function _contentOpenService(serviceName, category) {
-  openAlertActionModal({
-    mode: 'content',
-    service_or_dest: serviceName,
-    category,
-    mac_address: null,
-    default_scope: 'global',
-    default_action: 'block',
-    alert_type: 'content_rule',
-  });
-}
+// ── Modal entry points — Content page now uses React InlinePolicyPanel.
+// These stubs are kept so onclick attributes in vanilla-rendered kaders
+// don't throw — they just show a toast guiding the user to the React UI.
+function _contentOpenService() { showToast('Use the Content page to manage rules', 'info'); }
+function _contentOpenDeviceService() { showToast('Use the Content page to manage rules', 'info'); }
+function _contentOpenDeviceCategory() { showToast('Use the Content page to manage rules', 'info'); }
 window._contentOpenService = _contentOpenService;
-
-// Clicking a device chip inside Kader 1 or a service chip inside Kader 2:
-// default to DEVICE scope because the user picked a specific device +
-// specific service pair.
-function _contentOpenDeviceService(mac, serviceName, category) {
-  const dev = deviceMap[mac] || {};
-  openAlertActionModal({
-    mode: 'content',
-    service_or_dest: serviceName,
-    category,
-    mac_address: mac,
-    hostname: dev.hostname,
-    vendor: dev.vendor,
-    display_name: dev.display_name,
-    default_scope: 'device',
-    default_action: 'block',
-    alert_type: 'content_rule',
-  });
-}
 window._contentOpenDeviceService = _contentOpenDeviceService;
-
-// Clicking a device row (the body, not a service chip) in Kader 2:
-// default to DEVICE scope + whole CATEGORY (service_name = null) so
-// the user can block all Social for that phone in one click.
-function _contentOpenDeviceCategory(mac, category) {
-  const dev = deviceMap[mac] || {};
-  openAlertActionModal({
-    mode: 'content',
-    service_or_dest: null,  // category-wide rule
-    category,
-    mac_address: mac,
-    hostname: dev.hostname,
-    vendor: dev.vendor,
-    display_name: dev.display_name,
-    default_scope: 'device',
-    default_action: 'block',
-    alert_type: 'content_rule',
-  });
-}
 window._contentOpenDeviceCategory = _contentOpenDeviceCategory;
 
 function _renderFamilyHonesty(h) {

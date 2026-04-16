@@ -40,18 +40,19 @@ export const ALERT_META: Record<string, { icon: string; label: string; color: st
   inbound_port_scan:    { icon: 'ph-scan',                 label: 'Port scan',         color: 'amber' },
 };
 
-// Alert types that can only be snoozed/silenced — no service policy block.
-// Inbound attacks are NOT anomalies (they're network events) but also have
-// no service policy path — they'd need an IP-ban API (CrowdSec / iptables).
-// For now they share the snooze-only UX but get a different hint message.
+// Snooze-only types — no Block Activity tab available.
+// new_device: informational, nothing to block.
+// iot_volume_spike: ambiguous target.
+// inbound_*: would need IP-ban API (CrowdSec/iptables), not service policy.
 export const ANOMALY_TYPES = new Set([
-  'beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device',
-  'iot_lateral_movement', 'iot_suspicious_port', 'iot_new_country',
-  'iot_volume_spike',
+  'new_device', 'iot_volume_spike',
 ]);
-
-// Inbound attacks: snooze-only (no service policy) but NOT anomalies
 const INBOUND_TYPES = new Set(['inbound_threat', 'inbound_port_scan']);
+
+// All other alert types get both Manage Alert + Block Activity tabs:
+// vpn_tunnel, stealth_vpn_tunnel, beaconing_threat → block via iptables/policy
+// iot_lateral_movement, iot_suspicious_port, iot_new_country → block dest/service
+// upload, service_access → block via DNS/policy (original behavior)
 
 // ---------------------------------------------------------------------------
 // Types
