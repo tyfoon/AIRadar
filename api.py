@@ -6634,6 +6634,59 @@ async def toggle_ips(payload: GlobalFilterToggle):
     return {"enabled": crowdsec.enabled}
 
 
+class IpBanRequest(BaseModel):
+    ip: str
+    duration_hours: int | None = None  # None = permanent
+
+
+@app.post("/api/ips/ban")
+async def ban_ip(payload: IpBanRequest):
+    """Ban a source IP via iptables (FORWARD chain, both directions).
+
+    Used by the IPS page to manually block an inbound attacker.
+    If duration_hours is set, a background task will unban after that time.
+    """
+    import ipaddress
+
+    ip = payload.ip.strip()
+    # Validate it's a real IP and not a private/loopback address
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid IP address: {ip}")
+    if addr.is_private or addr.is_loopback:
+        raise HTTPException(status_code=400, detail="Cannot ban private or loopback addresses")
+
+    await _block_ip_iptables(ip)
+    print(f"[ips] manual ban: {ip} (duration={payload.duration_hours}h)")
+
+    # Schedule auto-unban if duration is set
+    if payload.duration_hours and payload.duration_hours > 0:
+        async def _delayed_unban():
+            import asyncio
+            await asyncio.sleep(payload.duration_hours * 3600)
+            await _unblock_ip_iptables(ip)
+            print(f"[ips] auto-unban expired: {ip}")
+        import asyncio
+        asyncio.create_task(_delayed_unban())
+
+    return {"banned": True, "ip": ip, "duration_hours": payload.duration_hours}
+
+
+@app.delete("/api/ips/ban")
+async def unban_ip(ip: str):
+    """Remove an iptables ban for a specific IP."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(ip.strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid IP address: {ip}")
+
+    await _unblock_ip_iptables(ip.strip())
+    print(f"[ips] manual unban: {ip}")
+    return {"unbanned": True, "ip": ip}
+
+
 # ---------------------------------------------------------------------------
 # Admin: one-click stale-data cleanup
 # ---------------------------------------------------------------------------

@@ -136,7 +136,7 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
   const meta = ALERT_META[alert.alert_type] || { icon: 'ph-warning', label: alert.alert_type, color: 'slate' };
   const isAnomaly = ANOMALY_TYPES.has(alert.alert_type);
   const isInbound = INBOUND_TYPES.has(alert.alert_type);
-  const isSnoozeOnly = isAnomaly || isInbound; // no Block Activity tab
+  const isSnoozeOnly = isAnomaly; // only new_device + iot_volume_spike
   const isSnoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
   const isDismissed = !!alert.is_dismissed;
   const colors = COLOR_MAP[meta.color] || COLOR_MAP.slate;
@@ -378,16 +378,15 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
       {expanded && (
         <div className="border-t border-white/[0.05] bg-white/[0.015]">
           {isSnoozeOnly ? (
-            // Anomalies + inbound: single manage-alert panel, no tabs
+            // Pure anomalies (new_device, volume_spike): snooze only
             <ManageAlertPanel
               onSnooze={handleSnooze}
               onPermanent={handlePermanent}
               onCustom={handleCustomSnooze}
-              isAnomaly={isAnomaly}
-              isInbound={isInbound}
+              isAnomaly
             />
           ) : (
-            // Service alerts: tabs for Manage Alert + Block Activity
+            // All other alerts: tabs for Manage Alert + Block/Ban
             <>
               <div className="flex gap-1 px-4 pt-3 pb-0">
                 <button
@@ -408,9 +407,10 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
                       ? 'bg-white/[0.08] text-slate-200'
                       : 'text-slate-500 hover:text-slate-300'
                   }`}
-                  title="Block, allow, or set alerts for this service"
+                  title={isInbound ? 'Ban this IP via firewall' : 'Block, allow, or set alerts for this service'}
                 >
-                  <i className="ph-duotone ph-shield-warning text-xs" /> Block Activity
+                  <i className={`ph-duotone ${isInbound ? 'ph-prohibit' : 'ph-shield-warning'} text-xs`} />
+                  {isInbound ? ' Ban IP' : ' Block Activity'}
                 </button>
               </div>
               {tab === 'alert' && (
@@ -418,15 +418,22 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
                   onSnooze={handleSnooze}
                   onPermanent={handlePermanent}
                   onCustom={handleCustomSnooze}
+                  isInbound={isInbound}
                 />
               )}
-              {tab === 'activity' && (
+              {tab === 'activity' && !isInbound && (
                 <BlockActivityPanel
                   mac={alert.mac_address}
                   serviceName={alert.service_or_dest}
                   category={alert.category}
                   deviceName={alert.device_name}
                   onDone={() => onAction?.(alert.alert_id, 'policy')}
+                />
+              )}
+              {tab === 'activity' && isInbound && (
+                <BanIpPanel
+                  ip={alert.service_or_dest || ''}
+                  onDone={() => onAction?.(alert.alert_id, 'ban')}
                 />
               )}
             </>
@@ -812,5 +819,100 @@ function ActionButton({ active, onClick, icon, label, tooltip, color }: {
     >
       <i className={`ph-duotone ${icon} text-xs`} /> {label}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ban IP Panel (for inbound attacks)
+// ---------------------------------------------------------------------------
+function BanIpPanel({ ip, onDone }: { ip: string; onDone?: () => void }) {
+  const [status, setStatus] = useState<'idle' | 'banning' | 'done' | 'error'>('idle');
+  const [selectedHours, setSelectedHours] = useState<number | null>(null); // null = permanent
+
+  const handleBan = useCallback(async () => {
+    if (!ip) return;
+    setStatus('banning');
+    try {
+      const res = await fetch('/api/ips/ban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, duration_hours: selectedHours }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      setStatus('done');
+      window.showToast?.(`Banned ${ip}${selectedHours ? ` for ${selectedHours}h` : ' permanently'}`, 'success');
+      onDone?.();
+    } catch (e: any) {
+      setStatus('error');
+      window.showToast?.(`Failed to ban: ${e.message}`, 'error');
+    }
+  }, [ip, selectedHours, onDone]);
+
+  if (status === 'done') {
+    return (
+      <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-xs">
+        <i className="ph-duotone ph-check-circle text-base" />
+        <span className="font-medium">{ip} banned{selectedHours ? ` for ${selectedHours}h` : ' permanently'}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 border-t border-white/[0.04]">
+      <div className="flex items-center gap-2 mb-3">
+        <i className="ph-duotone ph-prohibit text-xs text-red-400" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Ban IP via firewall</span>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 px-2 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+        <span className="font-mono text-xs text-slate-300">{ip}</span>
+      </div>
+
+      <p className="text-[10px] text-slate-500 mb-2.5">Duration:</p>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {[1, 4, 8, 24].map(h => (
+          <button
+            key={h}
+            onClick={() => setSelectedHours(h)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              selectedHours === h
+                ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-300'
+            }`}
+          >
+            {h}h
+          </button>
+        ))}
+        <button
+          onClick={() => setSelectedHours(null)}
+          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+            selectedHours === null
+              ? 'bg-red-500/20 border-red-500/30 text-red-300'
+              : 'bg-white/[0.04] border-white/[0.06] text-slate-400 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-300'
+          }`}
+        >
+          Permanent
+        </button>
+      </div>
+
+      <button
+        onClick={handleBan}
+        disabled={status === 'banning'}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+      >
+        {status === 'banning' ? (
+          <><span className="animate-spin inline-block w-3 h-3 border border-white/40 border-t-white rounded-full" /> Banning...</>
+        ) : (
+          <><i className="ph-duotone ph-prohibit text-sm" /> Ban {ip}</>
+        )}
+      </button>
+
+      {status === 'error' && (
+        <p className="text-[10px] text-red-400 mt-2">Ban failed — check server logs.</p>
+      )}
+    </div>
   );
 }
