@@ -40,12 +40,18 @@ export const ALERT_META: Record<string, { icon: string; label: string; color: st
   inbound_port_scan:    { icon: 'ph-scan',                 label: 'Port scan',         color: 'amber' },
 };
 
-// Anomaly types can only be snoozed/silenced, NOT blocked via policy
+// Alert types that can only be snoozed/silenced — no service policy block.
+// Inbound attacks are NOT anomalies (they're network events) but also have
+// no service policy path — they'd need an IP-ban API (CrowdSec / iptables).
+// For now they share the snooze-only UX but get a different hint message.
 export const ANOMALY_TYPES = new Set([
   'beaconing_threat', 'vpn_tunnel', 'stealth_vpn_tunnel', 'new_device',
   'iot_lateral_movement', 'iot_suspicious_port', 'iot_new_country',
-  'iot_volume_spike', 'inbound_threat', 'inbound_port_scan',
+  'iot_volume_spike',
 ]);
+
+// Inbound attacks: snooze-only (no service policy) but NOT anomalies
+const INBOUND_TYPES = new Set(['inbound_threat', 'inbound_port_scan']);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,6 +134,8 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
 
   const meta = ALERT_META[alert.alert_type] || { icon: 'ph-warning', label: alert.alert_type, color: 'slate' };
   const isAnomaly = ANOMALY_TYPES.has(alert.alert_type);
+  const isInbound = INBOUND_TYPES.has(alert.alert_type);
+  const isSnoozeOnly = isAnomaly || isInbound; // no Block Activity tab
   const isSnoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
   const isDismissed = !!alert.is_dismissed;
   const colors = COLOR_MAP[meta.color] || COLOR_MAP.slate;
@@ -368,13 +376,14 @@ export default function AlertCard({ alert, compact = false, showTrash = false, o
       {/* Expanded panel */}
       {expanded && (
         <div className="border-t border-white/[0.05] bg-white/[0.015]">
-          {isAnomaly ? (
-            // Anomalies: single manage-alert panel, no tabs
+          {isSnoozeOnly ? (
+            // Anomalies + inbound: single manage-alert panel, no tabs
             <ManageAlertPanel
               onSnooze={handleSnooze}
               onPermanent={handlePermanent}
               onCustom={handleCustomSnooze}
-              isAnomaly
+              isAnomaly={isAnomaly}
+              isInbound={isInbound}
             />
           ) : (
             // Service alerts: tabs for Manage Alert + Block Activity
@@ -435,25 +444,27 @@ function ManageAlertPanel({
   onPermanent,
   onCustom,
   isAnomaly = false,
+  isInbound = false,
 }: {
   onSnooze: (hours: number) => void;
   onPermanent: () => void;
   onCustom: (iso: string) => void;
   isAnomaly?: boolean;
+  isInbound?: boolean;
 }) {
   const [showCustom, setShowCustom] = useState(false);
   const dtRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="px-4 py-3 border-t border-white/[0.04]">
-      {isAnomaly && (
+      {(isAnomaly || isInbound) && (
         <div className="flex items-center gap-2 mb-2.5">
           <i className="ph-duotone ph-bell-slash text-xs text-slate-500" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Manage alert</span>
           <span className="text-[10px] text-slate-600 ml-1">— does not affect the traffic itself</span>
         </div>
       )}
-      {!isAnomaly && (
+      {!isAnomaly && !isInbound && (
         <p className="text-[10px] text-slate-500 mb-2.5">Snooze or silence this warning — does not affect the traffic itself.</p>
       )}
 
@@ -513,7 +524,13 @@ function ManageAlertPanel({
       {isAnomaly && (
         <p className="text-[10px] text-slate-600 mt-2.5 italic">
           <i className="ph-duotone ph-info text-xs" />{' '}
-          Anomalies cannot be blocked — use snooze or permanent to manage this alert.
+          Network anomalies can only be snoozed or silenced — use the Rules page to block specific services.
+        </p>
+      )}
+      {isInbound && (
+        <p className="text-[10px] text-slate-600 mt-2.5 italic">
+          <i className="ph-duotone ph-info text-xs" />{' '}
+          Inbound attacks are blocked by CrowdSec automatically. Snooze to hide this alert.
         </p>
       )}
     </div>
