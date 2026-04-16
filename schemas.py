@@ -172,6 +172,13 @@ class GlobalFilterToggle(BaseModel):
     enabled: bool
 
 
+class IpBanRequest(BaseModel):
+    """Payload for POST /api/ips/ban — ban a source IP via iptables."""
+
+    ip: str
+    duration_hours: int | None = None  # None = permanent
+
+
 class GlobalFilterStatus(BaseModel):
     """Status of all global filters."""
 

@@ -352,6 +352,7 @@ from schemas import (
     EventRead,
     FilterScheduleUpdate,
     GlobalFilterToggle,
+    IpBanRequest,
     PrivacyStats,
     ServicePolicyCreate,
     ServicePolicyRead,
@@ -6632,11 +6633,6 @@ async def toggle_ips(payload: GlobalFilterToggle):
     state = "enabled" if payload.enabled else "disabled"
     print(f"[ips] Active Protect {state}")
     return {"enabled": crowdsec.enabled}
-
-
-class IpBanRequest(BaseModel):
-    ip: str
-    duration_hours: int | None = None  # None = permanent
 
 
 @app.post("/api/ips/ban")
