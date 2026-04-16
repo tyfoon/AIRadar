@@ -120,34 +120,6 @@ export async function removeGroupMember(groupId: number, mac: string): Promise<v
   await fetch(`/api/groups/${groupId}/members/${encodeURIComponent(mac)}`, { method: 'DELETE' });
 }
 
-// Reputation
-export async function fetchReputationBulk(targets: string[]): Promise<Record<string, ReputationResult>> {
-  const unique = [...new Set(targets.filter(t => t && !t.startsWith('192.168.') && !t.startsWith('10.') && !t.startsWith('127.')))];
-  if (!unique.length) return {};
-  try {
-    const res = await fetch('/api/reputation/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targets: unique }),
-    });
-    const data = await res.json();
-    return data.results || {};
-  } catch {
-    return {};
-  }
-}
-
-export interface ReputationResult {
-  urlhaus_status?: string;
-  urlhaus_threat?: string;
-  threatfox_status?: string;
-  threatfox_malware?: string;
-  abuseipdb_score?: number;
-  abuseipdb_reports?: number;
-  vt_malicious?: number;
-  vt_total?: number;
-}
-
 // Policies
 export async function setServicePolicy(
   serviceName: string,

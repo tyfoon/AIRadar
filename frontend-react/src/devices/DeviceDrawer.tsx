@@ -7,7 +7,10 @@ import { getCategoryGroups, categorizeService } from '../utils/categories';
 import { svcDisplayName } from '../utils/services';
 import { fmtBytes, fmtDuration, fmtTime, formatNumber } from '../utils/format';
 import { t, getLocale } from '../utils/i18n';
-import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice, fetchReputationBulk, type ReputationResult } from './api';
+import { fetchConnections, fetchReport, fetchCachedReport, fetchIotProfile, renameDevice } from './api';
+import { fetchReputationBulk, type ReputationResult } from '../shared/reputationApi';
+import ReputationBadge from '../shared/ReputationBadge';
+import ReputationModal from '../shared/ReputationModal';
 import SvcLogo from './SvcLogo';
 import PhIcon from './PhIcon';
 import ScreenTime from '../ScreenTime';
@@ -486,39 +489,8 @@ function SummaryTab({ events, mac, policyByService, policyExpiresByService }: { 
 
 // --- Connections Tab ---
 
-// Bridge to vanilla JS reputation modal (still in index.html + app.js)
-declare global {
-  interface Window {
-    _openReputationCheck?: (target: string) => void;
-  }
-}
-
-function ReputationBadge({ ip, cache }: { ip: string; cache: Record<string, ReputationResult> }) {
-  const r = cache[ip];
-  if (!r) return null;
-  const badges: { cls: string; label: string }[] = [];
-  if (r.urlhaus_status === 'malware') badges.push({ cls: 'bg-red-600 text-white', label: `Malware${r.urlhaus_threat ? ` (${r.urlhaus_threat})` : ''}` });
-  if (r.threatfox_status === 'c2') badges.push({ cls: 'bg-red-700 text-white', label: `C2${r.threatfox_malware ? ` (${r.threatfox_malware})` : ''}` });
-  if (r.abuseipdb_score != null) {
-    const sc = r.abuseipdb_score;
-    const bg = sc >= 75 ? 'bg-red-600' : sc >= 25 ? 'bg-amber-600' : 'bg-emerald-600';
-    badges.push({ cls: `${bg} text-white`, label: `Abuse: ${sc}%` });
-  }
-  if (r.vt_malicious != null && r.vt_total != null) {
-    const bg = r.vt_malicious >= 5 ? 'bg-red-600' : r.vt_malicious >= 1 ? 'bg-amber-600' : 'bg-emerald-600';
-    badges.push({ cls: `${bg} text-white`, label: `VT: ${r.vt_malicious}/${r.vt_total}` });
-  }
-  if (!badges.length) return null;
-  return (
-    <>
-      {badges.map((b, i) => (
-        <span key={i} className={`inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-bold ${b.cls}`}>{b.label}</span>
-      ))}
-    </>
-  );
-}
-
 function ConnectionsTab({ mac }: { mac: string }) {
+  const [repTarget, setRepTarget] = useState<string | null>(null);
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['deviceConnections', mac],
     queryFn: () => fetchConnections(mac),
@@ -534,12 +506,6 @@ function ConnectionsTab({ mac }: { mac: string }) {
     staleTime: 120_000,
   });
   const reputation = repCache || {};
-
-  const openRepCheck = (ip: string) => {
-    if (typeof window._openReputationCheck === 'function') {
-      window._openReputationCheck(ip);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -571,7 +537,7 @@ function ConnectionsTab({ mac }: { mac: string }) {
           <div
             key={i}
             className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] cursor-pointer"
-            onClick={() => openRepCheck(c.resp_ip)}
+            onClick={() => setRepTarget(c.resp_ip)}
           >
             <span className="flex-shrink-0">
               {c.direction === 'outbound'
@@ -609,6 +575,7 @@ function ConnectionsTab({ mac }: { mac: string }) {
           </div>
         ))}
       </div>
+      <ReputationModal target={repTarget} onClose={() => setRepTarget(null)} />
     </div>
   );
 }
