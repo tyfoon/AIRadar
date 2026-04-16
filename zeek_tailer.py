@@ -3398,7 +3398,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         await send_event(
                             client,
                             detection_type="stealth_vpn_tunnel",
-                            ai_service=evasion_svc,
+                            ai_service=f"{evasion_svc}:{resp_ip}",
                             source_ip=src_ip,
                             bytes_transferred=dpd_total,
                             category="tracking",
@@ -3630,7 +3630,7 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 await send_event(
                                     client,
                                     detection_type="vpn_tunnel",
-                                    ai_service=f"vpn_{provider_label}",
+                                    ai_service=f"vpn_{provider_label}:{resp_ip}",
                                     source_ip=src_ip,
                                     bytes_transferred=a_total,
                                     category="tracking",

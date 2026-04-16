@@ -777,14 +777,20 @@ async def _expire_block_rules():
             )
 
             for rule in expired:
-                # Unblock in AdGuard
-                ok = await adguard.unblock_domain(rule.domain)
-                rule.is_active = False
-                status = "ok" if ok else "AdGuard error"
-                print(
-                    f"[rules] Expired: {rule.service_name} ({rule.domain}) "
-                    f"— unblocked ({status})"
-                )
+                if _is_vpn_service(rule.service_name):
+                    # Unblock VPN IP via iptables
+                    await _unblock_ip_iptables(rule.domain)
+                    rule.is_active = False
+                    print(f"[rules] Expired VPN: {rule.service_name} (IP {rule.domain}) — iptables removed")
+                else:
+                    # Unblock in AdGuard
+                    ok = await adguard.unblock_domain(rule.domain)
+                    rule.is_active = False
+                    status = "ok" if ok else "AdGuard error"
+                    print(
+                        f"[rules] Expired: {rule.service_name} ({rule.domain}) "
+                        f"— unblocked ({status})"
+                    )
 
             if expired:
                 db.commit()
@@ -1350,6 +1356,28 @@ async def lifespan(app: FastAPI):
 
     # Restore GeoIP block rules (ipset + iptables) from database
     asyncio.create_task(_restore_geo_block_rules())
+
+    # Restore VPN IP block rules (iptables) from database
+    async def _restore_vpn_block_rules():
+        db = SessionLocal()
+        try:
+            rules = (
+                db.query(BlockRule)
+                .filter(BlockRule.is_active == True)
+                .all()
+            )
+            restored = 0
+            for rule in rules:
+                if _is_vpn_service(rule.service_name) and "." in rule.domain:
+                    await _block_ip_iptables(rule.domain)
+                    restored += 1
+            if restored:
+                print(f"[rules] Restored {restored} VPN IP block rules")
+        except Exception as exc:
+            print(f"[rules] VPN block restore failed: {exc}")
+        finally:
+            db.close()
+    asyncio.create_task(_restore_vpn_block_rules())
 
     yield
     cleanup_task.cancel()
@@ -4407,14 +4435,22 @@ def _enrich_alert_details(
 
     elif alert_type == "vpn_tunnel":
         details["source_ip"] = event.source_ip
-        # service_or_dest is e.g. "vpn_nordvpn" — strip prefix for display
-        vpn_key = event.ai_service or ""
+        # ai_service is e.g. "vpn_nordvpn:1.2.3.4" — split on ':'
+        vpn_raw = event.ai_service or ""
+        vpn_parts = vpn_raw.split(":", 1)
+        vpn_key = vpn_parts[0]
         details["vpn_service"] = vpn_key.replace("vpn_", "").replace("_", " ").title() if vpn_key.startswith("vpn_") else vpn_key
+        if len(vpn_parts) > 1:
+            details["dest_ip"] = vpn_parts[1]
 
     elif alert_type == "stealth_vpn_tunnel":
         details["source_ip"] = event.source_ip
-        # ai_service may contain protocol hint
-        details["protocol"] = event.ai_service or "unknown"
+        # ai_service is e.g. "vpn_dtls_tunnel:1.2.3.4"
+        stealth_raw = event.ai_service or "unknown"
+        stealth_parts = stealth_raw.split(":", 1)
+        details["protocol"] = stealth_parts[0]
+        if len(stealth_parts) > 1:
+            details["dest_ip"] = stealth_parts[1]
 
     elif alert_type == "upload":
         details["severity"] = "HIGH"
@@ -6870,22 +6906,103 @@ def get_rules(db: Session = Depends(get_db)):
     )
 
 
+async def _block_ip_iptables(ip: str):
+    """Block a specific IP via iptables FORWARD chain (both directions)."""
+    for flag in ("src", "dst"):
+        chk = await _run_cmd(["iptables", "-C", "FORWARD", "-s" if flag == "src" else "-d",
+                               ip, "-j", "DROP"])
+        if chk.returncode != 0:
+            await _run_cmd(["iptables", "-I", "FORWARD", "-s" if flag == "src" else "-d",
+                             ip, "-j", "DROP"])
+    print(f"[rules] iptables: blocked IP {ip} (FORWARD src+dst)")
+
+
+async def _unblock_ip_iptables(ip: str):
+    """Remove iptables FORWARD block for a specific IP."""
+    for flag in ("src", "dst"):
+        await _run_cmd(["iptables", "-D", "FORWARD", "-s" if flag == "src" else "-d",
+                         ip, "-j", "DROP"])
+    print(f"[rules] iptables: unblocked IP {ip}")
+
+
+def _is_vpn_service(svc: str) -> bool:
+    return svc.startswith("vpn_") or svc.startswith("stealth_vpn_")
+
+
 @app.post("/api/rules/block", response_model=list[BlockRuleRead], status_code=201)
 async def block_service(payload: BlockRuleCreate, db: Session = Depends(get_db)):
-    """Block a service by adding rules to AdGuard Home.
+    """Block a service by adding rules to AdGuard Home or iptables (VPN).
 
     If the service has multiple domains, ALL are blocked. Optionally
     set duration_minutes for a temporary block.
+
+    For VPN services (vpn_*): blocks the VPN server IP via iptables
+    instead of DNS. The dest IP is extracted from payload.domain or
+    the ai_service field format "vpn_provider:ip".
     """
     svc = payload.service_name.lower()
     info = SERVICE_DOMAINS.get(svc)
-    domains = info["domains"] if info else [payload.domain]
-    category = info["category"] if info else payload.category
 
     # Calculate expiry
     expires = None
     if payload.duration_minutes and payload.duration_minutes > 0:
         expires = _utc_now_naive() + timedelta(minutes=payload.duration_minutes)
+
+    # --- VPN IP-based blocking ---
+    if _is_vpn_service(svc):
+        # Extract dest IP: either from payload.domain or from ai_service "vpn_x:ip"
+        dest_ip = payload.domain  # frontend should pass the VPN server IP here
+        if not dest_ip or "." not in dest_ip:
+            # Try to find from recent events
+            recent = (
+                db.query(DetectionEvent)
+                .filter(
+                    DetectionEvent.ai_service.like(f"{svc}:%"),
+                    DetectionEvent.detection_type.in_(["vpn_tunnel", "stealth_vpn_tunnel"]),
+                )
+                .order_by(DetectionEvent.timestamp.desc())
+                .first()
+            )
+            if recent and ":" in recent.ai_service:
+                dest_ip = recent.ai_service.split(":", 1)[1]
+
+        if not dest_ip or "." not in dest_ip:
+            print(f"[rules] VPN block failed: no dest IP for {svc}")
+            return []
+
+        # Check if already blocked
+        existing = (
+            db.query(BlockRule)
+            .filter(BlockRule.domain == dest_ip, BlockRule.is_active == True)
+            .first()
+        )
+        if existing:
+            existing.expires_at = expires
+            db.commit()
+            db.refresh(existing)
+            return [existing]
+
+        # Block via iptables
+        await _block_ip_iptables(dest_ip)
+
+        rule = BlockRule(
+            service_name=svc,
+            domain=dest_ip,  # store IP in domain field
+            category="tracking",
+            is_active=True,
+            expires_at=expires,
+        )
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+
+        label = f"for {payload.duration_minutes}m" if payload.duration_minutes else "permanently"
+        print(f"[rules] Blocked VPN {svc} (IP {dest_ip}) {label}")
+        return [rule]
+
+    # --- Standard DNS-based blocking ---
+    domains = info["domains"] if info else [payload.domain]
+    category = info["category"] if info else payload.category
 
     created = []
     for domain in domains:
@@ -6930,8 +7047,26 @@ async def block_service(payload: BlockRuleCreate, db: Session = Depends(get_db))
 
 @app.post("/api/rules/unblock")
 async def unblock_service(payload: BlockRuleUnblock, db: Session = Depends(get_db)):
-    """Unblock a service by removing rules from AdGuard Home."""
+    """Unblock a service by removing rules from AdGuard Home or iptables (VPN)."""
     svc = payload.service_name.lower()
+
+    # --- VPN IP-based unblocking ---
+    if _is_vpn_service(svc):
+        active = (
+            db.query(BlockRule)
+            .filter(BlockRule.service_name == svc, BlockRule.is_active == True)
+            .all()
+        )
+        unblocked = 0
+        for rule in active:
+            await _unblock_ip_iptables(rule.domain)
+            rule.is_active = False
+            unblocked += 1
+        db.commit()
+        print(f"[rules] Unblocked VPN {svc} ({unblocked} IP rules removed)")
+        return {"service": svc, "unblocked": unblocked}
+
+    # --- Standard DNS-based unblocking ---
     info = SERVICE_DOMAINS.get(svc)
     domains = info["domains"] if info else [payload.domain]
 
