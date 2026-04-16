@@ -1,12 +1,14 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchFamilyMeta, fetchFamilyOverview, fetchFamilyCategory, fetchGroups } from './api';
 import type {
   OverviewCard, CategoryService, CategoryDevice, CategoryPolicy,
-  HonestyInfo, DeviceGroup,
+  HonestyInfo,
 } from './types';
 import { SvcLogo, svcDisplayName } from '../category/serviceHelpers';
 import { detectDeviceType } from '../utils/devices';
+import { upsertPolicy, fetchDeviceGroups } from '../shared/alertApi';
+import type { DeviceGroup as SharedDeviceGroup } from '../shared/alertApi';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -63,10 +65,20 @@ function DeviceTypeIcon({ hostname, vendor, deviceClass, online, size = 'text-ba
   );
 }
 
-/** Open the vanilla alert-action modal (still shared across vanilla + React) */
-function openModal(opts: Record<string, any>) {
-  const fn = (window as any).openAlertActionModal;
-  if (typeof fn === 'function') fn(opts);
+declare global {
+  interface Window {
+    showToast?: (msg: string, type?: string) => void;
+  }
+}
+
+// Policy panel context — which service/device is currently showing its inline policy controls
+interface PolicyTarget {
+  serviceName?: string | null;
+  category: string;
+  macAddress?: string | null;
+  deviceName?: string;
+  defaultScope: 'global' | 'device';
+  defaultAction: 'allow' | 'alert' | 'block';
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +144,10 @@ export default function ContentPage() {
   // Expanded rows
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [expandedDevices, setExpandedDevices] = useState<Set<string>>(new Set());
+
+  // Inline policy panel
+  const [policyTarget, setPolicyTarget] = useState<PolicyTarget | null>(null);
+  const queryClient = useQueryClient();
 
   // Data queries
   const { data: _meta } = useQuery({
@@ -251,6 +267,11 @@ export default function ContentPage() {
               policies={policies}
               expandedSet={expandedServices}
               onToggleExpand={(k) => toggleExpand('service', k)}
+              onOpenPolicy={(svc) => setPolicyTarget({
+                serviceName: svc, category: activeCategory ?? '',
+                defaultScope: 'global', defaultAction: 'block',
+              })}
+              activePolicyService={policyTarget?.serviceName && !policyTarget?.macAddress ? policyTarget.serviceName : undefined}
             />
           )}
         </div>
@@ -276,10 +297,27 @@ export default function ContentPage() {
               policies={policies}
               expandedSet={expandedDevices}
               onToggleExpand={(k) => toggleExpand('device', k)}
+              onOpenPolicy={(mac, name) => setPolicyTarget({
+                category: activeCategory ?? '', macAddress: mac, deviceName: name,
+                defaultScope: 'device', defaultAction: 'block',
+              })}
+              activePolicyMac={policyTarget?.macAddress && !policyTarget?.serviceName ? policyTarget.macAddress : undefined}
             />
           )}
         </div>
       </div>
+
+      {/* Inline policy panel */}
+      {policyTarget && (
+        <InlinePolicyPanel
+          target={policyTarget}
+          onClose={() => setPolicyTarget(null)}
+          onApplied={() => {
+            setPolicyTarget(null);
+            queryClient.invalidateQueries({ queryKey: ['family-category'] });
+          }}
+        />
+      )}
 
       {/* Honesty block */}
       {overview?.honesty && <HonestyBlock honesty={overview.honesty} />}
@@ -346,12 +384,14 @@ function CategoryChipStrip({ cards, activeKey, onSelect }: {
   );
 }
 
-function ServicesKader({ services, category, policies, expandedSet, onToggleExpand }: {
+function ServicesKader({ services, category, policies, expandedSet, onToggleExpand, onOpenPolicy, activePolicyService }: {
   services: CategoryService[];
   category: string;
   policies: CategoryPolicy[];
   expandedSet: Set<string>;
   onToggleExpand: (key: string) => void;
+  onOpenPolicy: (serviceName: string) => void;
+  activePolicyService?: string;
 }) {
   if (!services.length) {
     return <p className="text-slate-400 dark:text-slate-500 text-center py-6 text-xs">No services seen in this category.</p>;
@@ -373,11 +413,8 @@ function ServicesKader({ services, category, policies, expandedSet, onToggleExpa
         return (
           <div
             key={s.service_name}
-            className={`p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim ? 'opacity-50' : ''}`}
-            onClick={() => openModal({
-              mode: 'content', service_or_dest: s.service_name, category,
-              mac_address: null, default_scope: 'global', default_action: 'block', alert_type: 'content_rule',
-            })}
+            className={`p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim ? 'opacity-50' : ''} ${activePolicyService === s.service_name ? 'ring-1 ring-blue-500/50 bg-blue-50/5' : ''}`}
+            onClick={() => onOpenPolicy(s.service_name)}
           >
             <div className="flex items-center gap-2 mb-1.5">
               <SvcLogo svc={s.service_name} size={20} />
@@ -402,7 +439,7 @@ function ServicesKader({ services, category, policies, expandedSet, onToggleExpa
             </div>
             <div className="flex flex-wrap gap-1.5">
               {shown.map(d => (
-                <DeviceChip key={d.mac_address} dev={d} serviceName={s.service_name} category={category} />
+                <DeviceChip key={d.mac_address} dev={d} />
               ))}
               {hidden > 0 && (
                 <button
@@ -430,12 +467,14 @@ function ServicesKader({ services, category, policies, expandedSet, onToggleExpa
   );
 }
 
-function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand }: {
+function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand, onOpenPolicy, activePolicyMac }: {
   devices: CategoryDevice[];
   category: string;
   policies: CategoryPolicy[];
   expandedSet: Set<string>;
   onToggleExpand: (key: string) => void;
+  onOpenPolicy: (mac: string, name: string) => void;
+  activePolicyMac?: string;
 }) {
   if (!devices.length) {
     return <p className="text-slate-400 dark:text-slate-500 text-center py-6 text-xs">No devices seen in this category.</p>;
@@ -457,13 +496,8 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
         return (
           <div
             key={d.mac_address}
-            className={`p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim ? 'opacity-50' : ''}`}
-            onClick={() => openModal({
-              mode: 'content', service_or_dest: null, category,
-              mac_address: d.mac_address, hostname: d.hostname, vendor: d.vendor,
-              display_name: d.display_name,
-              default_scope: 'device', default_action: 'block', alert_type: 'content_rule',
-            })}
+            className={`p-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors ${dim ? 'opacity-50' : ''} ${activePolicyMac === d.mac_address ? 'ring-1 ring-blue-500/50 bg-blue-50/5' : ''}`}
+            onClick={() => onOpenPolicy(d.mac_address, d.display_name || d.hostname || d.mac_address)}
           >
             <div className="flex items-center gap-2 mb-1.5">
               <DeviceTypeIcon hostname={d.hostname} vendor={d.vendor} deviceClass={d.device_class} online={d.online} />
@@ -480,7 +514,7 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
             </div>
             <div className="flex flex-wrap gap-1.5">
               {shown.map(s => (
-                <ServiceChip key={s.service_name} svc={s} mac={d.mac_address} category={category} />
+                <ServiceChip key={s.service_name} svc={s} />
               ))}
               {hidden > 0 && (
                 <button
@@ -508,10 +542,8 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
   );
 }
 
-function DeviceChip({ dev, serviceName, category }: {
+function DeviceChip({ dev }: {
   dev: { mac_address: string; display_name: string; hostname: string | null; vendor: string | null; device_class: string | null; online: boolean; bytes: number };
-  serviceName: string;
-  category: string;
 }) {
   const name = dev.display_name || dev.hostname || dev.mac_address || '?';
   const dt = detectDeviceType({
@@ -519,50 +551,185 @@ function DeviceChip({ dev, serviceName, category }: {
     vendor: dev.vendor ?? undefined, device_class: dev.device_class ?? undefined, ips: [],
   } as any);
   return (
-    <button
-      type="button"
-      onClick={e => {
-        e.stopPropagation();
-        const dm = (window as any).deviceMap?.[dev.mac_address] || {};
-        openModal({
-          mode: 'content', service_or_dest: serviceName, category,
-          mac_address: dev.mac_address, hostname: dm.hostname, vendor: dm.vendor,
-          display_name: dm.display_name || dev.display_name,
-          default_scope: 'device', default_action: 'block', alert_type: 'content_rule',
-        });
-      }}
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] max-w-[140px]"
       title={`${name} — ${fmtBytes(dev.bytes || 0)}`}
     >
       <i className={`ph-duotone ${dt.icon} text-xs ${dev.online ? 'text-emerald-500' : 'text-slate-400'}`} />
       <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{name}</span>
-    </button>
+    </span>
   );
 }
 
-function ServiceChip({ svc, mac, category }: {
+function ServiceChip({ svc }: {
   svc: { service_name: string; bytes: number };
-  mac: string;
-  category: string;
 }) {
   const name = svcDisplayName(svc.service_name);
   return (
-    <button
-      type="button"
-      onClick={e => {
-        e.stopPropagation();
-        const dm = (window as any).deviceMap?.[mac] || {};
-        openModal({
-          mode: 'content', service_or_dest: svc.service_name, category,
-          mac_address: mac, hostname: dm.hostname, vendor: dm.vendor, display_name: dm.display_name,
-          default_scope: 'device', default_action: 'block', alert_type: 'content_rule',
-        });
-      }}
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] transition-colors max-w-[140px]"
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] max-w-[140px]"
       title={`${name} — ${fmtBytes(svc.bytes || 0)}`}
     >
       <SvcLogo svc={svc.service_name} size={14} />
       <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{name}</span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline Policy Panel — replaces the vanilla alert-action modal
+// ---------------------------------------------------------------------------
+type Scope = 'global' | 'group' | 'device';
+type PolicyAction = 'allow' | 'alert' | 'block';
+
+function InlinePolicyPanel({ target, onClose, onApplied }: {
+  target: PolicyTarget;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [scope, setScope] = useState<Scope>(target.defaultScope);
+  const [action, setAction] = useState<PolicyAction>(target.defaultAction);
+  const [pending, setPending] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
+  const dtRef = useRef<HTMLInputElement>(null);
+
+  // Fetch groups for the device (if device scope)
+  const { data: groups = [] } = useQuery<SharedDeviceGroup[]>({
+    queryKey: ['device-groups', target.macAddress],
+    queryFn: () => fetchDeviceGroups(target.macAddress!),
+    enabled: !!target.macAddress,
+    staleTime: 120_000,
+  });
+  const firstGroup = groups[0];
+
+  const applyPolicy = useCallback(async (expiresAt?: string | null) => {
+    setPending(true);
+    try {
+      await upsertPolicy({
+        scope,
+        mac_address: scope === 'device' ? (target.macAddress || null) : null,
+        group_id: scope === 'group' && firstGroup ? firstGroup.id : null,
+        service_name: target.serviceName || null,
+        category: !target.serviceName ? (target.category || null) : null,
+        action,
+        expires_at: expiresAt ?? null,
+      });
+      const targetLabel = target.serviceName
+        ? svcDisplayName(target.serviceName)
+        : target.deviceName || target.category;
+      const scopeLabel = scope === 'global' ? 'globally' : scope === 'group' ? `for ${firstGroup?.name || 'group'}` : `for ${target.deviceName || 'device'}`;
+      window.showToast?.(`${targetLabel}: ${action} ${scopeLabel}`, 'success');
+      onApplied();
+    } catch (err) {
+      window.showToast?.(`Failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setPending(false);
+    }
+  }, [scope, action, target, firstGroup, onApplied]);
+
+  const snoozeExpiry = (hours: number) => new Date(Date.now() + hours * 3600_000).toISOString();
+
+  const title = target.serviceName
+    ? svcDisplayName(target.serviceName)
+    : target.deviceName || target.category;
+
+  return (
+    <div className="bg-white dark:bg-white/[0.03] border border-blue-400/40 dark:border-blue-500/30 rounded-xl p-5 shadow-lg shadow-blue-500/5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <i className="ph-duotone ph-shield-warning text-base text-blue-500" />
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Set policy for <span className="text-blue-500">{title}</span>
+          </h3>
+        </div>
+        <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+          <i className="ph-duotone ph-x text-base" />
+        </button>
+      </div>
+
+      <p className="text-[10px] text-slate-500 mb-3">Block or allow this {target.serviceName ? 'service' : 'category'} — affects actual network traffic.</p>
+
+      {/* Scope + Action */}
+      <div className="flex items-start gap-4 mb-3">
+        <div>
+          <span className="text-[10px] text-slate-500 block mb-1.5">Apply to</span>
+          <div className="flex items-center gap-1 bg-white/[0.04] dark:bg-white/[0.04] rounded-lg p-0.5 border border-slate-200 dark:border-white/[0.06]">
+            <ScopeBtn active={scope === 'global'} onClick={() => setScope('global')} icon="ph-globe" label="Global" tooltip="Apply to all devices" />
+            {firstGroup && (
+              <ScopeBtn active={scope === 'group'} onClick={() => setScope('group')} icon="ph-users-three" label="Group" tooltip={`Apply to all devices in '${firstGroup.name}'`} />
+            )}
+            {target.macAddress && (
+              <ScopeBtn active={scope === 'device'} onClick={() => setScope('device')} icon="ph-device-mobile" label="Device" tooltip={`Apply only to ${target.deviceName || 'this device'}`} />
+            )}
+          </div>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-500 block mb-1.5">Action</span>
+          <div className="flex gap-1 bg-white/[0.04] dark:bg-white/[0.04] rounded-lg p-0.5 border border-slate-200 dark:border-white/[0.06]">
+            <ActionBtn active={action === 'allow'} onClick={() => setAction('allow')} icon="ph-check" label="Allow" tooltip="Explicitly allow" color="emerald" />
+            <ActionBtn active={action === 'alert'} onClick={() => setAction('alert')} icon="ph-warning" label="Alert" tooltip="Allow but warn" color="amber" />
+            <ActionBtn active={action === 'block'} onClick={() => setAction('block')} icon="ph-x" label="Block" tooltip="Block all traffic" color="red" />
+          </div>
+        </div>
+      </div>
+
+      {/* Duration */}
+      <div>
+        <span className="text-[10px] text-slate-500 block mb-1.5">Duration</span>
+        {!showCustom ? (
+          <div className="flex flex-wrap gap-1.5">
+            {[1, 4, 8, 24].map(h => (
+              <button key={h} disabled={pending} onClick={() => applyPolicy(snoozeExpiry(h))}
+                className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-slate-200 dark:border-white/[0.06] hover:border-blue-500/20 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-300 text-xs font-medium transition-colors disabled:opacity-50"
+                title={`${action} for ${h} hours`}
+              >{h}h</button>
+            ))}
+            <button onClick={() => setShowCustom(true)}
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-400 text-xs font-medium transition-colors"
+              title="Pick a custom date and time"
+            >
+              <i className="ph-duotone ph-clock-countdown text-xs" /> Custom...
+            </button>
+            <span className="w-px bg-slate-200 dark:bg-white/[0.06] mx-0.5" />
+            <button disabled={pending} onClick={() => applyPolicy(null)}
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-400 text-xs font-medium transition-colors disabled:opacity-50"
+              title={`${action} permanently`}
+            >Permanent</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input ref={dtRef} type="datetime-local"
+              className="flex-1 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <button disabled={pending} onClick={() => { const v = dtRef.current?.value; if (v) applyPolicy(new Date(v).toISOString()); }}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50">Set</button>
+            <button onClick={() => setShowCustom(false)}
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-xs font-medium transition-colors">Cancel</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScopeBtn({ active, onClick, icon, label, tooltip }: { active: boolean; onClick: () => void; icon: string; label: string; tooltip: string }) {
+  return (
+    <button onClick={onClick} title={tooltip}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+        active ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+      }`}>
+      <i className={`ph-duotone ${icon} text-xs`} /> {label}
+    </button>
+  );
+}
+
+function ActionBtn({ active, onClick, icon, label, tooltip, color }: { active: boolean; onClick: () => void; icon: string; label: string; tooltip: string; color: string }) {
+  const activeCls = color === 'red' ? 'bg-red-500 text-white shadow-sm font-semibold'
+    : color === 'amber' ? 'bg-amber-500 text-white shadow-sm font-semibold'
+    : 'bg-emerald-500 text-white shadow-sm font-semibold';
+  return (
+    <button onClick={onClick} title={tooltip}
+      className={`flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium transition-colors ${active ? activeCls : 'text-slate-500 dark:text-slate-400'}`}>
+      <i className={`ph-duotone ${icon} text-xs`} /> {label}
     </button>
   );
 }

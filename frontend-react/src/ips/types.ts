@@ -1,8 +1,20 @@
-// IPS status payload from /api/ips/status. The backend returns additional
-// nested objects we don't touch in React (vanilla _renderIpsThreats consumes
-// the inbound_attacks / blocklist arrays directly), so we keep the interface
-// intentionally loose — `any[]` on the two lists avoids duplicating the
-// alert-card shape.
+// IPS page TypeScript interfaces
+
+export interface InboundAttack {
+  source_ip: string;
+  target_ip: string;
+  target_name?: string | null;
+  target_port: number;
+  severity: string;       // "threat" | "blocked"
+  conn_state: string;     // S0, REJ, S1, SF, etc.
+  crowdsec_reason?: string;
+  country_code?: string;
+  asn?: number;
+  asn_org?: string;
+  hit_count: number;
+  first_seen: string;
+  last_seen: string;
+}
 
 export interface IpsStatus {
   enabled: boolean;
@@ -13,17 +25,45 @@ export interface IpsStatus {
   inbound_threats_24h?: number;
   inbound_unique_ips_24h?: number;
   blocklist_count?: number;
-  // Opaque to React — passed straight to window._renderIpsThreats
-  inbound_attacks?: unknown[];
-  blocklist?: unknown[];
+  inbound_attacks?: InboundAttack[];
+  blocklist?: { ip: string; reason: string; duration: string }[];
+}
+
+export interface BeaconAlert {
+  source_ip: string;
+  dest_ip: string;
+  dest_sni?: string;
+  last_seen: string;
+  hits: number;
+  score: number;
+  dismissed: boolean;
+  hostname?: string;
+  mac_address?: string;
+  display_name?: string;
+  vendor?: string;
+  dest_asn_org?: string;
+  dest_country?: string;
+  dest_ptr?: string;
+  total_bytes?: number;
+  total_hits?: number;
+}
+
+export interface BeaconStatus {
+  running: boolean;
+  scans_completed: number;
+  last_scan_at?: string;
+  last_findings: number;
+  last_error?: string;
+}
+
+export interface SecurityStats {
+  total_24h?: number;
+  total_7d?: number;
+  sparkline_7d?: number[];
 }
 
 export interface PrivacyStatsPayload {
-  beaconing_alerts?: unknown[];
-  beaconing_status?: unknown;
-  security?: {
-    total_24h?: number;
-    total_7d?: number;
-    sparkline_7d?: number[];
-  };
+  beaconing_alerts?: BeaconAlert[];
+  beaconing_status?: BeaconStatus | null;
+  security?: SecurityStats;
 }
