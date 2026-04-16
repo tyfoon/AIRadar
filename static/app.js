@@ -1565,6 +1565,132 @@ async function refreshPage(page) {
 // Summary — now a React page (SummaryPage.tsx)
 async function loadSummaryDashboard() { /* React handles this */ }
 
+// ---------------------------------------------------------------------------
+// IP/Domain Reputation — badges and on-demand check
+// ---------------------------------------------------------------------------
+let _reputationCache = {};  // keyed by ip_or_domain
+
+async function _fetchReputationBulk(targets) {
+  const unique = [...new Set(targets.filter(t => t && !t.startsWith('192.168.') && !t.startsWith('10.') && !t.startsWith('127.')))];
+  if (!unique.length) return;
+  const needed = unique.filter(t => !_reputationCache[t]);
+  if (!needed.length) return;
+  try {
+    const resp = await fetch('/api/reputation/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({targets: needed}),
+    });
+    const data = await resp.json();
+    Object.assign(_reputationCache, data.results || {});
+  } catch (e) {
+    console.warn('[reputation] bulk fetch failed:', e);
+  }
+}
+
+function _reputationBadge(ipOrDomain) {
+  if (!ipOrDomain) return '';
+  const r = _reputationCache[ipOrDomain];
+  if (!r) return '';
+  const badges = [];
+  if (r.urlhaus_status === 'malware') {
+    const threat = r.urlhaus_threat ? ` (${r.urlhaus_threat})` : '';
+    badges.push(`<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold" title="URLhaus: malware distribution${threat}"><i class="ph-fill ph-virus text-[11px]"></i>Malware${threat}</span>`);
+  }
+  if (r.threatfox_status === 'c2') {
+    const malware = r.threatfox_malware ? ` (${r.threatfox_malware})` : '';
+    badges.push(`<span class="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-700 text-white font-bold" title="ThreatFox: C2 server${malware}"><i class="ph-fill ph-skull text-[11px]"></i>C2${malware}</span>`);
+  }
+  if (r.abuseipdb_score != null) {
+    const sc = r.abuseipdb_score;
+    const [bg, label] = sc >= 75 ? ['bg-red-600', `Abuse: ${sc}%`] : sc >= 25 ? ['bg-amber-600', `Abuse: ${sc}%`] : ['bg-emerald-600', `Abuse: ${sc}%`];
+    badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold" title="AbuseIPDB: ${r.abuseipdb_reports || 0} reports">${label}</span>`);
+  }
+  if (r.vt_malicious != null && r.vt_total != null) {
+    const m = r.vt_malicious;
+    const bg = m >= 5 ? 'bg-red-600' : m >= 1 ? 'bg-amber-600' : 'bg-emerald-600';
+    badges.push(`<span class="text-[10px] px-1.5 py-0.5 rounded-full ${bg} text-white font-bold" title="VirusTotal verdict">VT: ${m}/${r.vt_total}</span>`);
+  }
+  return badges.join(' ');
+}
+
+function _reputationIp(ip, extraClass) {
+  if (!ip) return '';
+  const cls = extraClass || 'font-mono text-slate-300 dark:text-slate-300';
+  const badge = _reputationBadge(ip);
+  return `<span class="${cls} cursor-pointer hover:underline decoration-dotted" onclick="_openReputationCheck('${ip.replace(/'/g, "\\'")}')">${ip}</span>${badge ? ' ' + badge : ''}`;
+}
+
+let _repPopoverTarget = null;
+async function _openReputationCheck(target) {
+  _repPopoverTarget = target;
+  const modal = document.getElementById('reputation-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const body = document.getElementById('reputation-modal-body');
+  body.innerHTML = `<div class="text-center py-6"><div class="animate-spin inline-block w-6 h-6 border-2 border-slate-400 border-t-transparent rounded-full"></div><p class="text-sm text-slate-400 mt-2">Checking ${target}...</p></div>`;
+  try {
+    const resp = await fetch('/api/reputation/check', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target}),
+    });
+    const data = await resp.json();
+    const r = data.result || {};
+    _reputationCache[target] = r;
+    const rows = [];
+    rows.push(_repRow('URLhaus', r.urlhaus_status === 'malware'
+      ? `🔴 Malware${r.urlhaus_threat ? ' — ' + r.urlhaus_threat : ''} (${r.urlhaus_url_count || 0} URLs)`
+      : r.urlhaus_status === 'clean' ? '✅ Clean' : '⏳ Not checked', r.urlhaus_checked_at));
+    rows.push(_repRow('ThreatFox', r.threatfox_status === 'c2'
+      ? `🔴 C2 Server${r.threatfox_malware ? ' — ' + r.threatfox_malware : ''}`
+      : r.threatfox_status === 'clean' ? '✅ Clean' : '⏳ Not checked', r.threatfox_checked_at));
+    if (r.abuseipdb_score != null) {
+      const sc = r.abuseipdb_score;
+      const icon = sc >= 75 ? '🔴' : sc >= 25 ? '🟠' : '🟢';
+      rows.push(_repRow('AbuseIPDB', `${icon} ${sc}% abuse confidence (${r.abuseipdb_reports || 0} reports)`, r.abuseipdb_checked_at));
+    } else {
+      rows.push(_repRow('AbuseIPDB', data.errors?.find(e => e.includes('AbuseIPDB')) || '<span class="text-slate-500">No API key configured</span>'));
+    }
+    if (r.vt_malicious != null) {
+      const m = r.vt_malicious;
+      const icon = m >= 5 ? '🔴' : m >= 1 ? '🟠' : '🟢';
+      rows.push(_repRow('VirusTotal', `${icon} ${m}/${r.vt_total} vendors flagged malicious`, r.vt_checked_at));
+    } else {
+      rows.push(_repRow('VirusTotal', data.errors?.find(e => e.includes('VirusTotal')) || '<span class="text-slate-500">No API key configured</span>'));
+    }
+    const rl = data.rate_limits || {};
+    let rlHtml = '';
+    if (rl.abuseipdb || rl.virustotal) {
+      const parts = [];
+      if (rl.abuseipdb) parts.push(`AbuseIPDB: ${rl.abuseipdb.used}/${rl.abuseipdb.max}`);
+      if (rl.virustotal) parts.push(`VT: ${rl.virustotal.used}/${rl.virustotal.max}`);
+      rlHtml = `<p class="text-[10px] text-slate-500 mt-3">Daily usage: ${parts.join(' · ')}</p>`;
+    }
+    body.innerHTML = `
+      <h3 class="text-sm font-bold text-slate-200 mb-3">🔍 ${target}</h3>
+      <div class="space-y-2">${rows.join('')}</div>
+      ${rlHtml}
+      <button onclick="_closeReputationModal()" class="mt-4 w-full text-xs py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition">Close</button>`;
+  } catch (e) {
+    body.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>
+      <button onclick="_closeReputationModal()" class="mt-4 w-full text-xs py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300">Close</button>`;
+  }
+}
+
+function _repRow(service, value, checkedAt) {
+  const timeStr = checkedAt ? `<span class="text-[10px] text-slate-600 ml-2">${new Date(checkedAt).toLocaleTimeString()}</span>` : '';
+  return `<div class="flex items-start gap-2 text-xs">
+    <span class="text-slate-400 w-20 shrink-0 font-medium">${service}</span>
+    <span class="text-slate-200 flex-1">${value}${timeStr}</span>
+  </div>`;
+}
+
+function _closeReputationModal() {
+  const modal = document.getElementById('reputation-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
 window._openReputationCheck = _openReputationCheck;
 window._closeReputationModal = _closeReputationModal;
 
