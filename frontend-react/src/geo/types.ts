@@ -25,6 +25,7 @@ export interface GeoTrafficResponse {
 export interface CountryDetailDevice {
   mac: string;
   name: string;
+  vendor?: string;
   bytes: number;
 }
 

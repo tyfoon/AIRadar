@@ -7,6 +7,7 @@ import {
 import Globe from 'react-globe.gl';
 import { fetchGeoTraffic, fetchBlockRules, blockCountry, unblockCountry } from './api';
 import { formatBytes, formatNumber, countryName, flagClass, ratioColor } from './utils';
+import CountryDrawer from './CountryDrawer';
 import type { Direction, GeoCountry } from './types';
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,7 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
   const [serviceFilter, setServiceFilter] = useState('');
   const [deviceFilter, setDeviceFilter] = useState('');
   const [hoveredCC, setHoveredCC] = useState<string | null>(null);
+  const [drawerCC, setDrawerCC] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState({ html: '', x: 0, y: 0 });
   const queryClient = useQueryClient();
   const globeRef = useRef<any>(null);
@@ -337,7 +339,7 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
   }, [countries]);
   const handlePolygonClick = useCallback((f: any) => {
     const cc = f?.properties?.ISO_A2;
-    if (cc && typeof (window as any).openCountryDrawer === 'function') (window as any).openCountryDrawer(cc);
+    if (cc) setDrawerCC(cc);
   }, []);
 
   const arcsData = useMemo(() => countries
@@ -535,7 +537,7 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
                             setTooltip({ html, x: rect ? evt.clientX - rect.left : 0, y: rect ? evt.clientY - rect.top : 0 });
                           }}
                           onMouseLeave={() => { setHoveredCC(null); setTooltip({ html: '', x: 0, y: 0 }); }}
-                          onClick={() => { if (cc && typeof (window as any).openCountryDrawer === 'function') (window as any).openCountryDrawer(cc); }}
+                          onClick={() => { if (cc) setDrawerCC(cc); }}
                         />
                       );
                     })
@@ -611,8 +613,15 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
 
       {/* Countries table */}
       {countries.length > 0 && (
-        <CountriesTable countries={countries} direction={direction} blockedSet={blockedSet} onBlock={handleBlock} onUnblock={handleUnblock} />
+        <CountriesTable countries={countries} direction={direction} blockedSet={blockedSet} onBlock={handleBlock} onUnblock={handleUnblock} onCountryClick={setDrawerCC} />
       )}
+
+      <CountryDrawer
+        cc={drawerCC}
+        direction={direction}
+        onClose={() => setDrawerCC(null)}
+        onDirectionChange={setDirection}
+      />
     </div>
   );
 }
@@ -637,9 +646,10 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
   );
 }
 
-function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }: {
+function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock, onCountryClick }: {
   countries: GeoCountry[]; direction: Direction; blockedSet: Set<string>;
   onBlock: (cc: string) => void; onUnblock: (cc: string) => void;
+  onCountryClick: (cc: string) => void;
 }) {
   const maxBytes = Math.max(1, ...countries.map(c => c.bytes));
   return (
@@ -663,7 +673,7 @@ function CountriesTable({ countries, direction, blockedSet, onBlock, onUnblock }
             return (
               <tr key={c.country_code} className="border-b border-slate-50 dark:border-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                 <td className="py-2.5 px-4 text-slate-400 tabular-nums text-xs">{i + 1}</td>
-                <td className="py-2.5 px-4 cursor-pointer" onClick={() => { if (typeof (window as any).openCountryDrawer === 'function') (window as any).openCountryDrawer(c.country_code); }}>
+                <td className="py-2.5 px-4 cursor-pointer" onClick={() => onCountryClick(c.country_code)}>
                   <span className="inline-flex items-center gap-2">
                     <span className={`${flagClass(c.country_code)} text-base`} />
                     <span className="font-medium text-slate-700 dark:text-slate-200">{countryName(c.country_code)}</span>
