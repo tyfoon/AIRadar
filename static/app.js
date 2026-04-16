@@ -2929,7 +2929,7 @@ async function refreshOther() {
 // ================================================================
 // GEO TRAFFIC — world map + country table with inbound/outbound tabs
 // ================================================================
-// Legacy: kept for openCountryDrawer which reads _geoDirection
+// Geo direction state (used by React GeoMap via window._geoDirection)
 let _geoDirection = 'outbound';
 
 // Convert a 2-letter ISO country code to a flag emoji using Unicode
@@ -3065,12 +3065,7 @@ window.unblockCountry = unblockCountry;
 // Country Drawer — drilldown for a single country from the Geo page
 // ---------------------------------------------------------------------------
 // Mirrors the device drawer UX but focused on a country. Reachable from:
-//   1. Clicking a country on the vector map (onRegionClick)
-//   2. Clicking a row in the geo table
-// Reuses the existing .drawer-panel CSS for the slide-in animation.
-
-let _countryDrawerCC = null;
-let _countryDrawerDirection = 'outbound';
+// Country drawer is now rendered by React (CountryDrawer.tsx)
 
 // Full country name lookup via the browser's built-in Intl API. Falls
 // back to the raw ISO code if the runtime doesn't support it.
@@ -3083,200 +3078,7 @@ function _countryName(cc) {
   }
 }
 
-async function openCountryDrawer(cc) {
-  if (!cc) return;
-  _countryDrawerCC = cc;
-  _countryDrawerDirection = _geoDirection || 'outbound';
 
-  // _flagEmoji returns HTML (not a text char), so use innerHTML.
-  document.getElementById('country-drawer-flag').innerHTML = _flagEmoji(cc);
-  document.getElementById('country-drawer-name').textContent = `${_countryName(cc)} (${cc})`;
-  document.getElementById('country-drawer-meta').textContent = t('country.loading') || 'Loading…';
-
-  // Mark the direction toggle visually
-  _syncCountryDirButtons();
-
-  document.getElementById('country-drawer-backdrop').classList.add('open');
-  const panel = document.getElementById('country-drawer-panel');
-  panel.style.transform = '';
-  panel.classList.add('open');
-  document.body.classList.add('overflow-hidden');
-
-  await _loadCountryDrawer();
-}
-
-function _syncCountryDirButtons() {
-  const out = document.getElementById('country-dir-out');
-  const inb = document.getElementById('country-dir-in');
-  // Shared tab classes — match Rules / AI / Settings / Geo.
-  const base = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors';
-  const active = `${base} bg-blue-700 text-white shadow-sm`;
-  const inactive = `${base} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300`;
-  if (!out || !inb) return;
-  if (_countryDrawerDirection === 'outbound') { out.className = active; inb.className = inactive; }
-  else                                         { inb.className = active; out.className = inactive; }
-}
-
-function setCountryDrawerDirection(dir) {
-  if (dir !== 'outbound' && dir !== 'inbound') return;
-  _countryDrawerDirection = dir;
-  _syncCountryDirButtons();
-  _loadCountryDrawer();
-}
-
-async function _loadCountryDrawer() {
-  const cc = _countryDrawerCC;
-  const dir = _countryDrawerDirection;
-  if (!cc) return;
-  try {
-    const res = await fetch(`/api/analytics/geo/country/${encodeURIComponent(cc)}?direction=${encodeURIComponent(dir)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (_countryDrawerCC !== cc) return; // user navigated away
-    _renderCountryDrawer(data);
-  } catch (err) {
-    console.error('loadCountryDrawer:', err);
-    document.getElementById('country-drawer-meta').textContent = t('country.loadError') || 'Failed to load country data';
-  }
-}
-
-async function _renderCountryDrawer(data) {
-  const dirLabel = data.direction === 'outbound'
-    ? (t('geo.outbound') || 'Outbound')
-    : (t('geo.inbound') || 'Inbound');
-
-  // Prefetch reputation data for all IPs so badges render immediately
-  const allIps = (data.top_ips || []).map(ip => ip.ip);
-  await _fetchReputationBulk(allIps);
-  document.getElementById('country-drawer-meta').textContent =
-    `${dirLabel} · ${_geoFmtBytes(data.total_bytes)} · ${formatNumber(data.total_hits)} ${t('geo.connectionsShort') || 'conn.'}`;
-
-  // --- Top devices ---
-  // Look up each device in the global deviceMap so we can render the
-  // same colour-coded device-type icon + online dot that the Devices
-  // page / IoT fleet / device drawer use. Keeps the visual language
-  // consistent — a user should recognise "green dot = active" without
-  // having to learn a per-page convention.
-  const devEl = document.getElementById('country-top-devices');
-  const devs = data.top_devices || [];
-  if (devs.length === 0) {
-    devEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noDevices') || 'No devices recorded.'}</div>`;
-  } else {
-    const maxB = devs[0].bytes || 1;
-    devEl.innerHTML = devs.map(d => {
-      const w = Math.max(2, (d.bytes / maxB * 100));
-      const vendor = d.vendor ? `<span class="text-[10px] text-slate-400 dark:text-slate-500 ml-1">${d.vendor}</span>` : '';
-      const onClick = d.mac ? `onclick="closeCountryDrawer();openDeviceDrawer('${d.mac}', null, null)"` : '';
-
-      // Resolve to the live device record so we get the right icon
-      // + online state. Fall back to a generic "device" tag when the
-      // row is for a raw MAC we haven't registered yet.
-      const devRec = d.mac ? deviceMap[d.mac] : null;
-      const dt = devRec ? _detectDeviceType(devRec) : { icon: PH_ICON.device, type: 'Device' };
-      const online = devRec ? _isDeviceOnline(devRec) : false;
-      const iconHtml = _deviceTypeIcon20(dt, online);
-
-      return `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] ${d.mac ? 'cursor-pointer' : ''}" ${onClick}>
-        <div class="flex-shrink-0">${iconHtml}</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${d.name}${vendor}</span>
-            <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_geoFmtBytes(d.bytes)}</span>
-          </div>
-          <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-            <div class="h-full bg-gradient-to-r from-blue-500 to-blue-700" style="width:${w}%"></div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // --- Top services ---
-  const svcEl = document.getElementById('country-top-services');
-  const svcs = data.top_services || [];
-  if (svcs.length === 0) {
-    svcEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noServices') || 'No services recorded.'}</div>`;
-  } else {
-    const maxB = svcs[0].bytes || 1;
-    svcEl.innerHTML = svcs.map(s => {
-      const w = Math.max(2, (s.bytes / maxB * 100));
-      return `<div class="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
-        <div class="flex-shrink-0">${svcLogo(s.service)}</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${svcDisplayName(s.service)}</span>
-            <span class="text-xs tabular-nums text-slate-500 dark:text-slate-400 flex-shrink-0">${_geoFmtBytes(s.bytes)}</span>
-          </div>
-          <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
-            <div class="h-full bg-gradient-to-r from-emerald-500 to-teal-500" style="width:${w}%"></div>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // --- Top IPs with ASN / PTR ---
-  // Label priority per row, from most to least informative:
-  //   1. ASN + org available → "AS15169 · Google LLC"
-  //   2. Only PTR available   → "server-...cloudfront.net"
-  //   3. Enrichment completed but empty → "(no reverse DNS / ASN)"
-  //   4. Enrichment not yet run         → "enriching…"
-  const ipEl = document.getElementById('country-top-ips');
-  const ips = data.top_ips || [];
-  if (ips.length === 0) {
-    ipEl.innerHTML = `<div class="text-xs text-slate-400 dark:text-slate-500 py-3">${t('country.noIps') || 'No remote IPs recorded.'}</div>`;
-  } else {
-    ipEl.innerHTML = ips.map(ip => {
-      let primary = '';   // big label line
-      let secondary = ''; // small detail line
-
-      if (ip.asn_org) {
-        primary = `<div class="text-xs text-slate-700 dark:text-slate-200 truncate">AS${ip.asn || '?'} · ${ip.asn_org}</div>`;
-        if (ip.ptr) {
-          secondary = `<div class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate">${ip.ptr}</div>`;
-        }
-      } else if (ip.ptr) {
-        primary = `<div class="text-xs text-slate-700 dark:text-slate-200 font-mono truncate">${ip.ptr}</div>`;
-      } else if (ip.enriched) {
-        primary = `<div class="text-xs text-slate-400 dark:text-slate-600 italic">${t('country.ipNoRdns') || '(no reverse DNS / ASN)'}</div>`;
-      } else {
-        primary = `<div class="text-xs text-slate-400 dark:text-slate-600 italic">${t('country.ipEnriching') || 'enriching…'}</div>`;
-      }
-
-      const repBadge = _reputationBadge(ip.ip);
-      return `<div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.04] last:border-0 cursor-pointer" onclick="_openReputationCheck('${ip.ip.replace(/'/g, "\\'")}')">
-        <div class="min-w-0 flex-1">
-          <div class="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">${ip.ip}${repBadge ? ' ' + repBadge : ''}</div>
-          ${primary}
-          ${secondary}
-        </div>
-        <div class="flex-shrink-0 text-right ml-3">
-          <div class="text-xs tabular-nums font-medium text-slate-700 dark:text-slate-200">${_geoFmtBytes(ip.bytes)}</div>
-          <div class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">${formatNumber(ip.hits)} ${t('geo.connectionsShort') || 'conn.'}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-}
-
-function closeCountryDrawer() {
-  document.getElementById('country-drawer-backdrop').classList.remove('open');
-  document.getElementById('country-drawer-panel').classList.remove('open');
-  if (!document.getElementById('drawer-panel')?.classList.contains('open')) {
-    document.body.classList.remove('overflow-hidden');
-  }
-  _countryDrawerCC = null;
-}
-window.openCountryDrawer = openCountryDrawer;
-window.closeCountryDrawer = closeCountryDrawer;
-window.setCountryDrawerDirection = setCountryDrawerDirection;
-
-// Close country drawer on Escape
-window.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && document.getElementById('country-drawer-panel').classList.contains('open')) {
-    closeCountryDrawer();
-  }
-});
 
 
 // --- DEVICES ---

@@ -265,48 +265,7 @@
 
 <!-- Device drawer is now rendered by React (DeviceDrawer.tsx) -->
 
-<!-- ============================================================= -->
-<!-- COUNTRY DETAIL DRAWER (Geo page drilldown)                      -->
-<!-- ============================================================= -->
-<div id="country-drawer-backdrop" class="drawer-backdrop" onclick="closeCountryDrawer()"></div>
-<div id="country-drawer-panel" class="drawer-panel">
-  <!-- Header -->
-  <div class="flex-shrink-0 border-b border-slate-200 dark:border-white/[0.05] px-5 py-4">
-    <div class="flex items-center justify-between">
-      <div class="flex items-center gap-3 min-w-0">
-        <span id="country-drawer-flag" class="text-2xl flex-shrink-0"></span>
-        <div class="min-w-0">
-          <h2 id="country-drawer-name" class="text-base font-semibold truncate"></h2>
-          <p id="country-drawer-meta" class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5"></p>
-        </div>
-      </div>
-      <button onclick="closeCountryDrawer()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors text-lg">&times;</button>
-    </div>
-  </div>
-  <!-- Body -->
-  <div class="flex-1 overflow-y-auto p-5 space-y-6" id="country-drawer-body">
-    <!-- Direction toggle (shared tab pattern) -->
-    <div class="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] rounded-lg p-1 w-fit">
-      <button id="country-dir-out" onclick="setCountryDrawerDirection('outbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-blue-700 text-white shadow-sm">&#8593; <span data-i18n="geo.outbound">Outbound</span></button>
-      <button id="country-dir-in" onclick="setCountryDrawerDirection('inbound')" class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300">&#8595; <span data-i18n="geo.inbound">Inbound</span></button>
-    </div>
-    <!-- Top devices -->
-    <div>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topDevices">Top devices</h3>
-      <div id="country-top-devices"></div>
-    </div>
-    <!-- Top services -->
-    <div>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topServices">Top services</h3>
-      <div id="country-top-services"></div>
-    </div>
-    <!-- Top IPs -->
-    <div>
-      <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3" data-i18n="country.topIps">Top remote IPs</h3>
-      <div id="country-top-ips"></div>
-    </div>
-  </div>
-</div>
+<!-- Country drawer is now rendered by React (CountryDrawer.tsx) -->
 
 <!-- ============================================================= -->
 <!-- SCHEDULE MODAL                                                  -->
