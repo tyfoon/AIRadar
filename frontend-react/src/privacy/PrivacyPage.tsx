@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchPrivacyStats, exportPrivacyCsvUrl } from './api';
 import type {
@@ -8,6 +8,8 @@ import type {
 } from './types';
 import { svcColor, svcDisplayName, SvcBadge } from '../category/serviceHelpers';
 import { useDeviceLookup } from '../utils/useDeviceLookup';
+import AlertCard from '../shared/AlertCard';
+import type { AlertData } from '../shared/AlertCard';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,24 +20,10 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
-function formatBytes(b: number): string {
-  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB';
-  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
-  if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB';
-  return b + ' B';
-}
-
 function fmtTime(ts: string): string {
   try {
     const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch { return ts; }
-}
-
-function fmtDateTime(ts: string): string {
-  try {
-    const d = new Date(ts.endsWith('Z') ? ts : ts + 'Z');
-    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch { return ts; }
 }
 
@@ -116,6 +104,13 @@ export default function PrivacyPage() {
   const [showBlocked, setShowBlocked] = useState(false);
   const [showTrackerDetails, setShowTrackerDetails] = useState(false);
   const [showVpnDetail, setShowVpnDetail] = useState(false);
+
+  const queryClient = useQueryClient();
+
+  const handleAlertAction = useCallback((_id: string, _action: string) => {
+    // Refetch privacy stats to get updated alert list
+    queryClient.invalidateQueries({ queryKey: ['privacy-stats'] });
+  }, [queryClient]);
 
   const { data, isLoading, refetch } = useQuery<PrivacyStatsResponse>({
     queryKey: ['privacy-stats', period, serviceFilter, deviceFilter],
@@ -217,7 +212,7 @@ export default function PrivacyPage() {
           color="orange"
           onClose={() => setShowVpnDetail(false)}
         >
-          <VpnAlertsList alerts={vpnAlerts} />
+          <VpnAlertsList alerts={vpnAlerts} onAction={handleAlertAction} />
         </ExpandablePanel>
       )}
 
@@ -247,7 +242,7 @@ export default function PrivacyPage() {
 
       {/* ── Beacon / C2 Alerts ── */}
       {(beaconAlerts.length > 0 || beaconStatus) && (
-        <BeaconPanel alerts={beaconAlerts} status={beaconStatus} />
+        <BeaconPanel alerts={beaconAlerts} status={beaconStatus} onAction={handleAlertAction} />
       )}
 
       {/* ── Filter Bar ── */}
@@ -561,7 +556,25 @@ function ExpandablePanel({ title, icon, color, onClose, children }: {
   );
 }
 
-function VpnAlertsList({ alerts }: { alerts: VpnAlert[] }) {
+function vpnToAlertData(a: VpnAlert): AlertData {
+  const svcName = a.vpn_service?.startsWith('vpn_')
+    ? svcDisplayName(a.vpn_service)
+    : a.vpn_service || 'VPN';
+  return {
+    alert_id: `vpn-${a.mac_address || a.source_ip}-${a.vpn_service}`,
+    mac_address: a.mac_address || '',
+    alert_type: a.is_stealth ? 'stealth_vpn_tunnel' : 'vpn_tunnel',
+    service_or_dest: a.vpn_service || '',
+    device_name: a.display_name || a.hostname || a.source_ip,
+    description: svcName,
+    severity: a.is_stealth ? 'Stealth' : undefined,
+    timestamp: a.last_seen,
+    hits: a.hits,
+    total_bytes: a.total_bytes,
+  };
+}
+
+function VpnAlertsList({ alerts, onAction }: { alerts: VpnAlert[]; onAction?: (id: string, action: string) => void }) {
   if (alerts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-6 text-center">
@@ -575,32 +588,13 @@ function VpnAlertsList({ alerts }: { alerts: VpnAlert[] }) {
   }
   return (
     <div className="space-y-2">
-      {alerts.map((a, i) => {
-        const name = a.display_name || a.hostname || a.source_ip;
-        const svcName = a.vpn_service?.startsWith('vpn_')
-          ? svcDisplayName(a.vpn_service)
-          : a.vpn_service || 'VPN';
-        return (
-          <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.04]">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center">
-              <i className={`ph-duotone ${a.is_stealth ? 'ph-detective' : 'ph-lock-key'} text-base text-orange-500`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm text-slate-700 dark:text-slate-200">{name}</span>
-                {a.is_stealth && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">Stealth</span>
-                )}
-              </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {svcName} · {formatBytes(a.total_bytes)} · {a.hits} connections
-              </div>
-              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-mono">{a.source_ip}</div>
-            </div>
-            <div className="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{fmtDateTime(a.last_seen)}</div>
-          </div>
-        );
-      })}
+      {alerts.map((a, i) => (
+        <AlertCard
+          key={`vpn-${i}`}
+          alert={vpnToAlertData(a)}
+          onAction={onAction}
+        />
+      ))}
     </div>
   );
 }
@@ -644,8 +638,32 @@ function TrackerDetailsList({ trackers }: { trackers: TopTracker[] }) {
   );
 }
 
-function BeaconPanel({ alerts, status }: { alerts: BeaconAlert[]; status: BeaconStatus | null }) {
+function beaconToAlertData(a: BeaconAlert): AlertData {
+  const dest = a.dest_sni || a.dest_ptr || a.dest_ip;
+  let description = dest;
+  if (a.dest_asn_org) description += ` (${a.dest_asn_org})`;
+  if (a.score) description += ` · Score: ${a.score}`;
+
+  return {
+    alert_id: `beacon-${a.mac_address || a.source_ip}-${a.dest_ip}`,
+    mac_address: a.mac_address || '',
+    alert_type: 'beaconing_threat',
+    service_or_dest: a.dest_sni || a.dest_ip,
+    device_name: a.display_name || a.hostname || a.source_ip,
+    description,
+    country_code: a.dest_country || undefined,
+    severity: a.score >= 70 ? 'Critical' : a.score >= 40 ? 'HIGH' : undefined,
+    timestamp: a.last_seen,
+    hits: a.total_hits || a.hits,
+    total_bytes: a.total_bytes || 0,
+    beacon_score: a.score,
+    is_dismissed: a.dismissed,
+  };
+}
+
+function BeaconPanel({ alerts, status, onAction }: { alerts: BeaconAlert[]; status: BeaconStatus | null; onAction?: (id: string, action: string) => void }) {
   const active = alerts.filter(a => !a.dismissed);
+  const dismissed = alerts.filter(a => a.dismissed);
   const hasActive = active.length > 0;
 
   return (
@@ -687,46 +705,22 @@ function BeaconPanel({ alerts, status }: { alerts: BeaconAlert[]; status: Beacon
         </div>
       ) : (
         <div className="space-y-2">
-          {alerts.map((a, i) => (
-            <div
-              key={i}
-              className={`flex items-start gap-3 p-3 rounded-lg border ${
-                a.dismissed
-                  ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-100 dark:border-white/[0.04] opacity-60'
-                  : 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-700/30'
-              }`}
-            >
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
-                <i className="ph-duotone ph-warning text-base text-red-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-sm text-slate-700 dark:text-slate-200">
-                    {a.display_name || a.hostname || a.source_ip}
-                  </span>
-                  <span className="text-[10px] text-slate-400">→</span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                    {a.dest_sni || a.dest_ptr || a.dest_ip}
-                  </span>
-                  {a.dest_country && (
-                    <img
-                      src={`https://flagcdn.com/16x12/${a.dest_country.toLowerCase()}.png`}
-                      alt={a.dest_country}
-                      className="w-4 h-3"
-                    />
-                  )}
-                  {a.dismissed && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/[0.08] text-slate-500 font-medium">Dismissed</span>
-                  )}
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Score: {a.score} · {a.hits} hits
-                  {a.dest_asn_org && ` · ${a.dest_asn_org}`}
-                  {a.total_bytes ? ` · ${formatBytes(a.total_bytes)}` : ''}
-                </div>
-              </div>
-              <div className="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{fmtDateTime(a.last_seen)}</div>
-            </div>
+          {/* Active alerts with full actions */}
+          {active.map((a, i) => (
+            <AlertCard
+              key={`beacon-active-${i}`}
+              alert={beaconToAlertData(a)}
+              onAction={onAction}
+            />
+          ))}
+          {/* Dismissed alerts with trash button */}
+          {dismissed.map((a, i) => (
+            <AlertCard
+              key={`beacon-dismissed-${i}`}
+              alert={beaconToAlertData(a)}
+              showTrash
+              onAction={onAction}
+            />
           ))}
         </div>
       )}

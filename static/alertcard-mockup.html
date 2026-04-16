@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unified AlertCard — v2.1</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.0.0/css/flag-icons.min.css" />
+  <style>
+    body { background: #0a0c13; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+    .expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s ease; }
+    .expand.open { grid-template-rows: 1fr; }
+    .expand > div { overflow: hidden; }
+  </style>
+  <script>
+    function toggle(btn) {
+      btn.closest('[data-card]').querySelector('.expand').classList.toggle('open');
+    }
+    function switchTab(btn, tab) {
+      const card = btn.closest('[data-card]');
+      card.querySelectorAll('[data-tab-btn]').forEach(b => {
+        b.classList.toggle('bg-white/[0.08]', b.dataset.tabBtn === tab);
+        b.classList.toggle('text-slate-200', b.dataset.tabBtn === tab);
+        b.classList.toggle('text-slate-500', b.dataset.tabBtn !== tab);
+      });
+      card.querySelectorAll('[data-tab]').forEach(p => {
+        p.classList.toggle('hidden', p.dataset.tab !== tab);
+      });
+    }
+  </script>
+</head>
+<body class="p-6 max-w-3xl mx-auto space-y-10">
+
+  <!-- ================================================================== -->
+  <!-- DESIGN NOTES                                                        -->
+  <!-- ================================================================== -->
+  <div class="bg-blue-950/40 border border-blue-800/40 rounded-xl p-5 text-sm text-blue-300 space-y-2">
+    <h2 class="text-blue-200 font-bold text-base">Unified AlertCard v2.1</h2>
+    <p><strong>Feedback verwerkt (v2 + v2.1):</strong></p>
+    <ol class="list-decimal ml-5 space-y-1 text-xs">
+      <li>Dismiss + More iconen rechts in de kaart &rarr; kaart blijft compact</li>
+      <li>Juiste vlag-iconen (<code>fi fi-xx</code>) ipv afbeeldingen</li>
+      <li>Tabs ipv stapelen; identieke chip-stijl, zelfde duration-set, zelfde "permanent" positie</li>
+      <li>Dismissed kaarten op detail-pagina's hebben een vuilnisbak-icoon</li>
+      <li><strong class="text-blue-200">v2.1:</strong> Tooltips op alle knoppen, chips en iconen</li>
+      <li><strong class="text-blue-200">v2.1:</strong> Group scope toegevoegd naast Global &amp; Device (toont groepsnaam als device in een groep zit)</li>
+    </ol>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 1. ANOMALY — collapsed (default state)                              -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Anomaly — Collapsed (default)</h3>
+
+    <div data-card class="bg-white/[0.03] border border-red-800/40 rounded-xl">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <!-- Icon -->
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-warning text-base text-red-500"></i>
+        </div>
+        <!-- Content -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">Malware beacon</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">Critical</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            <span class="text-slate-300">MacBook M4</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            <span class="font-mono">cdn-metrics.evil.com</span>
+            <span class="ml-1.5"><span class="fi fi-ru rounded-sm text-[10px]"></span></span>
+            <span class="mx-2 text-slate-600">·</span>
+            Score: <strong class="text-red-400">87</strong>
+            <span class="mx-1 text-slate-600">·</span>
+            234 conn
+            <span class="mx-1 text-slate-600">·</span>
+            12.4 MB
+          </p>
+        </div>
+        <!-- Timestamp -->
+        <span class="text-[10px] text-slate-500 tabular-nums flex-shrink-0">14:32</span>
+        <!-- Action icons -->
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-500 hover:text-emerald-400 transition-colors" title="Dismiss this alert (won't appear again)">
+          <i class="ph-duotone ph-check-circle text-base"></i>
+        </button>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors" title="Snooze, silence, or block this activity"
+          onclick="toggle(this)">
+          <i class="ph-duotone ph-dots-three-circle text-base"></i>
+        </button>
+      </div>
+
+      <!-- Expanded panel -->
+      <div class="expand">
+        <div>
+          <div class="border-t border-white/[0.05] bg-white/[0.015] px-4 py-3">
+            <!-- Single tab for anomalies: no tab bar needed -->
+            <div class="flex items-center gap-2 mb-2.5">
+              <i class="ph-duotone ph-bell-slash text-xs text-slate-500"></i>
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Manage alert</span>
+              <span class="text-[10px] text-slate-600 ml-1">— does not affect the traffic itself</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 1 hour">
+                1h
+              </button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 4 hours">
+                4h
+              </button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 8 hours">
+                8h
+              </button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 24 hours">
+                24h
+              </button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time">
+                <i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...
+              </button>
+              <span class="w-px bg-white/[0.06] mx-0.5"></span>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Permanently silence this alert — it will never appear again">
+                Permanent
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-600 mt-2.5 italic">
+              <i class="ph-duotone ph-info text-xs"></i>
+              Anomalies cannot be blocked — use snooze or permanent to manage this alert.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 2. VPN anomaly — expanded                                           -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">2. VPN anomaly — Expanded</h3>
+
+    <div data-card class="bg-white/[0.03] border border-amber-800/40 rounded-xl">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-lock-key text-base text-amber-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">VPN tunnel</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            <span class="text-slate-300">Robin's iPhone</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            NordVPN
+            <span class="mx-2 text-slate-600">·</span>
+            1.2 GB
+            <span class="mx-1 text-slate-600">·</span>
+            47 conn
+          </p>
+        </div>
+        <span class="text-[10px] text-slate-500 tabular-nums flex-shrink-0">12:15</span>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-500 hover:text-emerald-400 transition-colors" title="Dismiss">
+          <i class="ph-duotone ph-check-circle text-base"></i>
+        </button>
+        <button class="flex-shrink-0 p-1.5 rounded-lg bg-white/[0.06] text-slate-300 transition-colors" title="More actions"
+          onclick="toggle(this)">
+          <i class="ph-duotone ph-dots-three-circle text-base"></i>
+        </button>
+      </div>
+
+      <div class="expand open">
+        <div>
+          <div class="border-t border-white/[0.05] bg-white/[0.015] px-4 py-3">
+            <div class="flex items-center gap-2 mb-2.5">
+              <i class="ph-duotone ph-bell-slash text-xs text-slate-500"></i>
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Manage alert</span>
+              <span class="text-[10px] text-slate-600 ml-1">— does not affect the traffic itself</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 1 hour">1h</button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 4 hours">4h</button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 8 hours">8h</button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 24 hours">24h</button>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time"><i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...</button>
+              <span class="w-px bg-white/[0.06] mx-0.5"></span>
+              <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Permanently silence — never show again">Permanent</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 3. Service alert — expanded with TABS                               -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">3. Service alert — Expanded with tabs (Alert + Activity)</h3>
+
+    <div data-card class="bg-white/[0.03] border border-slate-700/50 rounded-xl">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-cloud-arrow-up text-base text-amber-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">Data upload</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">Warning</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            <span class="text-slate-300">MacBook M4</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            <img src="https://www.google.com/s2/favicons?domain=dropbox.com&sz=32" class="inline w-3.5 h-3.5 rounded-sm" />
+            <span class="ml-1">Dropbox</span>
+            <span class="mx-2 text-slate-600">·</span>
+            <span class="text-amber-400">2.3 GB uploaded</span>
+            <span class="mx-1 text-slate-600">·</span>
+            12 conn
+          </p>
+        </div>
+        <span class="text-[10px] text-slate-500 tabular-nums flex-shrink-0">09:45</span>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-500 hover:text-emerald-400 transition-colors" title="Dismiss">
+          <i class="ph-duotone ph-check-circle text-base"></i>
+        </button>
+        <button class="flex-shrink-0 p-1.5 rounded-lg bg-white/[0.06] text-slate-300 transition-colors" title="More actions"
+          onclick="toggle(this)">
+          <i class="ph-duotone ph-dots-three-circle text-base"></i>
+        </button>
+      </div>
+
+      <div class="expand open">
+        <div>
+          <div class="border-t border-white/[0.05] bg-white/[0.015]">
+            <!-- TAB BAR -->
+            <div class="flex gap-1 px-4 pt-3 pb-0">
+              <button data-tab-btn="alert" onclick="switchTab(this,'alert')"
+                class="px-3 py-1.5 rounded-t-lg text-xs font-medium transition-colors bg-white/[0.08] text-slate-200"
+                title="Snooze or permanently silence this alert">
+                <i class="ph-duotone ph-bell-slash text-xs"></i> Manage Alert
+              </button>
+              <button data-tab-btn="activity" onclick="switchTab(this,'activity')"
+                class="px-3 py-1.5 rounded-t-lg text-xs font-medium transition-colors text-slate-500 hover:text-slate-300"
+                title="Block, allow, or set alerts for this service">
+                <i class="ph-duotone ph-shield-warning text-xs"></i> Block Activity
+              </button>
+            </div>
+
+            <!-- TAB: Manage Alert -->
+            <div data-tab="alert" class="px-4 py-3 border-t border-white/[0.04]">
+              <p class="text-[10px] text-slate-500 mb-2.5">Snooze or silence this warning — does not affect the traffic itself.</p>
+              <div class="flex flex-wrap gap-1.5">
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 1 hour">1h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 4 hours">4h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 8 hours">8h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Snooze for 24 hours">24h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time">
+                  <i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...
+                </button>
+                <span class="w-px bg-white/[0.06] mx-0.5"></span>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Permanently silence — never show again">Permanent</button>
+              </div>
+            </div>
+
+            <!-- TAB: Block Activity -->
+            <div data-tab="activity" class="px-4 py-3 border-t border-white/[0.04] hidden">
+              <p class="text-[10px] text-slate-500 mb-2.5">Block or allow this service — affects actual network traffic.</p>
+
+              <!-- Scope + Action on one row -->
+              <div class="flex items-start gap-4 mb-3">
+                <div>
+                  <span class="text-[10px] text-slate-500 block mb-1.5">Apply to</span>
+                  <div class="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors text-slate-400 hover:text-slate-300" title="Apply to all devices on the network">
+                      <i class="ph-duotone ph-globe text-xs"></i> Global
+                    </button>
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors text-slate-400 hover:text-slate-300" title="Apply to all devices in 'Kids' group">
+                      <i class="ph-duotone ph-users-three text-xs"></i> Group
+                    </button>
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors bg-blue-600 text-white shadow-sm" title="Apply only to MacBook M4">
+                      <i class="ph-duotone ph-device-mobile text-xs"></i> Device
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 block mb-1.5">Action</span>
+                  <div class="flex gap-1 bg-white/[0.04] rounded-lg p-0.5">
+                    <button class="flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium transition-colors text-slate-400" title="Explicitly allow — override any broader block rule">
+                      <i class="ph-duotone ph-check text-xs"></i> Allow
+                    </button>
+                    <button class="flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium transition-colors text-slate-400" title="Allow but show a warning when used">
+                      <i class="ph-duotone ph-warning text-xs"></i> Alert
+                    </button>
+                    <button class="flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium transition-colors bg-red-500 text-white shadow-sm font-semibold" title="Block all traffic to this service">
+                      <i class="ph-duotone ph-x text-xs"></i> Block
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Duration — identical chip style as Manage Alert tab -->
+              <div>
+                <span class="text-[10px] text-slate-500 block mb-1.5">Duration</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Block for 1 hour">1h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Block for 4 hours">4h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Block for 8 hours">8h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] hover:border-blue-500/20 text-slate-400 hover:text-blue-300 text-xs font-medium transition-colors" title="Block for 24 hours">24h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time">
+                    <i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...
+                  </button>
+                  <span class="w-px bg-white/[0.06] mx-0.5"></span>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block permanently — never expires">Permanent</button>
+                </div>
+              </div>
+
+              <!-- Existing rule indicator -->
+              <div class="mt-3 flex items-center gap-2 text-[10px]">
+                <i class="ph-duotone ph-shield-warning text-xs text-red-400"></i>
+                <span class="text-red-400">Currently blocked globally (permanent)</span>
+                <button class="text-slate-500 hover:text-red-400 underline transition-colors ml-1" title="Remove the existing block rule">Remove rule</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 4. IPS inbound — expanded on Block Activity tab                     -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">4. IPS inbound attack — Block Activity tab active</h3>
+
+    <div data-card class="bg-white/[0.03] border border-red-800/30 rounded-xl">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-shield-warning text-base text-red-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">Inbound threat</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">HIGH</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            <span class="font-mono text-slate-300">203.0.113.42</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            Port 22 (SSH)
+            <span class="ml-1.5"><span class="fi fi-cn rounded-sm text-[10px]"></span></span>
+            <span class="mx-2 text-slate-600">·</span>
+            47 attempts
+            <span class="mx-1 text-slate-600">·</span>
+            <span class="text-red-400">CrowdSec blocked</span>
+          </p>
+        </div>
+        <span class="text-[10px] text-slate-500 tabular-nums flex-shrink-0">10:22</span>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-500 hover:text-emerald-400 transition-colors" title="Dismiss">
+          <i class="ph-duotone ph-check-circle text-base"></i>
+        </button>
+        <button class="flex-shrink-0 p-1.5 rounded-lg bg-white/[0.06] text-slate-300 transition-colors" title="More actions"
+          onclick="toggle(this)">
+          <i class="ph-duotone ph-dots-three-circle text-base"></i>
+        </button>
+      </div>
+
+      <div class="expand open">
+        <div>
+          <div class="border-t border-white/[0.05] bg-white/[0.015]">
+            <!-- TAB BAR — Block Activity active -->
+            <div class="flex gap-1 px-4 pt-3 pb-0">
+              <button data-tab-btn="alert" onclick="switchTab(this,'alert')"
+                class="px-3 py-1.5 rounded-t-lg text-xs font-medium transition-colors text-slate-500 hover:text-slate-300"
+                title="Snooze or permanently silence this alert">
+                <i class="ph-duotone ph-bell-slash text-xs"></i> Manage Alert
+              </button>
+              <button data-tab-btn="activity" onclick="switchTab(this,'activity')"
+                class="px-3 py-1.5 rounded-t-lg text-xs font-medium transition-colors bg-white/[0.08] text-slate-200"
+                title="Block, allow, or set alerts for this source IP">
+                <i class="ph-duotone ph-shield-warning text-xs"></i> Block Activity
+              </button>
+            </div>
+
+            <!-- TAB: Manage Alert (hidden) -->
+            <div data-tab="alert" class="px-4 py-3 border-t border-white/[0.04] hidden">
+              <p class="text-[10px] text-slate-500 mb-2.5">Snooze or silence this warning — does not affect the traffic itself.</p>
+              <div class="flex flex-wrap gap-1.5">
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Snooze for 1 hour">1h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Snooze for 4 hours">4h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Snooze for 8 hours">8h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Snooze for 24 hours">24h</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time"><i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...</button>
+                <span class="w-px bg-white/[0.06] mx-0.5"></span>
+                <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Permanently silence — never show again">Permanent</button>
+              </div>
+            </div>
+
+            <!-- TAB: Block Activity (visible) -->
+            <div data-tab="activity" class="px-4 py-3 border-t border-white/[0.04]">
+              <p class="text-[10px] text-slate-500 mb-2.5">Block or allow this source — affects actual network traffic.</p>
+              <div class="flex items-start gap-4 mb-3">
+                <div>
+                  <span class="text-[10px] text-slate-500 block mb-1.5">Apply to</span>
+                  <div class="flex items-center gap-1 bg-white/[0.04] rounded-lg p-0.5">
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-blue-600 text-white shadow-sm" title="Block for all devices on the network">
+                      <i class="ph-duotone ph-globe text-xs"></i> Global
+                    </button>
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-400" title="Block for all devices in a group">
+                      <i class="ph-duotone ph-users-three text-xs"></i> Group
+                    </button>
+                    <button class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-400" title="Block only for the targeted device">
+                      <i class="ph-duotone ph-device-mobile text-xs"></i> Device
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 block mb-1.5">Action</span>
+                  <div class="flex gap-1 bg-white/[0.04] rounded-lg p-0.5">
+                    <button class="flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium text-slate-400" title="Explicitly allow — override any broader block rule">
+                      <i class="ph-duotone ph-check text-xs"></i> Allow
+                    </button>
+                    <button class="flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-medium bg-red-500 text-white shadow-sm font-semibold" title="Block all traffic from this source">
+                      <i class="ph-duotone ph-x text-xs"></i> Block
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-500 block mb-1.5">Duration</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block for 1 hour">1h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block for 4 hours">4h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block for 8 hours">8h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block for 24 hours">24h</button>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Pick a custom date and time"><i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...</button>
+                  <span class="w-px bg-white/[0.06] mx-0.5"></span>
+                  <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-xs font-medium transition-colors" title="Block permanently — never expires">Permanent</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 5. IoT compact                                                      -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">5. IoT anomaly — Compact variant</h3>
+
+    <div data-card class="bg-white/[0.03] border border-amber-800/30 rounded-xl">
+      <div class="flex items-center gap-2.5 px-3 py-2.5">
+        <div class="flex-shrink-0 w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-globe-hemisphere-west text-sm text-amber-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <span class="text-xs font-semibold text-slate-200">New country</span>
+          <p class="text-[11px] text-slate-400">
+            <span class="text-slate-300">Nest Cam</span> &rarr; <span class="fi fi-ru rounded-sm text-[10px]"></span> Russia · first connection
+          </p>
+        </div>
+        <span class="text-[10px] text-slate-500 tabular-nums flex-shrink-0">08:12</span>
+        <button class="flex-shrink-0 p-1 rounded-lg hover:bg-emerald-500/15 text-slate-500 hover:text-emerald-400 transition-colors" title="Dismiss this alert (won't appear again)">
+          <i class="ph-duotone ph-check-circle text-sm"></i>
+        </button>
+        <button class="flex-shrink-0 p-1 rounded-lg hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors" title="Snooze, silence, or block this activity"
+          onclick="toggle(this)">
+          <i class="ph-duotone ph-dots-three-circle text-sm"></i>
+        </button>
+      </div>
+      <div class="expand">
+        <div>
+          <div class="border-t border-white/[0.05] bg-white/[0.015] px-3 py-2.5">
+            <div class="flex flex-wrap gap-1.5">
+              <button class="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-[11px] font-medium transition-colors" title="Snooze for 1 hour">1h</button>
+              <button class="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-[11px] font-medium transition-colors" title="Snooze for 4 hours">4h</button>
+              <button class="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-[11px] font-medium transition-colors" title="Snooze for 8 hours">8h</button>
+              <button class="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-blue-500/15 border border-white/[0.06] text-slate-400 text-[11px] font-medium transition-colors" title="Snooze for 24 hours">24h</button>
+              <span class="w-px bg-white/[0.06] mx-0.5"></span>
+              <button class="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 text-[11px] font-medium transition-colors" title="Permanently silence — never show again">Permanent</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 6. Snoozed state                                                    -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">6. Snoozed state (dimmed)</h3>
+
+    <div data-card class="bg-white/[0.02] border border-slate-700/30 rounded-xl opacity-50">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-lock-key text-base text-amber-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">VPN tunnel</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-medium flex items-center gap-1">
+              <i class="ph-duotone ph-clock text-xs"></i> Snoozed until 18:15
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            <span class="text-slate-300">Robin's iPhone</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            NordVPN
+          </p>
+        </div>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors" title="Cancel snooze">
+          <i class="ph-duotone ph-alarm text-base"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 7. Dismissed on detail page — with delete (trash)                   -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">7. Dismissed on detail page — with delete</h3>
+
+    <div data-card class="bg-white/[0.02] border border-slate-700/30 rounded-xl opacity-40">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-chart-line-up text-base text-slate-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-400 line-through">Volume spike</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-500 font-medium">Dismissed</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-0.5">
+            <span class="text-slate-400">Smart Washer</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            3.2x baseline
+          </p>
+        </div>
+        <span class="text-[10px] text-slate-600 tabular-nums flex-shrink-0">Yesterday</span>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors" title="Delete permanently">
+          <i class="ph-duotone ph-trash text-base"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Another dismissed example -->
+    <div data-card class="bg-white/[0.02] border border-slate-700/30 rounded-xl opacity-40">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-500/10 flex items-center justify-center">
+          <i class="ph-duotone ph-warning text-base text-slate-500"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-400 line-through">Malware beacon</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-500 font-medium">Permanently ignored</span>
+          </div>
+          <p class="text-[11px] text-slate-500 mt-0.5">
+            <span class="text-slate-400">Nest Protect</span>
+            <span class="mx-1 text-slate-600">&rarr;</span>
+            <span class="font-mono">telemetry.nest.com</span>
+            <span class="mx-1 text-slate-600">·</span>
+            Score: 12 (false positive)
+          </p>
+        </div>
+        <button class="flex-shrink-0 p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors" title="Delete permanently">
+          <i class="ph-duotone ph-trash text-base"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- 8. Custom snooze inline picker                                      -->
+  <!-- ================================================================== -->
+  <div class="space-y-2">
+    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">8. Custom time picker (replaces chips when "Custom..." clicked)</h3>
+
+    <div class="bg-white/[0.015] border border-white/[0.05] rounded-xl px-4 py-3 max-w-md">
+      <div class="flex items-center gap-2">
+        <input type="datetime-local" class="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        <button class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors">Set</button>
+        <button class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-xs font-medium transition-colors">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- DESIGN SYSTEM REFERENCE                                             -->
+  <!-- ================================================================== -->
+  <div class="bg-white/[0.03] border border-white/[0.06] rounded-xl p-5 space-y-4">
+    <h3 class="text-sm font-bold text-slate-300">Design tokens</h3>
+
+    <div class="grid grid-cols-2 gap-4 text-[11px]">
+      <div class="space-y-2">
+        <p class="text-slate-500 font-semibold uppercase text-[10px] tracking-wider">Duration chips (identical everywhere)</p>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium">1h</span>
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium">4h</span>
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium">8h</span>
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium">24h</span>
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium"><i class="ph-duotone ph-clock-countdown text-xs"></i> Custom...</span>
+          <span class="w-px bg-white/[0.06] mx-0.5"></span>
+          <span class="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-slate-400 text-xs font-medium">Permanent</span>
+        </div>
+        <p class="text-slate-600">Selected chip: <span class="px-3 py-1.5 rounded-lg bg-white/[0.10] border border-white/[0.12] text-slate-200 text-xs font-semibold">Permanent</span>  Toggle selected: <span class="px-2.5 py-1 rounded-md bg-blue-600 text-white text-[11px] font-medium shadow-sm">Device</span></p>
+      </div>
+      <div class="space-y-2">
+        <p class="text-slate-500 font-semibold uppercase text-[10px] tracking-wider">Alert type icons</p>
+        <div class="grid grid-cols-2 gap-1.5 text-slate-400">
+          <span><i class="ph-duotone ph-warning text-red-500"></i> Beacon</span>
+          <span><i class="ph-duotone ph-lock-key text-amber-500"></i> VPN</span>
+          <span><i class="ph-duotone ph-mask-sad text-purple-500"></i> Stealth</span>
+          <span><i class="ph-duotone ph-cloud-arrow-up text-amber-500"></i> Upload</span>
+          <span><i class="ph-duotone ph-cube text-blue-500"></i> Service</span>
+          <span><i class="ph-duotone ph-device-mobile text-blue-400"></i> New device</span>
+          <span><i class="ph-duotone ph-shuffle text-amber-500"></i> Lateral</span>
+          <span><i class="ph-duotone ph-plug text-amber-500"></i> Susp. port</span>
+          <span><i class="ph-duotone ph-globe-hemisphere-west text-amber-500"></i> New country</span>
+          <span><i class="ph-duotone ph-chart-line-up text-amber-500"></i> Volume spike</span>
+          <span><i class="ph-duotone ph-shield-warning text-red-500"></i> Inbound</span>
+          <span><i class="ph-duotone ph-scan text-amber-500"></i> Port scan</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-[11px] text-slate-500 space-y-1 border-t border-white/[0.05] pt-3">
+      <p><strong class="text-slate-400">Consistentie-regels:</strong></p>
+      <ul class="list-disc ml-4 space-y-0.5">
+        <li>Duration chips: zelfde stijl, zelfde set (1h/4h/8h/24h/Custom.../Permanent), zelfde positie — overal</li>
+        <li>"Permanent" altijd rechts, gescheiden door een vertical divider</li>
+        <li>Hover: <code>blue-500/15</code> + <code>blue-300</code> tekst — voor zowel alert als activity</li>
+        <li>Selected toggle (scope/action): <code>bg-blue-600 text-white shadow-sm</code> (blue = toggle state)</li>
+        <li>Selected duration chip: <code>bg-white/[0.10] text-slate-200 font-semibold</code> (NOT blue — blue reserved for toggles)</li>
+        <li>Card body: altijd single row (icon + content + time + actions rechts)</li>
+        <li>Tabs alleen bij service-alerts (waar Activity Control beschikbaar is)</li>
+        <li>Dismissed op detail-pagina's: trash icoon voor permanent verwijderen</li>
+      </ul>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -4,10 +4,12 @@ import {
   forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide,
 } from 'd3-force';
 import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
-import { fetchFleet, fetchAnomalies, fetchNetworkGraph, dismissAnomaly } from './api';
+import { fetchFleet, fetchAnomalies, fetchNetworkGraph } from './api';
 import type { FleetDevice, Anomaly, IotTab, NetworkNode, NetworkEdge } from './types';
 import type { NetworkGraphResponse } from './types';
-import { FleetCard, FlagIcon, fmtBytes } from './FleetCard';
+import { FleetCard, fmtBytes } from './FleetCard';
+import AlertCard from '../shared/AlertCard';
+import type { AlertData } from '../shared/AlertCard';
 
 // ---------------------------------------------------------------------------
 // Helpers (local to IotOverview)
@@ -16,25 +18,13 @@ function fmtNumber(n: number): string {
   return n >= 1000 ? n.toLocaleString() : String(n);
 }
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return '—';
-  const d = Date.now() - new Date(iso).getTime();
-  if (d < 60000) return 'just now';
-  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
-  if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
-  return `${Math.floor(d / 86400000)}d ago`;
-}
+// timeAgo is now handled inside the shared AlertCard component
 
 function isDarkMode(): boolean {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 }
 
-const DETECTION_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  iot_lateral_movement: { label: 'Lateral movement', icon: 'ph-flow-arrow', color: 'text-red-500' },
-  iot_suspicious_port: { label: 'Suspicious port', icon: 'ph-warning-octagon', color: 'text-amber-500' },
-  iot_new_country: { label: 'New country', icon: 'ph-globe-hemisphere-west', color: 'text-indigo-500' },
-  iot_volume_spike: { label: 'Volume spike', icon: 'ph-chart-line-up', color: 'text-orange-500' },
-};
+// Detection labels are now defined in the shared AlertCard component (ALERT_META)
 
 const PORT_LABELS: Record<number, string> = {
   22: 'SSH', 23: 'Telnet', 25: 'SMTP', 80: 'HTTP', 443: 'HTTPS',
@@ -73,9 +63,7 @@ export default function IotOverview() {
   const activeAnomalies = anomalies.filter(a => !a.dismissed);
   const devices = fleet?.devices || [];
 
-  const handleDismiss = useCallback(async (a: Anomaly) => {
-    if (!confirm(`Dismiss this ${DETECTION_LABELS[a.detection_type]?.label || a.detection_type} alert and whitelist it?`)) return;
-    await dismissAnomaly(a.source_ip, a.detection_type, a.detail);
+  const handleAlertAction = useCallback((_id: string, _action: string) => {
     queryClient.invalidateQueries({ queryKey: ['iot-anomalies'] });
     queryClient.invalidateQueries({ queryKey: ['iot-fleet'] });
   }, [queryClient]);
@@ -112,7 +100,7 @@ export default function IotOverview() {
 
       {/* Tab panels */}
       {tab === 'anomalies' && (
-        <AnomaliesPanel anomalies={anomalies} onDismiss={handleDismiss} />
+        <AnomaliesPanel anomalies={anomalies} onAction={handleAlertAction} />
       )}
       {tab === 'fleet' && (
         <FleetPanel devices={devices} loading={fleetLoading} />
@@ -170,9 +158,41 @@ function StatCard({ label, children, loading, highlight }: {
 }
 
 // ---------------------------------------------------------------------------
-// Anomalies panel
+// Anomalies panel — uses shared AlertCard
 // ---------------------------------------------------------------------------
-function AnomaliesPanel({ anomalies, onDismiss }: { anomalies: Anomaly[]; onDismiss: (a: Anomaly) => void }) {
+function anomalyToAlertData(a: Anomaly): AlertData {
+  let description = a.detail;
+  let countryCode: string | undefined;
+
+  if (a.detection_type === 'iot_lateral_movement') {
+    const m = a.detail.match(/lateral_(\d+)_(.+)/);
+    if (m) description = `\u2192 ${m[2]} on port ${m[1]} (${PORT_LABELS[+m[1]] || 'unknown'})`;
+  } else if (a.detection_type === 'iot_suspicious_port') {
+    const m = a.detail.match(/port_(\d+)/);
+    if (m) description = `Port ${m[1]} (${PORT_LABELS[+m[1]] || 'unusual'})`;
+  } else if (a.detection_type === 'iot_new_country') {
+    const m = a.detail.match(/country_([A-Z]{2})/);
+    if (m) {
+      countryCode = m[1];
+      description = `New country: ${m[1]}`;
+    }
+  }
+
+  return {
+    alert_id: `iot-${a.source_ip}-${a.detection_type}-${a.detail}`,
+    mac_address: a.mac || '',
+    alert_type: a.detection_type,
+    service_or_dest: a.detail,
+    device_name: a.display_name || a.hostname || a.source_ip,
+    description,
+    country_code: countryCode,
+    timestamp: a.last_seen,
+    hits: a.hits,
+    is_dismissed: a.dismissed,
+  };
+}
+
+function AnomaliesPanel({ anomalies, onAction }: { anomalies: Anomaly[]; onAction: (id: string, action: string) => void }) {
   const sorted = useMemo(() => {
     const active = anomalies.filter(a => !a.dismissed).sort((a, b) => b.last_seen.localeCompare(a.last_seen));
     const dismissed = anomalies.filter(a => a.dismissed).sort((a, b) => b.last_seen.localeCompare(a.last_seen));
@@ -190,73 +210,15 @@ function AnomaliesPanel({ anomalies, onDismiss }: { anomalies: Anomaly[]; onDism
 
   return (
     <div className="space-y-3">
-      {sorted.map((a, i) => <AnomalyCard key={`${a.source_ip}-${a.detection_type}-${a.detail}-${i}`} anomaly={a} onDismiss={onDismiss} />)}
-    </div>
-  );
-}
-
-function AnomalyCard({ anomaly: a, onDismiss }: { anomaly: Anomaly; onDismiss: (a: Anomaly) => void }) {
-  const meta = DETECTION_LABELS[a.detection_type] || { label: a.detection_type, icon: 'ph-question', color: 'text-slate-500' };
-  const name = a.display_name || a.hostname || a.source_ip;
-
-  // Parse detail for human-readable info
-  let detailLine = a.detail;
-  let newCountryCC: string | null = null;
-  if (a.detection_type === 'iot_lateral_movement') {
-    const m = a.detail.match(/lateral_(\d+)_(.+)/);
-    if (m) detailLine = `→ ${m[2]} on port ${m[1]} (${PORT_LABELS[+m[1]] || 'unknown'})`;
-  } else if (a.detection_type === 'iot_suspicious_port') {
-    const m = a.detail.match(/port_(\d+)/);
-    if (m) detailLine = `Port ${m[1]} (${PORT_LABELS[+m[1]] || 'unusual'})`;
-  } else if (a.detection_type === 'iot_new_country') {
-    const m = a.detail.match(/country_([A-Z]{2})/);
-    if (m) newCountryCC = m[1];
-  }
-
-  return (
-    <div className={`bg-white dark:bg-white/[0.03] border rounded-xl p-4 transition-all ${
-      a.dismissed
-        ? 'border-slate-200 dark:border-white/[0.04] opacity-50'
-        : 'border-red-200 dark:border-red-800/40 shadow-sm'
-    }`}>
-      <div className="flex items-center gap-3">
-        {/* Icon */}
-        <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
-          a.dismissed ? 'bg-slate-100 dark:bg-white/[0.04]' : 'bg-red-50 dark:bg-red-900/20'
-        }`}>
-          <i className={`ph-duotone ${meta.icon} text-lg ${meta.color}`} />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{meta.label}</p>
-            {a.dismissed && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-400 font-medium">dismissed</span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-            <span className="font-medium text-slate-600 dark:text-slate-300">{name}</span>
-            {' — '}
-            {newCountryCC ? <><FlagIcon cc={newCountryCC} /> New country: {newCountryCC}</> : detailLine}
-          </p>
-        </div>
-
-        {/* Stats */}
-        <div className="flex-shrink-0 text-right text-[10px] text-slate-400">
-          <p className="tabular-nums">{fmtNumber(a.hits)} hits</p>
-          <p>{timeAgo(a.last_seen)}</p>
-        </div>
-
-        {/* Dismiss */}
-        {!a.dismissed && (
-          <button onClick={() => onDismiss(a)}
-            className="flex-shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            title="Dismiss & whitelist">
-            <i className="ph-duotone ph-x-circle text-base" />
-          </button>
-        )}
-      </div>
+      {sorted.map((a, i) => (
+        <AlertCard
+          key={`${a.source_ip}-${a.detection_type}-${a.detail}-${i}`}
+          alert={anomalyToAlertData(a)}
+          compact
+          showTrash={a.dismissed}
+          onAction={onAction}
+        />
+      ))}
     </div>
   );
 }
