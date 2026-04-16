@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -63,6 +63,9 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* ── VPN Alert Banner ── */}
+      <VpnBanner alerts={privacy.data?.vpn_alerts ?? []} />
 
       {/* ── Metric Cards (5 cards — System Health+Network merged) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -157,6 +160,51 @@ export default function Dashboard() {
 
 // ---------------------------------------------------------------------------
 // MetricCard
+// ---------------------------------------------------------------------------
+// VPN Alert Banner — shown when active VPN connections detected
+// ---------------------------------------------------------------------------
+function VpnBanner({ alerts }: { alerts: any[] }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!alerts || alerts.length === 0 || dismissed) return null;
+
+  const deviceName = (alert: any) =>
+    alert.display_name || alert.hostname || alert.source_ip;
+
+  return (
+    <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl px-4 py-3 flex items-start gap-3">
+      <i className="ph-duotone ph-shield-warning text-amber-500 text-xl flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+          VPN Detected — {alerts.length} {alerts.length === 1 ? 'device' : 'devices'}
+        </p>
+        <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+          {alerts.slice(0, 3).map((a, i) => (
+            <span key={i}>
+              {i > 0 && ', '}
+              <strong>{deviceName(a)}</strong>
+              {a.vpn_service && ` (${a.vpn_service})`}
+            </span>
+          ))}
+          {alerts.length > 3 && ` and ${alerts.length - 3} more`}
+        </p>
+        <a
+          href="#/privacy"
+          className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 hover:underline mt-1"
+        >
+          View details & block <i className="ph-duotone ph-arrow-right text-xs" />
+        </a>
+      </div>
+      <button
+        onClick={() => setDismissed(true)}
+        className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-300 flex-shrink-0"
+      >
+        <i className="ph-duotone ph-x text-sm" />
+      </button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 function MetricCard({ icon, iconColor, label, value, sub, subColor }: {
   icon: string; iconColor: string; label: string;
