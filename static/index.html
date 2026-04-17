@@ -176,49 +176,10 @@
   <!-- Page Content -->
   <main class="p-4 sm:p-6 max-w-[1600px] mx-auto">
 
-    <!-- ============================================================= -->
-    <!-- PAGE: DASHBOARD                                                -->
-    <!-- ============================================================= -->
-    <!-- PAGE: SUMMARY / ACTION INBOX — migrated to React (SummaryPage.tsx) -->
-
-    <section id="page-dashboard" class="page">
-      <div id="react-dashboard-root" data-active="true"></div>
-    </section>
-
-    <!-- PAGE: AI — migrated to React -->
-
-    <!-- PAGE: CLOUD — migrated to React -->
-
-    <!-- PAGE: PRIVACY — migrated to React -->
-
-    <!-- PAGE: FAMILY — migrated to React -->
-
-    <!-- ============================================================= -->
-    <!-- PAGE: IoT OVERVIEW                                             -->
-    <!-- ============================================================= -->
-    <section id="page-iot" class="page space-y-6">
-      <!-- React IoT Overview island -->
-      <div id="react-iot-root" data-active="true"></div>
-    </section>
-
-    <!-- ============================================================= -->
-    <!-- PAGE: GEO TRAFFIC                                              -->
-    <!-- ============================================================= -->
-    <section id="page-geo" class="page space-y-6">
-
-      <!-- React GeoMap island -->
-      <div id="react-geo-root" data-active="true"></div>
-
-
-    </section>
-
-    <!-- ============================================================= -->
-    <!-- PAGE: DEVICES                                                  -->
-    <!-- ============================================================= -->
-    <section id="page-devices" class="page space-y-6">
-      <!-- React Devices Page island -->
-      <div id="react-devices-root"></div>
-    </section>
+    <!-- All pages are now rendered by React from #react-app-root
+         (see frontend-react/src/main.tsx). The old per-page
+         <section id="page-*"> wrappers and their island mount points
+         are gone. -->
 
     <!-- PAGE: ACTIVE PROTECT (IPS) — migrated to React (IpsPage.tsx) -->
 

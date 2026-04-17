@@ -235,34 +235,8 @@ function navigate(page) {
     a.classList.toggle('dark:text-slate-500', !isActive);
   });
 
-  // Unmount React islands when navigating away to free resources.
-  // Re-mount happens via refresh*() when user returns.
-  if (page !== 'geo') {
-    const reactGeo = document.getElementById('react-geo-root');
-    if (reactGeo && reactGeo.getAttribute('data-active')) {
-      reactGeo.setAttribute('data-active', '');
-    }
-  }
-  if (page !== 'iot') {
-    const reactIot = document.getElementById('react-iot-root');
-    if (reactIot && reactIot.getAttribute('data-active')) {
-      reactIot.setAttribute('data-active', '');
-    }
-  }
-  if (page !== 'dashboard') {
-    const reactDash = document.getElementById('react-dashboard-root');
-    if (reactDash && reactDash.getAttribute('data-active')) {
-      reactDash.setAttribute('data-active', '');
-    }
-  }
-  if (page !== 'devices') {
-    const reactDev = document.getElementById('react-devices-root');
-    if (reactDev && reactDev.getAttribute('data-active')) {
-      reactDev.setAttribute('data-active', '');
-    }
-  }
-
-  // Load data for this page
+  // Load data for this page (killswitch auto-restore + global refresh button
+  // still call into here — see refreshPage below).
   refreshPage(page);
 }
 
@@ -1544,10 +1518,8 @@ async function refreshPage(page) {
     else if (page === 'cloud') await refreshCloud();
     else if (page === 'privacy') await refreshPrivacy();
     else if (page === 'devices') {
-      // React island — activate mount point
-      const el = document.getElementById('react-devices-root');
-      if (el) el.setAttribute('data-active', '1');
-      // Still load devices for other pages that depend on deviceMap/ipToMac
+      // React DevicesPage owns rendering. Still refresh deviceMap
+      // so other pages (Geo, Rules, etc.) have fresh data.
       await loadDevices();
     }
     else if (page === 'ips') await refreshIps();
@@ -1663,13 +1635,9 @@ function showToast(message, type = 'info') {
 window.showToast = showToast;
 
 
-// --- DASHBOARD (React island) ---
-async function refreshDashboard() {
-  const el = document.getElementById('react-dashboard-root');
-  if (el && !el.getAttribute('data-active')) {
-    el.setAttribute('data-active', 'true');
-  }
-}
+// Dashboard, IoT, Geo — React pages, nothing for vanilla to do on refresh.
+async function refreshDashboard() { /* React handles this */ }
+async function refreshIot() { /* React handles this */ }
 
 // --- AI RADAR ---
 async function refreshAI() {
@@ -2828,14 +2796,7 @@ function _geoFmtBytes(b) {
   return b + ' B';
 }
 
-async function refreshGeo() {
-  // The React GeoMap handles its own data fetching via React Query.
-  // Just ensure the island is mounted.
-  const reactView = document.getElementById('react-geo-root');
-  if (reactView && !reactView.getAttribute('data-active')) {
-    reactView.setAttribute('data-active', 'true');
-  }
-}
+async function refreshGeo() { /* React handles this */ }
 
 // Build filter params for the Geo and Other pages. Mirrors the AI
 // page pattern (service/device/period) so all three insight pages

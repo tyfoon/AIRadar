@@ -141,10 +141,8 @@ select {
   box-shadow: inset 3px 0 0 #6366f1;
 }
 
-/* --- Page transitions --- */
-.page { display: none; }
-.page.active { display: block; animation: fadeIn 0.25s ease; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+/* Page-level transitions removed — every page is now React and owns
+   its own mount animation if needed. */
 
 /* --- Spin animation for refresh --- */
 @keyframes spin { to { transform: rotate(360deg); } }
