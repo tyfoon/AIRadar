@@ -663,7 +663,9 @@ function ServiceChip({ svc, policy, active, onClick }: {
 }
 
 // ---------------------------------------------------------------------------
-// Inline Policy Panel — replaces the vanilla alert-action modal
+// Policy Modal — centered popup for setting global/group/device rules.
+// Replaces the previous inline panel which rendered below both kaders
+// and was often off-screen when opened from a chip in the upper area.
 // ---------------------------------------------------------------------------
 type Scope = 'global' | 'group' | 'device';
 type PolicyAction = 'allow' | 'alert' | 'block';
@@ -678,14 +680,11 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
   const [pending, setPending] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const dtRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   // Re-sync scope/action when the target changes (e.g. user clicks a
   // different chip while the panel is open). Without this, the panel
-  // keeps the previous selection — which was confusing because the
-  // title updated but the controls didn't.
-  // Identity keyed on (mac, service) so re-clicking the same pair
-  // doesn't stomp in-progress edits.
+  // keeps the previous selection — confusing because the title
+  // updated but the controls didn't.
   const targetKey = `${target.macAddress || ''}|${target.serviceName || ''}|${target.category}`;
   useEffect(() => {
     setScope(target.defaultScope);
@@ -693,15 +692,13 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
     setShowCustom(false);
   }, [targetKey, target.defaultScope, target.defaultAction]);
 
-  // Scroll panel into view whenever it appears / target changes. The
-  // panel renders below both kaders + honesty block — on anything but
-  // a short viewport it opens off-screen and looks like "nothing
-  // happened". smooth + 'nearest' avoids jarring jumps on short pages.
+  // Escape to close — matches the other modals in the app
+  // (ReputationModal, CountryDrawer, DeviceDrawer).
   useEffect(() => {
-    if (panelRef.current) {
-      panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [targetKey]);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   // Fetch groups for the device (if device scope)
   const { data: groups = [] } = useQuery<SharedDeviceGroup[]>({
@@ -746,16 +743,28 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
     : <>{target.serviceName ? svcDisplayName(target.serviceName) : (target.deviceName || target.category)}</>;
 
   return (
-    <div ref={panelRef} className="bg-white dark:bg-white/[0.03] border border-blue-400/40 dark:border-blue-500/30 rounded-xl p-5 shadow-lg shadow-blue-500/5 scroll-mt-4">
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md bg-white dark:bg-slate-800 border border-blue-400/40 dark:border-blue-500/30 rounded-xl p-5 shadow-2xl shadow-blue-500/10 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <i className="ph-duotone ph-shield-warning text-base text-blue-500" />
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <div className="flex items-center gap-2 min-w-0">
+          <i className="ph-duotone ph-shield-warning text-base text-blue-500 flex-shrink-0" />
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">
             Set policy for <span className="text-blue-500">{titleNode}</span>
           </h3>
         </div>
-        <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-          <i className="ph-duotone ph-x text-base" />
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.08] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors text-lg leading-none flex-shrink-0"
+        >
+          ×
         </button>
       </div>
 
@@ -818,6 +827,7 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
               className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-xs font-medium transition-colors">Cancel</button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
