@@ -678,6 +678,30 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
   const [pending, setPending] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const dtRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Re-sync scope/action when the target changes (e.g. user clicks a
+  // different chip while the panel is open). Without this, the panel
+  // keeps the previous selection — which was confusing because the
+  // title updated but the controls didn't.
+  // Identity keyed on (mac, service) so re-clicking the same pair
+  // doesn't stomp in-progress edits.
+  const targetKey = `${target.macAddress || ''}|${target.serviceName || ''}|${target.category}`;
+  useEffect(() => {
+    setScope(target.defaultScope);
+    setAction(target.defaultAction);
+    setShowCustom(false);
+  }, [targetKey, target.defaultScope, target.defaultAction]);
+
+  // Scroll panel into view whenever it appears / target changes. The
+  // panel renders below both kaders + honesty block — on anything but
+  // a short viewport it opens off-screen and looks like "nothing
+  // happened". smooth + 'nearest' avoids jarring jumps on short pages.
+  useEffect(() => {
+    if (panelRef.current) {
+      panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [targetKey]);
 
   // Fetch groups for the device (if device scope)
   const { data: groups = [] } = useQuery<SharedDeviceGroup[]>({
@@ -715,17 +739,19 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
 
   const snoozeExpiry = (hours: number) => new Date(Date.now() + hours * 3600_000).toISOString();
 
-  const title = target.serviceName
-    ? svcDisplayName(target.serviceName)
-    : target.deviceName || target.category;
+  // Build a more descriptive title for the nested case so it's obvious
+  // what exactly is being policed (e.g. "TikTok on Robin iPhone").
+  const titleNode = target.serviceName && target.macAddress && target.deviceName
+    ? <>{svcDisplayName(target.serviceName)} <span className="text-slate-400">on</span> {target.deviceName}</>
+    : <>{target.serviceName ? svcDisplayName(target.serviceName) : (target.deviceName || target.category)}</>;
 
   return (
-    <div className="bg-white dark:bg-white/[0.03] border border-blue-400/40 dark:border-blue-500/30 rounded-xl p-5 shadow-lg shadow-blue-500/5">
+    <div ref={panelRef} className="bg-white dark:bg-white/[0.03] border border-blue-400/40 dark:border-blue-500/30 rounded-xl p-5 shadow-lg shadow-blue-500/5 scroll-mt-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <i className="ph-duotone ph-shield-warning text-base text-blue-500" />
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Set policy for <span className="text-blue-500">{title}</span>
+            Set policy for <span className="text-blue-500">{titleNode}</span>
           </h3>
         </div>
         <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
