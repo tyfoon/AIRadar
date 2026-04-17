@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDeviceMatrix } from './useDeviceMatrix';
 import DeviceMatrix from './DeviceMatrix';
@@ -29,6 +30,7 @@ export default function DevicesPage() {
   const [activeTab, setActiveTab] = useState<'devices' | 'groups'>('devices');
   const [period, setPeriod] = useState(1440);
   const [drawerMac, setDrawerMac] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   const { deviceMap, ipToMac, matrix, allEvents, policyByService, policyExpiresByService, isLoading, isError, refetch } = useDeviceMatrix(period);
@@ -39,13 +41,35 @@ export default function DevicesPage() {
     window.ipToMac = ipToMac;
   }, [deviceMap, ipToMac]);
 
+  // Open the drawer when ?mac=<mac> is in the URL (used by the
+  // window.openDeviceDrawer bridge from GeoMap's CountryDrawer and
+  // from IoT FleetCard). We also force the devices tab so a direct
+  // link doesn't land on Groups.
+  useEffect(() => {
+    const mac = searchParams.get('mac');
+    if (mac && mac !== drawerMac) {
+      setDrawerMac(mac);
+      setActiveTab('devices');
+    }
+    // drawerMac intentionally not in deps — we only react to URL changes,
+    // not to drawerMac mutations (closing drops the param explicitly).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const openDrawer = useCallback((mac: string, service?: string, category?: string) => {
     setDrawerMac(mac);
   }, []);
 
   const closeDrawer = useCallback(() => {
     setDrawerMac(null);
-  }, []);
+    // Drop the ?mac= param so navigating back and forth doesn't
+    // re-open the drawer we just closed.
+    if (searchParams.has('mac')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('mac');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const handleRename = useCallback((mac: string) => {
     // Open drawer which has inline rename

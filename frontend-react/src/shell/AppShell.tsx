@@ -28,6 +28,21 @@ export default function AppShell() {
     };
   }, [nav]);
 
+  // Replace the broken vanilla openDeviceDrawer with a React bridge.
+  // Vanilla app.js still defines its own openDeviceDrawer at script-load
+  // time, but it targets a #drawer-panel that was removed during the
+  // React device-drawer migration — every caller threw a TypeError.
+  // Here we override window.openDeviceDrawer to navigate to
+  // /devices?mac=<mac>; DevicesPage picks up the ?mac= param and opens
+  // its React drawer. Runs after mount so this assignment wins over
+  // app.js's.
+  useEffect(() => {
+    (window as any).openDeviceDrawer = (mac: string) => {
+      if (!mac) return;
+      nav(`/devices?mac=${encodeURIComponent(mac)}`);
+    };
+  }, [nav]);
+
   // Reset scroll to top whenever the route changes. React Router preserves
   // the window scroll position by default, which means navigating from
   // "bottom of /geo" to /content leaves you at the bottom of the new page.

@@ -4173,7 +4173,10 @@ window.generateDeviceReport = generateDeviceReport;
 // Expose for onclick
 window._toggleDevGroup = _toggleDevGroup;
 window._showCellEvents = _showCellEvents;
-window.openDeviceDrawer = openDeviceDrawer;
+// window.openDeviceDrawer is installed by AppShell (React bridge that
+// navigates to /devices?mac=<mac>). The vanilla openDeviceDrawer() below
+// targets DOM that was removed in the React device-drawer migration —
+// exposing it here would cause every caller to TypeError.
 window.closeDeviceDrawer = closeDeviceDrawer;
 window.setDrawerTab = setDrawerTab;
 window.drawerLoadMore = drawerLoadMore;
