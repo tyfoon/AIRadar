@@ -161,11 +161,20 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
   const [tooltip, setTooltip] = useState({ html: '', x: 0, y: 0 });
   const queryClient = useQueryClient();
   const globeRef = useRef<any>(null);
-  const globeWrapRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [globeSize, setGlobeSize] = useState(0);
   const [visible, setVisible] = useState(false);
   const [geoJson, setGeoJson] = useState<any>(null);
+  // Callback ref — fires when the globe wrapper DOM node attaches OR detaches.
+  // Critical for the non-compact Geo page where the wrapper is conditionally
+  // rendered once `countries.length > 0`: a plain useRef + useEffect misses
+  // this mount because the effect only runs when `visible` changes, not when
+  // the node finally appears. ResizeObserver then handles all subsequent
+  // layout settles (aspect-ratio resolution, window resize, sidebar toggle).
+  const [globeEl, setGlobeEl] = useState<HTMLDivElement | null>(null);
+  const globeWrapRef = useCallback((el: HTMLDivElement | null) => {
+    setGlobeEl(el);
+  }, []);
 
   // Detect when the component becomes visible / hidden (parent toggling
   // hidden class or scrolling off-screen). We track BOTH directions so we
@@ -198,19 +207,23 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
     } catch (_) {}
   }, [visible]);
 
-  // Measure globe container once visible
+  // Measure globe container via ResizeObserver — fires on attach, layout
+  // settle (e.g. aspect-ratio resolving after siblings lay out), and any
+  // later resize. Replaces the previous one-shot setTimeout(50ms) which
+  // raced against data load: on the non-compact Geo page the wrapper only
+  // mounts after `countries.length > 0`, so the timeout would fire before
+  // the div existed and leave globeSize at 0 forever.
   useEffect(() => {
-    if (!visible) return;
-    function measure() {
-      if (globeWrapRef.current) {
-        const w = globeWrapRef.current.clientWidth;
-        if (w > 0) setGlobeSize(w);
-      }
-    }
-    const t = setTimeout(measure, 50);
-    window.addEventListener('resize', measure);
-    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
-  }, [visible]);
+    if (!globeEl) return;
+    const measure = () => {
+      const w = globeEl.clientWidth;
+      if (w > 0) setGlobeSize(w);
+    };
+    measure(); // synchronous first pass covers the fast path
+    const ro = new ResizeObserver(measure);
+    ro.observe(globeEl);
+    return () => ro.disconnect();
+  }, [globeEl]);
 
   // Fetch GeoJSON with AbortController so we can cancel on unmount
   useEffect(() => {
