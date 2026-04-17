@@ -3284,14 +3284,21 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
                                 # --- nDPI DPI fallback ---
                                 # nDPI identifies apps in encrypted traffic
-                                # via packet pattern analysis.
+                                # via packet pattern analysis. Promote the
+                                # resolved label into _known_ips so the next
+                                # flow on the same (mac, public_ip) skips the
+                                # whole fallback cascade — matches how the
+                                # DNS and IP-prefix fallbacks above cache.
                                 if conv_svc == "unknown":
                                     try:
                                         from ndpi_tailer import label_via_ndpi
                                         ndpi_label = label_via_ndpi(public_ip)
                                         if ndpi_label:
-                                            conv_svc = ndpi_label[0]
-                                            conv_cat = ndpi_label[1]
+                                            conv_svc, conv_cat = ndpi_label
+                                            if conv_mac:
+                                                _known_ips[(conv_mac, public_ip)] = (
+                                                    conv_svc, conv_cat, time.time()
+                                                )
                                     except ImportError:
                                         pass
 
@@ -3301,12 +3308,24 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # nflxvideo.net → netflix) or ASN category
                                 # (e.g. AS2906 → streaming). Service may
                                 # stay "unknown" but the category is assigned.
+                                #
+                                # Only promote to _known_ips when a real
+                                # service was resolved (PTR pattern match).
+                                # ASN-only matches return service="unknown",
+                                # and caching those would block later
+                                # enrichment from ever upgrading the label
+                                # when a better signal (SNI, DNS, nDPI)
+                                # arrives on a subsequent flow.
                                 if conv_svc == "unknown":
                                     ptr_asn = _label_via_ptr_asn(public_ip)
                                     if ptr_asn:
                                         ptr_svc, ptr_cat = ptr_asn
                                         if ptr_svc != "unknown":
                                             conv_svc = ptr_svc
+                                            if conv_mac:
+                                                _known_ips[(conv_mac, public_ip)] = (
+                                                    ptr_svc, ptr_cat, time.time()
+                                                )
                                         conv_cat = ptr_cat
 
                                 asyncio.create_task(
