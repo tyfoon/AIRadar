@@ -134,35 +134,7 @@
 </aside>
 <div id="sidebar-backdrop" class="fixed inset-0 bg-black/50 z-30 hidden" onclick="toggleMobileSidebar()"></div>
 
-<!-- ============================================================= -->
-<!-- MOBILE BOTTOM NAV                                              -->
-<!-- ============================================================= -->
-<nav id="mobile-nav" class="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#0f1117] border-t border-slate-200 dark:border-white/[0.04] z-40 hidden">
-  <div class="h-16 flex items-stretch">
-    <a href="#/summary" data-page="summary" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
-      <i class="ph-duotone ph-tray text-xl"></i>
-      <span data-i18n="mob.home">Home</span>
-    </a>
-    <a href="#/devices" data-page="devices" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
-      <i class="ph-duotone ph-devices text-xl"></i>
-      <span data-i18n="mob.devices">Devices</span>
-    </a>
-    <a href="#/ips" data-page="ips" class="mob-nav flex-1 relative flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
-      <i class="ph-duotone ph-warning-octagon text-xl"></i>
-      <span data-i18n="mob.attacks">Attacks</span>
-      <span id="mob-badge-ips" class="hidden absolute top-1 right-1/4 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">0</span>
-    </a>
-    <a href="#/settings" data-page="settings" class="mob-nav flex-1 relative flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
-      <i class="ph-duotone ph-gear text-xl"></i>
-      <span data-i18n="mob.settings">Settings</span>
-      <span id="mob-badge-settings" class="hidden absolute top-1 right-1/4 w-2 h-2 rounded-full bg-red-500"></span>
-    </a>
-    <button onclick="toggleMobileSidebar()" class="mob-nav flex-1 flex flex-col items-center justify-center gap-0.5 text-slate-400 dark:text-slate-500 text-xs">
-      <i class="ph-duotone ph-list text-xl"></i>
-      <span data-i18n="mob.menu">Menu</span>
-    </button>
-  </div>
-</nav>
+<!-- Mobile bottom nav is now rendered by React (Sidebar.tsx, portaled to body) -->
 
 <!-- ============================================================= -->
 <!-- MAIN CONTENT AREA                                              -->

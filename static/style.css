@@ -263,6 +263,7 @@ canvas { max-width: 100%; }
 #sankey-chart { width: 100%; min-height: 350px; }
 
 /* --- Mobile bottom bar --- */
+/* #mobile-nav removed — React mobile nav (Sidebar.tsx) supersedes it. */
 @media (max-width: 767px) {
   #sidebar {
     transform: translateX(-100%);
@@ -271,12 +272,8 @@ canvas { max-width: 100%; }
     width: 280px;
   }
   #sidebar.mobile-open { transform: translateX(0); }
-  #mobile-nav { display: flex !important; }
   #main { margin-left: 0 !important; }
   .nav-item { min-height: 44px; display: flex; align-items: center; }
-}
-@media (min-width: 768px) {
-  #mobile-nav { display: none !important; }
 }
 
 /* --- Device row edit button: show on row hover --- */
