@@ -119,6 +119,24 @@ function findDeviceHeadlinePolicy(
   return candidates[0];
 }
 
+// Nested policy: exact match on (device scope, mac, service). This is what
+// the user sets by clicking a device-chip inside a service row (or a
+// service-chip inside a device row) — "block THIS service for THIS device".
+// Falls back to a device+category rule (blocks every service in the
+// category for the device) so that chip still shows the policy dot.
+function findNestedPolicy(
+  policies: CategoryPolicy[], mac: string, service: string, category: string,
+): CategoryPolicy | null {
+  const exact = policies.find(p =>
+    p.scope === 'device' && p.mac_address === mac && p.service_name === service,
+  );
+  if (exact) return exact;
+  const catWide = policies.find(p =>
+    p.scope === 'device' && p.mac_address === mac && p.service_name === null && p.category === category,
+  );
+  return catWide || null;
+}
+
 function PolicyIcon({ policy }: { policy: CategoryPolicy | null }) {
   if (!policy) return null;
   if (policy.action === 'block') {
@@ -271,7 +289,14 @@ export default function ContentPage() {
                 serviceName: svc, category: activeCategory ?? '',
                 defaultScope: 'global', defaultAction: 'block',
               })}
+              onOpenNestedPolicy={(mac, deviceName, svc) => setPolicyTarget({
+                serviceName: svc, macAddress: mac, deviceName,
+                category: activeCategory ?? '',
+                defaultScope: 'device', defaultAction: 'block',
+              })}
               activePolicyService={policyTarget?.serviceName && !policyTarget?.macAddress ? policyTarget.serviceName : undefined}
+              activeNested={policyTarget?.macAddress && policyTarget?.serviceName
+                ? { mac: policyTarget.macAddress, service: policyTarget.serviceName } : undefined}
             />
           )}
         </div>
@@ -301,7 +326,14 @@ export default function ContentPage() {
                 category: activeCategory ?? '', macAddress: mac, deviceName: name,
                 defaultScope: 'device', defaultAction: 'block',
               })}
+              onOpenNestedPolicy={(mac, deviceName, svc) => setPolicyTarget({
+                serviceName: svc, macAddress: mac, deviceName,
+                category: activeCategory ?? '',
+                defaultScope: 'device', defaultAction: 'block',
+              })}
               activePolicyMac={policyTarget?.macAddress && !policyTarget?.serviceName ? policyTarget.macAddress : undefined}
+              activeNested={policyTarget?.macAddress && policyTarget?.serviceName
+                ? { mac: policyTarget.macAddress, service: policyTarget.serviceName } : undefined}
             />
           )}
         </div>
@@ -384,14 +416,16 @@ function CategoryChipStrip({ cards, activeKey, onSelect }: {
   );
 }
 
-function ServicesKader({ services, category, policies, expandedSet, onToggleExpand, onOpenPolicy, activePolicyService }: {
+function ServicesKader({ services, category, policies, expandedSet, onToggleExpand, onOpenPolicy, onOpenNestedPolicy, activePolicyService, activeNested }: {
   services: CategoryService[];
   category: string;
   policies: CategoryPolicy[];
   expandedSet: Set<string>;
   onToggleExpand: (key: string) => void;
   onOpenPolicy: (serviceName: string) => void;
+  onOpenNestedPolicy: (mac: string, deviceName: string, serviceName: string) => void;
   activePolicyService?: string;
+  activeNested?: { mac: string; service: string };
 }) {
   if (!services.length) {
     return <p className="text-slate-400 dark:text-slate-500 text-center py-6 text-xs">No services seen in this category.</p>;
@@ -438,9 +472,23 @@ function ServicesKader({ services, category, policies, expandedSet, onToggleExpa
               <div className="h-full bg-blue-500/70 dark:bg-blue-400/70 rounded-full" style={{ width: `${pct}%` }} />
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {shown.map(d => (
-                <DeviceChip key={d.mac_address} dev={d} />
-              ))}
+              {shown.map(d => {
+                const nestedPol = findNestedPolicy(policies, d.mac_address, s.service_name, category);
+                const isActive = activeNested?.mac === d.mac_address && activeNested?.service === s.service_name;
+                return (
+                  <DeviceChip
+                    key={d.mac_address}
+                    dev={d}
+                    policy={nestedPol}
+                    active={isActive}
+                    onClick={() => onOpenNestedPolicy(
+                      d.mac_address,
+                      d.display_name || d.hostname || d.mac_address,
+                      s.service_name,
+                    )}
+                  />
+                );
+              })}
               {hidden > 0 && (
                 <button
                   type="button"
@@ -467,14 +515,16 @@ function ServicesKader({ services, category, policies, expandedSet, onToggleExpa
   );
 }
 
-function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand, onOpenPolicy, activePolicyMac }: {
+function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand, onOpenPolicy, onOpenNestedPolicy, activePolicyMac, activeNested }: {
   devices: CategoryDevice[];
   category: string;
   policies: CategoryPolicy[];
   expandedSet: Set<string>;
   onToggleExpand: (key: string) => void;
   onOpenPolicy: (mac: string, name: string) => void;
+  onOpenNestedPolicy: (mac: string, deviceName: string, serviceName: string) => void;
   activePolicyMac?: string;
+  activeNested?: { mac: string; service: string };
 }) {
   if (!devices.length) {
     return <p className="text-slate-400 dark:text-slate-500 text-center py-6 text-xs">No devices seen in this category.</p>;
@@ -513,9 +563,23 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
               <div className="h-full bg-emerald-500/70 dark:bg-emerald-400/70 rounded-full" style={{ width: `${pct}%` }} />
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {shown.map(s => (
-                <ServiceChip key={s.service_name} svc={s} />
-              ))}
+              {shown.map(s => {
+                const nestedPol = findNestedPolicy(policies, d.mac_address, s.service_name, category);
+                const isActive = activeNested?.mac === d.mac_address && activeNested?.service === s.service_name;
+                return (
+                  <ServiceChip
+                    key={s.service_name}
+                    svc={s}
+                    policy={nestedPol}
+                    active={isActive}
+                    onClick={() => onOpenNestedPolicy(
+                      d.mac_address,
+                      d.display_name || d.hostname || d.mac_address,
+                      s.service_name,
+                    )}
+                  />
+                );
+              })}
               {hidden > 0 && (
                 <button
                   type="button"
@@ -542,8 +606,13 @@ function DevicesKader({ devices, category, policies, expandedSet, onToggleExpand
   );
 }
 
-function DeviceChip({ dev }: {
+// Chip — clickable to open a nested (device + service) policy. Shows an
+// existing-policy icon when a rule already covers this pair.
+function DeviceChip({ dev, policy, active, onClick }: {
   dev: { mac_address: string; display_name: string; hostname: string | null; vendor: string | null; device_class: string | null; online: boolean; bytes: number };
+  policy?: CategoryPolicy | null;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   const name = dev.display_name || dev.hostname || dev.mac_address || '?';
   const dt = detectDeviceType({
@@ -551,28 +620,45 @@ function DeviceChip({ dev }: {
     vendor: dev.vendor ?? undefined, device_class: dev.device_class ?? undefined, ips: [],
   } as any);
   return (
-    <span
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] max-w-[140px]"
-      title={`${name} — ${fmtBytes(dev.bytes || 0)}`}
+    <button
+      type="button"
+      onClick={e => { e.stopPropagation(); onClick?.(); }}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border transition-colors max-w-[140px] ${
+        active
+          ? 'border-blue-400 dark:border-blue-500/60 ring-1 ring-blue-400/50'
+          : 'border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]'
+      }`}
+      title={`${name} — ${fmtBytes(dev.bytes || 0)}${policy ? ` · ${policy.action} (${policy.scope})` : ''}`}
     >
       <i className={`ph-duotone ${dt.icon} text-xs ${dev.online ? 'text-emerald-500' : 'text-slate-400'}`} />
       <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{name}</span>
-    </span>
+      {policy && <PolicyIcon policy={policy} />}
+    </button>
   );
 }
 
-function ServiceChip({ svc }: {
+function ServiceChip({ svc, policy, active, onClick }: {
   svc: { service_name: string; bytes: number };
+  policy?: CategoryPolicy | null;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   const name = svcDisplayName(svc.service_name);
   return (
-    <span
-      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] max-w-[140px]"
-      title={`${name} — ${fmtBytes(svc.bytes || 0)}`}
+    <button
+      type="button"
+      onClick={e => { e.stopPropagation(); onClick?.(); }}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border transition-colors max-w-[140px] ${
+        active
+          ? 'border-blue-400 dark:border-blue-500/60 ring-1 ring-blue-400/50'
+          : 'border-slate-200 dark:border-white/[0.06] hover:bg-slate-100 dark:hover:bg-white/[0.08]'
+      }`}
+      title={`${name} — ${fmtBytes(svc.bytes || 0)}${policy ? ` · ${policy.action} (${policy.scope})` : ''}`}
     >
       <SvcLogo svc={svc.service_name} size={14} />
       <span className="truncate text-[11px] text-slate-600 dark:text-slate-300">{name}</span>
-    </span>
+      {policy && <PolicyIcon policy={policy} />}
+    </button>
   );
 }
 
