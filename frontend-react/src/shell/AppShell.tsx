@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ROUTES } from './routes';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import DeviceDrawerHost from './DeviceDrawerHost';
 
 declare global {
   interface Window {
@@ -15,6 +16,12 @@ declare global {
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('airadar-sidebar') === 'collapsed');
   const [badges, setBadges] = useState<Record<string, number | boolean>>({});
+  // Globally-mounted device drawer state. Any page (GeoMap, IoT FleetCard,
+  // attacks list, …) can open the drawer via window.openDeviceDrawer(mac)
+  // without navigating. DevicesPage used to own this state but then a click
+  // from outside had to route to /devices?mac=..., which yanked the user out
+  // of the context they were investigating.
+  const [drawerMac, setDrawerMac] = useState<string | null>(null);
   const location = useLocation();
   const nav = useNavigate();
 
@@ -28,20 +35,16 @@ export default function AppShell() {
     };
   }, [nav]);
 
-  // Replace the broken vanilla openDeviceDrawer with a React bridge.
-  // Vanilla app.js still defines its own openDeviceDrawer at script-load
-  // time, but it targets a #drawer-panel that was removed during the
-  // React device-drawer migration — every caller threw a TypeError.
-  // Here we override window.openDeviceDrawer to navigate to
-  // /devices?mac=<mac>; DevicesPage picks up the ?mac= param and opens
-  // its React drawer. Runs after mount so this assignment wins over
-  // app.js's.
+  // window.openDeviceDrawer — global bridge used by GeoMap's CountryDrawer,
+  // IoT FleetCard, the inbound attacks list, and any remaining vanilla
+  // onclick strings. Opens the React drawer overlay in-place so users keep
+  // their context (used to navigate away to /devices?mac=…, which was
+  // disorienting).
   useEffect(() => {
     (window as any).openDeviceDrawer = (mac: string) => {
-      if (!mac) return;
-      nav(`/devices?mac=${encodeURIComponent(mac)}`);
+      if (mac) setDrawerMac(mac);
     };
-  }, [nav]);
+  }, []);
 
   // Reset scroll to top whenever the route changes. React Router preserves
   // the window scroll position by default, which means navigating from
@@ -172,6 +175,10 @@ export default function AppShell() {
         </div>
       )}
       {!isReactPage && <Outlet />}
+
+      {/* Globally-mounted device drawer — openable from anywhere via
+          window.openDeviceDrawer(mac). */}
+      <DeviceDrawerHost mac={drawerMac} onClose={() => setDrawerMac(null)} />
 
       {/* Inject responsive margin — 0 on mobile, sidebar width on desktop */}
       <style>{`
