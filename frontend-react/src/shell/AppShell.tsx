@@ -28,6 +28,15 @@ export default function AppShell() {
     };
   }, [nav]);
 
+  // Reset scroll to top whenever the route changes. React Router preserves
+  // the window scroll position by default, which means navigating from
+  // "bottom of /geo" to /content leaves you at the bottom of the new page.
+  // Use 'auto' (not 'smooth') so the jump is instant — a smooth scroll on
+  // a long page would animate through unrelated content during navigation.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname]);
+
   // On first mount: hide old sidebar/header/mobile-nav
   useEffect(() => {
     const hide = (id: string) => {
