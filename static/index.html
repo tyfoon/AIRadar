@@ -357,11 +357,7 @@
 <!-- ============================================================= -->
 <div id="toast-host" class="fixed bottom-6 right-6 z-[110] space-y-2 pointer-events-none"></div>
 
-<!-- Reputation check modal -->
-<div id="reputation-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm" onclick="if(event.target===this)_closeReputationModal()">
-  <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-5 w-full max-w-md mx-4" id="reputation-modal-body">
-  </div>
-</div>
+<!-- Reputation modal is now rendered by React (shared/ReputationModal.tsx) -->
 
 <script src="/static/app.js"></script>
 <script src="/static/react/screentime.bundle.js" defer></script>
