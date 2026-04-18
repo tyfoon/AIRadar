@@ -16,21 +16,23 @@
 
 import DeviceDrawer from '../devices/DeviceDrawer';
 import { useDeviceMatrix } from '../devices/useDeviceMatrix';
+import type { DeviceDrawerBack } from './AppShell';
 
 interface Props {
   mac: string | null;
+  back: DeviceDrawerBack | null;
   onClose: () => void;
 }
 
 const DEFAULT_PERIOD_MINUTES = 1440; // 24h — matches DevicesPage default
 
-export default function DeviceDrawerHost({ mac, onClose }: Props) {
+export default function DeviceDrawerHost({ mac, back, onClose }: Props) {
   // When mac is null the drawer isn't open — don't pay for the hook at all.
   if (!mac) return null;
-  return <LoadedDrawer mac={mac} onClose={onClose} />;
+  return <LoadedDrawer mac={mac} back={back} onClose={onClose} />;
 }
 
-function LoadedDrawer({ mac, onClose }: { mac: string; onClose: () => void }) {
+function LoadedDrawer({ mac, back, onClose }: { mac: string; back: DeviceDrawerBack | null; onClose: () => void }) {
   const {
     deviceMap,
     allEvents,
@@ -48,6 +50,7 @@ function LoadedDrawer({ mac, onClose }: { mac: string; onClose: () => void }) {
       svcCategoryMap={matrix.svcCategoryMap}
       policyByService={policyByService}
       policyExpiresByService={policyExpiresByService}
+      back={back}
       onClose={onClose}
       onDevicesRefetch={refetch}
     />

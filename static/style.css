@@ -301,6 +301,14 @@ tr:hover .dev-edit-btn { opacity: 1; }
 .dark .drawer-panel { box-shadow: -8px 0 30px rgba(0,0,0,0.4); }
 .drawer-panel.open { transform: translateX(0); }
 
+/* Opt-out of the slide/fade transition. Set by CountryDrawer and
+   DeviceDrawer when they close-to-hand-off to the other one, so the
+   outgoing drawer vanishes instantly instead of briefly sliding past
+   the incoming drawer (both share z-index:51 + right origin). The
+   parent component resets the flag on the next cc/mac change. */
+.drawer-panel.drawer-no-anim,
+.drawer-backdrop.drawer-no-anim { transition: none !important; }
+
 @media (max-width: 767px) {
   .drawer-panel { width: 100vw; min-width: 0; max-width: none; }
 }

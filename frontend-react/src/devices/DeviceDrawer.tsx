@@ -16,6 +16,8 @@ import PhIcon from './PhIcon';
 import ScreenTime from '../ScreenTime';
 import PolicySegment from './PolicySegment';
 
+import type { DeviceDrawerBack } from '../shell/AppShell';
+
 interface Props {
   mac: string | null;
   deviceMap: DeviceMap;
@@ -23,6 +25,11 @@ interface Props {
   svcCategoryMap: Record<string, string>;
   policyByService: Record<string, string>;
   policyExpiresByService: Record<string, string>;
+  // Optional "back to …" context. When the drawer is opened FROM another
+  // drawer (e.g. country drawer → device), this carries the origin so we
+  // can render a back button that hands control back to it instead of
+  // dumping the user on the bare underlying page.
+  back?: DeviceDrawerBack | null;
   onClose: () => void;
   onDevicesRefetch: () => void;
 }
@@ -49,13 +56,30 @@ function estimateActiveTime(timestamps: string[]): number {
   return total;
 }
 
-export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, policyByService, policyExpiresByService, onClose, onDevicesRefetch }: Props) {
+export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap, policyByService, policyExpiresByService, back, onClose, onDevicesRefetch }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('report');
   const [serviceFilter, setServiceFilter] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Handler for the "back" button shown when the drawer was opened from
+  // another context (currently: the country drawer). Same instant-close
+  // trick as CountryDrawer's handleDeviceClick — toggle a class that
+  // kills the slide-out transition so this drawer vanishes instantly
+  // and the other one can slide in cleanly into the same slot. Flag
+  // resets whenever `mac` changes.
+  const [skipAnim, setSkipAnim] = useState(false);
+  useEffect(() => { setSkipAnim(false); }, [mac]);
+  const handleBack = useCallback(() => {
+    if (!back) return;
+    setSkipAnim(true);
+    onClose();
+    if (back.type === 'country') {
+      (window as any).openCountryDrawer?.(back.cc, back.direction);
+    }
+  }, [back, onClose]);
 
   const device = mac ? deviceMap[mac] || null : null;
 
@@ -158,9 +182,21 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
   return (
     <>
       {/* Backdrop */}
-      <div className={`drawer-backdrop ${mac ? 'open' : ''}`} onClick={onClose} />
+      <div className={`drawer-backdrop ${mac ? 'open' : ''} ${skipAnim ? 'drawer-no-anim' : ''}`} onClick={onClose} />
       {/* Panel */}
-      <div ref={panelRef} className={`drawer-panel ${mac ? 'open' : ''}`}>
+      <div ref={panelRef} className={`drawer-panel ${mac ? 'open' : ''} ${skipAnim ? 'drawer-no-anim' : ''}`}>
+        {/* Back bar — only shown when drawer was opened from another context */}
+        {back && (
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1.5 px-5 py-2 border-b border-slate-200 dark:border-white/[0.06] text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors text-left"
+            title="Terug"
+          >
+            <i className="ph-bold ph-arrow-left text-sm" />
+            <span className="truncate">{back.label}</span>
+          </button>
+        )}
+
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 dark:border-white/[0.06]">
           <span className={`text-2xl ${online ? 'text-emerald-500' : 'text-slate-400'}`}>

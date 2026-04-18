@@ -176,6 +176,20 @@ export default function GeoMap({ initialDirection = 'outbound', compact = false 
     setGlobeEl(el);
   }, []);
 
+  // Expose window.openCountryDrawer so the DeviceDrawer's back button can
+  // reopen this drawer when the user clicked out of a country into a device.
+  // Only valid while GeoMap is mounted; after navigation it's cleared.
+  useEffect(() => {
+    (window as any).openCountryDrawer = (cc: string, dir?: Direction) => {
+      if (!cc) return;
+      if (dir) setDirection(dir);
+      setDrawerCC(cc);
+    };
+    return () => {
+      if ((window as any).openCountryDrawer) delete (window as any).openCountryDrawer;
+    };
+  }, []);
+
   // Detect when the component becomes visible / hidden (parent toggling
   // hidden class or scrolling off-screen). We track BOTH directions so we
   // can pause the Three.js animation loop when the globe isn't visible,

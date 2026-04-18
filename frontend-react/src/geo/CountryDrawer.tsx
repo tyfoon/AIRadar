@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchCountryDetail } from './api';
 import { formatBytes, formatNumber, countryName, flagClass } from './utils';
@@ -47,24 +47,35 @@ export default function CountryDrawer({ cc, direction, onClose, onDirectionChang
     return () => window.removeEventListener('keydown', handleKey);
   }, [cc, onClose]);
 
-  // When the user clicks a device inside this drawer, we want to swap to
+  // When the user clicks a device inside this drawer we want to swap to
   // the DeviceDrawer without the two briefly stacking (both share
-  // drawer-panel's z-index:51 and slide from the right). Strategy:
-  // disable our slide-out transition just for this one close so the
-  // CountryDrawer vanishes instantly, then fire openDeviceDrawer so the
-  // DeviceDrawer slides in cleanly into the now-empty slot.
-  const panelRef = useRef<HTMLDivElement>(null);
-  const backdropRef = useRef<HTMLDivElement>(null);
+  // drawer-panel's z-index:51 and slide from the right). Strategy: set a
+  // class that disables the slide-out transition for this one close so
+  // the CountryDrawer vanishes instantly, then fire openDeviceDrawer so
+  // the DeviceDrawer slides in cleanly into the now-empty slot. The flag
+  // resets whenever `cc` changes so the next normal open/close path gets
+  // its default animation back — we used to mutate inline style.transition
+  // directly, which persisted on the DOM node and broke the slide-in
+  // when the user clicked the back button to reopen this drawer.
+  const [skipAnim, setSkipAnim] = useState(false);
+  useEffect(() => { setSkipAnim(false); }, [cc]);
   const handleDeviceClick = useCallback((mac: string) => {
-    if (panelRef.current) panelRef.current.style.transition = 'none';
-    if (backdropRef.current) backdropRef.current.style.transition = 'none';
+    setSkipAnim(true);
     onClose();
-    // The transition override is on the element; once it unmounts the
-    // next open will re-apply the default transition via the cascade.
-    if (typeof (window as any).openDeviceDrawer === 'function') {
-      (window as any).openDeviceDrawer(mac, null, null);
+    // Pass a "back to <country>" context so the DeviceDrawer can render
+    // a back button that reopens this drawer with the same (cc, direction)
+    // state when the user is done exploring the device.
+    if (typeof (window as any).openDeviceDrawer === 'function' && cc) {
+      (window as any).openDeviceDrawer(mac, {
+        back: {
+          type: 'country',
+          cc,
+          direction,
+          label: `Back to ${countryName(cc)}`,
+        },
+      });
     }
-  }, [onClose]);
+  }, [onClose, cc, direction]);
 
   const dirLabel = direction === 'outbound' ? 'Outbound' : 'Inbound';
 
@@ -72,13 +83,12 @@ export default function CountryDrawer({ cc, direction, onClose, onDirectionChang
     <>
       {/* Backdrop */}
       <div
-        ref={backdropRef}
-        className={`drawer-backdrop ${cc ? 'open' : ''}`}
+        className={`drawer-backdrop ${cc ? 'open' : ''} ${skipAnim ? 'drawer-no-anim' : ''}`}
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div ref={panelRef} className={`drawer-panel ${cc ? 'open' : ''}`}>
+      <div className={`drawer-panel ${cc ? 'open' : ''} ${skipAnim ? 'drawer-no-anim' : ''}`}>
         {cc && (
           <>
             {/* Header */}

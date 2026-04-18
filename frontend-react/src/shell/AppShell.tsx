@@ -13,6 +13,13 @@ declare global {
   }
 }
 
+// Back-context payload passed in when one drawer opens another. Serialises
+// the "where to return to" as plain data so closures don't leak across
+// route changes. Currently only country ← → device is supported; the
+// shape stays union-style for easy future expansion.
+export type DeviceDrawerBack =
+  | { type: 'country'; cc: string; direction: 'outbound' | 'inbound'; label: string };
+
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('airadar-sidebar') === 'collapsed');
   const [badges, setBadges] = useState<Record<string, number | boolean>>({});
@@ -22,6 +29,11 @@ export default function AppShell() {
   // from outside had to route to /devices?mac=..., which yanked the user out
   // of the context they were investigating.
   const [drawerMac, setDrawerMac] = useState<string | null>(null);
+  // Optional "back to …" context — e.g. opening a device from the country
+  // drawer stores { type: 'country', cc, direction } so the DeviceDrawer
+  // can render a back button that reopens the country drawer where we
+  // left off, instead of dumping the user on the bare Geo map.
+  const [drawerBack, setDrawerBack] = useState<DeviceDrawerBack | null>(null);
   const location = useLocation();
   const nav = useNavigate();
 
@@ -40,9 +52,16 @@ export default function AppShell() {
   // onclick strings. Opens the React drawer overlay in-place so users keep
   // their context (used to navigate away to /devices?mac=…, which was
   // disorienting).
+  //
+  // The optional second arg carries a "back to …" context. When set, the
+  // drawer shows a back button that hands the user off to the origin
+  // (e.g. reopens the country drawer). Callers serialise intent as data
+  // (not a closure) so stale references don't survive route changes.
   useEffect(() => {
-    (window as any).openDeviceDrawer = (mac: string) => {
-      if (mac) setDrawerMac(mac);
+    (window as any).openDeviceDrawer = (mac: string, opts?: { back?: DeviceDrawerBack }) => {
+      if (!mac) return;
+      setDrawerMac(mac);
+      setDrawerBack(opts?.back ?? null);
     };
   }, []);
 
@@ -177,8 +196,12 @@ export default function AppShell() {
       {!isReactPage && <Outlet />}
 
       {/* Globally-mounted device drawer — openable from anywhere via
-          window.openDeviceDrawer(mac). */}
-      <DeviceDrawerHost mac={drawerMac} onClose={() => setDrawerMac(null)} />
+          window.openDeviceDrawer(mac, opts?). */}
+      <DeviceDrawerHost
+        mac={drawerMac}
+        back={drawerBack}
+        onClose={() => { setDrawerMac(null); setDrawerBack(null); }}
+      />
 
       {/* Inject responsive margin — 0 on mobile, sidebar width on desktop */}
       <style>{`
