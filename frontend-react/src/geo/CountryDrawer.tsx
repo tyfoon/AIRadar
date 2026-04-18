@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchCountryDetail } from './api';
 import { formatBytes, formatNumber, countryName, flagClass } from './utils';
@@ -47,8 +47,20 @@ export default function CountryDrawer({ cc, direction, onClose, onDirectionChang
     return () => window.removeEventListener('keydown', handleKey);
   }, [cc, onClose]);
 
+  // When the user clicks a device inside this drawer, we want to swap to
+  // the DeviceDrawer without the two briefly stacking (both share
+  // drawer-panel's z-index:51 and slide from the right). Strategy:
+  // disable our slide-out transition just for this one close so the
+  // CountryDrawer vanishes instantly, then fire openDeviceDrawer so the
+  // DeviceDrawer slides in cleanly into the now-empty slot.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const handleDeviceClick = useCallback((mac: string) => {
+    if (panelRef.current) panelRef.current.style.transition = 'none';
+    if (backdropRef.current) backdropRef.current.style.transition = 'none';
     onClose();
+    // The transition override is on the element; once it unmounts the
+    // next open will re-apply the default transition via the cascade.
     if (typeof (window as any).openDeviceDrawer === 'function') {
       (window as any).openDeviceDrawer(mac, null, null);
     }
@@ -60,12 +72,13 @@ export default function CountryDrawer({ cc, direction, onClose, onDirectionChang
     <>
       {/* Backdrop */}
       <div
+        ref={backdropRef}
         className={`drawer-backdrop ${cc ? 'open' : ''}`}
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className={`drawer-panel ${cc ? 'open' : ''}`}>
+      <div ref={panelRef} className={`drawer-panel ${cc ? 'open' : ''}`}>
         {cc && (
           <>
             {/* Header */}
