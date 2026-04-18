@@ -915,12 +915,12 @@ function _cancelDeviceRename() {
 // ================================================================
 function fmtTime(iso) {
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
 }
 
 function fmtBucket(iso) {
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12:false});
 }
 
 function getFilterParams(cat) {
@@ -2651,7 +2651,7 @@ async function loadActiveBlockRules() {
         const d = new Date(p.expires_at);
         const now = new Date();
         const remainingMs = d - now;
-        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
         // Expiring within 1 hour → orange warning, otherwise blue
         const isExpiringSoon = remainingMs > 0 && remainingMs < 3600000;
@@ -2907,7 +2907,7 @@ async function openScheduleModal(filterKey) {
     for (let h = 0; h < 24; h++) {
       for (let m = 0; m < 60; m += 30) {
         const val = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-        const label = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const label = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         sel.innerHTML += `<option value="${val}">${label}</option>`;
       }
     }
@@ -3029,7 +3029,7 @@ function _renderAllScheduleBadges() {
       // Format times nicely
       const fmtT = (v) => {
         const [h, m] = (v || '00:00').split(':').map(Number);
-        return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
       };
       textEl.textContent = `${dayStr}, ${fmtT(sched.start_time)} – ${fmtT(sched.end_time)}`;
       el.classList.remove('hidden');
@@ -3490,7 +3490,7 @@ function _renderCategoryToggle(category) {
   let timerHtml = '';
   if (exp) {
     const d = new Date(exp);
-    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     timerHtml = `<span class="text-[10px] text-blue-500 tabular-nums"><i class="ph-duotone ph-clock-countdown text-[8px]"></i> ${timeStr}</span>`;
   }
 
@@ -3574,7 +3574,7 @@ function renderTimerButton(serviceName) {
   const exp = _policyExpiresByService[serviceName];
   if (exp) {
     const d = new Date(exp);
-    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     return `<button onclick="openPolicyTimerModal('${serviceName}')" class="flex flex-col items-center gap-0.5 flex-shrink-0" title="${t('timer.activeUntil') || 'Active until'} ${timeStr}">
       <i class="ph-duotone ph-clock-countdown text-lg text-blue-500"></i>
       <span class="text-[10px] tabular-nums text-blue-500 font-medium">${timeStr}</span>
@@ -3658,7 +3658,7 @@ async function setPolicyTimerAt() {
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const timeStr = target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = target.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     const targetName = svc ? svcDisplayName(svc) : cat;
     showToast(`${targetName}: ${t('timer.until') || 'until'} ${timeStr}`, 'success');
     await loadAccessControl();
@@ -3829,7 +3829,7 @@ function renderKillswitchUI(data) {
     icon.className = 'w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center transition-colors';
     icon.innerHTML = '<span class="text-xl">⚠️</span>';
 
-    const since = data.activated_at ? new Date(data.activated_at + 'Z').toLocaleTimeString() : '?';
+    const since = data.activated_at ? new Date(data.activated_at + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '?';
     const by = data.activated_by === 'auto_failsafe' ? t('settings.ksAutoFailsafe') : t('settings.ksManual');
     subtitle.textContent = t('settings.ksActiveSince', { time: since, by });
     subtitle.classList.remove('text-slate-400', 'dark:text-slate-500');
@@ -3898,7 +3898,7 @@ function updateGlobalKsBanner(ksState) {
   if (ksState && ksState.active) {
     banner.classList.remove('hidden');
     banner.classList.add('flex');
-    const since = ksState.activated_at ? new Date(ksState.activated_at + 'Z').toLocaleTimeString() : '';
+    const since = ksState.activated_at ? new Date(ksState.activated_at + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
     const sinceEl = document.getElementById('ks-banner-since');
     if (sinceEl) sinceEl.textContent = since ? t('dash.since', { time: since }) : '';
   } else {
@@ -3994,7 +3994,7 @@ async function runHealthCheck() {
     const bannerText = allOk
       ? `<span class="text-emerald-600 dark:text-emerald-400 font-medium">${t('settings.allHealthy', { n: summary.total })}</span>`
       : `<span class="text-amber-600 dark:text-amber-400 font-medium">${t('settings.nHealthy', { ok: summary.ok, total: summary.total })}</span>`;
-    const banner = `<div class="col-span-full ${bannerBg} border rounded-xl p-3 text-center text-sm">${bannerText} — ${new Date().toLocaleTimeString()}</div>`;
+    const banner = `<div class="col-span-full ${bannerBg} border rounded-xl p-3 text-center text-sm">${bannerText} — ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</div>`;
 
     cards.innerHTML = banner + services.map(s => {
       const c = statusMap[s.status] || statusMap.error;
@@ -4310,7 +4310,7 @@ async function restartService(service, btn) {
 // ================================================================
 function updateRefreshTimestamp() {
   const el = document.getElementById('last-refresh');
-  if (el) el.textContent = t('topbar.lastUpdated') + ' ' + new Date().toLocaleTimeString();
+  if (el) el.textContent = t('topbar.lastUpdated') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 async function manualRefresh() {
@@ -4444,7 +4444,7 @@ function _perfChartOpts(yLabel, suggestedMax) {
 function _fmtTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function _fmtBps(bps) {
