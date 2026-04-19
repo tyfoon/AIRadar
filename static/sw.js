@@ -11,8 +11,9 @@
 // network is down. The old "cache-first" strategy meant new deploys
 // were invisible until the cache key changed, which caused users to
 // run on stale frontends for days.
-const CACHE_NAME = 'airadar-shell-v67';
-const SHELL_URLS = ['/', '/static/style.css', '/static/app.js', '/static/i18n.js'];
+const CACHE_NAME = 'airadar-shell-v68';
+const SHELL_URLS = ['/', '/static/style.css', '/static/app.js', '/static/i18n.js',
+  '/static/react/screentime.bundle.js', '/static/react/3d-tube.bundle.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(SHELL_URLS)));
