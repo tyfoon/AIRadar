@@ -15,6 +15,6 @@ export default defineConfig({
       },
     },
     outDir: '../static/react',
-    emptyOutDir: true,
+    emptyOutDir: false,
   },
 })
