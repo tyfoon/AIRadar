@@ -9588,6 +9588,41 @@ async def _compute_device_baselines():
                     if r[0]
                 ]
 
+                # Known ASN orgs — top destinations this device talks to,
+                # used to distinguish "normal traffic to expected cloud"
+                # from "suspicious traffic to unknown destination".
+                known_asn_rows = (
+                    db.query(
+                        IpMetadata.asn_org,
+                        func.sum(GeoConversation.bytes_transferred).label("total"),
+                    )
+                    .join(IpMetadata, IpMetadata.ip == GeoConversation.resp_ip)
+                    .filter(
+                        GeoConversation.mac_address == mac,
+                        IpMetadata.asn_org.is_not(None),
+                    )
+                    .group_by(IpMetadata.asn_org)
+                    .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+                    .limit(10)
+                    .all()
+                )
+                known_asns = [r[0] for r in known_asn_rows if r[0]]
+
+                # Typical upload ratio — what fraction of traffic is upload
+                # for this device over its lifetime. A Sonos is ~20% upload,
+                # a camera might be ~80% upload. Used to detect if a spike's
+                # direction is abnormal.
+                ratio_row = db.query(
+                    func.sum(GeoConversation.orig_bytes).label("up"),
+                    func.sum(GeoConversation.resp_bytes).label("down"),
+                ).filter(
+                    GeoConversation.mac_address == mac,
+                ).first()
+                typical_up = int(ratio_row.up or 0) if ratio_row else 0
+                typical_down = int(ratio_row.down or 0) if ratio_row else 0
+                typical_total = typical_up + typical_down
+                typical_upload_ratio = typical_up / typical_total if typical_total > 0 else 0.5
+
                 # --- Per-hour-of-day profile (0–23) ---
                 # Group DeviceTrafficHourly rows by hour-of-day and compute
                 # avg + stddev so the 3σ fallback compares against the
@@ -9634,6 +9669,7 @@ async def _compute_device_baselines():
                     existing.stddev_bytes = stddev_bytes
                     existing.stddev_connections = stddev_connections
                     existing.known_countries = _json.dumps(countries)
+                    existing.known_asns = _json.dumps(known_asns)
                     existing.hourly_profile = _json.dumps(hourly_profile)
                     existing.computed_at = _utc_now_naive()
                     if trained:
@@ -9653,6 +9689,7 @@ async def _compute_device_baselines():
                         stddev_bytes=stddev_bytes,
                         stddev_connections=stddev_connections,
                         known_countries=_json.dumps(countries),
+                        known_asns=_json.dumps(known_asns),
                         hourly_profile=_json.dumps(hourly_profile),
                         computed_at=_utc_now_naive(),
                     )
@@ -10129,6 +10166,56 @@ async def _check_volume_spikes():
                     threshold = max(threshold, 100_000)
                     if hour_bytes <= threshold:
                         continue
+
+                # --- Context-aware suppression ---
+                # A spike is less suspicious when:
+                #  1. It's mostly download AND the destination is known
+                #     (e.g. Sonos downloading from Amazon = playing music)
+                #  2. The upload ratio is in line with the device's history
+                #
+                # A spike is MORE suspicious when:
+                #  - Upload-heavy from a device that normally downloads
+                #  - Traffic going to an unknown destination
+                #
+                # We only suppress when BOTH conditions are benign.
+                # If either is unusual, we let the alert through.
+                import json as _jctx
+                spike_upload_ratio = up_bytes / hour_bytes if hour_bytes > 0 else 0.5
+
+                # Check if top destination ASN is known for this device
+                top_dest_check = db.query(
+                    IpMetadata.asn_org,
+                ).join(
+                    GeoConversation, GeoConversation.resp_ip == IpMetadata.ip,
+                ).filter(
+                    GeoConversation.mac_address == bl.mac_address,
+                    GeoConversation.last_seen >= hour_ago,
+                    IpMetadata.asn_org.is_not(None),
+                ).order_by(
+                    (GeoConversation.orig_bytes + GeoConversation.resp_bytes).desc()
+                ).first()
+                spike_dest_asn = top_dest_check[0] if top_dest_check else None
+
+                dest_is_known = False
+                if spike_dest_asn and bl.known_asns:
+                    try:
+                        known_list = _jctx.loads(bl.known_asns)
+                        dest_is_known = spike_dest_asn in known_list
+                    except Exception:
+                        pass
+
+                # Suppress: mostly download (>65%) to a known destination
+                # This is normal device usage — streaming, firmware updates,
+                # cloud sync (pull). NOT suspicious.
+                if spike_upload_ratio < 0.35 and dest_is_known:
+                    # Log suppression for debugging
+                    dev_name_ctx = (dev.display_name or dev.hostname or bl.mac_address)
+                    print(
+                        f"[volume-spike] SUPPRESSED {dev_name_ctx}: "
+                        f"download-dominant ({spike_upload_ratio:.0%} upload) "
+                        f"to known dest ({spike_dest_asn})"
+                    )
+                    continue
 
                 # Dedup: check both in-memory dict AND DB to survive restarts
                 if (now_ts - _volume_spike_last.get(bl.mac_address, 0)) < VOLUME_SPIKE_DEDUP_SECONDS:
