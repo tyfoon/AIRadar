@@ -86,6 +86,13 @@
       <span class="nav-tooltip" data-i18n="nav.geo">Geo Traffic</span>
     </a>
 
+    <!-- 3D Network View button -->
+    <button onclick="toggle3DTube()" class="nav-item w-full group flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors mt-1">
+      <i class="ph-duotone ph-cylinder text-lg flex-shrink-0"></i>
+      <span class="nav-label">3D Traffic</span>
+      <span class="nav-tooltip">3D Traffic</span>
+    </button>
+
     <!-- Divider -->
     <div class="my-1.5 border-t border-slate-200 dark:border-slate-700/50"></div>
 
@@ -318,9 +325,13 @@
 <!-- ============================================================= -->
 <div id="toast-host" class="fixed bottom-6 right-6 z-[110] space-y-2 pointer-events-none"></div>
 
+<!-- 3D Network Tube — fullscreen overlay (hidden by default) -->
+<div id="3d-tube-root" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; background:#050a12;"></div>
+
 <!-- Reputation modal is now rendered by React (shared/ReputationModal.tsx) -->
 
 <script src="/static/app.js"></script>
 <script src="/static/react/screentime.bundle.js" defer></script>
+<script src="/static/react/3d-tube.bundle.js" defer></script>
 </body>
 </html>

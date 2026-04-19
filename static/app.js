@@ -4614,6 +4614,16 @@ function _perfSetupAutoRefresh() {
 window.refreshPerformance = refreshPerformance;
 
 // ================================================================
+// 3D Network Tube toggle
+// ================================================================
+function toggle3DTube() {
+  const el = document.getElementById('3d-tube-root');
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+window.toggle3DTube = toggle3DTube;
+
+// ================================================================
 // PWA — Service Worker registration
 // ================================================================
 if ('serviceWorker' in navigator) {
