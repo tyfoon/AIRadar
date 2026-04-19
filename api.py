@@ -1635,79 +1635,98 @@ def traffic_live(
     window: int = Query(300, ge=10, le=3600, description="Lookback window in seconds"),
     db: Session = Depends(get_db),
 ):
-    """Return top active flows (service × device × direction) for live viz.
+    """Return top active flows (service × device) for the 3D cable viz.
 
-    Groups recent DetectionEvent rows by service+device, joins Device for
-    display_name, and returns at most 15 flows sorted by bytes descending.
-    Designed to be polled every 5-10 s only when the 3D view is open.
+    Uses GeoConversation (high-resolution traffic table) which captures ALL
+    connections, not just labelled ones. Joins Device for display_name and
+    DetectionEvent for category lookup. Returns at most 15 flows sorted by
+    bytes. Only polled when the 3D view is open (every ~8 s).
     """
-    from sqlalchemy import func
-    from collections import defaultdict
-
     cutoff = datetime.utcnow() - timedelta(seconds=window)
 
     rows = (
         db.query(
-            DetectionEvent.ai_service,
-            DetectionEvent.source_ip,
-            DetectionEvent.category,
-            func.sum(DetectionEvent.bytes_transferred).label("total_bytes"),
-            func.count().label("hits"),
-            func.sum(
-                func.cast(DetectionEvent.possible_upload, Integer)
-            ).label("upload_hits"),
+            GeoConversation.ai_service,
+            GeoConversation.mac_address,
+            GeoConversation.direction,
+            func.sum(GeoConversation.bytes_transferred).label("total_bytes"),
+            func.sum(GeoConversation.orig_bytes).label("orig"),
+            func.sum(GeoConversation.resp_bytes).label("resp"),
+            func.sum(GeoConversation.hits).label("hits"),
         )
-        .filter(DetectionEvent.timestamp >= cutoff)
-        .group_by(DetectionEvent.ai_service, DetectionEvent.source_ip, DetectionEvent.category)
-        .having(func.sum(DetectionEvent.bytes_transferred) > 0)
-        .order_by(func.sum(DetectionEvent.bytes_transferred).desc())
+        .filter(GeoConversation.last_seen >= cutoff)
+        .group_by(
+            GeoConversation.ai_service,
+            GeoConversation.mac_address,
+            GeoConversation.direction,
+        )
+        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
         .limit(30)
         .all()
     )
 
-    # Resolve IPs → device display names (batch lookup)
-    ips = list({r.source_ip for r in rows})
-    ip_to_name: dict[str, str] = {}
-    if ips:
-        device_rows = (
-            db.query(DeviceIP.ip, Device.display_name, Device.hostname, Device.vendor)
-            .join(Device, DeviceIP.mac_address == Device.mac_address)
-            .filter(DeviceIP.ip.in_(ips))
+    # Batch-resolve MAC → display name
+    macs = list({r.mac_address for r in rows if r.mac_address})
+    mac_to_name: dict[str, str] = {}
+    if macs:
+        dev_rows = (
+            db.query(Device.mac_address, Device.display_name, Device.hostname, Device.vendor)
+            .filter(Device.mac_address.in_(macs))
             .all()
         )
-        for dip, dname, hostname, vendor in device_rows:
-            ip_to_name[dip] = dname or hostname or vendor or dip
+        for mac, dname, hostname, vendor in dev_rows:
+            mac_to_name[mac] = dname or hostname or vendor or mac
 
-    # Merge same service+device (different IPs for same device)
+    # Batch-resolve service → category via DetectionEvent
+    svc_names = list({r.ai_service for r in rows})
+    svc_to_cat: dict[str, str] = {}
+    if svc_names:
+        cat_rows = (
+            db.query(DetectionEvent.ai_service, DetectionEvent.category)
+            .filter(DetectionEvent.ai_service.in_(svc_names))
+            .group_by(DetectionEvent.ai_service, DetectionEvent.category)
+            .all()
+        )
+        for svc, cat in cat_rows:
+            # Keep first non-tracking category if available
+            if svc not in svc_to_cat or svc_to_cat[svc] == "tracking":
+                svc_to_cat[svc] = cat
+
+    # Merge rows: group by (service, device_name) — collapse direction
     merged: dict[str, dict] = {}
-    for svc, src_ip, category, total_bytes, hits, upload_hits in rows:
-        device_name = ip_to_name.get(src_ip, src_ip)
+    for svc, mac, direction, total_bytes, orig, resp, hits in rows:
+        device_name = mac_to_name.get(mac or "", mac or "unknown")
         key = f"{svc}\0{device_name}"
         if key in merged:
             merged[key]["bytes"] += total_bytes or 0
-            merged[key]["hits"] += hits
-            merged[key]["upload_hits"] += upload_hits or 0
+            merged[key]["orig"] += orig or 0
+            merged[key]["resp"] += resp or 0
+            merged[key]["hits"] += hits or 0
         else:
             merged[key] = {
                 "service": svc,
                 "device": device_name,
-                "category": category,
+                "category": svc_to_cat.get(svc, "cloud"),
                 "bytes": total_bytes or 0,
-                "hits": hits,
-                "upload_hits": upload_hits or 0,
+                "orig": orig or 0,
+                "resp": resp or 0,
+                "hits": hits or 0,
             }
 
     # Sort by bytes, take top 15
     flows = sorted(merged.values(), key=lambda f: -f["bytes"])[:15]
 
-    # Normalise bandwidth to 1–10 scale
-    max_bytes = max((f["bytes"] for f in flows), default=1)
+    # Normalise bandwidth to 1–10 scale (log scale to avoid one huge
+    # flow dwarfing everything else)
+    import math
+    max_log = max((math.log1p(f["bytes"]) for f in flows), default=1)
     for f in flows:
-        ratio = f["bytes"] / max_bytes if max_bytes > 0 else 0
+        ratio = math.log1p(f["bytes"]) / max_log if max_log > 0 else 0
         f["bandwidth"] = max(1, round(ratio * 10))
-        # Direction: mostly upload → outbound, else inbound
-        f["direction"] = "outbound" if f["upload_hits"] > f["hits"] * 0.5 else "inbound"
-        del f["upload_hits"]
+        # Direction: more resp_bytes than orig → inbound (download)
+        f["direction"] = "inbound" if f["resp"] > f["orig"] else "outbound"
+        del f["orig"]
+        del f["resp"]
 
     return {"flows": flows, "window_seconds": window}
 

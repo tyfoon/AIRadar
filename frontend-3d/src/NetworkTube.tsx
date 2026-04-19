@@ -71,6 +71,11 @@ function catSpeed(cat: string): [number, number] {
   return CATEGORY_SPEED[cat] || CATEGORY_SPEED.background
 }
 
+/** Prettify API service IDs: "anthropic_claude" → "Anthropic Claude" */
+function prettyService(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 /* ------------------------------------------------------------------ */
 /*  Convert API flows to lane-assigned FlowDefs                        */
 /* ------------------------------------------------------------------ */
@@ -281,8 +286,8 @@ function LaneLabels({ flows }: { flows: FlowDef[] }) {
               borderRadius: 3,
             }}>
               {flow.direction === 1
-                ? `${flow.device} → ${flow.service}`
-                : `${flow.service} → ${flow.device}`}
+                ? `${flow.device} → ${prettyService(flow.service)}`
+                : `${prettyService(flow.service)} → ${flow.device}`}
             </div>
           </Html>
         )
