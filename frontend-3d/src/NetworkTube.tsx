@@ -314,27 +314,57 @@ function CableJacket({ side }: { side: 'left' | 'right' }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Thin lane guide lines (like road markings)                         */
+/*  Lane glow trails — brightness & width scale with bandwidth         */
 /* ------------------------------------------------------------------ */
 
-function LaneGuides() {
-  const seen = new Set<string>()
-  const guides: { y: number; z: number; color: THREE.Color }[] = []
+function LaneGlows() {
+  // Merge flows that share a lane: sum their bandwidth for the glow
+  const laneMap = new Map<string, { y: number; z: number; bw: number; color: THREE.Color }>()
   for (const flow of FLOWS) {
     const key = `${flow.lane.y},${flow.lane.z}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    guides.push({ ...flow.lane, color: CATEGORY_COLORS[flow.category].color })
+    const existing = laneMap.get(key)
+    if (existing) {
+      existing.bw += flow.bandwidth
+    } else {
+      laneMap.set(key, {
+        ...flow.lane,
+        bw: flow.bandwidth,
+        color: CATEGORY_COLORS[flow.category].color,
+      })
+    }
   }
+
+  const lanes = Array.from(laneMap.values())
+  // Normalise bandwidth to 0-1 range for visual scaling
+  const maxBw = Math.max(...lanes.map(l => l.bw))
 
   return (
     <group>
-      {guides.map(({ y, z, color }, i) => (
-        <mesh key={i} position={[0, y, z]}>
-          <boxGeometry args={[XRAY_HALF * 2, 0.005, 0.005]} />
-          <meshBasicMaterial color={color} transparent opacity={0.12} />
-        </mesh>
-      ))}
+      {lanes.map(({ y, z, bw, color }, i) => {
+        const t = bw / maxBw                  // 0 … 1
+        const glowWidth = 0.03 + t * 0.12     // thin → thick
+        const glowOpacity = 0.06 + t * 0.18   // faint → bright
+
+        return (
+          <group key={i}>
+            {/* Core line — sharp bright center */}
+            <mesh position={[0, y, z]}>
+              <boxGeometry args={[XRAY_HALF * 2, 0.008, 0.008]} />
+              <meshBasicMaterial color={color} transparent opacity={glowOpacity + 0.1} />
+            </mesh>
+            {/* Inner glow — soft halo */}
+            <mesh position={[0, y, z]}>
+              <boxGeometry args={[XRAY_HALF * 2, glowWidth, glowWidth]} />
+              <meshBasicMaterial color={color} transparent opacity={glowOpacity * 0.6} />
+            </mesh>
+            {/* Outer glow — wide diffuse */}
+            <mesh position={[0, y, z]}>
+              <boxGeometry args={[XRAY_HALF * 2, glowWidth * 2.5, glowWidth * 2.5]} />
+              <meshBasicMaterial color={color} transparent opacity={glowOpacity * 0.2} />
+            </mesh>
+          </group>
+        )
+      })}
     </group>
   )
 }
@@ -428,7 +458,7 @@ export function NetworkTube() {
         <GlassTube />
         <CableJacket side="left" />
         <CableJacket side="right" />
-        <LaneGuides />
+        <LaneGlows />
         <PacketSystem />
         <LaneLabels />
 
