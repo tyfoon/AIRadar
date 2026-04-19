@@ -9588,12 +9588,12 @@ async def _compute_device_baselines():
                     if r[0]
                 ]
 
-                # --- Train PyOD ECOD detector on hourly history ---
-                # Pulled from DeviceTrafficHourly so the feature shape is
-                # consistent and we don't have to re-bucket on the fly.
-                # Training is bounded by FEATURE_MIN_HOURS — devices with
-                # less than 3 days of hourly snapshots fall back to the
-                # legacy 3σ path until enough history accumulates.
+                # --- Per-hour-of-day profile (0–23) ---
+                # Group DeviceTrafficHourly rows by hour-of-day and compute
+                # avg + stddev so the 3σ fallback compares against the
+                # expected traffic for *this* hour, not a flat average.
+                # e.g. a Sonos that always spikes at 06:00 gets a high
+                # baseline for hour 6, so it won't alert.
                 hourly_rows = (
                     db.query(DeviceTrafficHourly)
                     .filter(
@@ -9603,6 +9603,25 @@ async def _compute_device_baselines():
                     .order_by(DeviceTrafficHourly.hour.asc())
                     .all()
                 )
+
+                hourly_buckets: dict[int, list[int]] = {h: [] for h in range(24)}
+                for hr in hourly_rows:
+                    hod = hr.hour.hour  # hour-of-day (0–23)
+                    hourly_buckets[hod].append(
+                        (hr.bytes_out or 0) + (hr.bytes_in or 0)
+                    )
+                hourly_profile: dict[str, dict] = {}
+                for hod in range(24):
+                    vals = hourly_buckets[hod]
+                    if vals:
+                        avg = int(_stats.mean(vals))
+                        std = int(_stats.stdev(vals)) if len(vals) >= 2 else 0
+                    else:
+                        avg = total_bytes // hours  # fallback to flat
+                        std = stddev_bytes
+                    hourly_profile[str(hod)] = {"avg": avg, "std": std}
+
+                # --- Train PyOD ECOD detector on hourly history ---
                 trained = _train_ecod_detector(hourly_rows)
 
                 existing = db.query(DeviceBaseline).filter(
@@ -9615,6 +9634,7 @@ async def _compute_device_baselines():
                     existing.stddev_bytes = stddev_bytes
                     existing.stddev_connections = stddev_connections
                     existing.known_countries = _json.dumps(countries)
+                    existing.hourly_profile = _json.dumps(hourly_profile)
                     existing.computed_at = _utc_now_naive()
                     if trained:
                         blob, p99, n_samples = trained
@@ -9633,6 +9653,7 @@ async def _compute_device_baselines():
                         stddev_bytes=stddev_bytes,
                         stddev_connections=stddev_connections,
                         known_countries=_json.dumps(countries),
+                        hourly_profile=_json.dumps(hourly_profile),
                         computed_at=_utc_now_naive(),
                     )
                     if trained:
@@ -10086,8 +10107,23 @@ async def _check_volume_spikes():
                                 continue
 
                 if not detector_used:
-                    # Legacy 3σ fallback
-                    threshold = bl.avg_bytes_hour + 3 * bl.stddev_bytes
+                    # Legacy 3σ fallback — use per-hour-of-day baseline
+                    # so that a device with a regular daily spike at a
+                    # specific hour is compared against the baseline for
+                    # that hour, not a flat 24h average.
+                    import json as _jl
+                    current_hod = str(now.hour)
+                    hod_avg = bl.avg_bytes_hour
+                    hod_std = bl.stddev_bytes
+                    if bl.hourly_profile:
+                        try:
+                            hp = _jl.loads(bl.hourly_profile)
+                            entry = hp.get(current_hod, {})
+                            hod_avg = entry.get("avg", hod_avg)
+                            hod_std = entry.get("std", hod_std)
+                        except Exception:
+                            pass  # fall back to flat baseline
+                    threshold = hod_avg + 3 * hod_std
                     # Minimum threshold of 100 KB/h to avoid noise from
                     # devices with very low baselines (e.g. 50 bytes/h)
                     threshold = max(threshold, 100_000)
@@ -10143,18 +10179,29 @@ async def _check_volume_spikes():
                         return f"{b/1_000_000:.1f} MB"
                     return f"{b/1024:.0f} KB"
 
+                # Determine baseline value for label — use hour-specific
+                # if available, otherwise flat average.
+                import json as _jl2
+                baseline_display = bl.avg_bytes_hour
+                if bl.hourly_profile:
+                    try:
+                        hp2 = _jl2.loads(bl.hourly_profile)
+                        baseline_display = hp2.get(str(now.hour), {}).get("avg", baseline_display)
+                    except Exception:
+                        pass
+
                 # Include upload/download breakdown when available
                 if up_bytes > 0 or down_bytes > 0:
                     spike_label = (
                         f"{_fmt_bytes_short(hour_bytes)}/h "
                         f"(↑{_fmt_bytes_short(up_bytes)} ↓{_fmt_bytes_short(down_bytes)}) "
-                        f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
+                        f"(baseline {_fmt_bytes_short(baseline_display)}/h @{now.hour:02d}:00) "
                         f"→ {top_svc}"
                     )
                 else:
                     spike_label = (
                         f"{_fmt_bytes_short(hour_bytes)}/h "
-                        f"(baseline {_fmt_bytes_short(bl.avg_bytes_hour)}/h) "
+                        f"(baseline {_fmt_bytes_short(baseline_display)}/h @{now.hour:02d}:00) "
                         f"→ {top_svc}"
                     )
 

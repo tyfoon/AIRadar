@@ -444,6 +444,11 @@ class DeviceBaseline(Base):
     # the global contamination=0.1 default.
     score_p99 = Column(Float, nullable=True)
     model_trained_at = Column(DateTime, nullable=True)
+    # --- Per-hour-of-day baseline (JSON, 24 entries) ---
+    # Each entry: {"avg": bytes, "std": bytes} keyed by hour "0"–"23".
+    # Used by the 3σ fallback to compare against the expected traffic for
+    # this specific hour of the day, not a flat 24h average.
+    hourly_profile = Column(String, nullable=True)
 
 
 class DeviceTrafficHourly(Base):
@@ -994,6 +999,7 @@ def init_db() -> None:
             "model_samples": "INTEGER",
             "score_p99": "REAL",
             "model_trained_at": "DATETIME",
+            "hourly_profile": "TEXT",
         }
         for col_name, col_type in baseline_extras.items():
             if col_name not in columns:
