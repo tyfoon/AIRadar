@@ -770,9 +770,9 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
 
       <p className="text-[10px] text-slate-500 mb-3">Block or allow this {target.serviceName ? 'service' : 'category'} — affects actual network traffic.</p>
 
-      {/* Scope + Action */}
-      <div className="flex items-start gap-4 mb-3">
-        <div>
+      {/* Scope + Action — stacks vertically on mobile */}
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 mb-3">
+        <div className="min-w-0">
           <span className="text-[10px] text-slate-500 block mb-1.5">Apply to</span>
           <div className="flex items-center gap-1 bg-white/[0.04] dark:bg-white/[0.04] rounded-lg p-0.5 border border-slate-200 dark:border-white/[0.06]">
             <ScopeBtn active={scope === 'global'} onClick={() => setScope('global')} icon="ph-globe" label="Global" tooltip="Apply to all devices" />
@@ -784,7 +784,7 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
             )}
           </div>
         </div>
-        <div>
+        <div className="min-w-0">
           <span className="text-[10px] text-slate-500 block mb-1.5">Action</span>
           <div className="flex gap-1 bg-white/[0.04] dark:bg-white/[0.04] rounded-lg p-0.5 border border-slate-200 dark:border-white/[0.06]">
             <ActionBtn active={action === 'allow'} onClick={() => setAction('allow')} icon="ph-check" label="Allow" tooltip="Explicitly allow" color="emerald" />
@@ -818,9 +818,9 @@ function InlinePolicyPanel({ target, onClose, onApplied }: {
             >Permanent</button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input ref={dtRef} type="datetime-local"
-              className="flex-1 bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              className="flex-1 min-w-[180px] bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500" />
             <button disabled={pending} onClick={() => { const v = dtRef.current?.value; if (v) applyPolicy(new Date(v).toISOString()); }}
               className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50">Set</button>
             <button onClick={() => setShowCustom(false)}

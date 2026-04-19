@@ -81,17 +81,6 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
         </div>
         <nav className="flex-1 py-1 px-3 overflow-y-auto">
           {navList(!collapsed, true)}
-          {/* 3D Traffic tube */}
-          <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
-          <a
-            className="nav-item relative group flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
-            onClick={() => (window as any).__show3DTube?.()}
-            title={collapsed ? '3D Traffic' : undefined}
-          >
-            <i className="ph-duotone ph-cylinder text-base flex-shrink-0" />
-            {!collapsed && <span className="nav-label">3D Traffic</span>}
-            {collapsed && <span className="nav-tooltip">3D Traffic</span>}
-          </a>
         </nav>
         <div className="flex items-center justify-center gap-2 py-1.5 border-t border-slate-200 dark:border-slate-700/50 flex-shrink-0">
           <button onClick={onToggleTheme} title="Toggle Theme" className="sidebar-util-btn w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -119,18 +108,6 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
         </div>
         <nav className="flex-1 py-2 px-3 overflow-y-auto">
           {navList(true, true)}
-          {/* 3D Traffic tube */}
-          <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
-          <a
-            className="nav-item relative group flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
-            onClick={() => {
-              (window as any).__show3DTube?.();
-              onCloseMobile();
-            }}
-          >
-            <i className="ph-duotone ph-cylinder text-base flex-shrink-0" />
-            <span className="nav-label">3D Traffic</span>
-          </a>
         </nav>
         <div className="flex items-center justify-center gap-2 py-2 border-t border-slate-200 dark:border-slate-700/50 flex-shrink-0">
           <button onClick={onToggleTheme} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
