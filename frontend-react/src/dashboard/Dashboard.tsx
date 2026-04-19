@@ -132,6 +132,9 @@ export default function Dashboard() {
       {/* ── Sankey — full width, compact ── */}
       <SankeyFlow events={events.data ?? []} />
 
+      {/* ── 3D Network Cable X-Ray ── */}
+      <div id="3d-tube-card" />
+
       {/* ── Traffic Heatmap ── */}
       <TrafficHeatmap hours={hours} />
 

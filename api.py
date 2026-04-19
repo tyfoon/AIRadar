@@ -1628,6 +1628,91 @@ def events_heatmap(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/traffic/live — active flows for 3D tube visualisation
+# ---------------------------------------------------------------------------
+@app.get("/api/traffic/live")
+def traffic_live(
+    window: int = Query(300, ge=10, le=3600, description="Lookback window in seconds"),
+    db: Session = Depends(get_db),
+):
+    """Return top active flows (service × device × direction) for live viz.
+
+    Groups recent DetectionEvent rows by service+device, joins Device for
+    display_name, and returns at most 15 flows sorted by bytes descending.
+    Designed to be polled every 5-10 s only when the 3D view is open.
+    """
+    from sqlalchemy import func
+    from collections import defaultdict
+
+    cutoff = datetime.utcnow() - timedelta(seconds=window)
+
+    rows = (
+        db.query(
+            DetectionEvent.ai_service,
+            DetectionEvent.source_ip,
+            DetectionEvent.category,
+            func.sum(DetectionEvent.bytes_transferred).label("total_bytes"),
+            func.count().label("hits"),
+            func.sum(
+                func.cast(DetectionEvent.possible_upload, Integer)
+            ).label("upload_hits"),
+        )
+        .filter(DetectionEvent.timestamp >= cutoff)
+        .group_by(DetectionEvent.ai_service, DetectionEvent.source_ip, DetectionEvent.category)
+        .having(func.sum(DetectionEvent.bytes_transferred) > 0)
+        .order_by(func.sum(DetectionEvent.bytes_transferred).desc())
+        .limit(30)
+        .all()
+    )
+
+    # Resolve IPs → device display names (batch lookup)
+    ips = list({r.source_ip for r in rows})
+    ip_to_name: dict[str, str] = {}
+    if ips:
+        device_rows = (
+            db.query(DeviceIP.ip, Device.display_name, Device.hostname, Device.vendor)
+            .join(Device, DeviceIP.mac_address == Device.mac_address)
+            .filter(DeviceIP.ip.in_(ips))
+            .all()
+        )
+        for dip, dname, hostname, vendor in device_rows:
+            ip_to_name[dip] = dname or hostname or vendor or dip
+
+    # Merge same service+device (different IPs for same device)
+    merged: dict[str, dict] = {}
+    for svc, src_ip, category, total_bytes, hits, upload_hits in rows:
+        device_name = ip_to_name.get(src_ip, src_ip)
+        key = f"{svc}\0{device_name}"
+        if key in merged:
+            merged[key]["bytes"] += total_bytes or 0
+            merged[key]["hits"] += hits
+            merged[key]["upload_hits"] += upload_hits or 0
+        else:
+            merged[key] = {
+                "service": svc,
+                "device": device_name,
+                "category": category,
+                "bytes": total_bytes or 0,
+                "hits": hits,
+                "upload_hits": upload_hits or 0,
+            }
+
+    # Sort by bytes, take top 15
+    flows = sorted(merged.values(), key=lambda f: -f["bytes"])[:15]
+
+    # Normalise bandwidth to 1–10 scale
+    max_bytes = max((f["bytes"] for f in flows), default=1)
+    for f in flows:
+        ratio = f["bytes"] / max_bytes if max_bytes > 0 else 0
+        f["bandwidth"] = max(1, round(ratio * 10))
+        # Direction: mostly upload → outbound, else inbound
+        f["direction"] = "outbound" if f["upload_hits"] > f["hits"] * 0.5 else "inbound"
+        del f["upload_hits"]
+
+    return {"flows": flows, "window_seconds": window}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/events/export — CSV download
 # ---------------------------------------------------------------------------
 @app.get("/api/events/export")
