@@ -85,10 +85,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
           <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
           <a
             className="nav-item relative group flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
-            onClick={() => {
-              const el = document.getElementById('3d-tube-root');
-              if (el) el.style.display = 'block';
-            }}
+            onClick={() => (window as any).__show3DTube?.()}
             title={collapsed ? '3D Traffic' : undefined}
           >
             <i className="ph-duotone ph-cylinder text-base flex-shrink-0" />
@@ -127,8 +124,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, onToggleTheme, ba
           <a
             className="nav-item relative group flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
             onClick={() => {
-              const el = document.getElementById('3d-tube-root');
-              if (el) el.style.display = 'block';
+              (window as any).__show3DTube?.();
               onCloseMobile();
             }}
           >
