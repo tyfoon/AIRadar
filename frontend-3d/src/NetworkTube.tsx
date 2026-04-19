@@ -12,6 +12,11 @@ const TUBE_LENGTH = 14
 const TUBE_RADIUS = 1.8
 const HALF_LEN = TUBE_LENGTH / 2
 
+// The transparent "x-ray" section is the middle portion;
+// opaque cable jackets cover the ends.
+const XRAY_HALF = 4.5            // transparent zone: -4.5 … +4.5
+const CABLE_LEN = HALF_LEN - XRAY_HALF  // length of each solid end cap
+
 /* Category visual config */
 interface CategoryStyle {
   color: THREE.Color
@@ -78,14 +83,10 @@ interface Particle {
   x: number
   y: number
   z: number
-  speed: number
+  speed: number        // signed: positive = left→right, negative = right→left
   scale: number
-  angle: number   // polar angle for tube-cross-section position
-  radius: number  // distance from tube center
-}
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t
+  angle: number
+  radius: number
 }
 
 function randRange(min: number, max: number) {
@@ -110,10 +111,8 @@ function ParticleSystem() {
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const colorAttr = useRef<Float32Array>(null!)
 
-  // Particle pool
   const particles = useRef<Particle[]>([])
 
-  // Initialize pool
   useMemo(() => {
     particles.current = Array.from({ length: MAX_PARTICLES }, () => ({
       alive: false,
@@ -127,11 +126,9 @@ function ParticleSystem() {
     colorAttr.current = new Float32Array(MAX_PARTICLES * 3)
   }, [])
 
-  // Spawn particles
   const spawnBurst = useCallback(() => {
     const count = Math.floor(Math.random() * 6) + 2
     for (let i = 0; i < count; i++) {
-      // Find dead slot
       const idx = particles.current.findIndex(p => !p.alive)
       if (idx === -1) break
 
@@ -140,35 +137,40 @@ function ParticleSystem() {
       const p = particles.current[idx]
       p.alive = true
       p.category = cat
-      p.speed = randRange(style.speed[0], style.speed[1])
+
+      // ~35% of traffic flows right→left (download-heavy network)
+      const goingRight = Math.random() > 0.35
+      const rawSpeed = randRange(style.speed[0], style.speed[1])
+      p.speed = goingRight ? rawSpeed : -rawSpeed
+
       p.scale = randRange(style.size[0], style.size[1])
       p.angle = Math.random() * Math.PI * 2
       p.radius = randRange(style.radius[0], style.radius[1])
-      p.x = -HALF_LEN - Math.random() * 2 // start off-screen left
+
+      // Spawn just outside the tube on the appropriate end
+      p.x = goingRight
+        ? -HALF_LEN - Math.random() * 2
+        :  HALF_LEN + Math.random() * 2
       p.y = Math.cos(p.angle) * p.radius
       p.z = Math.sin(p.angle) * p.radius
 
-      // Set color
       colorAttr.current[idx * 3] = style.color.r
       colorAttr.current[idx * 3 + 1] = style.color.g
       colorAttr.current[idx * 3 + 2] = style.color.b
     }
   }, [])
 
-  // Timer for spawning
   const spawnTimer = useRef(0)
 
   useFrame((_, delta) => {
     if (!meshRef.current) return
 
-    // Spawn new particles periodically
     spawnTimer.current += delta
     if (spawnTimer.current > 0.05) {
       spawnBurst()
       spawnTimer.current = 0
     }
 
-    // Update positions
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const p = particles.current[i]
       if (!p.alive) {
@@ -179,7 +181,6 @@ function ParticleSystem() {
         continue
       }
 
-      // Move along X axis (left to right through the tube)
       p.x += p.speed * delta
 
       // Slight wobble in cross-section
@@ -187,8 +188,8 @@ function ParticleSystem() {
       p.y = Math.cos(p.angle) * p.radius
       p.z = Math.sin(p.angle) * p.radius
 
-      // Kill when past tube end
-      if (p.x > HALF_LEN + 2) {
+      // Kill when past tube end (either direction)
+      if (p.x > HALF_LEN + 2 || p.x < -HALF_LEN - 2) {
         p.alive = false
         dummy.scale.set(0, 0, 0)
         dummy.position.set(0, 0, 0)
@@ -197,13 +198,15 @@ function ParticleSystem() {
         continue
       }
 
-      // Fade in/out at tube edges
-      const edgeFade = Math.min(
-        Math.max(0, (p.x + HALF_LEN) / 2),
-        Math.max(0, (HALF_LEN - p.x) / 2),
-        1
-      )
-      const s = p.scale * edgeFade
+      // Fade particles near x-ray boundary so they emerge/disappear
+      // smoothly from the opaque cable jacket
+      const distFromCenter = Math.abs(p.x)
+      const fadeZone = 1.0
+      let fade = 1
+      if (distFromCenter > XRAY_HALF - fadeZone) {
+        fade = Math.max(0, 1 - (distFromCenter - (XRAY_HALF - fadeZone)) / fadeZone)
+      }
+      const s = p.scale * fade
 
       dummy.position.set(p.x, p.y, p.z)
       dummy.scale.set(s, s, s)
@@ -213,7 +216,6 @@ function ParticleSystem() {
 
     meshRef.current.instanceMatrix.needsUpdate = true
 
-    // Update instance colors
     const colorAttribute = meshRef.current.geometry.getAttribute('color') as THREE.InstancedBufferAttribute
     if (colorAttribute) {
       colorAttribute.needsUpdate = true
@@ -242,13 +244,14 @@ function ParticleSystem() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Glass tube shell                                                   */
+/*  Glass tube (x-ray transparent middle section)                      */
 /* ------------------------------------------------------------------ */
 
 function GlassTube() {
+  const xrayLen = XRAY_HALF * 2
   return (
     <mesh rotation={[0, 0, Math.PI / 2]}>
-      <cylinderGeometry args={[TUBE_RADIUS, TUBE_RADIUS, TUBE_LENGTH, 64, 1, true]} />
+      <cylinderGeometry args={[TUBE_RADIUS, TUBE_RADIUS, xrayLen, 64, 1, true]} />
       <meshPhysicalMaterial
         color={0x1a2a3a}
         transparent
@@ -264,19 +267,55 @@ function GlassTube() {
   )
 }
 
-/* Glowing ring caps at tube ends */
-function TubeRing({ x }: { x: number }) {
+/* ------------------------------------------------------------------ */
+/*  Opaque cable jacket ends (look like UTP cable)                     */
+/* ------------------------------------------------------------------ */
+
+// UTP cable color: blue-grey jacket
+const CABLE_COLOR = 0x2a4060
+const CABLE_EMISSIVE = 0x0a1520
+
+function CableJacket({ side }: { side: 'left' | 'right' }) {
+  const dir = side === 'left' ? -1 : 1
+  // Position: center of the solid section
+  const cx = dir * (XRAY_HALF + CABLE_LEN / 2)
+
   return (
-    <mesh position={[x, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-      <torusGeometry args={[TUBE_RADIUS, 0.04, 16, 64]} />
-      <meshStandardMaterial
-        color={0x4488ff}
-        emissive={0x2244aa}
-        emissiveIntensity={2}
-        transparent
-        opacity={0.7}
-      />
-    </mesh>
+    <group>
+      {/* Main opaque cable body */}
+      <mesh position={[cx, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[TUBE_RADIUS, TUBE_RADIUS, CABLE_LEN, 64, 1, false]} />
+        <meshStandardMaterial
+          color={CABLE_COLOR}
+          emissive={CABLE_EMISSIVE}
+          roughness={0.7}
+          metalness={0.05}
+        />
+      </mesh>
+
+      {/* Rounded end cap */}
+      <mesh position={[dir * HALF_LEN, 0, 0]} rotation={[0, 0, dir * Math.PI / 2]}>
+        <sphereGeometry args={[TUBE_RADIUS, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial
+          color={CABLE_COLOR}
+          emissive={CABLE_EMISSIVE}
+          roughness={0.7}
+          metalness={0.05}
+        />
+      </mesh>
+
+      {/* Glowing ring at the x-ray / cable boundary */}
+      <mesh position={[dir * XRAY_HALF, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <torusGeometry args={[TUBE_RADIUS, 0.05, 16, 64]} />
+        <meshStandardMaterial
+          color={0x44aaff}
+          emissive={0x2266cc}
+          emissiveIntensity={3}
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+    </group>
   )
 }
 
@@ -309,6 +348,11 @@ function Legend() {
           {label}
         </div>
       ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 12, opacity: 0.6 }}>
+        <span>→ outbound</span>
+        <span style={{ margin: '0 4px' }}>|</span>
+        <span>← inbound</span>
+      </div>
     </div>
   )
 }
@@ -355,7 +399,7 @@ function Title() {
       pointerEvents: 'none',
       textShadow: '0 0 20px rgba(68, 136, 255, 0.4)',
     }}>
-      Network Traffic — Live Glass Tube
+      Network Traffic — X-Ray View
     </div>
   )
 }
@@ -368,7 +412,7 @@ export function NetworkTube() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', background: '#050a12' }}>
       <Canvas
-        camera={{ position: [0, 0, 8], fov: 55 }}
+        camera={{ position: [0, 2, 10], fov: 50 }}
         gl={{ antialias: true, alpha: false }}
         style={{ background: '#050a12' }}
       >
@@ -380,8 +424,8 @@ export function NetworkTube() {
 
         {/* Scene */}
         <GlassTube />
-        <TubeRing x={-HALF_LEN} />
-        <TubeRing x={HALF_LEN} />
+        <CableJacket side="left" />
+        <CableJacket side="right" />
         <ParticleSystem />
 
         {/* Controls */}
