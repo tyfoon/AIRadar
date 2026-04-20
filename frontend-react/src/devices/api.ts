@@ -92,11 +92,36 @@ export async function fetchGroups(): Promise<{ groups: Group[] }> {
   return json<{ groups: Group[] }>('/api/groups');
 }
 
-export async function createGroup(name: string): Promise<void> {
-  await json('/api/groups', {
+export interface CreateGroupOpts {
+  name: string;
+  parent_id?: number | null;
+  icon?: string;
+  color?: string;
+  auto_match_rules?: string | null;
+}
+
+export async function createGroup(opts: string | CreateGroupOpts): Promise<{ id: number; name: string }> {
+  const payload = typeof opts === 'string' ? { name: opts } : opts;
+  return json<{ id: number; name: string }>('/api/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UpdateGroupOpts {
+  name?: string;
+  parent_id?: number | null;
+  icon?: string;
+  color?: string;
+  auto_match_rules?: string | null;
+}
+
+export async function updateGroup(groupId: number, opts: UpdateGroupOpts): Promise<void> {
+  await json(`/api/groups/${groupId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts),
   });
 }
 
