@@ -42,7 +42,7 @@
 <section class="mb-10">
   <div class="flex items-baseline gap-3 mb-3">
     <span class="scene-label">SCENE 1</span>
-    <span class="scene-desc">Vertikale boom: parents boven, children eronder ingesprongen met doorlopende connector-lijn. Nesting is in één oogopslag duidelijk.</span>
+    <span class="scene-desc">Vertikale boom: klik op een kaart klapt hem inline open (zie "IoT / MCUs") — leden, regels, sub-groepen en +Device/+Sub-groep knoppen zichtbaar in-place. Geen context-switch nodig.</span>
   </div>
   <div class="mock-shell">
 
@@ -89,17 +89,111 @@
         <!-- left rail -->
         <span class="absolute left-[18px] top-0 bottom-4 w-px bg-purple-500/25"></span>
 
-        <div class="relative flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
-          <span class="absolute -left-[14px] top-1/2 w-3.5 h-px bg-purple-500/25"></span>
-          <div class="w-9 h-9 rounded-lg pal-teal flex items-center justify-center flex-shrink-0">
-            <i class="ph-duotone ph-cpu text-lg"></i>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <p class="text-sm font-semibold text-slate-200 truncate">IoT / MCUs</p>
-              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+        <!-- EXPANDED child — shows "wat zit er IN de box": leden + add-knoppen + regels-preview -->
+        <div class="relative rounded-xl bg-white/[0.03] border border-teal-500/30 overflow-hidden">
+          <span class="absolute -left-[14px] top-[26px] w-3.5 h-px bg-purple-500/25"></span>
+
+          <!-- header -->
+          <div class="flex items-center gap-3 p-3 cursor-pointer hover:bg-white/[0.02]">
+            <div class="w-9 h-9 rounded-lg pal-teal flex items-center justify-center flex-shrink-0">
+              <i class="ph-duotone ph-cpu text-lg"></i>
             </div>
-            <p class="text-[11px] text-slate-400">12 leden · via regels</p>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <p class="text-sm font-semibold text-slate-200 truncate">IoT / MCUs</p>
+                <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+                <span class="text-[10px] text-teal-300/90 px-1.5 py-0.5 rounded bg-teal-500/10 ml-1">open</span>
+              </div>
+              <p class="text-[11px] text-slate-400">12 leden · via regels · 2 policies actief</p>
+            </div>
+            <i class="ph-bold ph-caret-up text-slate-500 text-sm"></i>
+          </div>
+
+          <!-- inline content: regels, leden, add-buttons, sub-groepen -->
+          <div class="px-3 pb-3 pt-0 space-y-3 border-t border-white/[0.04]">
+
+            <!-- Match rules preview + edit -->
+            <div class="pt-3">
+              <div class="flex items-center justify-between mb-1.5">
+                <p class="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Auto-match regels</p>
+                <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-duotone ph-pencil text-[10px] mr-0.5"></i>Regels bewerken</button>
+              </div>
+              <div class="text-[11px] text-slate-300 leading-relaxed">
+                <span class="font-mono bg-white/[0.04] px-1 rounded">vendor</span> bevat
+                <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">espressif</span>,
+                <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">texas instruments</span>
+                · <span class="font-mono bg-white/[0.04] px-1 rounded">dhcp_vendor_class</span> start met
+                <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">udhcp</span>
+              </div>
+            </div>
+
+            <!-- Sub-groepen van deze groep (nu leeg) -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <p class="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Sub-groepen · 0</p>
+                <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-[10px] mr-0.5"></i>Sub-groep maken</button>
+              </div>
+              <p class="text-[11px] text-slate-500 italic">Nog geen sub-groepen in IoT / MCUs.</p>
+            </div>
+
+            <!-- Leden lijst + add -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <p class="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Leden · 12</p>
+                <div class="flex items-center gap-2">
+                  <input type="text" placeholder="Zoeken..." class="text-[11px] px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300 w-32"/>
+                  <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-[10px] mr-0.5"></i>Device toevoegen</button>
+                </div>
+              </div>
+              <div class="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-white/[0.03]">
+                  <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <i class="ph-duotone ph-cpu text-sm text-emerald-400"></i>
+                    <span class="text-[12px] text-slate-200 truncate">ESP_DCC733</span>
+                    <span class="text-[10px] text-slate-500 font-mono">.117</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-medium"><i class="ph-fill ph-sparkle text-[7px] mr-0.5"></i>via regel</span>
+                  </div>
+                  <button class="text-[10px] text-slate-500 hover:text-rose-400 px-1.5">Uitsluiten</button>
+                </div>
+                <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-white/[0.03]">
+                  <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <i class="ph-duotone ph-cpu text-sm text-emerald-400"></i>
+                    <span class="text-[12px] text-slate-200 truncate">Shelly-Plus-1</span>
+                    <span class="text-[10px] text-slate-500 font-mono">.142</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-medium"><i class="ph-fill ph-sparkle text-[7px] mr-0.5"></i>via regel</span>
+                  </div>
+                  <button class="text-[10px] text-slate-500 hover:text-rose-400 px-1.5">Uitsluiten</button>
+                </div>
+                <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-white/[0.03]">
+                  <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <i class="ph-duotone ph-cpu text-sm text-amber-400"></i>
+                    <span class="text-[12px] text-slate-200 truncate">myenergi-zappi</span>
+                    <span class="text-[10px] text-slate-500 font-mono">.88</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-medium"><i class="ph-bold ph-hand text-[7px] mr-0.5"></i>handmatig</span>
+                  </div>
+                  <button class="text-[10px] text-slate-500 hover:text-rose-400 px-1.5">Verwijderen</button>
+                </div>
+                <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-white/[0.03] opacity-50">
+                  <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <i class="ph-duotone ph-cpu text-sm text-slate-500"></i>
+                    <span class="text-[12px] text-slate-400 truncate line-through">ESP_TESTBOARD</span>
+                    <span class="text-[10px] text-slate-500 font-mono">.204</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 font-medium"><i class="ph-bold ph-x text-[7px] mr-0.5"></i>uitgesloten</span>
+                  </div>
+                  <button class="text-[10px] text-slate-500 hover:text-emerald-400 px-1.5">Terugzetten</button>
+                </div>
+                <div class="text-[11px] text-slate-500 text-center py-1">... 8 meer leden</div>
+              </div>
+            </div>
+
+            <!-- Actie-balk onderin -->
+            <div class="flex items-center justify-between pt-2 border-t border-white/[0.04]">
+              <div class="text-[10px] text-slate-500">
+                Parent: <button class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.08]"><i class="ph-duotone ph-house-line text-[10px] text-purple-400"></i>Smart Home<i class="ph-bold ph-caret-down text-[8px] ml-0.5"></i></button>
+              </div>
+              <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-duotone ph-arrow-square-out text-[11px] mr-0.5"></i>Volledig detail openen</button>
+            </div>
+
           </div>
         </div>
 
