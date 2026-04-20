@@ -677,8 +677,19 @@ function NetworkGraph({ nodes, edges, width, height }: {
     });
     const maxNodeHits = Math.max(...[...hitsByNode.values()], 1);
 
+    // Preserve positions across rebuilds. When a filter toggle changes
+    // the node set (e.g. "Hide infrastructure chatter" removes half the
+    // edges and therefore half the nodes), naive .map() creates fresh
+    // GNode objects with no x/y. d3 then re-initialises them on a tiny
+    // phyllotaxis spiral around the origin — hence the "everything
+    // clumps in the bottom-right" bug. Carrying x/y over lets surviving
+    // nodes stay put and only new ones re-lay-out.
+    const prevByIp = new Map<string, GNode>();
+    nodesRef.current.forEach(n => { prevByIp.set(n.id, n); });
+
     const gNodes: GNode[] = nodes.map(n => {
       const label = n.display_name || n.hostname || n.ip;
+      const prev = prevByIp.get(n.ip);
       return {
         id: n.ip,
         label,
@@ -688,7 +699,9 @@ function NetworkGraph({ nodes, edges, width, height }: {
         totalHits: hitsByNode.get(n.ip) || 0,
         radius: 10 + ((hitsByNode.get(n.ip) || 0) / maxNodeHits) * 16,
         iconType: getDeviceIconType(label, n.device_class),
-      };
+        // Preserve previous simulation position + velocity when present
+        x: prev?.x, y: prev?.y, vx: prev?.vx, vy: prev?.vy,
+      } as GNode;
     });
 
     // Add missing nodes from edges
@@ -696,7 +709,12 @@ function NetworkGraph({ nodes, edges, width, height }: {
     edges.forEach(e => {
       [e.source_ip, e.target_ip].forEach(ip => {
         if (!ids.has(ip)) {
-          gNodes.push({ id: ip, label: ip, online: false, ip, deviceClass: null, totalHits: hitsByNode.get(ip) || 0, radius: 10, iconType: 'device' });
+          const prev = prevByIp.get(ip);
+          gNodes.push({
+            id: ip, label: ip, online: false, ip, deviceClass: null,
+            totalHits: hitsByNode.get(ip) || 0, radius: 10, iconType: 'device',
+            x: prev?.x, y: prev?.y, vx: prev?.vx, vy: prev?.vy,
+          } as GNode);
           ids.add(ip);
         }
       });
@@ -742,13 +760,29 @@ function NetworkGraph({ nodes, edges, width, height }: {
     // Stop previous simulation
     simRef.current?.stop();
 
+    // Tune forces for actual canvas size. The prior hardcoded distance
+    // 120 + charge -300 was tuned for a handful of nodes; with 30-50
+    // nodes + 45 edges (normal home LAN after filters) that clumped
+    // everything into one corner because charge wasn't strong enough
+    // to counter link-springs + center-force. Scale with the canvas
+    // area so layout uses the full pane.
+    const linkDistance = Math.max(80, Math.min(180, Math.sqrt(width * height) / 8));
+    const chargeStrength = -Math.max(400, Math.min(900, (width * height) / 1200));
+
     const sim = forceSimulation<GNode>(gNodes)
-      .force('link', forceLink<GNode, GLink>(gLinks).id(d => d.id).distance(120))
-      .force('charge', forceManyBody().strength(-300))
+      .force('link', forceLink<GNode, GLink>(gLinks).id(d => d.id).distance(linkDistance))
+      .force('charge', forceManyBody().strength(chargeStrength))
       .force('center', forceCenter(width / 2, height / 2))
-      .force('collide', forceCollide<GNode>().radius(d => d.radius + 8))
-      .alphaDecay(0.025)
-      .velocityDecay(0.3);
+      .force('collide', forceCollide<GNode>().radius(d => d.radius + 10))
+      .alphaDecay(0.03)
+      .velocityDecay(0.35);
+
+    // Warm the layout synchronously so the first frame already shows
+    // a readable graph instead of a tiny clump near the origin that
+    // slowly expands. ~80 ticks is enough for 50-node graphs to
+    // converge to a stable layout; the running timer keeps it
+    // refining + responding to drags afterwards.
+    sim.tick(80);
 
     simRef.current = sim;
 
@@ -1036,16 +1070,20 @@ function NetworkGraph({ nodes, edges, width, height }: {
 
     const onUp = () => {
       if (dragRef.current) {
-        // Unpin every node so next time the layout can breathe again,
-        // and halt the simulation immediately via alpha(0) so the
-        // graph stays exactly where the user left it — no post-
-        // release drift from residual forces decaying to zero.
-        nodesRef.current.forEach(n => {
-          n.fx = null;
-          n.fy = null;
-        });
+        // Only unpin the node the user was actually dragging. Leaving
+        // all other nodes pinned (fx/fy = their x/y) means the
+        // released node drifts gently toward its force-preferred spot
+        // while the rest of the graph stays put — matching how the
+        // user expects a drag to feel.
+        const dragged = dragRef.current.node;
+        dragged.fx = null;
+        dragged.fy = null;
         dragRef.current = null;
-        simRef.current?.alphaTarget(0).alpha(0);
+        // Let alpha decay naturally to alphaTarget(0). Don't force
+        // alpha(0) — that stops the timer entirely and the next drag
+        // can't reheat it without running ticks first, which looked
+        // like "drag is frozen".
+        simRef.current?.alphaTarget(0);
       }
       canvas.style.cursor = 'default';
     };
