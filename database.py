@@ -88,6 +88,7 @@ class Device(Base):
     ua_os = Column(String, nullable=True)               # e.g. "iOS", "Android", "Windows"
     ua_last_seen = Column(DateTime, nullable=True)      # Last UA fingerprint update
     ua_type_history = Column(String, nullable=True)    # JSON list of distinct UA device types seen (for router heuristic)
+    device_class_source = Column(String, nullable=True) # Which detection source set device_class (for priority: user > p0f > mdns > ua > keyword > dhcp)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
@@ -977,6 +978,7 @@ def init_db() -> None:
             "ua_os": "TEXT",
             "ua_last_seen": "DATETIME",
             "ua_type_history": "TEXT",
+            "device_class_source": "TEXT",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:

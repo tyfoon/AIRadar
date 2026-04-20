@@ -4273,6 +4273,48 @@ MDNS_DEDUP_SECONDS = 600  # 10 min per (ip, name)
 _mdns_last_seen: dict[str, float] = {}
 
 # ---------------------------------------------------------------------------
+# Apple model prefix → device type (Firewalla appleModel.js-inspired)
+# ---------------------------------------------------------------------------
+# Maps the prefix of Apple model identifiers (e.g. "Mac16,12" → "MacBook Air")
+# to device class. Model identifiers come from mDNS TXT "model=" fields.
+APPLE_MODEL_PREFIX_MAP: dict[str, tuple[str, str]] = {
+    # (prefix, (device_class, friendly_name))
+    "MacBookPro": ("laptop", "MacBook Pro"),
+    "MacBookAir": ("laptop", "MacBook Air"),
+    "MacBook": ("laptop", "MacBook"),
+    "Macmini": ("desktop", "Mac mini"),
+    "MacPro": ("desktop", "Mac Pro"),
+    "MacStudio": ("desktop", "Mac Studio"),
+    "iMac": ("desktop", "iMac"),
+    "Mac": ("desktop", "Mac"),  # catch-all for Mac
+    "iPhone": ("phone", "iPhone"),
+    "iPad": ("tablet", "iPad"),
+    "iPod": ("media_player", "iPod"),
+    "AppleTV": ("media_player", "Apple TV"),
+    "AudioAccessory": ("speaker", "HomePod"),
+    "Watch": ("wearable", "Apple Watch"),
+    "AirPods": ("wearable", "AirPods"),
+    "AirPort": ("router", "AirPort"),
+    "TimeCapsule": ("nas", "Time Capsule"),
+}
+
+
+def _apple_model_to_class(model_id: str) -> tuple[str, str] | None:
+    """Map Apple model identifier to (device_class, friendly_name).
+
+    Input: "Mac16,12" or "MacBookPro18,1" or "AudioAccessory6,1"
+    Output: ("laptop", "MacBook Air") or None
+    """
+    if not model_id:
+        return None
+    # Strip the numeric suffix ("Mac16,12" → "Mac16" → find prefix)
+    # Model IDs are like: <prefix><generation>,<variant>
+    for prefix, result in sorted(APPLE_MODEL_PREFIX_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        if model_id.startswith(prefix):
+            return result
+    return None
+
+# ---------------------------------------------------------------------------
 # mDNS service type → device_class mapping (Firewalla-inspired)
 # ---------------------------------------------------------------------------
 # mDNS service types reveal what a device IS. When Zeek captures a query
@@ -4407,6 +4449,23 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if src_ip == "-" or not _is_local_ip(src_ip):
                         continue
 
+                    # --- Apple model detection from TXT records ---
+                    # mDNS answers may contain TXT records with Apple-specific
+                    # fields like "model=Mac16,12" or "md=MacBook Pro".
+                    # Parse these for precise device identification.
+                    answers_raw = record.get("answers", "-")
+                    apple_model = None
+                    apple_device_id = None
+                    if answers_raw and answers_raw != "-" and "TXT" in answers_raw:
+                        # Extract model= field (e.g. "model=Mac16\x2c12")
+                        m = re.search(r'model=([A-Za-z0-9]+(?:\\x2c|,)\d+)', answers_raw)
+                        if m:
+                            apple_model = m.group(1).replace("\\x2c", ",")
+                        # Extract deviceid= field (MAC address)
+                        m = re.search(r'deviceid=([0-9A-Fa-f:]{17})', answers_raw)
+                        if m:
+                            apple_device_id = m.group(1).upper()
+
                     # Extract hostname from mDNS — try common field names
                     mdns_name = None
                     for field in ("query", "qname", "name", "answers"):
@@ -4469,9 +4528,20 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if mac:
                         payload["mac_address"] = mac
 
+                    # Apple model detection from TXT record
+                    apple_class = None
+                    apple_friendly = None
+                    if apple_model:
+                        result = _apple_model_to_class(apple_model)
+                        if result:
+                            apple_class, apple_friendly = result
+                            # Use Apple model as device_class if more specific
+                            if not mdns_device_class or apple_class != mdns_device_class:
+                                mdns_device_class = apple_class
+
                     try:
                         await client.post(DEVICE_API_URL, json=payload, timeout=5)
-                        # Also update device_class if we identified a service type
+                        # Also update device_class if we identified a service type or Apple model
                         if mdns_device_class and mac:
                             fp_payload = {
                                 "ip": src_ip,
@@ -4479,8 +4549,12 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                             }
                             fp_url = DEVICE_API_URL.replace("/devices", "/devices/fingerprint")
                             await client.post(fp_url, json=fp_payload, timeout=5)
-                        label = f"{hostname or '?'} ({mdns_device_class})" if mdns_device_class else hostname
-                        print(f"[mDNS] Device: {label} → {src_ip} (MAC: {mac or 'unknown'})")
+                        label_parts = [hostname or "?"]
+                        if apple_friendly:
+                            label_parts.append(f"{apple_friendly} [{apple_model}]")
+                        elif mdns_device_class:
+                            label_parts.append(f"({mdns_device_class})")
+                        print(f"[mDNS] Device: {' '.join(label_parts)} → {src_ip} (MAC: {mac or 'unknown'})")
                     except httpx.HTTPError as exc:
                         print(f"[!] mDNS device registration failed: {exc}")
 
@@ -5437,6 +5511,23 @@ async def main(zeek_log_dir: str) -> None:
     if dns_snooping_enabled:
         warmed = await warmup_dns_cache_from_db()
         print(f"[*] DNS cache warm-up: {warmed} entries restored from DnsObservation")
+
+    # IP→MAC cache warm-up: restore from DeviceIP table so ssl.log and
+    # mDNS tailers can resolve MACs immediately without waiting for new
+    # conn.log entries. Closes the cold-start gap for idle devices.
+    try:
+        from database import SessionLocal as _IPMAC_SL, DeviceIP as _DIP
+        _ipmac_db = _IPMAC_SL()
+        try:
+            ip_rows = _ipmac_db.query(_DIP.ip, _DIP.mac_address).all()
+            for r in ip_rows:
+                if r.ip and r.mac_address and not r.mac_address.startswith("unknown_"):
+                    _ip_to_mac[r.ip] = _normalize_mac(r.mac_address)
+            print(f"[*] IP→MAC cache warm-up: {len(_ip_to_mac)} entries restored from DeviceIP")
+        finally:
+            _ipmac_db.close()
+    except Exception as exc:
+        print(f"[*] IP→MAC cache warm-up failed: {exc}")
 
     # JA4 community DB sync — issue #6 fix: persist last_sync_at in the
     # ja4_signatures.updated_at column. On startup, check if a sync is

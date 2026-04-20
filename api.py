@@ -2805,11 +2805,11 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
                 device.hostname = payload.hostname
             elif _is_junk_hostname(device.hostname) and not _is_junk_hostname(payload.hostname):
                 device.hostname = payload.hostname
-        # Auto-classify device_class from hostname if not already set
-        if not device.device_class and device.hostname:
+        # Auto-classify device_class from hostname via keyword map
+        if device.hostname:
             auto_class = _keyword_device_class(device.hostname)
             if auto_class:
-                device.device_class = auto_class
+                _set_device_class(device, auto_class, "keyword")
         # Re-resolve vendor — hostname match may be more accurate than stale OUI
         new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         if new_vendor and new_vendor != device.vendor:
@@ -2837,6 +2837,7 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
             hostname=payload.hostname,
             vendor=vendor,
             device_class=auto_class,
+            device_class_source="keyword" if auto_class else None,
             ja4_fingerprint=payload.ja4,
             ja4_last_seen=now if payload.ja4 else None,
             dhcp_vendor_class=payload.dhcp_vendor_class,
@@ -2981,7 +2982,9 @@ def update_device_fingerprint(payload: dict, db: Session = Depends(get_db)):
     if payload.get("os_full"):
         device.os_full = payload["os_full"]
     if payload.get("device_class") and payload["device_class"] != "unknown":
-        device.device_class = payload["device_class"]
+        # p0f and mDNS both call this endpoint — determine source
+        source = "mdns" if not payload.get("os_name") and not payload.get("os_full") else "p0f"
+        _set_device_class(device, payload["device_class"], source)
     if payload.get("network_distance") is not None:
         device.network_distance = payload["network_distance"]
     device.p0f_last_seen = _utc_now_naive()
@@ -3028,14 +3031,14 @@ def update_device_ua_fingerprint(payload: dict, db: Session = Depends(get_db)):
         if len(set(history)) >= 3:
             is_router = True
 
-    # Update UA fingerprint fields
+    # Update UA fingerprint fields (with source priority)
     if new_type:
         device.ua_device_type = new_type
         if is_router:
-            device.device_class = "router"
+            _set_device_class(device, "router", "ua")
             device.ua_device_type = "router"
-        elif not device.device_class:
-            device.device_class = new_type
+        else:
+            _set_device_class(device, new_type, "ua")
     if payload.get("brand"):
         device.ua_brand = payload["brand"]
     if payload.get("model"):
@@ -9545,6 +9548,38 @@ def _keyword_device_class(haystack: str) -> str | None:
         if keyword in h:
             return device_class
     return None
+
+
+# ---------------------------------------------------------------------------
+# Device class source priority (Firewalla-inspired)
+# ---------------------------------------------------------------------------
+# Higher number = higher priority. A source can only overwrite device_class
+# if its priority >= the current source's priority.
+_DEVICE_CLASS_SOURCE_PRIORITY: dict[str, int] = {
+    "dhcp": 10,
+    "keyword": 20,
+    "ua": 30,
+    "mdns": 40,
+    "p0f": 50,
+    "user": 100,  # User-set (via display_name or manual edit) — never overwritten
+}
+
+
+def _set_device_class(device, new_class: str, source: str) -> bool:
+    """Set device_class only if the new source has >= priority than the current.
+
+    Returns True if the value was updated, False if skipped due to lower priority.
+    """
+    if not new_class:
+        return False
+    current_source = device.device_class_source or ""
+    current_priority = _DEVICE_CLASS_SOURCE_PRIORITY.get(current_source, 0)
+    new_priority = _DEVICE_CLASS_SOURCE_PRIORITY.get(source, 0)
+    if new_priority >= current_priority:
+        device.device_class = new_class
+        device.device_class_source = source
+        return True
+    return False
 
 
 def _classify_device_type_backend(device: Device) -> str:
