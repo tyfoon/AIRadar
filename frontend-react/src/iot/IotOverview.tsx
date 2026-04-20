@@ -963,19 +963,19 @@ function NetworkGraph({ nodes, edges, width, height }: {
       if (node) {
         dragRef.current = { node, offsetX: x - (node.x || 0), offsetY: y - (node.y || 0) };
         // Pin every node to its current position so the simulation's
-        // force-link doesn't drag neighbours around when we move
-        // this one — avoids the "elastic band" feel where the whole
-        // graph swims after the cursor. Only the dragged node will
-        // have its fx/fy updated during onMove; the others stay
-        // frozen. They get unpinned again on mouseup.
+        // force-link can't drag neighbours around when we move this
+        // one — avoids the "elastic band" wobble where the whole
+        // graph swims after the cursor. Only the dragged node has
+        // its fx/fy updated during onMove; the others stay frozen
+        // because their fx/fy overrides whatever the forces compute.
         nodesRef.current.forEach(n => {
           n.fx = n.x;
           n.fy = n.y;
         });
-        // Keep the simulation quiet during drag. alphaTarget 0 means
-        // no reheat, and alpha decays to 0 so forces settle out
-        // rather than actively repositioning things.
-        simRef.current?.alphaTarget(0);
+        // Reheat the simulation — required so each tick still runs
+        // and propagates the dragged node's fx/fy into its rendered
+        // x/y. Without this the drag looks completely frozen.
+        simRef.current?.alphaTarget(0.3).restart();
       }
     };
 
@@ -995,15 +995,16 @@ function NetworkGraph({ nodes, edges, width, height }: {
 
     const onUp = () => {
       if (dragRef.current) {
-        // Release every node so the physics can gently re-settle
-        // on the next interaction. We don't restart alpha here —
-        // the graph stays where the user left it, which matches
-        // the "WYSIWYG after drag" feel we were missing.
+        // Unpin every node so next time the layout can breathe again,
+        // and halt the simulation immediately via alpha(0) so the
+        // graph stays exactly where the user left it — no post-
+        // release drift from residual forces decaying to zero.
         nodesRef.current.forEach(n => {
           n.fx = null;
           n.fy = null;
         });
         dragRef.current = null;
+        simRef.current?.alphaTarget(0).alpha(0);
       }
       canvas.style.cursor = 'default';
     };
