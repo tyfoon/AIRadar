@@ -542,34 +542,6 @@ class DeviceTrafficHourly(Base):
     )
 
 
-class ScreenTime(Base):
-    """Per-device, per-app/category usage time tracking (Firewalla-inspired).
-
-    Tracks how long each device actively communicates with each service or
-    category per day. A "session" is a window of continuous activity — if no
-    new flow for a service is seen within SESSION_GAP_SECONDS, the session ends.
-
-    This is the foundation for the Family Plan "screen time" feature.
-    """
-
-    __tablename__ = "screen_time"
-
-    id = Column(Integer, primary_key=True, index=True)
-    mac_address = Column(String, nullable=False, index=True)
-    date = Column(String, nullable=False, index=True)  # "2026-04-20" (local date)
-    service = Column(String, nullable=False, index=True)  # e.g. "youtube", "netflix", "unknown"
-    category = Column(String, nullable=False, index=True)  # e.g. "streaming", "social", "gaming"
-    seconds = Column(Integer, nullable=False, default=0)  # Total active seconds
-    sessions = Column(Integer, nullable=False, default=0)  # Number of distinct sessions
-    bytes_total = Column(Integer, nullable=False, default=0)  # Total bytes (for context)
-    last_activity = Column(DateTime, nullable=True)  # Last flow timestamp (for session tracking)
-
-    __table_args__ = (
-        UniqueConstraint("mac_address", "date", "service", "category",
-                         name="uq_screen_time_device_date_svc"),
-    )
-
-
 class KnownDomain(Base):
     """Dynamic domain → service mapping, populated by the service updater.
 

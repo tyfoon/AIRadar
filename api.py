@@ -413,7 +413,11 @@ ACTIVITY_SESSION_MIN_BYTES_BY_CAT: dict[str, int] = {
     "news":        1_000,   # 1 KB   — article load is real usage
 }
 ACTIVITY_SESSION_MIN_BYTES_DEFAULT = 10_000  # 10 KB for unknown categories
-ACTIVITY_CATEGORIES = ("social", "streaming", "gaming", "ai", "shopping", "news")
+ACTIVITY_CATEGORIES = (
+    "social", "streaming", "gaming", "ai", "shopping", "news",
+    "productivity", "education", "messaging", "finance", "health",
+    "email", "search", "travel", "food_delivery",
+)
 # Minimum byte threshold for a geo_conversations row to count as a
 # real activity signal. Suppresses trivial connection-establishment
 # bursts that aren't actual app usage. 1 KB is conservative — even
@@ -9566,129 +9570,6 @@ def _classify_device_type_backend(device: Device) -> str:
 
 def _is_iot_backend(device: Device) -> bool:
     return bool(_classify_device_type_backend(device))
-
-
-# ---------------------------------------------------------------------------
-# Screen Time API — Firewalla-inspired app time usage
-# ---------------------------------------------------------------------------
-
-@app.get("/api/screen-time/{mac_address}")
-def get_device_screen_time(
-    mac_address: str,
-    date: str | None = None,
-    days: int = 1,
-    db: Session = Depends(get_db),
-):
-    """Get screen time breakdown for a device.
-
-    Returns per-service and per-category usage time in seconds.
-    Default: today. Use ?days=7 for weekly view.
-    """
-    from database import ScreenTime
-    mac = _normalize_mac(mac_address)
-    if date:
-        dates = [date]
-    else:
-        from datetime import timedelta
-        today = datetime.now()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
-
-    rows = db.query(ScreenTime).filter(
-        ScreenTime.mac_address == mac,
-        ScreenTime.date.in_(dates),
-    ).all()
-
-    # Aggregate by service
-    by_service: dict[str, dict] = {}
-    by_category: dict[str, int] = {}
-    total_seconds = 0
-
-    for r in rows:
-        key = r.service
-        if key not in by_service:
-            by_service[key] = {"seconds": 0, "sessions": 0, "bytes": 0, "category": r.category}
-        by_service[key]["seconds"] += r.seconds
-        by_service[key]["sessions"] += r.sessions
-        by_service[key]["bytes"] += r.bytes_total
-        by_category[r.category] = by_category.get(r.category, 0) + r.seconds
-        total_seconds += r.seconds
-
-    # Sort by seconds descending
-    services_sorted = sorted(by_service.items(), key=lambda x: x[1]["seconds"], reverse=True)
-
-    return {
-        "mac_address": mac,
-        "dates": dates,
-        "total_seconds": total_seconds,
-        "total_display": f"{total_seconds // 3600}h {(total_seconds % 3600) // 60}m",
-        "by_service": [
-            {
-                "service": svc,
-                "category": info["category"],
-                "seconds": info["seconds"],
-                "display": f"{info['seconds'] // 3600}h {(info['seconds'] % 3600) // 60}m",
-                "sessions": info["sessions"],
-                "bytes": info["bytes"],
-            }
-            for svc, info in services_sorted
-        ],
-        "by_category": [
-            {
-                "category": cat,
-                "seconds": secs,
-                "display": f"{secs // 3600}h {(secs % 3600) // 60}m",
-            }
-            for cat, secs in sorted(by_category.items(), key=lambda x: x[1], reverse=True)
-        ],
-    }
-
-
-@app.get("/api/screen-time")
-def get_all_screen_time(
-    date: str | None = None,
-    days: int = 1,
-    db: Session = Depends(get_db),
-):
-    """Get screen time summary for all devices."""
-    from database import ScreenTime
-    if date:
-        dates = [date]
-    else:
-        from datetime import timedelta
-        today = datetime.now()
-        dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
-
-    rows = db.query(ScreenTime).filter(
-        ScreenTime.date.in_(dates),
-    ).all()
-
-    # Aggregate by device
-    by_device: dict[str, dict] = {}
-    for r in rows:
-        if r.mac_address not in by_device:
-            by_device[r.mac_address] = {"seconds": 0, "top_service": None, "top_secs": 0}
-        by_device[r.mac_address]["seconds"] += r.seconds
-        if r.seconds > by_device[r.mac_address]["top_secs"]:
-            by_device[r.mac_address]["top_service"] = r.service
-            by_device[r.mac_address]["top_secs"] = r.seconds
-
-    # Enrich with device names
-    devices = []
-    for mac, info in sorted(by_device.items(), key=lambda x: x[1]["seconds"], reverse=True):
-        dev = db.query(Device).filter(Device.mac_address == mac).first()
-        name = (dev.display_name or dev.hostname or dev.vendor or mac) if dev else mac
-        devices.append({
-            "mac_address": mac,
-            "name": name,
-            "seconds": info["seconds"],
-            "display": f"{info['seconds'] // 3600}h {(info['seconds'] % 3600) // 60}m",
-            "top_service": info["top_service"],
-        })
-
-    return {
-        "dates": dates,
-        "devices": devices,
-    }
 
 
 @app.get("/api/devices/{mac_address}/connections")
