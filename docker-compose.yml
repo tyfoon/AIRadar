@@ -27,6 +27,11 @@ services:
     volumes:
       # Persistent database — survives container restarts
       - ./data:/app/data
+      # Static frontend files — bind-mounted so changes in static/
+      # (React bundles, mockups, index.html, sw.js, style.css) pick
+      # up after a `git pull` without needing a full image rebuild.
+      # Read-only: the container never writes here.
+      - ./static:/app/static:ro
       # Read-only access to Zeek logs on the host
       # Mount spool/zeek directly — /opt/zeek/logs/current is a symlink
       # that Docker bind mounts don't follow reliably.
