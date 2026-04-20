@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="nl" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <title>AI-Radar · Auto Groups mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    body { background: #0B0C10; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+    .scene-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; font-weight: 600; }
+    .scene-desc { color: #94a3b8; font-size: 13px; }
+    .mock-shell { background: #0f1117; border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; padding: 24px; }
+    .auto-chip { background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02)); }
+    /* Custom color utility - tailwind JIT doesn't know our dynamic classes */
+    .bg-rose-900\/30 { background-color: rgba(136,19,55,0.3); }
+    .bg-purple-900\/30 { background-color: rgba(88,28,135,0.3); }
+    .bg-pink-900\/30 { background-color: rgba(131,24,67,0.3); }
+    .bg-orange-900\/30 { background-color: rgba(124,45,18,0.3); }
+    .bg-sky-900\/30 { background-color: rgba(12,74,110,0.3); }
+    .bg-blue-900\/30 { background-color: rgba(30,58,138,0.3); }
+    .bg-amber-900\/30 { background-color: rgba(120,53,15,0.3); }
+    .bg-slate-800 { background-color: rgb(30,41,59); }
+    .bg-teal-900\/30 { background-color: rgba(19,78,74,0.3); }
+    .bg-indigo-900\/30 { background-color: rgba(49,46,129,0.3); }
+    .bg-emerald-900\/30 { background-color: rgba(6,78,59,0.3); }
+    .bg-stone-800 { background-color: rgb(41,37,36); }
+  </style>
+</head>
+<body class="p-6 max-w-[1400px] mx-auto">
+
+<header class="mb-8">
+  <h1 class="text-2xl font-bold text-white">Auto Groups — UI mockup</h1>
+  <p class="text-sm text-slate-400 mt-1">Voorstel voor integratie van system-managed auto-groups naast user-created groups. 4 scenes.</p>
+</header>
+
+<!-- =========================================================================
+     SCENE 1 — Groups tab overall layout
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 1</span>
+    <span class="scene-desc">Devices → Groups tab. 2 secties: Auto Groups (system) en Jouw Groepen (user).</span>
+  </div>
+  <div class="mock-shell">
+
+    <!-- Tab switcher (context) -->
+    <div class="flex items-center justify-between mb-5">
+      <div class="flex items-center gap-1 bg-white/[0.04] p-1 rounded-lg">
+        <button class="px-4 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-slate-300">Apparaten</button>
+        <button class="px-4 py-1.5 rounded-md text-xs font-medium bg-blue-700 text-white shadow-sm">Groepen</button>
+      </div>
+    </div>
+
+    <!-- Auto Groups section -->
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <i class="ph-duotone ph-sparkle text-indigo-400 text-base"></i>
+          <h2 class="text-sm font-semibold text-slate-200">Auto Groups</h2>
+          <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium uppercase tracking-wider">System</span>
+          <span class="text-[11px] text-slate-500">AI-Radar sorteert je devices automatisch op basis van type, vendor en gedrag</span>
+        </div>
+        <button class="text-[11px] text-slate-400 hover:text-slate-200">Regels bekijken →</button>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+        <!-- Each card -->
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-rose-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-video-camera text-xl text-rose-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Camera's</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60" title="Auto-managed"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">8</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-house-line text-xl text-purple-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Smart Home</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">14</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-pink-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-speaker-high text-xl text-pink-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Media & Speakers</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">6</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-orange-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-television-simple text-xl text-orange-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">TVs</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">3</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-sky-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-device-mobile text-xl text-sky-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Phones & Tablets</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">7</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-laptop text-xl text-blue-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Computers</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">9</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-thermometer text-xl text-amber-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Klimaat & Energie</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">5</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-printer text-xl text-slate-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Printers</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">1</span> device</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-cpu text-xl text-teal-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">IoT / MCUs</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">12</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-router text-xl text-indigo-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Network Gear</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">4</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+          <div class="w-10 h-10 rounded-lg bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-washing-machine text-xl text-emerald-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Appliances</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-slate-200 font-medium">2</span> devices</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors opacity-70">
+          <div class="w-10 h-10 rounded-lg bg-stone-800 flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-question text-xl text-stone-400"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1">
+              <p class="text-sm font-semibold text-slate-200 truncate">Te classificeren</p>
+              <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+            </div>
+            <p class="text-[11px] text-slate-400"><span class="text-stone-300 font-medium">3</span> devices</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Groups section -->
+    <div class="pt-5 border-t border-white/[0.04]">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <i class="ph-duotone ph-users-three text-slate-400 text-base"></i>
+          <h2 class="text-sm font-semibold text-slate-200">Jouw Groepen</h2>
+          <span class="text-[11px] text-slate-500">Handmatige groepen voor policies en rapportage</span>
+        </div>
+        <button class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors">
+          <i class="ph-bold ph-plus text-xs mr-1"></i>Nieuwe groep
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-pink-900/30 flex items-center justify-center">
+              <i class="ph-duotone ph-users-three text-lg text-pink-400"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-slate-200">Familie Annie</p>
+              <p class="text-[11px] text-slate-500">3 members</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400"><i class="ph-duotone ph-user-plus text-base"></i></button>
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400"><i class="ph-duotone ph-shield-check text-base"></i></button>
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 hover:text-red-400"><i class="ph-duotone ph-trash text-base"></i></button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-blue-900/30 flex items-center justify-center">
+              <i class="ph-duotone ph-briefcase text-lg text-blue-400"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-slate-200">Work Devices</p>
+              <p class="text-[11px] text-slate-500">5 members</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400"><i class="ph-duotone ph-user-plus text-base"></i></button>
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400"><i class="ph-duotone ph-shield-check text-base"></i></button>
+            <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 hover:text-red-400"><i class="ph-duotone ph-trash text-base"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 2 — Auto-group detail panel
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 2</span>
+    <span class="scene-desc">Click op auto-group card → detail panel. Rules readonly, leden met source-indicator, bulk-actions.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="bg-white/[0.02] border border-rose-500/20 rounded-xl overflow-hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 border-b border-white/[0.04]">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-lg bg-rose-900/30 flex items-center justify-center">
+            <i class="ph-duotone ph-video-camera text-2xl text-rose-400"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-semibold text-slate-100">Camera's & Doorbells</h3>
+              <span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium uppercase tracking-wider">
+                <i class="ph-fill ph-sparkle text-[10px]"></i> System
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">8 devices · geautomatiseerd toegekend · laatste evaluatie 3 min geleden</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 font-medium">
+            <i class="ph-duotone ph-prohibit text-xs mr-1"></i>Bulk: Block internet
+          </button>
+          <button class="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 font-medium">
+            <i class="ph-duotone ph-bell-ringing text-xs mr-1"></i>Bulk: Alert
+          </button>
+        </div>
+      </div>
+
+      <!-- Match rules -->
+      <div class="p-4 border-b border-white/[0.04] bg-white/[0.01]">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Match rules <span class="text-slate-600">·  readonly (system-managed)</span></p>
+          <button class="text-[11px] text-slate-400 hover:text-slate-200">
+            <i class="ph-duotone ph-copy text-xs mr-1"></i>Kopiëren als custom group
+          </button>
+        </div>
+        <div class="space-y-1.5">
+          <div class="flex items-start gap-2">
+            <i class="ph-fill ph-check-circle text-xs text-emerald-400 mt-0.5"></i>
+            <span class="text-[12px] text-slate-300">
+              <span class="font-mono bg-white/[0.04] px-1 rounded">vendor</span>
+              <span class="text-slate-500">bevat één van</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">hikvision</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">dahua</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">axis</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">reolink</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">ring</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">nest</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">arlo</span>
+            </span>
+          </div>
+          <div class="flex items-start gap-2">
+            <i class="ph-fill ph-check-circle text-xs text-emerald-400 mt-0.5"></i>
+            <span class="text-[12px] text-slate-300">
+              <span class="font-mono bg-white/[0.04] px-1 rounded">device_type</span>
+              <span class="text-slate-500">is één van</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">IP Camera</span>
+              <span class="font-mono bg-rose-500/10 text-rose-300 px-1 rounded">Doorbell</span>
+            </span>
+          </div>
+          <p class="text-[10px] text-slate-500 pt-1">Een device hoort bij deze groep als aan <span class="text-slate-400 font-medium">één van de regels</span> wordt voldaan.</p>
+        </div>
+      </div>
+
+      <!-- Members -->
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Members · 8</p>
+          <input type="text" placeholder="Zoeken..." class="text-[11px] px-2 py-1 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300 w-40"/>
+        </div>
+        <div class="space-y-1">
+          <!-- auto member -->
+          <div class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.03]">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <span class="relative inline-flex items-center justify-center w-5 h-5 text-emerald-400">
+                <i class="ph-duotone ph-video-camera text-base"></i>
+                <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              </span>
+              <span class="text-[13px] text-slate-200 truncate">Hikvison voordeur</span>
+              <span class="text-[10px] text-slate-500 font-mono">.92</span>
+              <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium">
+                <i class="ph-fill ph-sparkle text-[8px]"></i> auto
+              </span>
+            </div>
+            <button class="text-[10px] px-2 py-0.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400">
+              <i class="ph-bold ph-x text-[10px] mr-0.5"></i>Uitsluiten
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.03]">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <span class="relative inline-flex items-center justify-center w-5 h-5 text-emerald-400">
+                <i class="ph-duotone ph-video-camera text-base"></i>
+                <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              </span>
+              <span class="text-[13px] text-slate-200 truncate">Ring doorbell</span>
+              <span class="text-[10px] text-slate-500 font-mono">.117</span>
+              <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium">
+                <i class="ph-fill ph-sparkle text-[8px]"></i> auto
+              </span>
+            </div>
+            <button class="text-[10px] px-2 py-0.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400">
+              <i class="ph-bold ph-x text-[10px] mr-0.5"></i>Uitsluiten
+            </button>
+          </div>
+
+          <!-- manual addition -->
+          <div class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.03]">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <span class="relative inline-flex items-center justify-center w-5 h-5 text-slate-500">
+                <i class="ph-duotone ph-video-camera text-base"></i>
+              </span>
+              <span class="text-[13px] text-slate-200 truncate">Oude cam garage</span>
+              <span class="text-[10px] text-slate-500 font-mono">.239</span>
+              <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 font-medium">
+                <i class="ph-fill ph-user text-[8px]"></i> handmatig
+              </span>
+              <span class="text-[10px] text-slate-500">(matcht geen regel — bewust toegevoegd)</span>
+            </div>
+            <button class="text-[10px] px-2 py-0.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400">
+              <i class="ph-bold ph-x text-[10px] mr-0.5"></i>Verwijderen
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.03] opacity-60">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <span class="relative inline-flex items-center justify-center w-5 h-5 text-slate-500">
+                <i class="ph-duotone ph-video-camera text-base"></i>
+              </span>
+              <span class="text-[13px] text-slate-300 truncate line-through">Test cam</span>
+              <span class="text-[10px] text-slate-500 font-mono">.168</span>
+              <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 font-medium">
+                <i class="ph-fill ph-prohibit text-[8px]"></i> uitgesloten
+              </span>
+            </div>
+            <button class="text-[10px] px-2 py-0.5 rounded hover:bg-emerald-500/10 text-slate-500 hover:text-emerald-400">
+              <i class="ph-bold ph-arrow-counter-clockwise text-[10px] mr-0.5"></i>Herstel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 3 — Auto-group chips op device drawer + fleet card
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 3</span>
+    <span class="scene-desc">Auto-group chips tonen de context op device niveau. Klikbaar → filter op die groep.</span>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <!-- Device drawer header style -->
+    <div class="mock-shell">
+      <p class="scene-label mb-3">Device drawer header</p>
+      <div class="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
+        <div class="flex items-start gap-3">
+          <div class="relative w-12 h-12 rounded-lg bg-rose-900/30 flex items-center justify-center">
+            <i class="ph-duotone ph-video-camera text-2xl text-rose-400"></i>
+            <span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-[#0f1117]"></span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h4 class="text-base font-semibold text-slate-100">Hikvison voordeur</h4>
+            <p class="text-[11px] text-slate-400">IP Camera · 192.168.1.92 · Hangzhou Hikvision</p>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <button class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20">
+                <i class="ph-duotone ph-video-camera text-[11px]"></i>
+                Camera's
+                <i class="ph-fill ph-sparkle text-[8px] opacity-60"></i>
+              </button>
+              <button class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 hover:bg-teal-500/20">
+                <i class="ph-duotone ph-cpu text-[11px]"></i>
+                IoT / MCUs
+                <i class="ph-fill ph-sparkle text-[8px] opacity-60"></i>
+              </button>
+              <button class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/20 text-pink-300 hover:bg-pink-500/20">
+                <i class="ph-duotone ph-users-three text-[11px]"></i>
+                Familie Annie
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1.5">
+              <i class="ph-fill ph-sparkle text-[9px] text-indigo-400/60"></i> = auto-group
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IoT Fleet card style -->
+    <div class="mock-shell">
+      <p class="scene-label mb-3">IoT Fleet card (top strip)</p>
+      <div class="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
+        <div class="flex items-start justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="relative inline-flex items-center justify-center w-5 h-5 text-emerald-400">
+              <i class="ph-duotone ph-video-camera text-lg"></i>
+            </span>
+            <p class="text-xs font-semibold text-slate-200">Hikvison voordeur</p>
+          </div>
+          <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">7d ready</span>
+        </div>
+        <p class="text-[10px] text-slate-500 truncate">Hangzhou Hikvision · 192.168.1.92</p>
+        <div class="flex flex-wrap gap-1 mt-2">
+          <span class="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300">📹 Camera's</span>
+          <span class="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300">⚡ IoT</span>
+        </div>
+        <!-- fake chart -->
+        <svg viewBox="0 0 100 40" class="w-full mt-3 opacity-70">
+          <polygon points="0,40 0,28 10,20 20,22 30,15 40,18 50,10 60,13 70,8 80,12 90,7 100,9 100,40" fill="rgb(244,63,94,0.3)"/>
+          <polyline points="0,28 10,20 20,22 30,15 40,18 50,10 60,13 70,8 80,12 90,7 100,9" fill="none" stroke="#fb7185" stroke-width="0.8"/>
+        </svg>
+        <div class="flex items-center justify-between mt-2 text-[10px] text-slate-400">
+          <span>🌐 0B</span>
+          <span>🔀 2.3 GB</span>
+          <span>2 peers</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 4 — Rules / Content page scope selector
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 4</span>
+    <span class="scene-desc">Policy scope dropdown op Rules / Content. Auto-groups staan bovenaan met ✨, manual groups eronder.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="flex items-start gap-4">
+      <!-- Current selection -->
+      <div class="flex-1">
+        <p class="scene-label mb-2">Scope selector (geopend)</p>
+        <div class="bg-slate-900 border border-white/[0.06] rounded-lg shadow-xl max-w-sm">
+          <div class="p-2">
+            <input type="text" placeholder="Filter..." class="w-full text-xs px-2 py-1.5 rounded bg-white/[0.04] border border-white/[0.06] text-slate-200"/>
+          </div>
+          <div class="border-t border-white/[0.04]">
+            <button class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-globe text-base text-slate-400"></i>
+              <span class="text-[13px] text-slate-200">Globaal</span>
+              <span class="ml-auto text-[10px] text-slate-500">alle devices</span>
+            </button>
+          </div>
+          <div class="border-t border-white/[0.04]">
+            <p class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold flex items-center gap-1">
+              <i class="ph-fill ph-sparkle text-indigo-400/60"></i>Auto Groups
+            </p>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03] bg-blue-500/5">
+              <i class="ph-duotone ph-video-camera text-base text-rose-400"></i>
+              <span class="text-[13px] text-slate-200">Camera's</span>
+              <span class="ml-auto text-[10px] text-slate-500">8</span>
+              <i class="ph-bold ph-check text-xs text-blue-400 ml-1"></i>
+            </button>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-house-line text-base text-purple-400"></i>
+              <span class="text-[13px] text-slate-200">Smart Home</span>
+              <span class="ml-auto text-[10px] text-slate-500">14</span>
+            </button>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-speaker-high text-base text-pink-400"></i>
+              <span class="text-[13px] text-slate-200">Media & Speakers</span>
+              <span class="ml-auto text-[10px] text-slate-500">6</span>
+            </button>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-television-simple text-base text-orange-400"></i>
+              <span class="text-[13px] text-slate-200">TVs</span>
+              <span class="ml-auto text-[10px] text-slate-500">3</span>
+            </button>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03] text-slate-500">
+              <span class="text-[11px] px-2">... 8 meer</span>
+            </button>
+          </div>
+          <div class="border-t border-white/[0.04]">
+            <p class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Jouw Groepen</p>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-users-three text-base text-pink-400"></i>
+              <span class="text-[13px] text-slate-200">Familie Annie</span>
+              <span class="ml-auto text-[10px] text-slate-500">3</span>
+            </button>
+            <button class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.03]">
+              <i class="ph-duotone ph-briefcase text-base text-blue-400"></i>
+              <span class="text-[13px] text-slate-200">Work Devices</span>
+              <span class="ml-auto text-[10px] text-slate-500">5</span>
+            </button>
+          </div>
+          <div class="border-t border-white/[0.04]">
+            <button class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] text-slate-400">
+              <i class="ph-duotone ph-device-mobile text-base text-slate-500"></i>
+              <span class="text-[13px]">Per device...</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rule config preview -->
+      <div class="flex-1">
+        <p class="scene-label mb-2">Na selectie: regel aanmaken</p>
+        <div class="bg-white/[0.02] border border-blue-500/30 rounded-xl p-4">
+          <p class="text-xs text-slate-400 mb-3">
+            Regel voor <span class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 font-medium"><i class="ph-duotone ph-video-camera text-[11px]"></i>Camera's <i class="ph-fill ph-sparkle text-[8px] opacity-60"></i></span>
+          </p>
+          <div class="space-y-3">
+            <div>
+              <label class="text-[10px] text-slate-500">Actie</label>
+              <div class="flex gap-1 mt-1">
+                <button class="px-3 py-1.5 rounded-md text-[11px] font-medium bg-red-600 text-white">Block</button>
+                <button class="px-3 py-1.5 rounded-md text-[11px] font-medium text-slate-400 hover:bg-white/[0.04]">Alert</button>
+                <button class="px-3 py-1.5 rounded-md text-[11px] font-medium text-slate-400 hover:bg-white/[0.04]">Allow</button>
+              </div>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-500">Doel</label>
+              <select class="mt-1 w-full text-xs px-2 py-1.5 rounded bg-white/[0.04] border border-white/[0.06] text-slate-200">
+                <option>Al het internet verkeer</option>
+                <option>Specifieke service (Hikvision cloud)</option>
+                <option>Nieuwe landen (baseline anomalie)</option>
+              </select>
+            </div>
+            <p class="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              <i class="ph-duotone ph-sparkle text-sm mr-1"></i>
+              Deze regel geldt automatisch ook voor nieuwe camera's die je in de toekomst op het netwerk aansluit.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     NOTES
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">DESIGN NOTES</span>
+  </div>
+  <div class="mock-shell">
+    <ul class="text-sm text-slate-300 space-y-2 list-disc list-inside marker:text-slate-500">
+      <li><strong class="text-slate-100">Visueel onderscheid:</strong> auto-groups hebben altijd een ✨ <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/80"></i> indicator, een "system" badge indien aangemaakt door AI-Radar, en pastel gekleurde iconen. Manual groups zijn kleurloos-default.</li>
+      <li><strong class="text-slate-100">Source indicator op member:</strong> <span class="text-indigo-300 text-xs px-1 rounded bg-indigo-500/15">auto</span> = door rules toegevoegd · <span class="text-amber-300 text-xs px-1 rounded bg-amber-500/15">handmatig</span> = user added · <span class="text-slate-400 text-xs px-1 rounded bg-slate-500/15">uitgesloten</span> = user overrode.</li>
+      <li><strong class="text-slate-100">Kopiëren als custom:</strong> "Copy as custom group" — user kan een system group klonen en de regels aanpassen. Handig voor edge cases zonder het system origineel te breken.</li>
+      <li><strong class="text-slate-100">Empty state:</strong> een auto-group met 0 members blijft zichtbaar (opaque 70%) zodat de user weet dat er "nog geen" devices van dat type zijn. Niet verwijderen.</li>
+      <li><strong class="text-slate-100">Onboarding:</strong> eerste visit na implementatie toont een banner: "AI-Radar heeft <strong>12 auto-groups</strong> voor je samengesteld op basis van je 45 devices. Bekijk ze →"</li>
+      <li><strong class="text-slate-100">Rule editor (later):</strong> voor user-created auto-groups komt er een inline editor. System groups zijn read-only zodat we ze kunnen upgraden over releases heen zonder user config te breken.</li>
+      <li><strong class="text-slate-100">Koppeling met policies:</strong> de auto-groups worden scope-selecteerbaar op Rules en Content page. Een policy "Block Camera's van internet" geldt automatisch voor elke toekomstige camera — big value prop voor ZERO-config bij nieuwe devices.</li>
+    </ul>
+  </div>
+</section>
+
+</body>
+</html>
