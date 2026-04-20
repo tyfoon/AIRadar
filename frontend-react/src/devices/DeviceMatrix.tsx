@@ -337,6 +337,11 @@ function DeviceRow({
             {online && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-white dark:border-[#0B0C10]" />}
           </span>
           {' '}{dt.type}{device?.vendor ? ` · ${device.vendor}` : ''}
+          {device?.ua_brand && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 text-[10px] font-medium">
+              {device.ua_brand}{device.ua_model ? ` ${device.ua_model}` : ''}
+            </span>
+          )}
           {device?.os_name && (
             <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-medium">
               {device.os_name}{device.os_version ? ` ${device.os_version}` : ''}

@@ -14,9 +14,14 @@ export interface Device {
   os_name?: string;
   os_version?: string;
   device_class?: string;
+  device_class_source?: string; // Which detection set device_class (p0f, ua, mdns, keyword, user)
   network_distance?: number;
   dhcp_vendor_class?: string;
   ja4_label?: string;
+  ua_device_type?: string;  // UA fingerprint: phone, tablet, desktop, etc.
+  ua_brand?: string;        // UA fingerprint: Apple, Samsung, etc.
+  ua_model?: string;        // UA fingerprint: iPhone, Pixel 8, etc.
+  ua_os?: string;           // UA fingerprint: iOS, Android, etc.
   ips: { ip: string }[];
 }
 

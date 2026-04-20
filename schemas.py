@@ -90,6 +90,11 @@ class DeviceRead(BaseModel):
     ja4_label: Optional[str] = None        # Friendly name resolved from ja4
     dhcp_vendor_class: Optional[str] = None  # e.g. "MSFT 5.0", "android-dhcp-14"
     dhcp_fingerprint: Optional[str] = None   # JA4D DHCP hash
+    ua_device_type: Optional[str] = None   # UA fingerprint: phone, tablet, desktop, etc.
+    ua_brand: Optional[str] = None         # UA fingerprint: Apple, Samsung, etc.
+    ua_model: Optional[str] = None         # UA fingerprint: iPhone, Pixel 8, etc.
+    ua_os: Optional[str] = None            # UA fingerprint: iOS, Android, etc.
+    device_class_source: Optional[str] = None  # Which detection set device_class (p0f, ua, mdns, keyword)
     first_seen: datetime
     last_seen: datetime
     ips: List[DeviceIPRead] = []

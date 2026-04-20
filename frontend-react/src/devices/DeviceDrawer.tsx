@@ -224,11 +224,36 @@ export default function DeviceDrawer({ mac, deviceMap, allEvents, svcCategoryMap
               </h2>
             )}
             <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">{metaParts.join(' · ')}</p>
-            {device?.os_name && (
-              <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">
-                🔍 p0f: {device.os_name}{device.os_version ? ` ${device.os_version}` : ''}{device.device_class ? ` · ${device.device_class}` : ''}{device.network_distance != null ? ` · ${device.network_distance} hop${device.network_distance !== 1 ? 's' : ''}` : ''}
-              </p>
-            )}
+            {/* Fingerprint badges — show detection sources */}
+            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+              {device?.ua_brand && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  <i className="ph-duotone ph-device-mobile text-[9px]" />
+                  {device.ua_brand}{device.ua_model ? ` ${device.ua_model}` : ''}
+                </span>
+              )}
+              {device?.ua_os && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  {device.ua_os}
+                </span>
+              )}
+              {device?.os_name && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                  <i className="ph-duotone ph-fingerprint text-[9px]" />
+                  p0f: {device.os_name}{device.os_version ? ` ${device.os_version}` : ''}
+                </span>
+              )}
+              {device?.network_distance != null && device.network_distance > 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400">
+                  {device.network_distance} hop{device.network_distance !== 1 ? 's' : ''}
+                </span>
+              )}
+              {device?.device_class_source && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-white/[0.04] text-slate-400 dark:text-slate-500">
+                  via {device.device_class_source}
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
             <i className="ph-bold ph-x text-lg" />
