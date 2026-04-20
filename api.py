@@ -4313,80 +4313,146 @@ def get_network_graph(
     hours: int = Query(24, ge=1, le=168),
     db: Session = Depends(get_db),
 ):
-    """Return nodes (devices) and edges (lateral movement connections) for
-    a force-directed network graph visualization.
+    """Return nodes (devices) and edges for a force-directed network graph
+    visualization of ALL internal device-to-device traffic.
 
-    Edges are derived from iot_lateral_movement DetectionEvents.
-    Nodes include all devices involved in lateral movement, plus the
-    router/gateway as the central hub.
+    Sourced from lan_conversations (populated by zeek_tailer for every
+    LAN-to-LAN flow). Previous implementation used iot_lateral_movement
+    DetectionEvents which only fire for suspicious scan-like ports, so
+    normal activity like camera→NVR (RTSP/ONVIF) was invisible here.
+
+    Edges are aggregated per (src_mac, peer_ip) — the top ports are
+    surfaced for tooltip display but don't split the edge into multiple
+    lines. Bytes and hits drive the visual weight.
     """
     cutoff = _utc_now_naive() - timedelta(hours=hours)
 
-    # Fetch lateral movement events
-    events = (
-        db.query(DetectionEvent)
-        .filter(
-            DetectionEvent.detection_type == "iot_lateral_movement",
-            DetectionEvent.timestamp >= cutoff,
+    # Pull LAN flows in one query. Group by (src_mac, peer_ip, peer_mac,
+    # port, proto) so we can later aggregate up to (src, dst) for the
+    # edge list while still tracking top ports.
+    rows = (
+        db.query(
+            LanConversation.mac_address.label("src_mac"),
+            LanConversation.peer_ip,
+            LanConversation.peer_mac,
+            LanConversation.port,
+            LanConversation.proto,
+            func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.hits).label("hits"),
+            func.min(LanConversation.first_seen).label("first_seen"),
+            func.max(LanConversation.last_seen).label("last_seen"),
         )
-        .order_by(DetectionEvent.timestamp.desc())
+        .filter(LanConversation.last_seen >= cutoff)
+        .group_by(
+            LanConversation.mac_address, LanConversation.peer_ip,
+            LanConversation.peer_mac, LanConversation.port, LanConversation.proto,
+        )
         .all()
     )
 
-    # Build IP → device lookup
+    # Build IP/MAC → device lookup (single pass). IoT devices sometimes
+    # have multiple IPs (IPv4 + IPv6 link-local) so both get resolved.
     dev_ip_rows = db.query(DeviceIP).all()
     ip_to_mac = {d.ip: d.mac_address for d in dev_ip_rows}
-    ip_to_dev = {}
+    mac_to_ips: dict[str, list[str]] = {}
     for dip in dev_ip_rows:
-        if dip.device:
-            ip_to_dev[dip.ip] = dip.device
+        mac_to_ips.setdefault(dip.mac_address, []).append(dip.ip)
+    devices = {d.mac_address: d for d in db.query(Device).all()}
 
-    # Aggregate edges by (source_ip, target_ip, port)
+    # Resolve peer_mac when missing — ARP table (DeviceIP) fills the gap
+    # for peers that zeek hadn't seen the L2 for at flow-record time.
+    def _resolve_mac(peer_ip: str, peer_mac: str | None) -> str | None:
+        return peer_mac or ip_to_mac.get(peer_ip)
+
+    # Aggregate edges per (src_mac, peer_mac) — falls back to peer_ip
+    # when peer is an unregistered device (router uplink, transient IP).
     edge_map: dict[tuple, dict] = {}
-    involved_ips: set[str] = set()
+    involved: set[str] = set()
 
-    for e in events:
-        # Parse ai_service: "lateral_{port}_{dest_ip}" or "lateral_{port}"
-        parts = (e.ai_service or "").replace("lateral_", "").split("_", 1)
-        port = int(parts[0]) if parts[0].isdigit() else 0
-        target_ip = parts[1] if len(parts) > 1 and parts[1] else None
+    def _pick_ip_for_mac(mac: str) -> str | None:
+        ips = mac_to_ips.get(mac, [])
+        for ip in ips:
+            if ":" not in ip:  # prefer v4 for display
+                return ip
+        return ips[0] if ips else None
 
-        if not target_ip:
-            continue  # Old format without dest_ip, skip
-
-        key = (e.source_ip, target_ip, port)
-        involved_ips.add(e.source_ip)
-        involved_ips.add(target_ip)
+    for r in rows:
+        src_mac = r.src_mac
+        resolved_peer_mac = _resolve_mac(r.peer_ip, r.peer_mac)
+        # Edge identity: use MAC if we have it on both sides so multi-IP
+        # peers collapse to one edge; otherwise fall back to peer_ip.
+        src_ip = _pick_ip_for_mac(src_mac) or src_mac
+        peer_ip = (resolved_peer_mac and _pick_ip_for_mac(resolved_peer_mac)) or r.peer_ip
+        key = (src_mac, resolved_peer_mac or r.peer_ip)
+        involved.add(src_mac)
+        involved.add(resolved_peer_mac or r.peer_ip)
 
         if key not in edge_map:
-            port_name = _PORT_LABELS.get(port, "")
             edge_map[key] = {
-                "source_ip": e.source_ip,
-                "target_ip": target_ip,
-                "port": port,
-                "port_label": f"{port_name}/{port}" if port_name else str(port),
+                "source_ip": src_ip,
+                "target_ip": peer_ip,
+                "source_mac": src_mac,
+                "target_mac": resolved_peer_mac,
+                "port": int(r.port or 0),
+                "port_label": _format_port_label(int(r.port or 0), r.proto),
+                "bytes": 0,
                 "hits": 0,
-                "first_seen": str(e.timestamp),
-                "last_seen": str(e.timestamp),
+                "first_seen": str(r.first_seen) if r.first_seen else "",
+                "last_seen": str(r.last_seen) if r.last_seen else "",
+                "top_ports": {},
             }
         edge = edge_map[key]
-        edge["hits"] += 1
-        if str(e.timestamp) > edge["last_seen"]:
-            edge["last_seen"] = str(e.timestamp)
-        if str(e.timestamp) < edge["first_seen"]:
-            edge["first_seen"] = str(e.timestamp)
+        edge["bytes"] += int(r.bytes or 0)
+        edge["hits"] += int(r.hits or 0)
+        # Track port contributions for the top-ports tooltip. Keeping
+        # only counts + bytes keeps the payload small; the frontend
+        # renders them as a "tcp/443 (2 GB) · udp/123 (12 KB)" line.
+        port_key = f"{r.proto}/{int(r.port or 0)}"
+        tp = edge["top_ports"].setdefault(port_key, {"bytes": 0, "hits": 0})
+        tp["bytes"] += int(r.bytes or 0)
+        tp["hits"] += int(r.hits or 0)
+        if r.last_seen and str(r.last_seen) > edge["last_seen"]:
+            edge["last_seen"] = str(r.last_seen)
+        if r.first_seen and (not edge["first_seen"] or str(r.first_seen) < edge["first_seen"]):
+            edge["first_seen"] = str(r.first_seen)
 
-    # Build nodes for all involved devices
+    # Collapse top_ports dict into a sorted list (top 3 by bytes) for
+    # a stable JSON payload. Re-pick the dominant port as the edge's
+    # primary port_label so visual labels reflect reality.
+    for edge in edge_map.values():
+        ports_sorted = sorted(
+            edge["top_ports"].items(),
+            key=lambda kv: -kv[1]["bytes"],
+        )[:3]
+        edge["top_ports"] = [
+            {"proto_port": k, "bytes": v["bytes"], "hits": v["hits"]}
+            for k, v in ports_sorted
+        ]
+        if ports_sorted:
+            primary = ports_sorted[0][0]  # "tcp/443"
+            try:
+                proto_s, port_s = primary.split("/", 1)
+                port_n = int(port_s)
+                name = _PORT_LABELS.get(port_n, "")
+                edge["port"] = port_n
+                edge["port_label"] = f"{name}/{port_n}" if name else f"{proto_s}/{port_n}"
+            except (ValueError, AttributeError):
+                pass
+
+    # Build node list from all devices involved (src_mac or peer
+    # identifier). Prefer MAC when known so multi-IP devices collapse.
     nodes = []
-    seen_ips: set[str] = set()
-    for ip in involved_ips:
-        if ip in seen_ips:
+    seen: set[str] = set()
+    for key in involved:
+        if key in seen:
             continue
-        seen_ips.add(ip)
-        dev = ip_to_dev.get(ip)
+        seen.add(key)
+        # key is either a MAC or a peer_ip fallback for unresolved peers
+        dev = devices.get(key) if ":" in key or "-" in key else None
+        primary_ip = _pick_ip_for_mac(key) if dev else key
         nodes.append({
-            "ip": ip,
-            "mac": ip_to_mac.get(ip),
+            "ip": primary_ip or key,
+            "mac": dev.mac_address if dev else (key if dev is None and "." not in key else None),
             "hostname": dev.hostname if dev else None,
             "display_name": dev.display_name if dev else None,
             "vendor": dev.vendor if dev else None,
@@ -4400,6 +4466,15 @@ def get_network_graph(
         "nodes": nodes,
         "edges": list(edge_map.values()),
     }
+
+
+def _format_port_label(port: int, proto: str | None = None) -> str:
+    name = _PORT_LABELS.get(port, "")
+    if name:
+        return f"{name}/{port}"
+    if proto:
+        return f"{proto}/{port}"
+    return str(port)
 
 
 # ---------------------------------------------------------------------------

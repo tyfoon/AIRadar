@@ -84,11 +84,15 @@ export interface NetworkNode {
 export interface NetworkEdge {
   source_ip: string;
   target_ip: string;
+  source_mac?: string | null;
+  target_mac?: string | null;
   port: number;
   port_label: string;
+  bytes?: number;            // new — drives edge thickness
   hits: number;
   first_seen: string;
   last_seen: string;
+  top_ports?: { proto_port: string; bytes: number; hits: number }[];
 }
 
 export interface NetworkGraphResponse {
