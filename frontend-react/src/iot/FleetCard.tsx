@@ -124,6 +124,19 @@ const HEALTH_COLOR: Record<string, { stroke: string; fill: string; dot: string }
 
 /** Derive 0-100 radar dimensions from existing FleetDevice fields. */
 function computeRadar(d: FleetDevice): Record<string, number> {
+  // No activity in the window → radar has nothing to fingerprint. Return
+  // all-zero so the polygon collapses to a dot at the center, matching
+  // the user's mental model ("0B in, 0B out, no destinations, empty
+  // fingerprint"). Without this the math bottoms out in two deceiving
+  // ways: a) zero-baseline devices get reg=100 (ratio defaults to 1 →
+  // deviation 0 → "perfect regularity"); b) devices with a baseline
+  // that went silent get reg=75 and a small anomaly bump (ratio=0 →
+  // deviation 1 → reg 75, baselineDev 12). Either way the polygon
+  // draws a visible shape for a device that is literally doing nothing.
+  if (!d.bytes_24h && !d.hits_24h && !d.destinations) {
+    return { volume: 0, frequency: 0, regularity: 0, uploadRatio: 0, destinations: 0, deviation: 0 };
+  }
+
   // Volume: log scale — 1 KB=20, 1 MB=40, 100 MB=60, 1 GB=70, 10 GB=85, 100 GB=100
   const vol = d.bytes_24h > 0
     ? Math.min(100, Math.max(5, (Math.log10(d.bytes_24h) - 3) / 8 * 100))
