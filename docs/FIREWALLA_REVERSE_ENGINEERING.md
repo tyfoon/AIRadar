@@ -1391,86 +1391,178 @@ Currently empty on this device (no active block rules).
 
 ---
 
-## 21. Key Takeaways for AIradar
+## 21. Gap Analysis — Firewalla vs AIradar (updated 2026-04-20)
 
-### HIGH PRIORITY — Should Implement
+> **Important**: This section was rewritten after a full audit of AIradar's existing
+> capabilities. The original version was written without checking what AIradar already
+> had, leading to several "recommendations" for features that already existed.
 
-#### 1. User-Agent Device Fingerprinting
-- Parse Zeek `http.log` for `user_agent` field
-- Use Python `device_detector` or `ua-parser` library
-- Store detected type/brand/model/OS per MAC
-- **Router detection heuristic**: 3+ device types or 5+ OS names from same MAC = router
-- This is the single most impactful detection improvement AIradar can make
+### Already Covered — No Action Needed
 
-#### 2. SSL/TLS SNI Processing
-- Parse Zeek `ssl.log` for `server_name` field
-- SNI reveals the domain even when DNS is encrypted (DoH/DoT)
-- Fall back to x509 certificate CN/SAN when SNI is absent
-- This directly addresses the DoH bypass problem documented in `project_dns_bypass.md`
+These Firewalla techniques already have an equivalent (or better) implementation in AIradar:
 
-#### 3. Hostname→Device Type Mapping
-- Build a keyword→device_type dictionary (start with 50-100 entries)
-- Match against DHCP hostnames and mDNS names we already capture
-- Longest-match-first for specificity
-- Examples: "iphone"→phone, "roku"→tv, "echo"→speaker, "macbook"→laptop
+| Firewalla Technique | AIradar Equivalent | Notes |
+|---|---|---|
+| SSL/TLS SNI extraction (`processSslData`) | `tail_ssl_log()` + `sni_direct` labeler (weight 0.95) | AIradar also has QUIC SNI — Firewalla doesn't |
+| DNS→IP correlation (`processDnsData`) | `tail_dns_log()` + `dns_cache.py` (50K LRU, CNAME-aware, per-client scoped) | AIradar's cache is 500x larger than Firewalla's (100 entries) |
+| User-Agent fingerprinting (`DeviceIdentificationSensor`) | `tail_http_log()` + `device_detector` library + `ua_*` DB columns | Implemented 2026-04-20 |
+| Hostname→device type (`keywordToType.json`) | `device_keywords.json` (130+ keywords) + `_keyword_device_class()` | Implemented 2026-04-20, longest-match-first |
+| mDNS device discovery (`BonjourSensor`) | `tail_mdns_log()` with service type→device_class mapping (30+ types) | Implemented 2026-04-20 |
+| Domain categorisation (bloom filters + lists) | `KnownDomain` table (1445+ domains, 20 categories) + v2fly + AdGuard + DuckDuckGo TDS | Broader coverage — Firewalla's lists are cloud-proprietary |
+| Flow aggregation (`FlowAggregationSensor`) | `GeoConversation` + `DeviceTrafficHourly` + in-memory flush buffers | Comparable architecture |
+| Screen time / app usage (`AppTimeUsageSensor`) | `/api/devices/{mac}/activity` + `ScreenTime.tsx` (24h timeline, session chips, date navigation) | **Already fully built with UI** |
+| Alarm system (`AlarmManager2`) | 14 alert types + `AlertException` (snooze/whitelist/re-alert) + beacon scoring | AIradar is more sophisticated — has ECOD anomaly detection |
+| Long-lived connections (`bro-long-connection`) | `tail_conn_long_log()` + custom Zeek script installed | Implemented 2026-04-20 |
+| conn.log processing delay (2s) | `CONN_DELAY_SECONDS = 2.0` in `tail_conn_log()` | Implemented 2026-04-20 |
+| Bloom filter domain lookup | `_effective_domain_map` (Python dict, O(1) hash lookup) | Equivalent performance at our scale |
+| Traffic interception (ARP spoof) | Transparent L2 bridge (br0) | AIradar's approach is cleaner — no ARP artifacts |
+| Zeek MAC logging (`mac-logging.zeek`) | `@load policy/protocols/conn/mac-logging` already in `local.zeek` | Identical |
+| HTTP host header extraction | `tail_http_log()` extracts host + user_agent | Implemented 2026-04-20 |
+| conn_long.log Zeek script | `zeek-scripts/long-connections/main.zeek` installed | Adapted from Firewalla source |
 
-#### 4. mDNS Service Parsing
-- We already see mDNS traffic in Zeek dns.log (queries to 224.0.0.251)
-- Parse service type fields (`_airplay._tcp`, `_hap._tcp`, etc.)
-- Extract device names from mDNS TXT records
-- OR use Python `zeroconf` library for active mDNS listening
+### AIradar Capabilities That Firewalla LACKS
 
-### MEDIUM PRIORITY — Worth Adding
+| AIradar Feature | Description |
+|---|---|
+| QUIC SNI extraction | `tail_quic_log()` — Firewalla has no QUIC-specific processing |
+| JA4/JA4D TLS fingerprinting | Client TLS fingerprint → app identification via FoxIO community DB |
+| JA4D DHCP fingerprinting | DHCP option signatures for device classification at boot time |
+| p0f passive OS fingerprinting | SYN/ACK TTL analysis for OS family/version + network distance |
+| nDPI deep packet inspection | Encrypted app identification (40+ protocols) when SNI/DNS fail |
+| ECOD multivariate anomaly detection | PyOD-based per-device behavioral baseline with hour-of-day seasonality |
+| RITA-inspired beacon scoring | Multi-dimensional C2 detection (Bowley skewness, MADM, connection density) |
+| 11-source labeler hierarchy | Deterministic vs probabilistic tiers with audit trail (`LabelAttribution`) |
+| Per-client DNS scoping | Prevents CDN multi-tenancy label corruption (Firewalla's DNS cache is global) |
+| IP reputation (4 sources) | URLhaus, ThreatFox, AbuseIPDB, VirusTotal integration |
+| GeoIP blocking (iptables) | Country-level inbound/outbound blocking via ipset + iptables |
+| LLM device reports | PydanticAI-powered per-device AI recap with structured flags |
+| Family content controls | Filter schedules (parental/social/gaming) with time-based AdGuard toggling |
+| 3D globe visualization | react-globe-gl with animated traffic arcs |
 
-#### 5. Domain Category Lists
-- Build curated domain lists per category (AI, gaming, social, streaming, work, etc.)
-- Use open-source lists as starting point (many available on GitHub)
-- Match during Zeek log processing
-- No need for bloom filters at our scale — Python dicts are fine
+### Remaining Gaps — Firewalla Has It, AIradar Doesn't
 
-#### 6. Connection Log Delay Pattern
-- Firewalla delays conn.log processing by 2 seconds to allow DNS/HTTP/SSL to populate first
-- This ensures domain information is available when the connection is processed
-- AIradar could benefit from a similar correlation window
+These are the only genuine gaps remaining after the full audit:
 
-#### 7. Long-Lived Connection Monitoring
-- Firewalla's custom Zeek script logs `conn_long.log` every minute for active connections
-- Good for detecting persistent connections: VPNs, C2, streaming, tunnels
-- We could add this Zeek script to AIradar's Zeek config
+#### Gap 1: Router Detection Heuristic (SMALL, HIGH VALUE)
 
-#### 8. Flow Stashing Pattern
-- Buffer flows in memory, flush to database periodically
-- Stagger different flow types to flatten IO
-- Useful if AIradar hits SQLite write performance issues
+**Firewalla**: If a MAC shows 3+ different UA device types or 5+ OS names in its history, it's classified as a "router" (because routers proxy traffic from many devices behind them).
 
-### ARCHITECTURE LESSONS
+```javascript
+// Firewalla DeviceIdentificationSensor.js
+if (Object.keys(deviceType).length > 3 || Object.keys(osName).length > 5) {
+  detect.type = 'router'
+}
+```
 
-#### What Firewalla Gets Right
-- **Processing order matters**: DNS→HTTP→SSL→Connection (with delays)
-- **Multiple detection signals**: Hostname + UA + mDNS + cloud = better than any single source
-- **Voting/confidence system**: Most-common value wins, with special cases (router heuristic)
-- **Batched writes**: Flow stashing prevents database write amplification
-- **Custom Zeek scripts**: Small additions (MAC logging, fast HTTP, long connections) add huge value
+**AIradar gap**: We store `ua_device_type` per MAC but don't accumulate a history of distinct types. A single UA observation overwrites the previous one. Without the history, we can't detect the "too many types = router" pattern.
 
-#### What We Should NOT Copy
-- **Redis as primary store**: SQLite is fine for our scale and gives us persistence
-- **Cloud-dependent detection**: Their detection data is proprietary; we need self-contained alternatives
-- **ARP spoofing**: We already use a transparent bridge, which is cleaner
-- **Bloom filters**: Overkill for our domain count; Python dicts are O(1) with hashing
-- **Complex alarm pipeline**: Our current approach is simpler and sufficient
+**Implementation**: Track a JSON list of observed UA types per MAC (e.g. `ua_type_history`). On each new UA observation, append to the list. If `len(set(types)) >= 3`, set `device_class = "router"`.
 
-### COMPARISON TABLE
+#### Gap 2: x509 Certificate CN/SAN Fallback (MEDIUM, GROWING VALUE)
 
-| Aspect | Firewalla | AIradar | Gap |
-|--------|-----------|---------|-----|
-| Zeek log types processed | conn, dns, ssl, http, x509, notice, intel, knownHosts, signature, connLong | conn, dns | **ssl, http, connLong** |
-| Device detection signals | MAC vendor + hostname + UA + mDNS + cloud | MAC vendor + DHCP hostname | **UA, mDNS, hostname keywords** |
-| Domain identification | DNS + SNI + HTTP host + x509 CN + conntrack | DNS only | **SNI, HTTP host** |
-| Flow correlation | 2s delay + LRU caches + conntrack | Direct DNS→conn | **Correlation window** |
-| Domain categorization | Cloud bloom filters + curated lists | Service labelers | **Category lists** |
-| Data store | Redis (in-memory, 9K keys) | SQLite (on-disk) | OK as-is |
-| Devices tracked | 197 | ~30 | Firewalla sees more (ARP spoof) |
-| Custom Zeek scripts | 8 scripts | 0 | **MAC logging, long conn** |
+**Firewalla**: When SNI is absent, `processSslData` falls back to the x509 certificate's Common Name (CN) and Subject Alternative Name (SAN) fields to identify the service.
+
+```javascript
+// Firewalla BroDetect.js
+if (cert["certificate.subject"]) {
+  const regexp = /CN=.*,/;
+  const matches = cert["certificate.subject"].match(regexp);
+  if (matches) {
+    server_name = match.split(/=|,/)[1];
+    if (server_name.startsWith("*."))
+      server_name = server_name.substring(2);
+  }
+}
+```
+
+**AIradar gap**: Zeek produces `x509.log` with certificate details, but `zeek_tailer.py` doesn't tail it. As Encrypted Client Hello (ECH) adoption grows, SNI will be hidden and x509 becomes the last plaintext signal.
+
+**Implementation**: Add `tail_x509_log()` that extracts `certificate.subject` CN and `san.dns` fields. Store in a `_cert_cache` (keyed by cert fingerprint). When `tail_ssl_log()` encounters an entry without `server_name` but with a `cert_chain_fps`, look up the cert in the cache.
+
+#### Gap 3: HTTP CONNECT Proxy Detection (SMALL, NICHE VALUE)
+
+**Firewalla**: When an HTTP CONNECT method is detected, Firewalla reverses all domain/intel mappings for the proxy target IP. This prevents the proxy IP from being misidentified as the actual service.
+
+```javascript
+// Firewalla BroDetect.js
+if (obj.method == 'CONNECT' || obj.proxied) {
+  this.proxyConn.set(obj.uid, true)
+  // After 30s delay: reverse DNS, intel, appmap for this IP
+  await dnsTool.removeReverseDns(host, ip);
+  await dnsTool.removeDns(ip, host);
+}
+```
+
+**AIradar gap**: `tail_http_log()` processes all HTTP requests equally. A CONNECT to a proxy IP could cause the proxy's IP to be labeled as the proxied service, which is wrong.
+
+**Implementation**: Check `method == "CONNECT"` in `tail_http_log()`. When detected, skip UA processing and optionally remove the proxy IP from `_known_ips` to prevent false labels.
+
+#### Gap 4: Device Detection Source Priority (MEDIUM, QUALITY)
+
+**Firewalla**: Multiple detection sources are kept separate and merged with priority: `feedback > bonjour > cloud > ua_detection`. User corrections are never overwritten by automated detection.
+
+```javascript
+// Firewalla DeviceIdentificationSensor.js
+const keepsake = _.pick(host.o.detect, ['feedback', 'bonjour', 'cloud'])
+host.o.detect = await this.detect(host)  // UA-based
+Object.assign(host.o.detect, keepsake)   // Overlay preserved sources
+```
+
+**AIradar gap**: `device_class` is a single column. Whichever source writes last wins. A p0f update could overwrite a more accurate user-set or mDNS-derived classification. There's no record of which source set the current value.
+
+**Implementation**: Add `device_class_source` column (e.g. "user", "p0f", "ua", "mdns", "keyword", "dhcp"). Define priority: user > p0f > mdns > ua > keyword > dhcp. Only overwrite if new source has equal or higher priority.
+
+#### Gap 5: MAC-Scoped Conntrack Persistence (SMALL, CORRECTNESS)
+
+**Firewalla**: DNS→connection correlation uses MAC address as the primary key in conntrack, surviving DHCP lease changes and IPv6 privacy address rotation.
+
+**AIradar gap**: `_ip_to_mac` cache is in-memory only. After a container restart, the MAC→IP mapping is lost until new conn.log entries arrive. The `dns_cache` warmup from `DnsObservation` partially mitigates this.
+
+**Implementation**: This is mostly mitigated by the existing DNS cache warmup. The remaining gap is small and would require persisting `_ip_to_mac` to SQLite, which adds complexity for marginal benefit.
+
+#### Gap 6: Apple Model Detection via mDNS TXT Records (MEDIUM, NICE-TO-HAVE)
+
+**Firewalla**: Parses mDNS TXT records for Apple-specific data: HAP category IDs (HomeKit device type), model identifiers (e.g. "MacBookPro18,1"), and board codes. Maps these via cloud-downloaded JSON files.
+
+```javascript
+// Firewalla appleModel.js
+async function modelToType(identifier) {
+  const main = identifier.split(',')[0]  // "MacBookPro18,1" → "MacBookPro18"
+  return modelPfxToType[main.substring(0, i)]  // → "laptop"
+}
+```
+
+**AIradar gap**: `tail_mdns_log()` extracts service types (`_airplay._tcp` → "media_player") but doesn't parse TXT record payloads for model-specific data.
+
+**Implementation**: Would require parsing Zeek's `dns.log` answer TXT records for Apple-specific patterns, or using the Python `zeroconf` library for active mDNS queries. The detection data (model prefix→type mappings) would need to be maintained manually since Firewalla's is cloud-downloaded.
+
+### Not Relevant — Firewalla Has It, AIradar Doesn't Need It
+
+| Firewalla Technique | Why Not Relevant for AIradar |
+|---|---|
+| Redis as primary data store | SQLite is fine at our scale (~30 active devices vs Firewalla's 197) |
+| Cloud-based device detection | Requires proprietary cloud service; our multi-source labeler achieves similar results |
+| ARP spoofing mode | We use a transparent L2 bridge — cleaner, no ARP artifacts |
+| App time usage DomainTrie | Our `_effective_domain_map` (Python dict) achieves O(1) lookup |
+| Mobile app (React Native) | We have a web dashboard with React islands |
+| Flow stashing with staggered flush | Our `flush_geo_buckets` already batches writes; SQLite isn't a bottleneck |
+| Bloom filter for domain classification | Python dicts with hashing are O(1); bloom filters add complexity for no gain at our volume |
+
+### Architecture Comparison (Post-Implementation)
+
+| Aspect | Firewalla | AIradar | Winner |
+|---|---|---|---|
+| Zeek logs processed | 10 (conn, dns, ssl, http, x509, notice, intel, knownHosts, signature, connLong) | 9 (conn, dns, ssl, quic, http, dhcp, ja4d, mdns, connLong) | **Tie** — different logs, similar coverage; AIradar has QUIC, Firewalla has x509 |
+| Device detection signals | 5 (MAC vendor, hostname, UA, mDNS, cloud) | 8 (MAC vendor, hostname, UA, mDNS service types, p0f, JA4/JA4D, DHCP vendor, nDPI) | **AIradar** |
+| Domain identification | 4 (DNS, SNI, HTTP host, x509 CN) | 5 (DNS, SNI, QUIC SNI, HTTP host, nDPI) | **Tie** — Firewalla has x509, AIradar has QUIC+nDPI |
+| Labeler pipeline | Single-pass, last-write-wins | 11-source hierarchy with deterministic/probabilistic tiers + audit trail | **AIradar** |
+| Anomaly detection | StdDev-based (`FlowMonitor`) | ECOD multivariate + RITA beacon scoring + per-hour-of-day baseline | **AIradar** |
+| Threat intelligence | Cloud-only (`bone.hashsetAsync`) | 4 sources (URLhaus, ThreatFox, AbuseIPDB, VirusTotal) | **AIradar** |
+| DNS cache | LRU 100 entries, global scope, no CNAME awareness | LRU 50K entries, per-client scoped, CNAME-aware, TTL-honoring | **AIradar** |
+| Content blocking | dnsmasq + ipset (per device/group/network) | AdGuard Home + iptables + ServicePolicy (global/group/device) + filter schedules | **Comparable** |
+| Screen time | Cloud-managed DomainTrie + daily refresh | SQL sessionization from GeoConversation + detection_events, 15 activity categories | **Comparable** |
+| Device tracking | 197 devices (ARP spoof sees everything) | ~30 active devices (bridge mode + nmap scanning) | Firewalla sees more due to ARP spoofing |
+| Data persistence | Redis in-memory (lost on crash without RDB) | SQLite WAL (crash-safe, persistent) | **AIradar** |
 
 ---
 
