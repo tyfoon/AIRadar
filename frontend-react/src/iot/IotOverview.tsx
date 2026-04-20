@@ -962,9 +962,20 @@ function NetworkGraph({ nodes, edges, width, height }: {
       const node = findNode(x, y);
       if (node) {
         dragRef.current = { node, offsetX: x - (node.x || 0), offsetY: y - (node.y || 0) };
-        node.fx = node.x;
-        node.fy = node.y;
-        simRef.current?.alphaTarget(0.3).restart();
+        // Pin every node to its current position so the simulation's
+        // force-link doesn't drag neighbours around when we move
+        // this one — avoids the "elastic band" feel where the whole
+        // graph swims after the cursor. Only the dragged node will
+        // have its fx/fy updated during onMove; the others stay
+        // frozen. They get unpinned again on mouseup.
+        nodesRef.current.forEach(n => {
+          n.fx = n.x;
+          n.fy = n.y;
+        });
+        // Keep the simulation quiet during drag. alphaTarget 0 means
+        // no reheat, and alpha decays to 0 so forces settle out
+        // rather than actively repositioning things.
+        simRef.current?.alphaTarget(0);
       }
     };
 
@@ -984,10 +995,15 @@ function NetworkGraph({ nodes, edges, width, height }: {
 
     const onUp = () => {
       if (dragRef.current) {
-        dragRef.current.node.fx = null;
-        dragRef.current.node.fy = null;
+        // Release every node so the physics can gently re-settle
+        // on the next interaction. We don't restart alpha here —
+        // the graph stays where the user left it, which matches
+        // the "WYSIWYG after drag" feel we were missing.
+        nodesRef.current.forEach(n => {
+          n.fx = null;
+          n.fy = null;
+        });
         dragRef.current = null;
-        simRef.current?.alphaTarget(0);
       }
       canvas.style.cursor = 'default';
     };

@@ -3935,24 +3935,119 @@ def get_country_detail(
 # ---------------------------------------------------------------------------
 
 # Well-known port labels for human-readable display in alert cards
+# Port → human description. Broadly covers:
+#   - Classic internet: HTTP, HTTPS, SMTP, FTP, SSH, Telnet, ...
+#   - LAN discovery chatter the IoT network tab surfaces heavily:
+#     mDNS, SSDP, LLMNR, NetBIOS, WS-Discovery, Chromecast, ...
+#   - IoT control planes: MQTT, HomeKit, Zigbee2MQTT, Home Assistant, ...
+#   - Media streaming that LG TVs / NVRs / cams hit: RTSP, ONVIF, AirPlay, ...
+#   - Infra: NTP, DHCP (both sides), DNS, NFS, SMB, SNMP, ...
+# Descriptions favour plain English over protocol acronyms so a
+# non-networking user can still read the edge labels in the graph.
 _PORT_LABELS = {
-    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
-    80: "HTTP", 110: "POP3", 139: "NetBIOS", 143: "IMAP", 443: "HTTPS",
-    445: "SMB", 993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 1521: "Oracle",
-    3306: "MySQL", 3389: "RDP", 4444: "Metasploit", 5432: "PostgreSQL",
-    5555: "ADB", 5900: "VNC", 6379: "Redis", 6667: "IRC", 8080: "HTTP-Alt",
-    8443: "HTTPS-Alt", 8888: "HTTP-Proxy", 9200: "Elasticsearch",
+    20: "FTP data", 21: "FTP",
+    22: "SSH", 23: "Telnet",
+    25: "Email (SMTP)", 110: "Email (POP3)", 143: "Email (IMAP)",
+    465: "Email (SMTPS)", 587: "Email submission",
+    993: "Email (IMAPS)", 995: "Email (POP3S)",
+    53: "DNS lookup",
+    67: "DHCP server", 68: "DHCP client",
+    69: "TFTP",
+    80: "Web", 443: "Web (TLS)",
+    8080: "Web (alt)", 8443: "Web TLS (alt)", 8888: "Web proxy",
+    88: "Kerberos",
+    111: "NFS portmap", 2049: "NFS",
+    123: "Time sync (NTP)",
+    137: "NetBIOS name", 138: "NetBIOS broadcast", 139: "SMB (NetBIOS)",
+    445: "File share (SMB)",
+    161: "SNMP", 162: "SNMP trap",
+    389: "LDAP", 636: "LDAPS",
+    514: "Syslog",
+    515: "Print (LPD)",
+    548: "AFP (Apple file)",
+    554: "Video stream (RTSP)",
+    631: "Print (IPP)", 9100: "Print (raw)",
+    1194: "OpenVPN",
+    1433: "MSSQL", 1521: "Oracle DB",
+    1883: "MQTT", 8883: "MQTT (TLS)",
+    1900: "Device discovery (SSDP)",
+    3000: "webOS / dev",
+    3306: "MySQL",
+    3389: "Remote desktop (RDP)",
+    3478: "STUN / WebRTC",
+    3479: "STUN / WebRTC",
+    3480: "STUN / WebRTC",
+    3702: "WS-Discovery (ONVIF)",
+    4070: "Spotify Connect",
+    4444: "Metasploit",
+    5000: "UPnP / Synology",
+    5060: "SIP (voice)", 5061: "SIP TLS",
+    5222: "Jabber / XMPP",
+    5353: "Local discovery (mDNS)",
+    5355: "Local name (LLMNR)",
+    5432: "PostgreSQL",
+    5555: "Android debug (ADB)",
+    5683: "CoAP (IoT)", 5684: "CoAP TLS",
+    5900: "Remote desktop (VNC)",
+    6379: "Redis",
+    6667: "IRC",
+    7000: "AirPlay (legacy)",
+    7001: "AirPlay",
+    8008: "Chromecast", 8009: "Chromecast (TLS)",
+    8060: "Roku ECP",
+    8089: "Plex SSDP",
+    8123: "Home Assistant",
+    8129: "HomeKit",
+    8188: "Unifi AP",
+    8200: "DLNA media",
+    8291: "MikroTik",
+    8554: "RTSP (alt)",
+    9200: "Elasticsearch",
+    9443: "Portainer",
+    10001: "Ubiquiti discovery",
+    11211: "Memcached",
+    19132: "Minecraft (Bedrock)",
+    25565: "Minecraft (Java)",
     27017: "MongoDB",
+    32400: "Plex",
+    47808: "BACnet (building)",
+    49152: "UPnP dynamic",
+    62078: "iOS sync",
 }
 
 
 def _port_label(port: int | str | None) -> str:
-    """Return 'SSH/22' style label for a port number, or just the number."""
+    """Short human-readable port description. Falls back to the number.
+
+    Used by legacy callers that want the old 'SSH/22' format for
+    compatibility (detection_events display etc). Keep the /port
+    suffix here to preserve that behaviour — the network-graph path
+    uses _port_description() below which drops the port for brevity.
+    """
     if port is None:
         return ""
     port = int(port)
     name = _PORT_LABELS.get(port)
     return f"{name}/{port}" if name else str(port)
+
+
+def _port_description(port: int | str | None, proto: str | None = None) -> str:
+    """Friendly description for use in UI labels.
+
+    Known port → just the description ("DNS lookup", "Web", "mDNS").
+    Unknown port → "<proto> port <n>" so users still get plain English
+    instead of cryptic "udp/138" style strings.
+    """
+    if port is None:
+        return ""
+    port_n = int(port)
+    name = _PORT_LABELS.get(port_n)
+    if name:
+        return name
+    proto_name = {"tcp": "TCP", "udp": "UDP", "icmp": "ICMP"}.get(
+        (proto or "").lower(), (proto or "").upper() or "port"
+    )
+    return f"{proto_name} port {port_n}"
 
 
 # Detection types that are treated as anomalies (policy-bypass, exception-only)
@@ -4651,9 +4746,8 @@ def get_network_graph(
             try:
                 proto_s, port_s = primary.split("/", 1)
                 port_n = int(port_s)
-                name = _PORT_LABELS.get(port_n, "")
                 edge["port"] = port_n
-                edge["port_label"] = f"{name}/{port_n}" if name else f"{proto_s}/{port_n}"
+                edge["port_label"] = _port_description(port_n, proto_s)
             except (ValueError, AttributeError):
                 pass
 
@@ -4711,12 +4805,13 @@ def get_network_graph(
 
 
 def _format_port_label(port: int, proto: str | None = None) -> str:
-    name = _PORT_LABELS.get(port, "")
-    if name:
-        return f"{name}/{port}"
-    if proto:
-        return f"{proto}/{port}"
-    return str(port)
+    """Human-readable label for the network-graph edge pill.
+
+    Delegates to _port_description so unknown ports read as e.g.
+    "UDP port 34561" rather than "udp/34561", and known ones get the
+    short plain-English description ("DNS lookup", "Web (TLS)").
+    """
+    return _port_description(port, proto)
 
 
 # ---------------------------------------------------------------------------
