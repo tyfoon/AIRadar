@@ -2719,6 +2719,128 @@ GEO_FLUSH_INTERVAL = 15  # seconds
 # Key: (country_code, direction, mac_or_none, ai_service, resp_ip)
 _geo_conv_buckets: dict[tuple[str, str, str | None, str, str], dict] = {}
 
+# ---------------------------------------------------------------------------
+# Screen Time tracking — Firewalla AppTimeUsageSensor-inspired
+# ---------------------------------------------------------------------------
+# Tracks per-device, per-service active usage time. A "session" is a window
+# of continuous activity: if no flow for a (mac, service) pair is seen for
+# SESSION_GAP_SECONDS, the session ends and duration is finalized.
+#
+# In-memory state tracks last_activity per (mac, service, category). On each
+# flush, we compute elapsed time and upsert into the screen_time DB table.
+SESSION_GAP_SECONDS = 300  # 5 minutes — no activity = session ended
+SCREEN_TIME_FLUSH_INTERVAL = 60  # flush to DB every 60 seconds
+
+# Key: (mac, service, category) → {last_ts: float, session_start: float, bytes: int}
+_screen_time_sessions: dict[tuple[str, str, str], dict] = {}
+_screen_time_lock = asyncio.Lock()
+
+
+def _today_str() -> str:
+    """Return today's date as YYYY-MM-DD string."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+async def _record_screen_time(
+    mac: str | None,
+    service: str,
+    category: str,
+    total_bytes: int,
+    ts: float | None = None,
+) -> None:
+    """Record a flow event for screen time tracking."""
+    if not mac or not service or service == "unknown":
+        return
+    now = ts or time.time()
+    key = (mac, service, category or "unknown")
+    async with _screen_time_lock:
+        session = _screen_time_sessions.get(key)
+        if session:
+            gap = now - session["last_ts"]
+            if gap > SESSION_GAP_SECONDS:
+                # Session expired — start a new one
+                session["session_start"] = now
+                session["session_count"] += 1
+            session["last_ts"] = now
+            session["bytes"] += total_bytes
+        else:
+            _screen_time_sessions[key] = {
+                "last_ts": now,
+                "session_start": now,
+                "session_count": 1,
+                "bytes": total_bytes,
+            }
+
+
+async def flush_screen_time() -> None:
+    """Background task: flush screen time sessions to DB every 60 seconds."""
+    from database import SessionLocal as _SL, ScreenTime as _ST
+    while True:
+        await asyncio.sleep(SCREEN_TIME_FLUSH_INTERVAL)
+        try:
+            async with _screen_time_lock:
+                if not _screen_time_sessions:
+                    continue
+                snapshot = dict(_screen_time_sessions)
+
+            today = _today_str()
+            now = time.time()
+            db = _SL()
+            try:
+                for (mac, service, category), sess in snapshot.items():
+                    # Calculate active seconds for this session
+                    if now - sess["last_ts"] > SESSION_GAP_SECONDS:
+                        # Session ended — duration is last_ts - session_start
+                        active_secs = int(sess["last_ts"] - sess["session_start"])
+                    else:
+                        # Session still active — duration up to now
+                        active_secs = int(now - sess["session_start"])
+
+                    if active_secs <= 0:
+                        active_secs = 1  # at least 1 second per flow
+
+                    # Upsert into screen_time table
+                    row = db.query(_ST).filter(
+                        _ST.mac_address == mac,
+                        _ST.date == today,
+                        _ST.service == service,
+                        _ST.category == category,
+                    ).first()
+                    if row:
+                        row.seconds += active_secs
+                        row.sessions = max(row.sessions, sess["session_count"])
+                        row.bytes_total += sess["bytes"]
+                        row.last_activity = datetime.fromtimestamp(sess["last_ts"])
+                    else:
+                        row = _ST(
+                            mac_address=mac,
+                            date=today,
+                            service=service,
+                            category=category,
+                            seconds=active_secs,
+                            sessions=sess["session_count"],
+                            bytes_total=sess["bytes"],
+                            last_activity=datetime.fromtimestamp(sess["last_ts"]),
+                        )
+                        db.add(row)
+
+                db.commit()
+            finally:
+                db.close()
+
+            # Clear flushed sessions that have expired
+            async with _screen_time_lock:
+                expired = [
+                    k for k, v in _screen_time_sessions.items()
+                    if now - v["last_ts"] > SESSION_GAP_SECONDS
+                ]
+                for k in expired:
+                    del _screen_time_sessions[k]
+
+        except Exception as exc:
+            print(f"[screen-time] Flush error: {exc}")
+
+
 # LAN-to-LAN buffer — for flows where BOTH endpoints are local. Fills the
 # blind spot the geo pipeline leaves (geo needs a country tag, LAN has
 # none). Same flush cadence as geo.
@@ -3471,6 +3593,16 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                         ob=_ob, rb=_rb,
                                     )
                                 )
+                                # Screen time tracking — record usage for
+                                # every enriched flow with a known service
+                                if conv_svc and conv_svc != "unknown" and conv_mac:
+                                    asyncio.create_task(
+                                        _record_screen_time(
+                                            conv_mac, conv_svc,
+                                            conv_cat or "unknown",
+                                            total,
+                                        )
+                                    )
 
                     # --- LAN-to-LAN conversation accumulation ---
                     # Complements the geo branch above: when BOTH ends are
@@ -4630,6 +4762,158 @@ async def tail_http_log(log_path: Path, client: httpx.AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Long-lived connection monitoring — Firewalla conn_long.log
+# ---------------------------------------------------------------------------
+# Detects persistent connections (VPN tunnels, streaming, C2 channels)
+# by tailing conn_long.log, which logs snapshots of connections alive
+# for >2 minutes every 1 minute.
+LONG_CONN_MIN_DURATION = 300  # 5 minutes before flagging
+LONG_CONN_DEDUP_SECONDS = 600  # 10 min dedup per (mac, resp_ip)
+_long_conn_last_seen: dict[str, float] = {}
+
+
+async def tail_conn_long_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Tail Zeek's conn_long.log for persistent connection detection."""
+    print(f"[*] Tailing conn_long.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(10)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break
+                        except OSError:
+                            break
+                        await asyncio.sleep(2)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception:
+                        continue
+
+                    # Parse duration
+                    dur_str = record.get("duration", "0")
+                    try:
+                        duration = float(dur_str) if dur_str != "-" else 0
+                    except ValueError:
+                        duration = 0
+
+                    if duration < LONG_CONN_MIN_DURATION:
+                        continue
+
+                    src_ip = record.get("id.orig_h", "")
+                    resp_ip = record.get("id.resp_h", "")
+                    src_mac = record.get("orig_l2_addr", "")
+                    if src_mac == "-":
+                        src_mac = ""
+
+                    if not src_ip or not resp_ip:
+                        continue
+
+                    # Only care about local→external connections
+                    if not _is_local_ip(src_ip) or _is_local_ip(resp_ip):
+                        continue
+
+                    mac = _normalize_mac(src_mac) if src_mac else _ip_to_mac.get(src_ip)
+                    if not mac:
+                        continue
+
+                    # Dedup
+                    now = time.time()
+                    dedup_key = f"{mac}:{resp_ip}"
+                    last = _long_conn_last_seen.get(dedup_key, 0)
+                    if (now - last) < LONG_CONN_DEDUP_SECONDS:
+                        continue
+                    _long_conn_last_seen[dedup_key] = now
+
+                    # Parse bytes
+                    try:
+                        ob = int(record.get("orig_bytes", "0") or "0")
+                    except ValueError:
+                        ob = 0
+                    try:
+                        rb = int(record.get("resp_bytes", "0") or "0")
+                    except ValueError:
+                        rb = 0
+
+                    proto = record.get("proto", "").lower()
+                    resp_port_str = record.get("id.resp_p", "0")
+                    try:
+                        resp_port = int(resp_port_str) if resp_port_str != "-" else 0
+                    except ValueError:
+                        resp_port = 0
+
+                    # Try to identify the service from our caches
+                    svc_info = _known_ips.get((mac, resp_ip))
+                    service = svc_info[0] if svc_info else "unknown"
+                    category = svc_info[1] if svc_info else "unknown"
+
+                    # Check if this looks like a VPN tunnel
+                    vpn_type = None
+                    port_key = (proto, resp_port)
+                    if port_key in VPN_PORTS:
+                        vpn_type = VPN_PORTS[port_key]
+                    if not vpn_type and duration > 3600 and ob + rb > 10_000_000:
+                        # Heuristic: >1 hour, >10MB = likely tunnel
+                        vpn_type = "tunnel"
+
+                    dur_display = f"{int(duration // 3600)}h{int((duration % 3600) // 60)}m"
+                    total_mb = (ob + rb) / 1_000_000
+
+                    if vpn_type:
+                        print(
+                            f"[long-conn] VPN/tunnel: {mac} → {resp_ip}:{resp_port} "
+                            f"({vpn_type}, {dur_display}, {total_mb:.1f}MB)"
+                        )
+                    else:
+                        print(
+                            f"[long-conn] Persistent: {mac} → {resp_ip}:{resp_port} "
+                            f"({service}, {dur_display}, {total_mb:.1f}MB)"
+                        )
+
+                    # Record screen time for long connections too
+                    if service != "unknown":
+                        asyncio.create_task(
+                            _record_screen_time(mac, service, category, ob + rb)
+                        )
+
+        except (OSError, IOError) as exc:
+            print(f"[!] conn_long.log read error: {exc}, retrying in 10s…")
+            await asyncio.sleep(10)
+
+
+# ---------------------------------------------------------------------------
 # DNS-IP correlation — tail dns.log to populate the labeler fallback cache
 # ---------------------------------------------------------------------------
 # This is the heart of the Day-1 coverage uplift. Zeek's dns.log records
@@ -5006,6 +5290,7 @@ async def main(zeek_log_dir: str) -> None:
     dns_log = log_dir / "dns.log"
     quic_log = log_dir / "quic.log"
     http_log = log_dir / "http.log"
+    conn_long_log = log_dir / "conn_long.log"
 
     # Per-labeler rollback flags. Each labeler can be turned off via
     # an env var so we can isolate it in production without a code
@@ -5033,6 +5318,8 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
     print(f"[*] mDNS device name + service type discovery: enabled (tailing mdns.log)")
     print(f"[*] HTTP User-Agent fingerprinting: enabled (tailing http.log)")
+    print(f"[*] Screen time tracking: enabled (session gap {SESSION_GAP_SECONDS}s, flush every {SCREEN_TIME_FLUSH_INTERVAL}s)")
+    print(f"[*] Long-lived connection monitoring: enabled (tailing conn_long.log, threshold {LONG_CONN_MIN_DURATION}s)")
     if dns_snooping_enabled:
         print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
     else:
@@ -5128,6 +5415,8 @@ async def main(zeek_log_dir: str) -> None:
         tail_ja4d_log(ja4d_log, client),
         tail_mdns_log(mdns_log, client),
         tail_http_log(http_log, client),
+        tail_conn_long_log(conn_long_log, client),
+        flush_screen_time(),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs

@@ -1,0 +1,171 @@
+{
+  "_comment": "Extra domain→category mappings to seed into KnownDomain. Supplements existing v2fly/seed data. Categories match Firewalla + AIradar conventions.",
+
+  "news": {
+    "cnn": ["cnn.com", "edition.cnn.com", "cnn.io"],
+    "bbc": ["bbc.com", "bbc.co.uk", "bbci.co.uk", "bbc.net.uk"],
+    "nytimes": ["nytimes.com", "nyt.com"],
+    "theguardian": ["theguardian.com", "guardian.co.uk", "guim.co.uk"],
+    "washingtonpost": ["washingtonpost.com"],
+    "reuters": ["reuters.com", "reutersconnect.com"],
+    "apnews": ["apnews.com"],
+    "bloomberg": ["bloomberg.com", "bwbx.io"],
+    "nos": ["nos.nl"],
+    "nu_nl": ["nu.nl"],
+    "rtv": ["rtv.nl", "rtlnieuws.nl", "rtl.nl"],
+    "ad": ["ad.nl"],
+    "telegraaf": ["telegraaf.nl"],
+    "volkskrant": ["volkskrant.nl"],
+    "nrc": ["nrc.nl"]
+  },
+
+  "shopping": {
+    "amazon": ["amazon.com", "amazon.co.uk", "amazon.de", "amazon.nl", "amazon.fr", "amazon.es", "amazon.it", "amazonaws.com"],
+    "ebay": ["ebay.com", "ebay.co.uk", "ebay.de", "ebay.nl", "ebaystatic.com"],
+    "aliexpress": ["aliexpress.com", "aliexpress.ru"],
+    "bol": ["bol.com"],
+    "coolblue": ["coolblue.nl", "coolblue.be"],
+    "zalando": ["zalando.nl", "zalando.de", "zalando.co.uk"],
+    "etsy": ["etsy.com", "etsystatic.com"],
+    "wish": ["wish.com"],
+    "shopify": ["shopify.com", "myshopify.com"],
+    "ikea": ["ikea.com", "ikea.nl"],
+    "hm": ["hm.com"],
+    "temu": ["temu.com"],
+    "shein": ["shein.com"]
+  },
+
+  "productivity": {
+    "google_workspace": ["docs.google.com", "sheets.google.com", "slides.google.com", "calendar.google.com", "meet.google.com"],
+    "microsoft_365": ["office.com", "office365.com", "live.com", "outlook.com", "outlook.office.com", "sharepoint.com", "officeppe.net"],
+    "notion": ["notion.so", "notion.site"],
+    "slack": ["slack.com", "slack-edge.com", "slack-msgs.com", "slack-imgs.com"],
+    "zoom": ["zoom.us", "zoom.com", "zoomgov.com"],
+    "teams": ["teams.microsoft.com", "teams.live.com"],
+    "trello": ["trello.com"],
+    "asana": ["asana.com"],
+    "jira": ["atlassian.com", "atlassian.net", "jira.com"],
+    "github": ["github.com", "github.io", "githubusercontent.com", "githubassets.com"],
+    "gitlab": ["gitlab.com", "gitlab.io"],
+    "figma": ["figma.com"],
+    "canva": ["canva.com"],
+    "miro": ["miro.com"]
+  },
+
+  "education": {
+    "coursera": ["coursera.org"],
+    "udemy": ["udemy.com", "udemycdn.com"],
+    "khan_academy": ["khanacademy.org", "kastatic.org"],
+    "duolingo": ["duolingo.com"],
+    "wikipedia": ["wikipedia.org", "wikimedia.org", "wikidata.org", "mediawiki.org"],
+    "stackoverflow": ["stackoverflow.com", "stackexchange.com", "sstatic.net"],
+    "quora": ["quora.com"],
+    "medium": ["medium.com"]
+  },
+
+  "finance": {
+    "paypal": ["paypal.com", "paypalobjects.com"],
+    "stripe": ["stripe.com", "stripe.network"],
+    "wise": ["wise.com", "transferwise.com"],
+    "revolut": ["revolut.com"],
+    "ing": ["ing.nl", "ing.com"],
+    "rabobank": ["rabobank.nl"],
+    "abn_amro": ["abnamro.nl"],
+    "bunq": ["bunq.com"],
+    "binance": ["binance.com", "binance.cloud"],
+    "coinbase": ["coinbase.com"],
+    "crypto": ["crypto.com"]
+  },
+
+  "health": {
+    "fitbit": ["fitbit.com"],
+    "strava": ["strava.com"],
+    "myfitnesspal": ["myfitnesspal.com"],
+    "withings": ["withings.com"],
+    "garmin": ["garmin.com", "garminconnect.com"],
+    "peloton": ["onepeloton.com"]
+  },
+
+  "email": {
+    "gmail": ["mail.google.com", "gmail.com", "googlemail.com"],
+    "outlook_mail": ["outlook.live.com", "hotmail.com"],
+    "protonmail": ["proton.me", "protonmail.com", "protonmail.ch"],
+    "yahoo_mail": ["mail.yahoo.com"],
+    "fastmail": ["fastmail.com"]
+  },
+
+  "messaging": {
+    "whatsapp": ["web.whatsapp.com", "whatsapp.net"],
+    "telegram": ["telegram.org", "t.me", "telegram.me"],
+    "signal": ["signal.org"],
+    "discord": ["discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media"],
+    "imessage": ["ess.apple.com", "identity.apple.com"],
+    "skype": ["skype.com"]
+  },
+
+  "search": {
+    "google_search": ["google.com", "google.nl", "google.co.uk", "google.de", "googleapis.com", "gstatic.com"],
+    "bing": ["bing.com", "bing.net"],
+    "duckduckgo": ["duckduckgo.com", "duck.com"],
+    "brave_search": ["search.brave.com"]
+  },
+
+  "infrastructure": {
+    "cloudflare": ["cloudflare.com", "cloudflare-dns.com", "cloudflareinsights.com", "cf-ipfs.com"],
+    "akamai": ["akamai.net", "akamaized.net", "akamaihd.net", "edgekey.net", "edgesuite.net"],
+    "fastly": ["fastly.net", "fastlylb.net"],
+    "aws": ["aws.amazon.com", "s3.amazonaws.com", "elasticbeanstalk.com", "cloudfront.net"],
+    "azure": ["azure.com", "azure.net", "azureedge.net", "windows.net"],
+    "gcp": ["cloud.google.com", "storage.googleapis.com", "appspot.com"],
+    "ntp": ["ntp.org", "pool.ntp.org", "time.apple.com", "time.google.com", "time.windows.com"],
+    "dns": ["dns.google", "one.one.one.one", "dns.cloudflare.com", "dns.quad9.net"]
+  },
+
+  "smart_home": {
+    "tuya": ["tuya.com", "tuyaus.com", "tuyaeu.com"],
+    "homeassistant": ["home-assistant.io", "nabucasa.com"],
+    "smartthings": ["smartthings.com"],
+    "alexa_iot": ["device-metrics-us.amazon.com", "bob-dispatch-prod-na.amazon.com"],
+    "homekit": ["hap.apple.com"],
+    "google_home": ["home.google.com", "ghs.googlehosted.com"]
+  },
+
+  "vpn": {
+    "nordvpn": ["nordvpn.com", "nordvpn.net"],
+    "expressvpn": ["expressvpn.com"],
+    "surfshark": ["surfshark.com"],
+    "protonvpn": ["protonvpn.com"],
+    "mullvad": ["mullvad.net"],
+    "windscribe": ["windscribe.com"],
+    "tailscale": ["tailscale.com", "tailscale.io"],
+    "wireguard": ["wireguard.com"]
+  },
+
+  "adult": {
+    "pornhub": ["pornhub.com", "phncdn.com"],
+    "xvideos": ["xvideos.com"],
+    "xhamster": ["xhamster.com"],
+    "onlyfans": ["onlyfans.com"]
+  },
+
+  "travel": {
+    "booking": ["booking.com", "bstatic.com"],
+    "airbnb": ["airbnb.com", "airbnbusercontent.com"],
+    "google_maps": ["maps.google.com", "maps.googleapis.com"],
+    "uber": ["uber.com"],
+    "lyft": ["lyft.com"],
+    "flightradar": ["flightradar24.com"],
+    "skyscanner": ["skyscanner.net", "skyscanner.com"],
+    "tripadvisor": ["tripadvisor.com"]
+  },
+
+  "food_delivery": {
+    "thuisbezorgd": ["thuisbezorgd.nl"],
+    "ubereats": ["ubereats.com"],
+    "deliveroo": ["deliveroo.com", "deliveroo.nl"],
+    "doordash": ["doordash.com"],
+    "gorillas": ["gorillas.io"],
+    "flink": ["goflink.com"],
+    "picnic": ["picnic.app"]
+  }
+}
