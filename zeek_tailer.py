@@ -3189,13 +3189,30 @@ async def enrich_ip_metadata_loop(client: httpx.AsyncClient) -> None:
 # conn.log tailer — detects volumetric uploads to known AI/Cloud IPs
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# conn.log correlation delay — Firewalla-inspired
+# ---------------------------------------------------------------------------
+# Firewalla delays conn.log processing by 2 seconds to allow DNS, SSL, and
+# HTTP log processors to populate IP→domain caches first. Without this,
+# connections established right after a DNS lookup may miss the correlation.
+CONN_DELAY_SECONDS = 2.0
+
+
 async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
     """Continuously tail Zeek's conn.log for completed connections.
 
     When a connection to a known AI/Cloud IP has large outbound bytes
     (orig_bytes > threshold), fire a volumetric_upload event.
+
+    Records are buffered for CONN_DELAY_SECONDS before processing to
+    allow DNS/SSL/HTTP tailers to populate the IP→domain cache first
+    (Firewalla BroDetect pattern).
     """
-    print(f"[*] Tailing conn.log: {log_path}")
+    # Wait for DNS/SSL/HTTP tailers to start and populate initial caches.
+    # Firewalla does this by delaying conn.log processing by 2 seconds.
+    await asyncio.sleep(CONN_DELAY_SECONDS)
+
+    print(f"[*] Tailing conn.log: {log_path} (started after {CONN_DELAY_SECONDS}s correlation delay)")
     fields: list[str] = []
 
     while True:
@@ -3252,17 +3269,17 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 src_ip = record.get("id.orig_h", "unknown")
                 resp_ip = record.get("id.resp_h", "")
                 # MAC address from Zeek conn.log (requires @load policy/protocols/conn/mac-logging)
+                # Populate IP→MAC cache IMMEDIATELY — other tailers (ssl, http, mdns)
+                # need this without delay.
                 src_mac = record.get("orig_l2_addr")
                 if src_mac and src_mac == "-":
                     src_mac = None
                 if src_mac and _is_local_ip(src_ip):
                     _ip_to_mac[src_ip] = _normalize_mac(src_mac)
                 proto = record.get("proto", "").lower()
-                # Zeek MAC logging: use orig_l2_addr if available
                 l2_mac = record.get("orig_l2_addr")
                 if l2_mac and l2_mac == "-":
                     l2_mac = None
-                # Populate IP→MAC cache for use by ssl.log and mDNS tailers
                 if l2_mac and _is_local_ip(src_ip):
                     _ip_to_mac[src_ip] = _normalize_mac(l2_mac)
                 resp_port_str = record.get("id.resp_p", "0")
@@ -4244,6 +4261,75 @@ async def tail_ja4d_log(log_path: Path, client: httpx.AsyncClient) -> None:
 MDNS_DEDUP_SECONDS = 600  # 10 min per (ip, name)
 _mdns_last_seen: dict[str, float] = {}
 
+# ---------------------------------------------------------------------------
+# mDNS service type → device_class mapping (Firewalla-inspired)
+# ---------------------------------------------------------------------------
+# mDNS service types reveal what a device IS. When Zeek captures a query
+# like "_airplay._tcp.local", the originator is an AirPlay-capable device.
+# We map known service types to device classes.
+MDNS_SERVICE_TYPE_MAP: dict[str, str] = {
+    # Apple ecosystem
+    "_airplay._tcp":         "media_player",   # AirPlay (Apple TV, HomePod, smart TVs)
+    "_raop._tcp":            "media_player",   # Remote Audio Output (AirPlay audio)
+    "_hap._tcp":             "smart_home",     # HomeKit Accessory Protocol
+    "_homekit._tcp":         "smart_home",     # HomeKit
+    "_companion-link._tcp":  "phone",          # Apple Continuity (iPhone/iPad)
+    "_apple-mobdev2._tcp":   "phone",          # Apple mobile device sync
+    "_touch-able._tcp":      "phone",          # iPhone/iPad remote
+    "_rdlink._tcp":          "laptop",         # Apple Remote Desktop
+    "_sleep-proxy._udp":     "network",        # Apple sleep proxy (router/AP)
+
+    # Printing
+    "_ipp._tcp":             "printer",        # Internet Printing Protocol
+    "_ipps._tcp":            "printer",        # IPP over TLS
+    "_printer._tcp":         "printer",        # LPR printer
+    "_pdl-datastream._tcp":  "printer",        # Raw printing (port 9100)
+    "_scanner._tcp":         "printer",        # Network scanner
+
+    # Google/Chromecast
+    "_googlecast._tcp":      "media_player",   # Chromecast / Google TV
+    "_googlerpc._tcp":       "speaker",        # Google Home RPC
+    "_googlezone._tcp":      "speaker",        # Google Home multi-room
+
+    # Media / A/V
+    "_spotify-connect._tcp": "media_player",   # Spotify Connect
+    "_sonos._tcp":           "speaker",        # Sonos
+    "_daap._tcp":            "media_player",   # iTunes/DAAP music sharing
+    "_dpap._tcp":            "media_player",   # iPhoto sharing
+
+    # Smart home
+    "_hue._tcp":             "smart_lighting", # Philips Hue
+    "_ozw._tcp":             "smart_home_hub", # OpenZWave
+    "_mqtt._tcp":            "smart_home_hub", # MQTT broker
+    "_coap._udp":            "iot",            # CoAP (IoT protocol)
+
+    # Network infrastructure
+    "_smb._tcp":             "nas",            # SMB/CIFS file sharing
+    "_afpovertcp._tcp":      "nas",            # AFP file sharing (Apple)
+    "_nfs._tcp":             "nas",            # NFS file sharing
+    "_ssh._tcp":             "server",         # SSH server
+    "_http._tcp":            None,             # Too generic — skip
+    "_https._tcp":           None,             # Too generic — skip
+}
+
+def _mdns_service_to_class(name: str) -> str | None:
+    """Extract device_class from an mDNS service type string.
+
+    Input examples:
+        "_airplay._tcp.local"
+        "Chromecast-abc123._googlecast._tcp.local"
+        "_hap._tcp"
+    """
+    name_lower = name.lower().rstrip(".")
+    if name_lower.endswith(".local"):
+        name_lower = name_lower[:-6]
+
+    # Try matching the full service type first, then look for known patterns
+    for svc_type, device_class in MDNS_SERVICE_TYPE_MAP.items():
+        if svc_type in name_lower:
+            return device_class
+    return None
+
 
 async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
     """Tail Zeek's mdns.log for mDNS name announcements.
@@ -4326,21 +4412,38 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     if hostname.lower().endswith(".local"):
                         hostname = hostname[:-6]
 
-                    # Skip service discovery queries (_tcp, _udp, _services)
-                    if hostname.startswith("_") or "._" in hostname:
-                        continue
+                    # Service type detection — extract device_class from
+                    # mDNS service types like "_airplay._tcp" before
+                    # potentially skipping the entry as a "non-hostname".
+                    mdns_device_class = None
+                    if "._" in hostname or hostname.startswith("_"):
+                        mdns_device_class = _mdns_service_to_class(hostname)
+                        # Extract instance name from service records
+                        # e.g. "Living Room._airplay._tcp" → "Living Room"
+                        if "._" in hostname:
+                            instance_name = hostname.split("._")[0]
+                            if instance_name and not instance_name.startswith("_"):
+                                hostname = instance_name
+                            else:
+                                hostname = None
+                        else:
+                            hostname = None
 
                     # Skip too-short or numeric-only names
-                    if len(hostname) < 2:
-                        continue
+                    if hostname and len(hostname) < 2:
+                        hostname = None
 
                     # Skip junk hostnames (UUIDs, hex IDs, reverse-DNS PTRs)
-                    if _is_junk_hostname(hostname):
+                    if hostname and _is_junk_hostname(hostname):
+                        hostname = None
+
+                    # Need at least a hostname or a device_class to be useful
+                    if not hostname and not mdns_device_class:
                         continue
 
                     # Dedup
                     now = time.time()
-                    dedup_key = f"{src_ip}:{hostname}"
+                    dedup_key = f"{src_ip}:{hostname or ''}:{mdns_device_class or ''}"
                     last = _mdns_last_seen.get(dedup_key, 0)
                     if (now - last) < MDNS_DEDUP_SECONDS:
                         continue
@@ -4349,18 +4452,180 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     # Look up MAC from conn.log cache
                     mac = _ip_to_mac.get(src_ip)
 
-                    payload: dict = {"ip": src_ip, "hostname": hostname}
+                    payload: dict = {"ip": src_ip}
+                    if hostname:
+                        payload["hostname"] = hostname
                     if mac:
                         payload["mac_address"] = mac
 
                     try:
                         await client.post(DEVICE_API_URL, json=payload, timeout=5)
-                        print(f"[mDNS] Device: {hostname} → {src_ip} (MAC: {mac or 'unknown'})")
+                        # Also update device_class if we identified a service type
+                        if mdns_device_class and mac:
+                            fp_payload = {
+                                "ip": src_ip,
+                                "device_class": mdns_device_class,
+                            }
+                            fp_url = DEVICE_API_URL.replace("/devices", "/devices/fingerprint")
+                            await client.post(fp_url, json=fp_payload, timeout=5)
+                        label = f"{hostname or '?'} ({mdns_device_class})" if mdns_device_class else hostname
+                        print(f"[mDNS] Device: {label} → {src_ip} (MAC: {mac or 'unknown'})")
                     except httpx.HTTPError as exc:
                         print(f"[!] mDNS device registration failed: {exc}")
 
         except (OSError, IOError) as exc:
             print(f"[!] mdns.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------
+# HTTP User-Agent fingerprinting — tail http.log (Firewalla-inspired)
+# ---------------------------------------------------------------------------
+# Parse User-Agent strings from Zeek http.log to identify device type,
+# brand, model, and OS. Uses the device_detector library. Results are
+# sent to the API which stores them in the Device table.
+#
+# Firewalla insight: if a single MAC shows 3+ different device types in
+# its UA history, it's likely a router (proxying traffic from many devices).
+
+UA_FINGERPRINT_API_URL = os.environ.get(
+    "AIRADAR_UA_FP_API_URL",
+    "http://localhost:8000/api/devices/ua-fingerprint",
+)
+UA_DEDUP_SECONDS = 3600  # 1 hour per (mac, ua_hash)
+_ua_last_seen: dict[str, float] = {}
+
+# Lazy-loaded device detector (import is slow, ~200ms)
+_ua_detector = None
+
+def _get_ua_detector():
+    global _ua_detector
+    if _ua_detector is None:
+        try:
+            from device_detector import DeviceDetector
+            _ua_detector = DeviceDetector
+            print("[ua-fp] device_detector library loaded")
+        except ImportError:
+            print("[ua-fp] device_detector not installed — UA fingerprinting disabled")
+            _ua_detector = False  # sentinel: tried and failed
+    return _ua_detector if _ua_detector is not False else None
+
+
+async def tail_http_log(log_path: Path, client: httpx.AsyncClient) -> None:
+    """Tail Zeek's http.log for User-Agent device fingerprinting."""
+    print(f"[*] Tailing http.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                _line_count = 0
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break
+                        except OSError:
+                            break
+                        await asyncio.sleep(1)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception:
+                        continue
+
+                    ua = record.get("user_agent", "-")
+                    if ua in ("-", "(empty)", "") or not ua:
+                        continue
+
+                    src_ip = record.get("id.orig_h", "-")
+                    if src_ip == "-" or not _is_local_ip(src_ip):
+                        continue
+
+                    # Get MAC for this IP
+                    mac = _ip_to_mac.get(src_ip)
+                    if not mac:
+                        continue
+
+                    # Dedup: only process each (mac, ua) pair once per hour
+                    ua_hash = f"{mac}:{hash(ua) & 0xFFFFFFFF}"
+                    now = time.time()
+                    last = _ua_last_seen.get(ua_hash, 0)
+                    if (now - last) < UA_DEDUP_SECONDS:
+                        continue
+                    _ua_last_seen[ua_hash] = now
+
+                    # Parse User-Agent
+                    detector_cls = _get_ua_detector()
+                    if not detector_cls:
+                        continue
+
+                    try:
+                        det = detector_cls(ua).parse()
+                        device_type = det.device_type() or None
+                        brand = det.device_brand() or None
+                        model = det.device_model() or None
+                        os_name = None
+                        os_info = det.os_name()
+                        if os_info:
+                            os_name = os_info
+
+                        # Normalize phone types (Firewalla pattern)
+                        if device_type and device_type.lower() in (
+                            "smartphone", "feature phone", "phablet"
+                        ):
+                            device_type = "phone"
+
+                        if not any([device_type, brand, model, os_name]):
+                            continue
+
+                        payload = {
+                            "ip": src_ip,
+                            "mac_address": mac,
+                            "device_type": device_type,
+                            "brand": brand,
+                            "model": model,
+                            "os_name": os_name,
+                        }
+                        await client.post(UA_FINGERPRINT_API_URL, json=payload, timeout=5)
+                        print(f"[ua-fp] {mac}: {device_type or '?'} {brand or ''} {model or ''} ({os_name or '?'})")
+                    except Exception as exc:
+                        print(f"[ua-fp] Parse error for UA '{ua[:60]}…': {exc}")
+
+        except (OSError, IOError) as exc:
+            print(f"[!] http.log read error: {exc}, retrying in 5s…")
             await asyncio.sleep(5)
 
 
@@ -4740,6 +5005,7 @@ async def main(zeek_log_dir: str) -> None:
     mdns_log = log_dir / "mdns.log"
     dns_log = log_dir / "dns.log"
     quic_log = log_dir / "quic.log"
+    http_log = log_dir / "http.log"
 
     # Per-labeler rollback flags. Each labeler can be turned off via
     # an env var so we can isolate it in production without a code
@@ -4765,7 +5031,8 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] Upload debounce window: {UPLOAD_DEBOUNCE_SECONDS}s")
     print(f"[*] DHCP passive device recognition: enabled")
     print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
-    print(f"[*] mDNS device name discovery: enabled (tailing mdns.log)")
+    print(f"[*] mDNS device name + service type discovery: enabled (tailing mdns.log)")
+    print(f"[*] HTTP User-Agent fingerprinting: enabled (tailing http.log)")
     if dns_snooping_enabled:
         print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
     else:
@@ -4860,6 +5127,7 @@ async def main(zeek_log_dir: str) -> None:
         tail_dhcp_log(dhcp_log, client),
         tail_ja4d_log(ja4d_log, client),
         tail_mdns_log(mdns_log, client),
+        tail_http_log(http_log, client),
         flush_upload_buckets(client),  # background flusher
         flush_geo_buckets(client),     # geo traffic buffer → DB every 15s
         enrich_ip_metadata_loop(client), # PTR + ASN lookups for new remote IPs

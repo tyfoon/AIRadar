@@ -81,6 +81,12 @@ class Device(Base):
     ai_report_model = Column(String, nullable=True)     # Which model produced it (gemini-2.5-flash-lite, claude-haiku-4-5, ...)
     ai_report_tokens = Column(Integer, nullable=True)   # Total tokens used (for cost display)
     ai_report_flags = Column(String, nullable=True)     # JSON: extracted RecapFlags (vpn_detected, ai_usage_present, ...)
+    # User-Agent fingerprinting (from http.log, Firewalla-inspired)
+    ua_device_type = Column(String, nullable=True)     # e.g. "phone", "tablet", "desktop", "tv", "router"
+    ua_brand = Column(String, nullable=True)            # e.g. "Apple", "Samsung", "Google"
+    ua_model = Column(String, nullable=True)            # e.g. "iPhone", "Pixel 8", "Galaxy S24"
+    ua_os = Column(String, nullable=True)               # e.g. "iOS", "Android", "Windows"
+    ua_last_seen = Column(DateTime, nullable=True)      # Last UA fingerprint update
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
@@ -964,6 +970,11 @@ def init_db() -> None:
             "ai_report_model": "TEXT",
             "ai_report_tokens": "INTEGER",
             "ai_report_flags": "TEXT",
+            "ua_device_type": "TEXT",
+            "ua_brand": "TEXT",
+            "ua_model": "TEXT",
+            "ua_os": "TEXT",
+            "ua_last_seen": "DATETIME",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:

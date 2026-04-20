@@ -2789,6 +2789,11 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
                 device.hostname = payload.hostname
             elif _is_junk_hostname(device.hostname) and not _is_junk_hostname(payload.hostname):
                 device.hostname = payload.hostname
+        # Auto-classify device_class from hostname if not already set
+        if not device.device_class and device.hostname:
+            auto_class = _keyword_device_class(device.hostname)
+            if auto_class:
+                device.device_class = auto_class
         # Re-resolve vendor — hostname match may be more accurate than stale OUI
         new_vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
         if new_vendor and new_vendor != device.vendor:
@@ -2805,10 +2810,17 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
         device.last_seen = now
     else:
         vendor = _resolve_vendor(mac, payload.hostname) or _resolve_vendor(payload.mac_address, payload.hostname)
+        # Auto-classify device_class from hostname via keyword map
+        auto_class = None
+        if payload.hostname:
+            auto_class = _keyword_device_class(payload.hostname)
+        if not auto_class and vendor:
+            auto_class = _keyword_device_class(vendor)
         device = Device(
             mac_address=mac,
             hostname=payload.hostname,
             vendor=vendor,
+            device_class=auto_class,
             ja4_fingerprint=payload.ja4,
             ja4_last_seen=now if payload.ja4 else None,
             dhcp_vendor_class=payload.dhcp_vendor_class,
@@ -2961,6 +2973,46 @@ def update_device_fingerprint(payload: dict, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(device)
     return {"status": "ok", "mac": device.mac_address, "os": device.os_full}
+
+
+@app.post("/api/devices/ua-fingerprint")
+def update_device_ua_fingerprint(payload: dict, db: Session = Depends(get_db)):
+    """Update a device's User-Agent fingerprint from http.log data.
+
+    Expects: {ip, mac_address, device_type, brand, model, os_name}
+    Firewalla-inspired: collects UA signals per MAC and picks the most
+    common type/brand/model via voting. The router heuristic (3+ device
+    types = router) is applied here.
+    """
+    mac = payload.get("mac_address")
+    if not mac:
+        raise HTTPException(status_code=400, detail="Missing 'mac_address' field")
+    mac = _normalize_mac(mac)
+
+    device = db.query(Device).filter(Device.mac_address == mac).first()
+    if not device:
+        raise HTTPException(status_code=404, detail=f"Device not found: {mac}")
+
+    now = _utc_now_naive()
+
+    # Update UA fingerprint fields
+    if payload.get("device_type"):
+        device.ua_device_type = payload["device_type"]
+        # Also set device_class if not already set by a higher-priority source
+        if not device.device_class:
+            device.device_class = payload["device_type"]
+    if payload.get("brand"):
+        device.ua_brand = payload["brand"]
+    if payload.get("model"):
+        device.ua_model = payload["model"]
+    if payload.get("os_name"):
+        # Only set os_name if not already set by p0f (which is more accurate)
+        if not device.os_name:
+            device.os_name = payload["os_name"]
+    device.ua_last_seen = now
+
+    db.commit()
+    return {"status": "ok", "mac": mac, "ua_type": device.ua_device_type}
 
 
 @app.put("/api/devices/{mac_address:path}", response_model=DeviceRead)
@@ -9429,20 +9481,56 @@ _IOT_TYPE_KEYWORDS = {
     "lg smart tv", "e-reader",
 }
 
+# ---------------------------------------------------------------------------
+# Hostname → device_class keyword map (Firewalla-inspired)
+# ---------------------------------------------------------------------------
+# Loaded from device_keywords.json — longest-match-first for specificity.
+# E.g. "macbook pro" matches before "macbook", "echo show" before "echo".
+_DEVICE_KEYWORD_MAP: list[tuple[str, str]] = []  # [(keyword, device_class), ...]
+
+def _load_device_keywords():
+    global _DEVICE_KEYWORD_MAP
+    kw_path = Path(__file__).parent / "device_keywords.json"
+    if kw_path.exists():
+        raw = json.loads(kw_path.read_text())
+        # Sort by keyword length descending — longest match wins
+        _DEVICE_KEYWORD_MAP = sorted(
+            [(k.lower(), v) for k, v in raw.items() if not k.startswith("_")],
+            key=lambda x: len(x[0]),
+            reverse=True,
+        )
+
+_load_device_keywords()
+
+
+def _keyword_device_class(haystack: str) -> str | None:
+    """Match a haystack string against device_keywords.json, longest-first."""
+    h = haystack.lower()
+    for keyword, device_class in _DEVICE_KEYWORD_MAP:
+        if keyword in h:
+            return device_class
+    return None
+
 
 def _classify_device_type_backend(device: Device) -> str:
     """Return the device type string, mirroring app.js _detectDeviceType.
 
-    Uses hostname, vendor, display_name, device_class, dhcp_vendor_class.
+    Uses hostname, vendor, display_name, device_class, dhcp_vendor_class,
+    and the device_keywords.json keyword map (Firewalla-inspired).
     """
     haystack = " ".join(filter(None, [
         device.hostname, device.vendor, device.display_name
     ])).lower()
 
-    # Check against IoT keywords
+    # Check against IoT keywords (legacy, kept for backwards compat)
     for kw in _IOT_TYPE_KEYWORDS:
         if kw in haystack:
             return kw
+
+    # Keyword map from device_keywords.json (longest match first)
+    kw_match = _keyword_device_class(haystack)
+    if kw_match:
+        return kw_match
 
     # Vendor-based
     v = (device.vendor or "").lower()
