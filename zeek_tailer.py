@@ -2041,7 +2041,18 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # Extract SNI and source IP
                 sni = record.get("server_name", "-")
                 if sni == "-" or not sni:
-                    continue
+                    # --- x509 certificate fallback (Firewalla-inspired) ---
+                    # When SNI is absent (ECH, old TLS), try to recover the
+                    # domain from the certificate's CN or SAN via x509 cache.
+                    cert_fps = record.get("cert_chain_fps", "-")
+                    if cert_fps and cert_fps not in ("-", "(empty)"):
+                        # cert_chain_fps is comma-separated; first is the leaf cert
+                        leaf_fp = cert_fps.split(",")[0].strip()
+                        sni = _x509_cert_cache.get(leaf_fp)
+                        if sni:
+                            print(f"[x509-fallback] Recovered domain '{sni}' from cert {leaf_fp[:16]}…")
+                    if not sni:
+                        continue
 
                 src_ip = record.get("id.orig_h", "unknown")
 
@@ -4482,6 +4493,152 @@ async def tail_mdns_log(log_path: Path, client: httpx.AsyncClient) -> None:
 # HTTP User-Agent fingerprinting — tail http.log (Firewalla-inspired)
 # ---------------------------------------------------------------------------
 # Parse User-Agent strings from Zeek http.log to identify device type,
+# ---------------------------------------------------------------------------
+# x509 Certificate cache — Firewalla-inspired SNI fallback
+# ---------------------------------------------------------------------------
+# When SNI is absent (e.g. ECH, old TLS clients), Firewalla falls back to
+# the x509 certificate's CN and SAN fields. We cache cert fingerprint →
+# domain(s) from x509.log, then use it in tail_ssl_log when server_name
+# is missing but cert_chain_fps is present.
+#
+# Cache size is bounded — certs rotate infrequently so 5000 entries covers
+# days of traffic on a home network.
+
+from collections import OrderedDict
+
+_X509_CACHE_MAX = 5000
+_x509_cert_cache: OrderedDict[str, str] = OrderedDict()  # fingerprint → domain
+
+
+def _x509_cache_put(fingerprint: str, domain: str) -> None:
+    """Store a cert fingerprint → domain mapping, evicting oldest if full."""
+    if fingerprint in _x509_cert_cache:
+        _x509_cert_cache.move_to_end(fingerprint)
+        return
+    if len(_x509_cert_cache) >= _X509_CACHE_MAX:
+        _x509_cert_cache.popitem(last=False)
+    _x509_cert_cache[fingerprint] = domain
+
+
+def _extract_cn_from_subject(subject: str) -> str | None:
+    """Extract Common Name from x509 subject string.
+
+    Input: "CN=api-notify.dropbox.com,O=Dropbox\\, Inc,L=San Francisco,..."
+    Output: "api-notify.dropbox.com"
+    """
+    if not subject or subject == "-":
+        return None
+    # Match CN= field, handling escaped commas
+    for part in re.split(r'(?<!\\),', subject):
+        part = part.strip()
+        if part.startswith("CN="):
+            cn = part[3:]
+            # Strip wildcard prefix
+            if cn.startswith("*."):
+                cn = cn[2:]
+            # Skip if CN is not a domain (e.g. just an org name)
+            if "." in cn and not cn[0].isdigit():
+                return cn.lower()
+    return None
+
+
+async def tail_x509_log(log_path: Path) -> None:
+    """Tail Zeek's x509.log to populate the cert fingerprint→domain cache.
+
+    This cache is consumed by tail_ssl_log when SNI is absent.
+    """
+    print(f"[*] Tailing x509.log: {log_path}")
+    fields: list[str] = []
+
+    while True:
+        if not log_path.exists():
+            await asyncio.sleep(5)
+            continue
+
+        try:
+            with open(log_path, "r") as f:
+                header_lines: list[str] = []
+                for line in f:
+                    if line.startswith("#"):
+                        header_lines.append(line)
+                    else:
+                        break
+                fields = parse_zeek_header(header_lines) or []
+                f.seek(0, 2)
+
+                _line_count = 0
+                while True:
+                    line = f.readline()
+                    if not line:
+                        try:
+                            if f.tell() > os.path.getsize(log_path):
+                                break
+                        except OSError:
+                            break
+                        await asyncio.sleep(1)
+                        continue
+
+                    line = line.strip()
+                    if line.startswith("#") or not line:
+                        if line.startswith("#fields"):
+                            fields = line.split("\t")[1:]
+                        continue
+
+                    if not fields:
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) != len(fields):
+                        continue
+
+                    _line_count += 1
+                    if _line_count % 1000 == 0:
+                        await asyncio.sleep(0)
+
+                    try:
+                        record = dict(zip(fields, parts))
+                    except Exception:
+                        continue
+
+                    fingerprint = record.get("fingerprint", "-")
+                    if fingerprint == "-" or not fingerprint:
+                        continue
+
+                    # Skip CA certs (we want host/leaf certs only)
+                    if record.get("basic_constraints.ca") == "T":
+                        continue
+                    # Skip client certs
+                    if record.get("client_cert") == "T" and record.get("host_cert") != "T":
+                        continue
+
+                    # Try SAN DNS names first (most specific)
+                    san_dns = record.get("san.dns", "-")
+                    domain = None
+                    if san_dns and san_dns not in ("-", "(empty)"):
+                        # san.dns is comma-separated: "api.dropbox.com,bolt.dropbox.com"
+                        names = [n.strip() for n in san_dns.split(",")]
+                        # Pick the shortest non-wildcard name
+                        for name in sorted(names, key=len):
+                            if name.startswith("*."):
+                                name = name[2:]
+                            if "." in name and not name[0].isdigit():
+                                domain = name.lower()
+                                break
+
+                    # Fall back to CN from subject
+                    if not domain:
+                        domain = _extract_cn_from_subject(
+                            record.get("certificate.subject", "-")
+                        )
+
+                    if domain:
+                        _x509_cache_put(fingerprint, domain)
+
+        except (OSError, IOError) as exc:
+            print(f"[!] x509.log read error: {exc}, retrying in 5s…")
+            await asyncio.sleep(5)
+
+
 # brand, model, and OS. Uses the device_detector library. Results are
 # sent to the API which stores them in the Device table.
 #
@@ -4564,6 +4721,22 @@ async def tail_http_log(log_path: Path, client: httpx.AsyncClient) -> None:
                     try:
                         record = dict(zip(fields, parts))
                     except Exception:
+                        continue
+
+                    # --- HTTP CONNECT proxy detection (Firewalla-inspired) ---
+                    # CONNECT requests are proxy tunnels. The proxy IP is NOT
+                    # the actual destination, so we must skip UA processing
+                    # and clean up any false labels from _known_ips.
+                    method = record.get("method", "-")
+                    if method == "CONNECT" or record.get("proxied", "-") not in ("-", "(empty)", ""):
+                        resp_ip = record.get("id.resp_h", "")
+                        src_ip = record.get("id.orig_h", "")
+                        src_mac = _ip_to_mac.get(src_ip) if src_ip else None
+                        if src_mac and resp_ip:
+                            proxy_key = (src_mac, resp_ip)
+                            if proxy_key in _known_ips:
+                                del _known_ips[proxy_key]
+                                print(f"[http-proxy] CONNECT detected: removed false label for {resp_ip}")
                         continue
 
                     ua = record.get("user_agent", "-")
@@ -5164,6 +5337,7 @@ async def main(zeek_log_dir: str) -> None:
     quic_log = log_dir / "quic.log"
     http_log = log_dir / "http.log"
     conn_long_log = log_dir / "conn_long.log"
+    x509_log = log_dir / "x509.log"
 
     # Per-labeler rollback flags. Each labeler can be turned off via
     # an env var so we can isolate it in production without a code
@@ -5192,6 +5366,7 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] mDNS device name + service type discovery: enabled (tailing mdns.log)")
     print(f"[*] HTTP User-Agent fingerprinting: enabled (tailing http.log)")
     print(f"[*] Screen time: enhanced with {len(ACTIVITY_CATEGORIES)} categories (via existing /activity endpoint)")
+    print(f"[*] x509 certificate fallback: enabled (tailing x509.log, cache size {_X509_CACHE_MAX})")
     print(f"[*] Long-lived connection monitoring: enabled (tailing conn_long.log, threshold {LONG_CONN_MIN_DURATION}s)")
     if dns_snooping_enabled:
         print(f"[*] DNS-IP correlation labeler: enabled (tailing dns.log)")
@@ -5282,6 +5457,7 @@ async def main(zeek_log_dir: str) -> None:
             print(f"[ja4-sync] Startup sync failed (will retry in 7d): {exc}")
 
     tasks = [
+        tail_x509_log(x509_log),          # Must start before ssl.log (populates cert cache)
         tail_ssl_log(ssl_log, client),
         tail_conn_log(conn_log, client),
         tail_dhcp_log(dhcp_log, client),

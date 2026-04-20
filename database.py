@@ -87,6 +87,7 @@ class Device(Base):
     ua_model = Column(String, nullable=True)            # e.g. "iPhone", "Pixel 8", "Galaxy S24"
     ua_os = Column(String, nullable=True)               # e.g. "iOS", "Android", "Windows"
     ua_last_seen = Column(DateTime, nullable=True)      # Last UA fingerprint update
+    ua_type_history = Column(String, nullable=True)    # JSON list of distinct UA device types seen (for router heuristic)
     first_seen = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     last_seen = Column(DateTime, nullable=False,
@@ -975,6 +976,7 @@ def init_db() -> None:
             "ua_model": "TEXT",
             "ua_os": "TEXT",
             "ua_last_seen": "DATETIME",
+            "ua_type_history": "TEXT",
         }
         for col_name, col_type in p0f_columns.items():
             if col_name not in dev_cols:

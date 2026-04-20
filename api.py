@@ -3010,13 +3010,32 @@ def update_device_ua_fingerprint(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Device not found: {mac}")
 
     now = _utc_now_naive()
+    new_type = payload.get("device_type")
+
+    # --- Router detection heuristic (Firewalla-inspired) ---
+    # Track distinct UA device types per MAC. If 3+ different types
+    # are seen, this MAC is likely a router/AP proxying traffic
+    # from multiple devices behind it.
+    is_router = False
+    if new_type:
+        try:
+            history = json.loads(device.ua_type_history or "[]")
+        except (json.JSONDecodeError, TypeError):
+            history = []
+        if new_type not in history:
+            history.append(new_type)
+            device.ua_type_history = json.dumps(history)
+        if len(set(history)) >= 3:
+            is_router = True
 
     # Update UA fingerprint fields
-    if payload.get("device_type"):
-        device.ua_device_type = payload["device_type"]
-        # Also set device_class if not already set by a higher-priority source
-        if not device.device_class:
-            device.device_class = payload["device_type"]
+    if new_type:
+        device.ua_device_type = new_type
+        if is_router:
+            device.device_class = "router"
+            device.ua_device_type = "router"
+        elif not device.device_class:
+            device.device_class = new_type
     if payload.get("brand"):
         device.ua_brand = payload["brand"]
     if payload.get("model"):
@@ -3028,7 +3047,7 @@ def update_device_ua_fingerprint(payload: dict, db: Session = Depends(get_db)):
     device.ua_last_seen = now
 
     db.commit()
-    return {"status": "ok", "mac": mac, "ua_type": device.ua_device_type}
+    return {"status": "ok", "mac": mac, "ua_type": device.ua_device_type, "is_router": is_router}
 
 
 @app.put("/api/devices/{mac_address:path}", response_model=DeviceRead)
