@@ -266,13 +266,13 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   // Hide the gateway/router by default. Everything flows through it so
   // its star-shape dwarfs the actual device-to-device relationships.
   const [hideGateway, setHideGateway] = useState(true);
-  // Hide infrastructure chatter (DNS / NetBIOS / mDNS / SSDP / ICMP) by
-  // default. These protocols fan out one→many: a single device probing
-  // every LAN peer ("can I cast? are you a file server?") would look
-  // like that device is talking to everyone, even though it's just
-  // discovery noise. The backend sets edge.is_infrastructure based on
-  // the dominant port.
-  const [hideInfra, setHideInfra] = useState(true);
+  // Infrastructure chatter toggle (DNS / NetBIOS / mDNS / SSDP /
+  // LLMNR / WS-Discovery / DHCP / ICMP). Default OFF so users see
+  // their full LAN activity when they open the tab — filter on only
+  // when decluttering. Toggling on hides edges where >= 80% of the
+  // bytes sit on infra ports (so a real RTSP flow with incidental
+  // mDNS piggybacking stays visible either way).
+  const [hideInfra, setHideInfra] = useState(false);
   const gatewayKeys = useMemo(() => {
     const keys = new Set<string>();
     rawNodes.forEach(n => {

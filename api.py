@@ -4071,25 +4071,33 @@ def _port_description(port: int | str | None, proto: str | None = None) -> str:
     return f"{proto_name} port {port_n}"
 
 
-# Ports that are "infrastructure chatter" — discovery, name resolution,
-# time sync, address allocation. They're useful to record (we want to
-# detect lateral movement on NetBIOS/SMB etc.) but in the network graph
-# they fan out to every peer and drown out the real device-to-device
-# relationships. Frontend default-hides them with a toggle.
+# Ports that are "infrastructure chatter" — pure discovery / name /
+# address-resolution protocols that fan out one→many across the LAN.
+# Kept deliberately small: DHCP/DNS/NetBIOS/mDNS/SSDP/LLMNR/ND only.
+#
+# NTP (123) is NOT here: an IoT device syncing time against a local NTP
+# server is a legitimate device-to-device relationship the user wants
+# visible (sync issues break TLS, so seeing "camera → NTP server" is
+# genuinely diagnostic).
+#
+# DNS stays because in AI-Radar's architecture every device's DNS gets
+# transparently redirected to AdGuard — the ONE real DNS edge is "all
+# devices → 192.168.1.7:53" which is better surfaced via AdGuard's own
+# dashboard. What remains are per-peer fan-outs (TV probing every IP
+# for DNS-SD), which ARE noise.
 _INFRASTRUCTURE_PORTS = frozenset({
     53,     # DNS
     67, 68, # DHCP
-    123,    # NTP
     137, 138, # NetBIOS name + broadcast
     1900,   # SSDP discovery
-    3702,   # WS-Discovery (ONVIF)
+    3702,   # WS-Discovery (ONVIF probe, not RTSP data)
     5353,   # mDNS
     5355,   # LLMNR
 })
 
 
 def _edge_is_infrastructure(port: int, proto: str | None) -> bool:
-    """True if an edge is discovery/name/time chatter (not a real flow)."""
+    """True if an edge is discovery/name chatter (not a real flow)."""
     if (proto or "").lower() in ("icmp", "icmpv6"):
         return True
     return port in _INFRASTRUCTURE_PORTS
@@ -4779,26 +4787,43 @@ def get_network_graph(
     # a stable JSON payload. Re-pick the dominant port as the edge's
     # primary port_label so visual labels reflect reality.
     for edge in edge_map.values():
+        ports_dict = edge["top_ports"]  # still a {proto/port: {bytes, hits}} dict
         ports_sorted = sorted(
-            edge["top_ports"].items(),
+            ports_dict.items(),
             key=lambda kv: -kv[1]["bytes"],
-        )[:3]
+        )
+
+        # Edge is infrastructure only if >= 80% of the bytes sit on
+        # infra-classified ports. Ratio check (over the FULL dict,
+        # not just top 3) so a real RTSP / HTTP / SMB stream that
+        # happens to have a little mDNS or NetBIOS piggybacking
+        # stays visible. Also handles the edge case where many
+        # small infra ports together beat the dominant real port.
+        infra_bytes = 0
+        for proto_port, meta in ports_dict.items():
+            try:
+                p_proto, p_port = proto_port.split("/", 1)
+                if _edge_is_infrastructure(int(p_port), p_proto):
+                    infra_bytes += meta["bytes"]
+            except (ValueError, AttributeError):
+                continue
+        edge["is_infrastructure"] = (
+            edge["bytes"] > 0 and infra_bytes / edge["bytes"] >= 0.8
+        )
+
+        # Now keep only top 3 ports for the payload.
+        top3 = ports_sorted[:3]
         edge["top_ports"] = [
             {"proto_port": k, "bytes": v["bytes"], "hits": v["hits"]}
-            for k, v in ports_sorted
+            for k, v in top3
         ]
-        if ports_sorted:
-            primary = ports_sorted[0][0]  # "tcp/443"
+        if top3:
+            primary = top3[0][0]  # "tcp/443"
             try:
                 proto_s, port_s = primary.split("/", 1)
                 port_n = int(port_s)
                 edge["port"] = port_n
                 edge["port_label"] = _port_description(port_n, proto_s)
-                # Flag infra chatter by the DOMINANT port. An edge that
-                # mostly moves bytes on port 443 but had a small amount
-                # of incidental port-53 piggybacking is still a real
-                # conversation, not infrastructure.
-                edge["is_infrastructure"] = _edge_is_infrastructure(port_n, proto_s)
             except (ValueError, AttributeError):
                 pass
 
