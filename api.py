@@ -4304,6 +4304,218 @@ def delete_inbound_attack(
     return None
 
 
+@app.get("/api/attacks/country/{cc}/summary")
+def attacks_country_summary(
+    cc: str,
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """Forensic summary of inbound attacks from a given country.
+
+    Built to answer "I blocked country X on my upstream firewall — why
+    are attacks from X still showing up?". Returns IPv4 vs IPv6 split
+    (common geo-block bypass), top sources with ASN org, conn-state
+    distribution, target port breakdown, and target device breakdown.
+    """
+    cc_upper = (cc or "").upper()[:2]
+    if not cc_upper:
+        raise HTTPException(status_code=400, detail="cc required")
+    cutoff = _utc_now_naive() - timedelta(hours=hours)
+
+    base = db.query(InboundAttack).filter(
+        InboundAttack.country_code == cc_upper,
+        InboundAttack.last_seen >= cutoff,
+    )
+
+    total = base.count()
+    total_hits = (
+        db.query(func.coalesce(func.sum(InboundAttack.hit_count), 0))
+        .filter(
+            InboundAttack.country_code == cc_upper,
+            InboundAttack.last_seen >= cutoff,
+        )
+        .scalar() or 0
+    )
+
+    # IPv4 vs IPv6 split — IPv6 has ':' in the address, IPv4 does not.
+    # A big IPv6 fraction here is the #1 explanation for "UDM geo-block
+    # is on but attacks leak through": most home firewalls only apply
+    # geo-blocking to IPv4, and your ISP + these attackers both support
+    # native IPv6 today.
+    v4_hits = (
+        db.query(func.coalesce(func.sum(InboundAttack.hit_count), 0))
+        .filter(
+            InboundAttack.country_code == cc_upper,
+            InboundAttack.last_seen >= cutoff,
+            ~InboundAttack.source_ip.contains(":"),
+        ).scalar() or 0
+    )
+    v6_hits = (
+        db.query(func.coalesce(func.sum(InboundAttack.hit_count), 0))
+        .filter(
+            InboundAttack.country_code == cc_upper,
+            InboundAttack.last_seen >= cutoff,
+            InboundAttack.source_ip.contains(":"),
+        ).scalar() or 0
+    )
+
+    # Connection states — did any of these succeed? S0/REJ/RSTO = dropped
+    # or rejected, SF/S1 = actually completed handshake (means whatever
+    # blocker is supposedly in place let it through).
+    states = [
+        {"state": row.st, "hits": int(row.hits or 0)}
+        for row in (
+            db.query(
+                InboundAttack.conn_state.label("st"),
+                func.sum(InboundAttack.hit_count).label("hits"),
+            )
+            .filter(
+                InboundAttack.country_code == cc_upper,
+                InboundAttack.last_seen >= cutoff,
+            )
+            .group_by(InboundAttack.conn_state)
+            .order_by(func.sum(InboundAttack.hit_count).desc())
+            .all()
+        )
+    ]
+
+    # Top source IPs
+    top_sources = [
+        {
+            "source_ip": row.source_ip,
+            "asn": int(row.asn) if row.asn else None,
+            "asn_org": row.asn_org,
+            "hits": int(row.hits or 0),
+            "targets": int(row.targets or 0),
+            "ports": sorted({int(p) for p in (row.ports_concat or "").split(",") if p.isdigit()}),
+            "conn_states": sorted({s for s in (row.states_concat or "").split(",") if s}),
+            "is_ipv6": ":" in (row.source_ip or ""),
+            "first_seen": str(row.first_seen) if row.first_seen else None,
+            "last_seen": str(row.last_seen) if row.last_seen else None,
+        }
+        for row in (
+            db.query(
+                InboundAttack.source_ip,
+                InboundAttack.asn,
+                InboundAttack.asn_org,
+                func.sum(InboundAttack.hit_count).label("hits"),
+                func.count(func.distinct(InboundAttack.target_ip)).label("targets"),
+                func.group_concat(func.distinct(InboundAttack.target_port)).label("ports_concat"),
+                func.group_concat(func.distinct(InboundAttack.conn_state)).label("states_concat"),
+                func.min(InboundAttack.first_seen).label("first_seen"),
+                func.max(InboundAttack.last_seen).label("last_seen"),
+            )
+            .filter(
+                InboundAttack.country_code == cc_upper,
+                InboundAttack.last_seen >= cutoff,
+            )
+            .group_by(InboundAttack.source_ip, InboundAttack.asn, InboundAttack.asn_org)
+            .order_by(func.sum(InboundAttack.hit_count).desc())
+            .limit(25)
+            .all()
+        )
+    ]
+
+    # Top target ports — reveals "what are they scanning" quickly. If
+    # there's one port getting most of the hits, that often maps to a
+    # port-forward punched through the firewall (home assistant, NVR
+    # RTSP, game server, etc.).
+    top_ports = [
+        {
+            "port": int(row.port),
+            "proto": row.protocol,
+            "hits": int(row.hits or 0),
+            "sources": int(row.sources or 0),
+        }
+        for row in (
+            db.query(
+                InboundAttack.target_port.label("port"),
+                InboundAttack.protocol,
+                func.sum(InboundAttack.hit_count).label("hits"),
+                func.count(func.distinct(InboundAttack.source_ip)).label("sources"),
+            )
+            .filter(
+                InboundAttack.country_code == cc_upper,
+                InboundAttack.last_seen >= cutoff,
+            )
+            .group_by(InboundAttack.target_port, InboundAttack.protocol)
+            .order_by(func.sum(InboundAttack.hit_count).desc())
+            .limit(15)
+            .all()
+        )
+    ]
+
+    # Top target IPs — which local devices are being probed. Hits to a
+    # port-forwarded device are expected; hits directly to gateway/
+    # router IPs suggest reflection or naive scanning.
+    top_targets = [
+        {
+            "target_ip": row.target_ip,
+            "target_mac": row.target_mac,
+            "hits": int(row.hits or 0),
+            "sources": int(row.sources or 0),
+        }
+        for row in (
+            db.query(
+                InboundAttack.target_ip,
+                InboundAttack.target_mac,
+                func.sum(InboundAttack.hit_count).label("hits"),
+                func.count(func.distinct(InboundAttack.source_ip)).label("sources"),
+            )
+            .filter(
+                InboundAttack.country_code == cc_upper,
+                InboundAttack.last_seen >= cutoff,
+            )
+            .group_by(InboundAttack.target_ip, InboundAttack.target_mac)
+            .order_by(func.sum(InboundAttack.hit_count).desc())
+            .limit(10)
+            .all()
+        )
+    ]
+
+    # Top ASN orgs — if 90% of hits come from one network, that's a
+    # single botnet / rented infrastructure. Helps decide whether an
+    # ASN-level block on the firewall is worth adding.
+    top_asns = [
+        {
+            "asn": int(row.asn) if row.asn else None,
+            "asn_org": row.asn_org or "(unknown)",
+            "hits": int(row.hits or 0),
+            "sources": int(row.sources or 0),
+        }
+        for row in (
+            db.query(
+                InboundAttack.asn,
+                InboundAttack.asn_org,
+                func.sum(InboundAttack.hit_count).label("hits"),
+                func.count(func.distinct(InboundAttack.source_ip)).label("sources"),
+            )
+            .filter(
+                InboundAttack.country_code == cc_upper,
+                InboundAttack.last_seen >= cutoff,
+            )
+            .group_by(InboundAttack.asn, InboundAttack.asn_org)
+            .order_by(func.sum(InboundAttack.hit_count).desc())
+            .limit(10)
+            .all()
+        )
+    ]
+
+    return {
+        "country_code": cc_upper,
+        "window_hours": hours,
+        "total_rows": total,
+        "total_hits": int(total_hits),
+        "ipv4_hits": int(v4_hits),
+        "ipv6_hits": int(v6_hits),
+        "conn_states": states,
+        "top_sources": top_sources,
+        "top_ports": top_ports,
+        "top_targets": top_targets,
+        "top_asns": top_asns,
+    }
+
+
 # ---------------------------------------------------------------------------
 # GET /api/network/graph — lateral movement network graph data
 # ---------------------------------------------------------------------------
