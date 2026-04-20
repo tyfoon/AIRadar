@@ -4860,9 +4860,16 @@ def get_network_graph(
         # key is either a MAC or a peer_ip fallback for unresolved peers
         dev = devices.get(key) if ":" in key or "-" in key else None
         primary_ip = _pick_ip_for_mac(key) if dev else key
+        # AI-Radar's own MAC (the bridge or its slaves) — flag it so the
+        # frontend can hide it by default. The observer showing up as a
+        # hub confuses the "device-to-device" narrative — everyone's API
+        # calls, SSH, AdGuard DNS etc. land here, making AI-Radar look
+        # like the LG TV if its device record is mislabelled (which is
+        # what sent the user down the rabbit hole in the first place).
+        node_mac = dev.mac_address if dev else (key if dev is None and "." not in key else None)
         nodes.append({
             "ip": primary_ip or key,
-            "mac": dev.mac_address if dev else (key if dev is None and "." not in key else None),
+            "mac": node_mac,
             "hostname": dev.hostname if dev else None,
             "display_name": dev.display_name if dev else None,
             "vendor": dev.vendor if dev else None,
@@ -4871,6 +4878,7 @@ def get_network_graph(
             "last_seen": str(dev.last_seen) if dev and dev.last_seen else None,
             "edge_count": degree.get(key, 0),
             "is_gateway": key == gateway_key,
+            "is_self": _is_self_mac(node_mac),
         })
 
     return {
@@ -4888,6 +4896,46 @@ def _format_port_label(port: int, proto: str | None = None) -> str:
     short plain-English description ("DNS lookup", "Web (TLS)").
     """
     return _port_description(port, proto)
+
+
+# MACs that belong to AI-Radar's own host (br0 + its slave interfaces).
+# Read once at startup from /sys/class/net/*/address. The network graph
+# uses these to flag nodes as is_self so the frontend can hide AI-Radar
+# itself by default — it's the observer, not a device of interest.
+def _load_self_macs() -> set[str]:
+    """Discover the MACs of AI-Radar's own network interfaces.
+
+    We read sysfs rather than shelling out to `ip link` so we don't
+    depend on the iproute2 package being present in the container.
+    Loopback + docker bridge MACs are skipped. Any MAC that's all
+    zeros is also skipped (pre-init interfaces, tun/tap without MAC).
+    """
+    macs: set[str] = set()
+    try:
+        import os as _os
+        base = "/sys/class/net"
+        for iface in _os.listdir(base):
+            if iface.startswith(("lo", "docker", "veth", "vnet")):
+                continue
+            try:
+                with open(f"{base}/{iface}/address") as f:
+                    mac = f.read().strip().lower()
+                if mac and mac != "00:00:00:00:00:00":
+                    macs.add(mac)
+            except OSError:
+                continue
+    except Exception as exc:
+        print(f"[self-mac] discovery failed: {exc}")
+    return macs
+
+
+_SELF_MACS: set[str] = _load_self_macs()
+if _SELF_MACS:
+    print(f"[self-mac] detected AI-Radar MACs: {sorted(_SELF_MACS)}")
+
+
+def _is_self_mac(mac: str | None) -> bool:
+    return bool(mac) and mac.lower() in _SELF_MACS
 
 
 # ---------------------------------------------------------------------------

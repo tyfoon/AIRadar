@@ -266,6 +266,11 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   // Hide the gateway/router by default. Everything flows through it so
   // its star-shape dwarfs the actual device-to-device relationships.
   const [hideGateway, setHideGateway] = useState(true);
+  // Hide AI-Radar itself by default. It's the observer, not a device
+  // of interest; every local API/SSH/AdGuard call terminates here and
+  // it becomes a spurious hub in the graph. Toggle off to debug
+  // AI-Radar's own LAN interactions.
+  const [hideSelf, setHideSelf] = useState(true);
   // Infrastructure chatter toggle (DNS / NetBIOS / mDNS / SSDP /
   // LLMNR / WS-Discovery / DHCP / ICMP). Default OFF so users see
   // their full LAN activity when they open the tab — filter on only
@@ -283,6 +288,16 @@ function NetworkPanel({ data, hours, onHoursChange }: {
     });
     return keys;
   }, [rawNodes]);
+  const selfKeys = useMemo(() => {
+    const keys = new Set<string>();
+    rawNodes.forEach(n => {
+      if (n.is_self) {
+        if (n.mac) keys.add(n.mac);
+        keys.add(n.ip);
+      }
+    });
+    return keys;
+  }, [rawNodes]);
   // Edge filtering: apply both toggles. Node filtering is separate
   // because a node with only infra chatter still exists as a device,
   // just has no visible edges after filtering. d3-force drops orphan
@@ -294,9 +309,13 @@ function NetworkPanel({ data, hours, onHoursChange }: {
         gatewayKeys.has(e.source_mac || e.source_ip) ||
         gatewayKeys.has(e.target_mac || e.target_ip)
       )) return false;
+      if (hideSelf && (
+        selfKeys.has(e.source_mac || e.source_ip) ||
+        selfKeys.has(e.target_mac || e.target_ip)
+      )) return false;
       return true;
     });
-  }, [rawEdges, hideInfra, hideGateway, gatewayKeys]);
+  }, [rawEdges, hideInfra, hideGateway, hideSelf, gatewayKeys, selfKeys]);
   // Nodes: keep only those actually touching a surviving edge (plus
   // gateway unless hidden). Avoids a cloud of orphan device names
   // floating with no visible connections.
@@ -308,10 +327,12 @@ function NetworkPanel({ data, hours, onHoursChange }: {
     });
     return rawNodes.filter(n => {
       if (hideGateway && n.is_gateway) return false;
+      if (hideSelf && n.is_self) return false;
       return keep.has(n.ip);
     });
-  }, [rawNodes, edges, hideGateway]);
+  }, [rawNodes, edges, hideGateway, hideSelf]);
   const gatewayNode = rawNodes.find(n => n.is_gateway);
+  const selfNode = rawNodes.find(n => n.is_self);
   const infraEdgeCount = rawEdges.filter(e => e.is_infrastructure).length;
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ w: 800, h: 500 });
@@ -368,6 +389,20 @@ function NetworkPanel({ data, hours, onHoursChange }: {
                   className="accent-indigo-500 w-3.5 h-3.5"
                 />
                 Hide gateway
+              </label>
+            )}
+            {selfNode && (
+              <label
+                className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 select-none cursor-pointer"
+                title="AI-Radar is the observer, not a device of interest. Every local API/SSH/AdGuard call terminates here."
+              >
+                <input
+                  type="checkbox"
+                  checked={hideSelf}
+                  onChange={e => setHideSelf(e.target.checked)}
+                  className="accent-indigo-500 w-3.5 h-3.5"
+                />
+                Hide AI-Radar
               </label>
             )}
             <select

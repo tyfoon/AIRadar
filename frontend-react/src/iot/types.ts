@@ -81,6 +81,7 @@ export interface NetworkNode {
   last_seen: string | null;
   edge_count?: number;        // # of edges touching this node
   is_gateway?: boolean;       // top-degree node — usually the router
+  is_self?: boolean;          // matches one of AI-Radar's own NIC MACs
 }
 
 export interface NetworkEdge {
