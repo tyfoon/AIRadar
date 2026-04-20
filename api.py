@@ -4338,6 +4338,8 @@ def get_network_graph(
             LanConversation.port,
             LanConversation.proto,
             func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.orig_bytes).label("orig_bytes"),
+            func.sum(LanConversation.resp_bytes).label("resp_bytes"),
             func.sum(LanConversation.hits).label("hits"),
             func.min(LanConversation.first_seen).label("first_seen"),
             func.max(LanConversation.last_seen).label("last_seen"),
@@ -4396,6 +4398,8 @@ def get_network_graph(
                 "port": int(r.port or 0),
                 "port_label": _format_port_label(int(r.port or 0), r.proto),
                 "bytes": 0,
+                "orig_bytes": 0,   # src → peer
+                "resp_bytes": 0,   # peer → src
                 "hits": 0,
                 "first_seen": str(r.first_seen) if r.first_seen else "",
                 "last_seen": str(r.last_seen) if r.last_seen else "",
@@ -4403,6 +4407,8 @@ def get_network_graph(
             }
         edge = edge_map[key]
         edge["bytes"] += int(r.bytes or 0)
+        edge["orig_bytes"] += int(r.orig_bytes or 0)
+        edge["resp_bytes"] += int(r.resp_bytes or 0)
         edge["hits"] += int(r.hits or 0)
         # Track port contributions for the top-ports tooltip. Keeping
         # only counts + bytes keeps the payload small; the frontend
@@ -4439,6 +4445,28 @@ def get_network_graph(
             except (ValueError, AttributeError):
                 pass
 
+    # Per-node edge count → gateway detection.  In a home network the
+    # router/gateway appears as a peer in nearly every flow. Flag the
+    # top-degree node as is_gateway so the frontend can offer a
+    # "hide gateway" toggle (defaults to on — the router otherwise
+    # becomes a giant hairball hub that drowns out the interesting
+    # device-to-device relationships).
+    degree: dict[str, int] = {}
+    for edge in edge_map.values():
+        src_key = edge["source_mac"] or edge["source_ip"]
+        dst_key = edge["target_mac"] or edge["target_ip"]
+        degree[src_key] = degree.get(src_key, 0) + 1
+        degree[dst_key] = degree.get(dst_key, 0) + 1
+
+    # Gateway candidate: node with highest degree, provided it exceeds
+    # half of the other nodes (avoids flagging random chatty hubs as
+    # gateway on small networks).
+    gateway_key: str | None = None
+    if degree and involved:
+        top_key, top_deg = max(degree.items(), key=lambda kv: kv[1])
+        if top_deg >= max(3, (len(involved) - 1) // 2):
+            gateway_key = top_key
+
     # Build node list from all devices involved (src_mac or peer
     # identifier). Prefer MAC when known so multi-IP devices collapse.
     nodes = []
@@ -4459,6 +4487,8 @@ def get_network_graph(
             "device_class": dev.device_class if dev else None,
             "os_name": dev.os_name if dev else None,
             "last_seen": str(dev.last_seen) if dev and dev.last_seen else None,
+            "edge_count": degree.get(key, 0),
+            "is_gateway": key == gateway_key,
         })
 
     return {

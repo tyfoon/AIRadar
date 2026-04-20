@@ -261,8 +261,32 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   hours: number;
   onHoursChange: (h: number) => void;
 }) {
-  const nodes = data?.nodes || [];
-  const edges = data?.edges || [];
+  const rawNodes = data?.nodes || [];
+  const rawEdges = data?.edges || [];
+  // Hide the gateway/router by default. Everything flows through it so
+  // its star-shape dwarfs the actual device-to-device relationships.
+  // Toggle lets the user bring it back when they want full topology.
+  const [hideGateway, setHideGateway] = useState(true);
+  const gatewayKeys = useMemo(() => {
+    const keys = new Set<string>();
+    rawNodes.forEach(n => {
+      if (n.is_gateway) {
+        if (n.mac) keys.add(n.mac);
+        keys.add(n.ip);
+      }
+    });
+    return keys;
+  }, [rawNodes]);
+  const nodes = hideGateway
+    ? rawNodes.filter(n => !n.is_gateway)
+    : rawNodes;
+  const edges = hideGateway
+    ? rawEdges.filter(e =>
+        !gatewayKeys.has(e.source_mac || e.source_ip) &&
+        !gatewayKeys.has(e.target_mac || e.target_ip),
+      )
+    : rawEdges;
+  const gatewayNode = rawNodes.find(n => n.is_gateway);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ w: 800, h: 500 });
 
@@ -281,7 +305,7 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   return (
     <div className="space-y-3">
       <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/[0.05]">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/[0.05] gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
             <i className="ph-duotone ph-graph text-indigo-500" /> Internal device-to-device traffic
             {edges.length > 0 && (
@@ -290,18 +314,52 @@ function NetworkPanel({ data, hours, onHoursChange }: {
               </span>
             )}
           </h3>
-          <select
-            value={hours}
-            onChange={e => onHoursChange(+e.target.value)}
-            className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300"
-          >
-            <option value={1}>Last hour</option>
-            <option value={4}>Last 4 hours</option>
-            <option value={24}>Last 24 hours</option>
-            <option value={48}>Last 48 hours</option>
-            <option value={168}>Last 7 days</option>
-          </select>
+          <div className="flex items-center gap-2 flex-wrap">
+            {gatewayNode && (
+              <label
+                className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 select-none cursor-pointer"
+                title={`Gateway: ${gatewayNode.display_name || gatewayNode.hostname || gatewayNode.ip}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={hideGateway}
+                  onChange={e => setHideGateway(e.target.checked)}
+                  className="accent-indigo-500 w-3.5 h-3.5"
+                />
+                Hide gateway
+              </label>
+            )}
+            <select
+              value={hours}
+              onChange={e => onHoursChange(+e.target.value)}
+              className="text-xs border border-slate-200 dark:border-white/[0.1] rounded-md px-2 py-1.5 bg-white dark:bg-white/[0.05] text-slate-600 dark:text-slate-300"
+            >
+              <option value={1}>Last hour</option>
+              <option value={4}>Last 4 hours</option>
+              <option value={24}>Last 24 hours</option>
+              <option value={48}>Last 48 hours</option>
+              <option value={168}>Last 7 days</option>
+            </select>
+          </div>
         </div>
+
+        {/* Direction legend — matches the edge colors used by NetworkGraph */}
+        {edges.length > 0 && (
+          <div className="flex items-center gap-3 px-4 py-1.5 text-[10px] text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-white/[0.04]">
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-0.5 bg-amber-500 rounded-full" />
+              src → peer (upload-dominant)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-0.5 bg-blue-500 rounded-full" />
+              peer → src (download-dominant)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-0.5 bg-slate-400 rounded-full" />
+              balanced
+            </span>
+          </div>
+        )}
 
         <div ref={containerRef} style={{
           background: isDarkMode()
@@ -542,10 +600,14 @@ interface GNode extends SimulationNodeDatum {
   radius: number;
   iconType: IconType;
 }
+type EdgeDirection = 'out' | 'in' | 'balanced';
+
 interface GLink extends SimulationLinkDatum<GNode> {
   port: number;
   portLabel: string;
   hits: number;
+  bytes: number;
+  direction: EdgeDirection;  // drives color + arrow direction
 }
 
 function NetworkGraph({ nodes, edges, width, height }: {
@@ -599,13 +661,28 @@ function NetworkGraph({ nodes, edges, width, height }: {
       });
     });
 
-    const gLinks: GLink[] = edges.map(e => ({
-      source: e.source_ip as any,
-      target: e.target_ip as any,
-      port: e.port,
-      portLabel: e.port_label,
-      hits: e.hits,
-    }));
+    const gLinks: GLink[] = edges.map(e => {
+      const orig = e.orig_bytes ?? 0;
+      const resp = e.resp_bytes ?? 0;
+      const total = orig + resp;
+      // Direction: 60/40 split or stronger → dominant direction.
+      // Otherwise balanced. Avoids flipping colors on tiny asymmetries.
+      let direction: EdgeDirection = 'balanced';
+      if (total > 0) {
+        const outRatio = orig / total;
+        if (outRatio >= 0.6) direction = 'out';
+        else if (outRatio <= 0.4) direction = 'in';
+      }
+      return {
+        source: e.source_ip as any,
+        target: e.target_ip as any,
+        port: e.port,
+        portLabel: e.port_label,
+        hits: e.hits,
+        bytes: e.bytes ?? 0,
+        direction,
+      };
+    });
 
     // Init particles for each link
     const maxHits = Math.max(...edges.map(e => e.hits), 1);
@@ -665,6 +742,38 @@ function NetworkGraph({ nodes, edges, width, height }: {
       const gLinks = linksRef.current;
       const particles = particlesRef.current;
 
+      // Edge color palette — keyed on direction of traffic flow.
+      // 'out' = src uploads more (orange/amber); 'in' = peer uploads more
+      // to src so from src's POV this is inbound/download (blue);
+      // 'balanced' = neither direction dominates (neutral slate).
+      // Colors match the legend strip rendered above the canvas.
+      const palette = {
+        out: {
+          line:   isDark ? '245,158,11' : '217,119,6',    // amber
+          arrow:  isDark ? 'rgba(245,158,11,0.7)' : 'rgba(217,119,6,0.6)',
+          dot:    isDark ? 'rgba(251,191,36,0.85)' : 'rgba(217,119,6,0.65)',
+          pillBg: isDark ? 'rgba(120,53,15,0.8)'   : 'rgba(254,243,199,0.95)',
+          pillFg: isDark ? '#fcd34d'                : '#b45309',
+          pillBd: isDark ? 'rgba(252,211,77,0.3)'  : 'rgba(217,119,6,0.25)',
+        },
+        in: {
+          line:   isDark ? '59,130,246'  : '37,99,235',
+          arrow:  isDark ? 'rgba(59,130,246,0.7)'  : 'rgba(37,99,235,0.6)',
+          dot:    isDark ? 'rgba(147,197,253,0.85)' : 'rgba(37,99,235,0.6)',
+          pillBg: isDark ? 'rgba(30,58,138,0.8)'   : 'rgba(219,234,254,0.95)',
+          pillFg: isDark ? '#93c5fd'                : '#1e40af',
+          pillBd: isDark ? 'rgba(147,197,253,0.3)' : 'rgba(37,99,235,0.25)',
+        },
+        balanced: {
+          line:   isDark ? '148,163,184' : '100,116,139',
+          arrow:  isDark ? 'rgba(148,163,184,0.55)' : 'rgba(100,116,139,0.5)',
+          dot:    isDark ? 'rgba(203,213,225,0.75)' : 'rgba(100,116,139,0.55)',
+          pillBg: isDark ? 'rgba(30,41,59,0.85)'   : 'rgba(241,245,249,0.95)',
+          pillFg: isDark ? '#cbd5e1'                : '#475569',
+          pillBd: isDark ? 'rgba(203,213,225,0.25)' : 'rgba(100,116,139,0.2)',
+        },
+      } as const;
+
       // --- Draw links ---
       gLinks.forEach((l, i) => {
         const src = l.source as any as GNode;
@@ -673,46 +782,54 @@ function NetworkGraph({ nodes, edges, width, height }: {
 
         const intensity = Math.min(1, (l.hits / maxHits) * 0.8 + 0.2);
         const lw = Math.max(1.5, Math.min(5, (l.hits / maxHits) * 5));
+        const c = palette[l.direction];
 
         // Link line
         ctx.beginPath();
         ctx.moveTo(src.x, src.y);
         ctx.lineTo(tgt.x, tgt.y);
-        ctx.strokeStyle = isDark
-          ? `rgba(239,68,68,${intensity * 0.3})`
-          : `rgba(239,68,68,${intensity * 0.25})`;
+        ctx.strokeStyle = `rgba(${c.line},${(isDark ? 0.45 : 0.4) * intensity})`;
         ctx.lineWidth = lw;
         if (l.hits / maxHits < 0.15) ctx.setLineDash([4, 3]);
         else ctx.setLineDash([]);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Arrow head
-        const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+        // Arrow head — pointing in the direction of dominant byte flow.
+        // For 'in' (src downloads), reverse so the arrow points src→src's
+        // direction of incoming data. For balanced keep the default
+        // src→tgt orientation (it still anchors the visual).
+        const reverse = l.direction === 'in';
+        const fromX = reverse ? tgt.x : src.x;
+        const fromY = reverse ? tgt.y : src.y;
+        const toX = reverse ? src.x : tgt.x;
+        const toY = reverse ? src.y : tgt.y;
+        const angle = Math.atan2(toY - fromY, toX - fromX);
         const arrowPos = 0.82;
-        const ax = src.x + (tgt.x - src.x) * arrowPos;
-        const ay = src.y + (tgt.y - src.y) * arrowPos;
+        const ax = fromX + (toX - fromX) * arrowPos;
+        const ay = fromY + (toY - fromY) * arrowPos;
         const arrowLen = 6;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ax - arrowLen * Math.cos(angle - 0.35), ay - arrowLen * Math.sin(angle - 0.35));
         ctx.lineTo(ax - arrowLen * Math.cos(angle + 0.35), ay - arrowLen * Math.sin(angle + 0.35));
         ctx.closePath();
-        ctx.fillStyle = isDark ? 'rgba(239,68,68,0.6)' : 'rgba(239,68,68,0.5)';
+        ctx.fillStyle = c.arrow;
         ctx.fill();
 
-        // Animated particles
+        // Animated particles — flow in the dominant-byte direction.
         const pArr = particles.get(i);
         if (pArr) {
           const speed = 0.003 + (l.hits / maxHits) * 0.006;
           const pSize = Math.max(2, Math.min(4, (l.hits / maxHits) * 4));
           for (let p = 0; p < pArr.length; p++) {
             pArr[p] = (pArr[p] + speed) % 1;
-            const px = src.x + (tgt.x - src.x) * pArr[p];
-            const py = src.y + (tgt.y - src.y) * pArr[p];
+            const t = pArr[p];
+            const px = fromX + (toX - fromX) * t;
+            const py = fromY + (toY - fromY) * t;
             ctx.beginPath();
             ctx.arc(px, py, pSize, 0, Math.PI * 2);
-            ctx.fillStyle = isDark ? 'rgba(248,113,113,0.8)' : 'rgba(220,38,38,0.6)';
+            ctx.fillStyle = c.dot;
             ctx.fill();
           }
         }
@@ -732,19 +849,19 @@ function NetworkGraph({ nodes, edges, width, height }: {
         ctx.save();
         ctx.shadowColor = 'rgba(0,0,0,0.12)';
         ctx.shadowBlur = 3;
-        ctx.fillStyle = isDark ? 'rgba(127,29,29,0.8)' : 'rgba(254,226,226,0.95)';
+        ctx.fillStyle = c.pillBg;
         ctx.beginPath();
         ctx.roundRect(mx - tw / 2 - padX, my - pillH / 2, tw + padX * 2, pillH, rr);
         ctx.fill();
         ctx.restore();
 
-        ctx.strokeStyle = isDark ? 'rgba(248,113,113,0.3)' : 'rgba(220,38,38,0.2)';
+        ctx.strokeStyle = c.pillBd;
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         ctx.roundRect(mx - tw / 2 - padX, my - pillH / 2, tw + padX * 2, pillH, rr);
         ctx.stroke();
 
-        ctx.fillStyle = isDark ? '#fca5a5' : '#b91c1c';
+        ctx.fillStyle = c.pillFg;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, mx, my);

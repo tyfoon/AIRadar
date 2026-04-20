@@ -79,6 +79,8 @@ export interface NetworkNode {
   device_class: string | null;
   os_name: string | null;
   last_seen: string | null;
+  edge_count?: number;        // # of edges touching this node
+  is_gateway?: boolean;       // top-degree node — usually the router
 }
 
 export interface NetworkEdge {
@@ -88,7 +90,9 @@ export interface NetworkEdge {
   target_mac?: string | null;
   port: number;
   port_label: string;
-  bytes?: number;            // new — drives edge thickness
+  bytes?: number;             // total (orig + resp)
+  orig_bytes?: number;        // src → peer (upload from src POV)
+  resp_bytes?: number;        // peer → src (download from src POV)
   hits: number;
   first_seen: string;
   last_seen: string;
