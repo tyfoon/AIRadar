@@ -97,6 +97,10 @@ export interface NetworkEdge {
   first_seen: string;
   last_seen: string;
   top_ports?: { proto_port: string; bytes: number; hits: number }[];
+  // Infra chatter edges (DNS/NetBIOS/mDNS/ICMP/...) — filtered out by
+  // the UI by default because they fan out to every peer and drown
+  // out the actual device-to-device relationships.
+  is_infrastructure?: boolean;
 }
 
 export interface NetworkGraphResponse {

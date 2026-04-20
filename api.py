@@ -4031,23 +4031,68 @@ def _port_label(port: int | str | None) -> str:
     return f"{name}/{port}" if name else str(port)
 
 
+# ICMP / ICMPv6 "type" → human label. Zeek logs the ICMP type in the
+# resp_port field which is misleading — there are no real ports for
+# ICMP. Types 128..137 are common IPv6 neighbor-discovery chatter that
+# shouldn't be labelled "ICMP port 136"; say what they are.
+_ICMP_TYPE_LABELS = {
+    0: "Ping reply", 3: "Unreachable", 5: "Redirect", 8: "Ping",
+    11: "Time exceeded",
+    # ICMPv6
+    128: "Ping (v6)", 129: "Ping reply (v6)",
+    130: "Listener query", 131: "Listener report", 132: "Listener done",
+    133: "Router solicit", 134: "Router advert",
+    135: "Neighbor solicit", 136: "Neighbor advert",
+    137: "Redirect (v6)",
+}
+
+
 def _port_description(port: int | str | None, proto: str | None = None) -> str:
     """Friendly description for use in UI labels.
 
     Known port → just the description ("DNS lookup", "Web", "mDNS").
+    ICMP type → friendly type name ("Neighbor advert" not "ICMP port 136").
     Unknown port → "<proto> port <n>" so users still get plain English
     instead of cryptic "udp/138" style strings.
     """
     if port is None:
         return ""
     port_n = int(port)
+    proto_l = (proto or "").lower()
+    if proto_l in ("icmp", "icmpv6"):
+        name = _ICMP_TYPE_LABELS.get(port_n)
+        return name if name else f"ICMP type {port_n}"
     name = _PORT_LABELS.get(port_n)
     if name:
         return name
-    proto_name = {"tcp": "TCP", "udp": "UDP", "icmp": "ICMP"}.get(
-        (proto or "").lower(), (proto or "").upper() or "port"
+    proto_name = {"tcp": "TCP", "udp": "UDP"}.get(
+        proto_l, (proto or "").upper() or "port"
     )
     return f"{proto_name} port {port_n}"
+
+
+# Ports that are "infrastructure chatter" — discovery, name resolution,
+# time sync, address allocation. They're useful to record (we want to
+# detect lateral movement on NetBIOS/SMB etc.) but in the network graph
+# they fan out to every peer and drown out the real device-to-device
+# relationships. Frontend default-hides them with a toggle.
+_INFRASTRUCTURE_PORTS = frozenset({
+    53,     # DNS
+    67, 68, # DHCP
+    123,    # NTP
+    137, 138, # NetBIOS name + broadcast
+    1900,   # SSDP discovery
+    3702,   # WS-Discovery (ONVIF)
+    5353,   # mDNS
+    5355,   # LLMNR
+})
+
+
+def _edge_is_infrastructure(port: int, proto: str | None) -> bool:
+    """True if an edge is discovery/name/time chatter (not a real flow)."""
+    if (proto or "").lower() in ("icmp", "icmpv6"):
+        return True
+    return port in _INFRASTRUCTURE_PORTS
 
 
 # Detection types that are treated as anomalies (policy-bypass, exception-only)
@@ -4711,6 +4756,7 @@ def get_network_graph(
                 "first_seen": str(r.first_seen) if r.first_seen else "",
                 "last_seen": str(r.last_seen) if r.last_seen else "",
                 "top_ports": {},
+                "is_infrastructure": False,  # filled in after aggregation
             }
         edge = edge_map[key]
         edge["bytes"] += int(r.bytes or 0)
@@ -4748,6 +4794,11 @@ def get_network_graph(
                 port_n = int(port_s)
                 edge["port"] = port_n
                 edge["port_label"] = _port_description(port_n, proto_s)
+                # Flag infra chatter by the DOMINANT port. An edge that
+                # mostly moves bytes on port 443 but had a small amount
+                # of incidental port-53 piggybacking is still a real
+                # conversation, not infrastructure.
+                edge["is_infrastructure"] = _edge_is_infrastructure(port_n, proto_s)
             except (ValueError, AttributeError):
                 pass
 

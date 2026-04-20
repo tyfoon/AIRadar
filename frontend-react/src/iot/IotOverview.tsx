@@ -265,8 +265,14 @@ function NetworkPanel({ data, hours, onHoursChange }: {
   const rawEdges = data?.edges || [];
   // Hide the gateway/router by default. Everything flows through it so
   // its star-shape dwarfs the actual device-to-device relationships.
-  // Toggle lets the user bring it back when they want full topology.
   const [hideGateway, setHideGateway] = useState(true);
+  // Hide infrastructure chatter (DNS / NetBIOS / mDNS / SSDP / ICMP) by
+  // default. These protocols fan out one→many: a single device probing
+  // every LAN peer ("can I cast? are you a file server?") would look
+  // like that device is talking to everyone, even though it's just
+  // discovery noise. The backend sets edge.is_infrastructure based on
+  // the dominant port.
+  const [hideInfra, setHideInfra] = useState(true);
   const gatewayKeys = useMemo(() => {
     const keys = new Set<string>();
     rawNodes.forEach(n => {
@@ -277,16 +283,36 @@ function NetworkPanel({ data, hours, onHoursChange }: {
     });
     return keys;
   }, [rawNodes]);
-  const nodes = hideGateway
-    ? rawNodes.filter(n => !n.is_gateway)
-    : rawNodes;
-  const edges = hideGateway
-    ? rawEdges.filter(e =>
-        !gatewayKeys.has(e.source_mac || e.source_ip) &&
-        !gatewayKeys.has(e.target_mac || e.target_ip),
-      )
-    : rawEdges;
+  // Edge filtering: apply both toggles. Node filtering is separate
+  // because a node with only infra chatter still exists as a device,
+  // just has no visible edges after filtering. d3-force drops orphan
+  // nodes visually by floating them off-center, which is fine.
+  const edges = useMemo(() => {
+    return rawEdges.filter(e => {
+      if (hideInfra && e.is_infrastructure) return false;
+      if (hideGateway && (
+        gatewayKeys.has(e.source_mac || e.source_ip) ||
+        gatewayKeys.has(e.target_mac || e.target_ip)
+      )) return false;
+      return true;
+    });
+  }, [rawEdges, hideInfra, hideGateway, gatewayKeys]);
+  // Nodes: keep only those actually touching a surviving edge (plus
+  // gateway unless hidden). Avoids a cloud of orphan device names
+  // floating with no visible connections.
+  const nodes = useMemo(() => {
+    const keep = new Set<string>();
+    edges.forEach(e => {
+      keep.add(e.source_ip);
+      keep.add(e.target_ip);
+    });
+    return rawNodes.filter(n => {
+      if (hideGateway && n.is_gateway) return false;
+      return keep.has(n.ip);
+    });
+  }, [rawNodes, edges, hideGateway]);
   const gatewayNode = rawNodes.find(n => n.is_gateway);
+  const infraEdgeCount = rawEdges.filter(e => e.is_infrastructure).length;
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ w: 800, h: 500 });
 
@@ -315,6 +341,21 @@ function NetworkPanel({ data, hours, onHoursChange }: {
             )}
           </h3>
           <div className="flex items-center gap-2 flex-wrap">
+            {infraEdgeCount > 0 && (
+              <label
+                className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 select-none cursor-pointer"
+                title="DNS / NetBIOS / mDNS / SSDP / ICMP — discovery chatter that fans out one→many and drowns out real flows"
+              >
+                <input
+                  type="checkbox"
+                  checked={hideInfra}
+                  onChange={e => setHideInfra(e.target.checked)}
+                  className="accent-indigo-500 w-3.5 h-3.5"
+                />
+                Hide infrastructure chatter
+                <span className="text-slate-400 dark:text-slate-500">({infraEdgeCount})</span>
+              </label>
+            )}
             {gatewayNode && (
               <label
                 className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 select-none cursor-pointer"
