@@ -79,10 +79,10 @@ export default function DevicesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/[0.04] p-1 rounded-lg">
           <button className={activeTab === 'devices' ? tabActive : tabInactive} onClick={() => setActiveTab('devices')}>
-            {t('dev.devicesTab') || 'Devices'}
+            {t('dev.tabDevices')}
           </button>
           <button className={activeTab === 'groups' ? tabActive : tabInactive} onClick={() => setActiveTab('groups')}>
-            {t('dev.groupsTab') || 'Groups'}
+            {t('dev.tabGroups')}
           </button>
         </div>
         {activeTab === 'devices' && (
