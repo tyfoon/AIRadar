@@ -5439,7 +5439,7 @@ async def main(zeek_log_dir: str) -> None:
     print(f"[*] JA4D DHCP fingerprinting: enabled (tailing ja4d.log)")
     print(f"[*] mDNS device name + service type discovery: enabled (tailing mdns.log)")
     print(f"[*] HTTP User-Agent fingerprinting: enabled (tailing http.log)")
-    print(f"[*] Screen time: enhanced with {len(ACTIVITY_CATEGORIES)} categories (via existing /activity endpoint)")
+    print(f"[*] Screen time: enhanced with extra domain categories (via existing /activity endpoint)")
     print(f"[*] x509 certificate fallback: enabled (tailing x509.log, cache size {_X509_CACHE_MAX})")
     print(f"[*] Long-lived connection monitoring: enabled (tailing conn_long.log, threshold {LONG_CONN_MIN_DURATION}s)")
     if dns_snooping_enabled:
