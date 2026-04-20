@@ -3228,7 +3228,35 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                 # to UA and why". Service resolves via the
                                 # existing _known_ips cache; unknown IPs
                                 # fall into the 'unknown' bucket.
-                                conv_mac = _normalize_mac(l2_mac) if l2_mac else None
+                                #
+                                # Resolve the LOCAL device's MAC. For outbound
+                                # flows the local side is src_ip; for inbound
+                                # it's resp_ip. Two bugs were fixed here:
+                                #   1) Outbound: used to only use this record's
+                                #      orig_l2_addr. When Zeek missed the L2
+                                #      frame (mid-stream capture, some IPv6
+                                #      paths, long-lived sessions that predate
+                                #      Zeek's restart) the row was written with
+                                #      mac_address=NULL and the fleet card
+                                #      filter GeoConversation.mac == device.mac
+                                #      dropped it — user saw "0B / 0 dst" for
+                                #      demonstrably active IoT devices.
+                                #   2) Inbound: used the same orig_l2_addr,
+                                #      but for inbound flows that is the
+                                #      UPSTREAM router's MAC, not the local
+                                #      device's. Attributed inbound bytes to
+                                #      the wrong device (or NULL).
+                                # Fallback to _ip_to_mac cache — populated
+                                # earlier by this tailer, the SSL/QUIC
+                                # sibling tailers, and ARP/NDP where available.
+                                if direction == "outbound":
+                                    local_ip = src_ip
+                                    conv_mac = (
+                                        _normalize_mac(l2_mac) if l2_mac
+                                        else _ip_to_mac.get(local_ip)
+                                    )
+                                else:  # inbound
+                                    conv_mac = _ip_to_mac.get(resp_ip)
                                 conv_svc = "unknown"
                                 conv_cat = None
 
