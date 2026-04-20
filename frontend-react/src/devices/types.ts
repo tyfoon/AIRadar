@@ -51,13 +51,27 @@ export interface Group {
   id: number;
   name: string;
   parent_id: number | null;
-  member_count: number;
+  member_count: number;              // visible members (auto + manual)
   icon: string;
   color: string;
+  // Origin & modification state drive the ✨ / 🛠️ indicators. All
+  // groups are functionally identical — these are purely informational.
+  origin?: 'suggested' | 'user';
+  modified_at?: string | null;
+  auto_match_rules?: string | null;  // JSON string
+  member_counts?: {
+    auto: number;
+    manual: number;
+    excluded: number;                // opt-outs of an auto-match
+  };
 }
 
 export interface GroupMember {
   mac_address: string;
+  source?: 'auto' | 'manual' | 'exclude';
+  hostname?: string | null;
+  display_name?: string | null;
+  vendor?: string | null;
 }
 
 export interface ReportData {

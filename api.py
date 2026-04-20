@@ -1270,6 +1270,22 @@ async def lifespan(app: FastAPI):
     _backfill_vendors()
     _cleanup_junk_hostnames()
     _cleanup_empty_sentinel_strings()
+    # Seed the suggested groups + run an initial eval. Defined in the
+    # auto_groups module. Idempotent — won't overwrite user edits.
+    try:
+        from auto_groups import seed_default_groups, evaluate_auto_groups
+        _db_seed = SessionLocal()
+        try:
+            n = seed_default_groups(_db_seed)
+            if n:
+                print(f"[auto-groups] seeded {n} suggested groups")
+            stats = evaluate_auto_groups(_db_seed, _classify_device_type_backend)
+            if stats["added"] or stats["removed"]:
+                print(f"[auto-groups] initial eval: +{stats['added']} -{stats['removed']} over {stats['groups_evaluated']} groups")
+        finally:
+            _db_seed.close()
+    except Exception as exc:
+        print(f"[auto-groups] startup seed/eval failed: {exc}")
     _normalize_mac_addresses()
     # One-shot: clear false-positive inbound attacks (established connections
     # to open web ports recorded before the conn_state filter was added).
@@ -2850,6 +2866,19 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(device)
+
+    # Re-evaluate auto-group rules for this specific MAC so new devices
+    # land in the right suggested groups within one request cycle (and
+    # devices whose attributes changed — e.g. vendor/hostname just
+    # filled in — migrate to the matching group). Scoped to one mac so
+    # it's O(groups) not O(groups × devices).
+    try:
+        from auto_groups import evaluate_auto_groups
+        evaluate_auto_groups(db, _classify_device_type_backend, only_macs=[mac])
+    except Exception as exc:
+        # Non-fatal: device registration shouldn't fail because of group eval
+        print(f"[auto-groups] eval for {mac} failed: {exc}")
+
     return device
 
 
@@ -9128,13 +9157,36 @@ Timestamp: {now.strftime('%Y-%m-%d %H:%M UTC')}
 
 @app.get("/api/groups")
 def list_groups(db: Session = Depends(get_db)):
-    """Return all device groups with member counts."""
+    """Return all device groups with member counts + origin info.
+
+    Members are split by source (auto / manual / exclude) so the UI
+    can show "8 leden · 5 regel + 3 handmatig". origin + modified_at
+    drive the subtle ✨/🛠️ indicators.
+    """
     groups = db.query(DeviceGroup).order_by(DeviceGroup.name).all()
+
+    # Pre-aggregate member counts per group per source (avoid N+1).
+    from sqlalchemy import func as _f
+    count_rows = (
+        db.query(
+            DeviceGroupMember.group_id,
+            DeviceGroupMember.source,
+            _f.count().label("cnt"),
+        )
+        .group_by(DeviceGroupMember.group_id, DeviceGroupMember.source)
+        .all()
+    )
+    counts_by_group: dict[int, dict[str, int]] = {}
+    for r in count_rows:
+        d = counts_by_group.setdefault(r.group_id, {"auto": 0, "manual": 0, "exclude": 0})
+        d[r.source] = int(r.cnt or 0)
+
     result = []
     for g in groups:
-        member_count = db.query(DeviceGroupMember).filter(
-            DeviceGroupMember.group_id == g.id
-        ).count()
+        counts = counts_by_group.get(g.id, {"auto": 0, "manual": 0, "exclude": 0})
+        # Visible member count excludes "exclude" entries (those are
+        # anti-memberships, not members).
+        visible = counts["auto"] + counts["manual"]
         result.append({
             "id": g.id,
             "name": g.name,
@@ -9142,7 +9194,14 @@ def list_groups(db: Session = Depends(get_db)):
             "icon": g.icon or "users-three",
             "color": g.color or "blue",
             "auto_match_rules": g.auto_match_rules,
-            "member_count": member_count,
+            "origin": g.origin or "user",
+            "modified_at": str(g.modified_at) if g.modified_at else None,
+            "member_count": visible,
+            "member_counts": {
+                "auto": counts["auto"],
+                "manual": counts["manual"],
+                "excluded": counts["exclude"],
+            },
             "created_at": str(g.created_at),
         })
     return {"groups": result}
@@ -9172,21 +9231,40 @@ def create_group(payload: dict = Body(...), db: Session = Depends(get_db)):
 
 @app.put("/api/groups/{group_id}")
 def update_group(group_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
-    """Update a group's name, icon, color, parent, or auto-match rules."""
+    """Update a group's name, icon, color, parent, or auto-match rules.
+
+    Any edit to a suggested group (origin='suggested') sets modified_at,
+    which the UI uses to switch the indicator from ✨ to 🛠️.
+    """
     group = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
-    if "name" in payload:
-        group.name = payload["name"]
-    if "parent_id" in payload:
-        group.parent_id = payload["parent_id"]
-    if "icon" in payload:
-        group.icon = payload["icon"]
-    if "color" in payload:
-        group.color = payload["color"]
-    if "auto_match_rules" in payload:
-        group.auto_match_rules = payload["auto_match_rules"]
+
+    changed = False
+    if "name" in payload and payload["name"] != group.name:
+        group.name = payload["name"]; changed = True
+    if "parent_id" in payload and payload["parent_id"] != group.parent_id:
+        group.parent_id = payload["parent_id"]; changed = True
+    if "icon" in payload and payload["icon"] != group.icon:
+        group.icon = payload["icon"]; changed = True
+    if "color" in payload and payload["color"] != group.color:
+        group.color = payload["color"]; changed = True
+    if "auto_match_rules" in payload and payload["auto_match_rules"] != group.auto_match_rules:
+        group.auto_match_rules = payload["auto_match_rules"]; changed = True
+
+    if changed and group.origin == "suggested":
+        group.modified_at = _utc_now_naive()
+
     db.commit()
+
+    # If rules changed on a suggested group, immediately re-evaluate so
+    # the membership catches up without waiting for the next periodic run.
+    if changed and "auto_match_rules" in payload:
+        try:
+            from auto_groups import evaluate_auto_groups
+            evaluate_auto_groups(db, _classify_device_type_backend)
+        except Exception as exc:
+            print(f"[auto-groups] re-eval after PUT failed: {exc}")
     return {"status": "ok"}
 
 
@@ -9237,32 +9315,79 @@ def list_group_members(group_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/groups/{group_id}/members", status_code=201)
 def add_group_member(group_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
-    """Add a device to a group."""
+    """Add a device to a group as a manual member.
+
+    If the device was previously 'excluded' (user had opted out of an
+    auto-match), clear that exclusion and promote to 'manual'. If
+    already 'auto'-matched, upgrade to 'manual' so the rule evaluator
+    stops managing it (user now owns this membership).
+    """
     mac = payload.get("mac_address")
     if not mac:
         raise HTTPException(status_code=400, detail="mac_address required")
+    source = payload.get("source", "manual")
+
     existing = db.query(DeviceGroupMember).filter(
         DeviceGroupMember.group_id == group_id,
         DeviceGroupMember.mac_address == mac,
     ).first()
     if existing:
+        # Adopt whichever new source is "stronger": manual always wins.
+        if source == "manual" and existing.source != "manual":
+            existing.source = "manual"
+            db.commit()
+            return {"status": "updated"}
         return {"status": "already_member"}
+
     db.add(DeviceGroupMember(
         group_id=group_id,
         mac_address=mac,
-        source=payload.get("source", "manual"),
+        source=source,
     ))
+    # User added → this suggestion is no longer pristine
+    group = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
+    if group and group.origin == "suggested":
+        group.modified_at = _utc_now_naive()
     db.commit()
     return {"status": "added"}
 
 
 @app.delete("/api/groups/{group_id}/members/{mac_address}", status_code=204)
-def remove_group_member(group_id: int, mac_address: str, db: Session = Depends(get_db)):
-    """Remove a device from a group."""
-    db.query(DeviceGroupMember).filter(
+def remove_group_member(
+    group_id: int,
+    mac_address: str,
+    hard: bool = Query(False, description="If true, hard-delete even auto-matched members (no exclusion)"),
+    db: Session = Depends(get_db),
+):
+    """Remove a device from a group.
+
+    Default behaviour:
+      - If member was 'auto' (matched a rule), convert to 'exclude' so
+        the rule evaluator won't re-add it on the next pass. Exclusions
+        persist until explicitly restored.
+      - If member was 'manual' or 'exclude', hard-delete the row.
+
+    Use ``?hard=true`` to delete without creating an exclusion (useful
+    for "restore": delete the exclude record so the rule can auto-add
+    again).
+    """
+    existing = db.query(DeviceGroupMember).filter(
         DeviceGroupMember.group_id == group_id,
         DeviceGroupMember.mac_address == mac_address,
-    ).delete()
+    ).first()
+    if not existing:
+        return None
+
+    if hard or existing.source in ("manual", "exclude"):
+        db.delete(existing)
+    else:  # source == 'auto' → downgrade to exclude
+        existing.source = "exclude"
+
+    # User-driven membership change → suggestion becomes customized
+    group = db.query(DeviceGroup).filter(DeviceGroup.id == group_id).first()
+    if group and group.origin == "suggested":
+        group.modified_at = _utc_now_naive()
+
     db.commit()
     return None
 

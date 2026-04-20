@@ -387,9 +387,23 @@ class DeviceGroup(Base):
     to multiple groups. Policies set on a group apply to all member
     devices, with priority: device > child-group > parent-group > global.
 
-    auto_match_rules is a JSON array of match criteria that automatically
-    add new devices to the group:
-      [{"field": "vendor", "operator": "contains", "value": "espressif"}]
+    auto_match_rules is a JSON array of match criteria. Rules are OR'd
+    together — any rule matching adds the device to the group:
+      [
+        {"field": "vendor", "op": "contains_any", "value": ["hikvision", "dahua"]},
+        {"field": "classified_type", "op": "equals_any", "value": ["ip camera"]}
+      ]
+    Evaluated periodically + on device register/update. Members added
+    this way get DeviceGroupMember.source='auto' and can be excluded
+    per-device via source='exclude'.
+
+    origin + modified_at distinguish suggested groups (seeded by
+    AI-Radar) from user-created ones, for a subtle UI indicator.
+    Functionally all groups are the same: any can have policies, rules,
+    members. ``origin='suggested'`` + ``modified_at IS NULL`` = pristine
+    suggestion ✨. ``origin='suggested'`` + ``modified_at IS NOT NULL``
+    = customized suggestion 🛠️. ``origin='user'`` = user-created (no
+    badge).
     """
 
     __tablename__ = "device_groups"
@@ -400,6 +414,8 @@ class DeviceGroup(Base):
     icon = Column(String, nullable=True, default="users-three")  # Phosphor icon name
     color = Column(String, nullable=True, default="blue")
     auto_match_rules = Column(String, nullable=True)  # JSON array
+    origin = Column(String, nullable=False, default="user")  # "suggested" | "user"
+    modified_at = Column(DateTime, nullable=True)  # set on any user edit to a suggested group
     created_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
@@ -987,6 +1003,24 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE service_policies ADD COLUMN expires_at DATETIME"
+                ))
+
+    # --- Ensure device_groups.origin + modified_at columns exist ---
+    # Added for the "unified groups" feature: distinguishes AI-Radar
+    # seeded suggestions ("suggested") from user-created groups ("user"),
+    # with a subtle "modified" state once a suggestion is edited.
+    inspector = inspect(engine)
+    if "device_groups" in inspector.get_table_names():
+        dg_cols = [c["name"] for c in inspector.get_columns("device_groups")]
+        if "origin" not in dg_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE device_groups ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'"
+                ))
+        if "modified_at" not in dg_cols:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE device_groups ADD COLUMN modified_at DATETIME"
                 ))
 
     # --- Ensure detection_events columns exist ---
