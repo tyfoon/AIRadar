@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="nl" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <title>AI-Radar · Groups mockup v3 (nesting + rich cards)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    body { background: #0B0C10; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+    .scene-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; font-weight: 600; }
+    .scene-desc { color: #94a3b8; font-size: 13px; }
+    .mock-shell { background: #0f1117; border: 1px solid rgba(255,255,255,0.04); border-radius: 12px; padding: 24px; }
+    /* Palette */
+    .pal-rose { background-color: rgba(136,19,55,0.3); color: #fb7185; }
+    .pal-purple { background-color: rgba(88,28,135,0.3); color: #c084fc; }
+    .pal-pink { background-color: rgba(131,24,67,0.3); color: #f472b6; }
+    .pal-orange { background-color: rgba(124,45,18,0.3); color: #fb923c; }
+    .pal-sky { background-color: rgba(12,74,110,0.3); color: #38bdf8; }
+    .pal-blue { background-color: rgba(30,58,138,0.3); color: #60a5fa; }
+    .pal-amber { background-color: rgba(120,53,15,0.3); color: #fbbf24; }
+    .pal-slate { background-color: rgb(30,41,59); color: #94a3b8; }
+    .pal-teal { background-color: rgba(19,78,74,0.3); color: #2dd4bf; }
+    .pal-indigo { background-color: rgba(49,46,129,0.3); color: #818cf8; }
+    .pal-emerald { background-color: rgba(6,78,59,0.3); color: #34d399; }
+    .pal-stone { background-color: rgb(41,37,36); color: #a8a29e; }
+  </style>
+</head>
+<body class="p-6 max-w-[1400px] mx-auto">
+
+<header class="mb-8">
+  <h1 class="text-2xl font-bold text-white">Groups — mockup v3</h1>
+  <p class="text-sm text-slate-400 mt-1">
+    Toevoegingen t.o.v. v2: nesting zichtbaar in kaart, rijkere cards, group-detail panel met sub-group management.
+  </p>
+</header>
+
+<!-- =========================================================================
+     SCENE 1 — Grid with nesting hints
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 1</span>
+    <span class="scene-desc">Groups grid. Parents tonen "↓ N subgroepen", children tonen "↳ in Parent". Visueel vlak, relatie zichtbaar.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <h2 class="text-sm font-semibold text-slate-200">Groepen</h2>
+        <span class="text-[11px] text-slate-500">15 totaal · 3 top-level · 12 genest</span>
+        <div class="flex items-center gap-1 ml-2 flex-wrap">
+          <button class="text-[11px] px-2.5 py-1 rounded-full bg-blue-600 text-white font-medium">Alles · 15</button>
+          <button class="text-[11px] px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400">✨ Voorgesteld · 12</button>
+          <button class="text-[11px] px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400">🛠️ Aangepast · 2</button>
+          <button class="text-[11px] px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400">Eigen · 1</button>
+          <span class="w-px h-4 bg-white/[0.06] mx-1"></span>
+          <button class="text-[11px] px-2.5 py-1 rounded-full bg-white/[0.04] text-slate-400" title="Toon als boomstructuur">
+            <i class="ph-duotone ph-tree-view text-xs mr-1"></i>Tree-view
+          </button>
+        </div>
+      </div>
+      <button class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium">
+        <i class="ph-bold ph-plus text-xs mr-1"></i>Nieuwe groep
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+      <!-- Parent card with children indicator -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-purple-500/20 hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-purple flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-house-line text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Smart Home</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">14 leden · <span class="text-purple-400"><i class="ph-duotone ph-folders text-[10px]"></i> 3 subgroepen</span></p>
+        </div>
+      </div>
+
+      <!-- Child card with parent indicator -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors ml-4 relative">
+        <span class="absolute -left-4 top-1/2 w-3 h-px bg-purple-500/30"></span>
+        <span class="absolute -left-4 top-0 bottom-1/2 w-px bg-purple-500/30"></span>
+        <div class="w-10 h-10 rounded-lg pal-teal flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-cpu text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">IoT / MCUs</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">12 leden · <span class="text-purple-400"><i class="ph-bold ph-arrow-u-up-left text-[10px]"></i> in Smart Home</span></p>
+        </div>
+      </div>
+
+      <!-- Child card with parent indicator -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors ml-4 relative">
+        <span class="absolute -left-4 top-1/2 w-3 h-px bg-purple-500/30"></span>
+        <span class="absolute -left-4 top-0 bottom-0 w-px bg-purple-500/30"></span>
+        <div class="w-10 h-10 rounded-lg pal-amber flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-thermometer text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Klimaat & Energie</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">5 leden · <span class="text-purple-400"><i class="ph-bold ph-arrow-u-up-left text-[10px]"></i> in Smart Home</span></p>
+        </div>
+      </div>
+
+      <!-- Child with manual member indicator + customized state -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-amber-500/15 hover:bg-white/[0.04] cursor-pointer transition-colors ml-4 relative">
+        <span class="absolute -left-4 top-1/2 w-3 h-px bg-purple-500/30"></span>
+        <span class="absolute -left-4 top-0 bottom-1/2 w-px bg-purple-500/30"></span>
+        <div class="w-10 h-10 rounded-lg pal-emerald flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-washing-machine text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Appliances</p>
+            <i class="ph-duotone ph-pencil text-[10px] text-amber-400/80"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">2 leden · <span class="text-purple-400"><i class="ph-bold ph-arrow-u-up-left text-[10px]"></i> in Smart Home</span></p>
+        </div>
+      </div>
+
+      <!-- Another top-level parent -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-pink-500/20 hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-pink flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-monitor-play text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Media</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">9 leden · <span class="text-pink-400"><i class="ph-duotone ph-folders text-[10px]"></i> 2 subgroepen</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors ml-4 relative">
+        <span class="absolute -left-4 top-1/2 w-3 h-px bg-pink-500/30"></span>
+        <span class="absolute -left-4 top-0 bottom-1/2 w-px bg-pink-500/30"></span>
+        <div class="w-10 h-10 rounded-lg pal-orange flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-television-simple text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">TVs</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">3 leden · <span class="text-pink-400"><i class="ph-bold ph-arrow-u-up-left text-[10px]"></i> in Media</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors ml-4 relative">
+        <span class="absolute -left-4 top-1/2 w-3 h-px bg-pink-500/30"></span>
+        <span class="absolute -left-4 top-0 bottom-0 w-px bg-pink-500/30"></span>
+        <div class="w-10 h-10 rounded-lg pal-pink flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-speaker-high text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Speakers</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">6 leden · <span class="text-pink-400"><i class="ph-bold ph-arrow-u-up-left text-[10px]"></i> in Media</span></p>
+        </div>
+      </div>
+
+      <!-- Top-level non-parent -->
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-rose flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-video-camera text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Camera's</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">8 leden · via regels</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-sky flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-device-mobile text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Phones & Tablets</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">7 leden · via regels</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-blue flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-laptop text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Computers</p>
+            <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          </div>
+          <p class="text-[11px] text-slate-400">9 leden · via regels</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] cursor-pointer transition-colors">
+        <div class="w-10 h-10 rounded-lg pal-pink flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-users-three text-xl"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1">
+            <p class="text-sm font-semibold text-slate-200 truncate">Familie Annie</p>
+          </div>
+          <p class="text-[11px] text-slate-400">3 leden · handmatig</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-[11px] text-slate-500 mt-4 italic">
+      Parent-kaarten hebben een gekleurde linker-border (kleur van de parent). Children staan 4 indent-units naar rechts, met connector-lijntje naar de parent erboven. Visueel licht, klik op elke kaart om details + sub-groepen te beheren.
+    </p>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 2 — Group detail with nesting management
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 2</span>
+    <span class="scene-desc">Click op een groep → detail. Breadcrumb bovenin, sub-groepen + leden sectie, rules editor, policies.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="bg-white/[0.02] border border-purple-500/20 rounded-xl overflow-hidden">
+      <!-- Breadcrumb + header -->
+      <div class="px-4 pt-3 pb-1 text-[10px] text-slate-500 flex items-center gap-1">
+        <i class="ph-duotone ph-house-line text-[11px] mr-0.5"></i>
+        <span>Groepen</span>
+        <i class="ph-bold ph-caret-right text-[8px] text-slate-600"></i>
+        <a class="text-slate-400 hover:text-slate-200 cursor-pointer">Smart Home</a>
+        <i class="ph-bold ph-caret-right text-[8px] text-slate-600"></i>
+        <span class="text-slate-300">IoT / MCUs</span>
+      </div>
+
+      <div class="flex items-center justify-between p-4 border-b border-white/[0.04]">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-lg pal-teal flex items-center justify-center">
+            <i class="ph-duotone ph-cpu text-2xl"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-semibold text-slate-100">IoT / MCUs</h3>
+              <i class="ph-fill ph-sparkle text-xs text-indigo-400/80"></i>
+              <button class="text-[11px] text-slate-500 hover:text-slate-300"><i class="ph-duotone ph-pencil-simple text-xs"></i> Hernoemen</button>
+              <button class="text-[11px] text-slate-500 hover:text-slate-300"><i class="ph-duotone ph-palette text-xs"></i> Kleur & icoon</button>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">12 leden · <span class="text-purple-400">in Smart Home</span> · eval 3 min geleden</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Parent selector — subtle inline -->
+          <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span>Parent:</span>
+            <button class="px-2 py-1 rounded bg-white/[0.04] hover:bg-white/[0.08] inline-flex items-center gap-1">
+              <i class="ph-duotone ph-house-line text-[11px] text-purple-400"></i>
+              Smart Home
+              <i class="ph-bold ph-caret-down text-[8px]"></i>
+            </button>
+          </div>
+          <button class="p-1.5 rounded hover:bg-white/[0.06] text-slate-400 hover:text-red-400" title="Verwijderen">
+            <i class="ph-duotone ph-trash text-base"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Active policies -->
+      <div class="p-4 border-b border-white/[0.04] bg-blue-500/[0.03]">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Policies · 2</p>
+          <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-xs"></i>Policy toevoegen</button>
+        </div>
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-red-500/20">
+            <i class="ph-duotone ph-prohibit text-red-400"></i>
+            <span class="text-[12px] text-slate-200">Internet geblokkeerd</span>
+            <span class="text-[10px] text-slate-500">permanent</span>
+            <span class="flex-1"></span>
+            <button class="text-[11px] text-slate-500 hover:text-slate-200">Aanpassen</button>
+          </div>
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-purple-500/20">
+            <i class="ph-duotone ph-arrow-u-up-left text-purple-400" title="Geërfd van Smart Home"></i>
+            <span class="text-[12px] text-slate-200">Nieuwe landen alerten</span>
+            <span class="text-[10px] text-slate-500">via parent <span class="text-purple-400">Smart Home</span></span>
+            <span class="flex-1"></span>
+            <button class="text-[11px] text-slate-500 hover:text-slate-200">Bekijken</button>
+          </div>
+        </div>
+        <p class="text-[10px] text-slate-500 mt-2"><i class="ph-duotone ph-arrow-u-up-left text-purple-400 text-[11px] mr-0.5"></i>= geërfd van parent groep. Device-specifieke policies hebben voorrang op groep-policies.</p>
+      </div>
+
+      <!-- Sub-groups (only shown if this group has any) — not this example, so
+           instead we show the ADD Subgroup UI -->
+      <div class="p-4 border-b border-white/[0.04]">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Sub-groepen · 0</p>
+          <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-xs"></i>Sub-groep maken</button>
+        </div>
+        <p class="text-[11px] text-slate-500">Deze groep heeft geen sub-groepen. Policies hangen direct aan deze groep.</p>
+      </div>
+
+      <!-- Match rules (editable) -->
+      <div class="p-4 border-b border-white/[0.04]">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Match rules · auto-toekenning</p>
+          <button class="text-[11px] text-blue-400 hover:text-blue-300 inline-flex items-center gap-1">
+            <i class="ph-duotone ph-pencil text-xs"></i>Regels bewerken
+          </button>
+        </div>
+        <div class="space-y-1.5">
+          <div class="flex items-start gap-2">
+            <i class="ph-fill ph-check-circle text-xs text-emerald-400 mt-0.5"></i>
+            <span class="text-[12px] text-slate-300">
+              <span class="font-mono bg-white/[0.04] px-1 rounded">vendor</span>
+              bevat één van
+              <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">espressif</span>
+              <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">texas instruments</span>
+            </span>
+          </div>
+          <div class="flex items-start gap-2">
+            <i class="ph-fill ph-check-circle text-xs text-emerald-400 mt-0.5"></i>
+            <span class="text-[12px] text-slate-300">
+              <span class="font-mono bg-white/[0.04] px-1 rounded">dhcp_vendor_class</span>
+              start met
+              <span class="font-mono bg-teal-500/10 text-teal-300 px-1 rounded">udhcp</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Members -->
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] uppercase tracking-wider font-semibold text-slate-500">Leden · 12</p>
+          <div class="flex items-center gap-2">
+            <input type="text" placeholder="Zoeken..." class="text-[11px] px-2 py-1 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300 w-40"/>
+            <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-xs"></i>Handmatig</button>
+          </div>
+        </div>
+        <div class="space-y-1">
+          <div class="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.03]">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <i class="ph-duotone ph-cpu text-base text-emerald-400"></i>
+              <span class="text-[13px] text-slate-200 truncate">ESP_DCC733</span>
+              <span class="text-[10px] text-slate-500 font-mono">.117</span>
+              <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-medium">
+                <i class="ph-fill ph-sparkle text-[8px]"></i>via regel
+              </span>
+            </div>
+            <button class="text-[10px] px-2 py-0.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400">
+              <i class="ph-bold ph-x text-[10px] mr-0.5"></i>Uitsluiten
+            </button>
+          </div>
+          <div class="text-[11px] text-slate-500 text-center py-2">... 11 meer leden</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 3 — Create/move group with parent selector
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 3</span>
+    <span class="scene-desc">"Nieuwe groep" modal. Naam, icoon+kleur, optioneel parent, en direct rules bedenken.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="max-w-md bg-white/[0.02] border border-blue-500/20 rounded-xl">
+      <div class="flex items-center justify-between p-4 border-b border-white/[0.04]">
+        <h3 class="text-sm font-semibold text-slate-100">Nieuwe groep</h3>
+        <button class="text-slate-500 hover:text-slate-300"><i class="ph-bold ph-x"></i></button>
+      </div>
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="text-[10px] text-slate-500 uppercase tracking-wider">Naam</label>
+          <input type="text" value="Camera's zolder" class="mt-1 w-full text-sm px-2 py-1.5 rounded bg-white/[0.04] border border-white/[0.06] text-slate-200"/>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider">Icoon</label>
+            <button class="mt-1 w-10 h-10 rounded-lg pal-rose flex items-center justify-center hover:ring-2 hover:ring-rose-500/40">
+              <i class="ph-duotone ph-video-camera text-xl"></i>
+            </button>
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-500 uppercase tracking-wider">Kleur</label>
+            <div class="mt-1 flex gap-1">
+              <button class="w-5 h-5 rounded pal-rose ring-2 ring-white/30"></button>
+              <button class="w-5 h-5 rounded pal-purple"></button>
+              <button class="w-5 h-5 rounded pal-pink"></button>
+              <button class="w-5 h-5 rounded pal-orange"></button>
+              <button class="w-5 h-5 rounded pal-sky"></button>
+              <button class="w-5 h-5 rounded pal-blue"></button>
+              <button class="w-5 h-5 rounded pal-amber"></button>
+              <button class="w-5 h-5 rounded pal-teal"></button>
+              <button class="w-5 h-5 rounded pal-indigo"></button>
+              <button class="w-5 h-5 rounded pal-emerald"></button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-[10px] text-slate-500 uppercase tracking-wider">Parent groep (optioneel)</label>
+          <select class="mt-1 w-full text-sm px-2 py-1.5 rounded bg-white/[0.04] border border-white/[0.06] text-slate-200">
+            <option>— geen parent (top-level) —</option>
+            <optgroup label="Voorgesteld">
+              <option selected>📹 Camera's</option>
+              <option>🏠 Smart Home</option>
+              <option>🎬 Media</option>
+            </optgroup>
+            <optgroup label="Eigen">
+              <option>👨‍👩‍👧 Familie Annie</option>
+            </optgroup>
+          </select>
+          <p class="text-[10px] text-slate-500 mt-1">
+            <i class="ph-duotone ph-info text-xs"></i>
+            Policies op de parent gelden automatisch ook voor deze groep.
+          </p>
+        </div>
+
+        <div>
+          <label class="text-[10px] text-slate-500 uppercase tracking-wider">Auto-match regels (optioneel)</label>
+          <div class="mt-1 space-y-1.5">
+            <div class="flex items-center gap-1 text-[11px]">
+              <select class="text-xs px-2 py-1 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300">
+                <option>ip_address</option>
+                <option selected>hostname</option>
+                <option>vendor</option>
+                <option>device_class</option>
+              </select>
+              <select class="text-xs px-2 py-1 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300">
+                <option>bevat</option>
+                <option selected>start met</option>
+                <option>is gelijk aan</option>
+                <option>regex match</option>
+              </select>
+              <input type="text" value="attic-cam" class="flex-1 text-xs px-2 py-1 rounded bg-white/[0.04] border border-white/[0.06] text-slate-300"/>
+              <button class="text-slate-500 hover:text-red-400"><i class="ph-bold ph-x text-xs"></i></button>
+            </div>
+            <button class="text-[11px] text-blue-400 hover:text-blue-300"><i class="ph-bold ph-plus text-xs"></i>Extra regel toevoegen (OR)</button>
+          </div>
+          <p class="text-[10px] text-slate-500 mt-2">
+            Devices die aan een van deze regels voldoen worden automatisch lid van deze groep.
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2 p-4 border-t border-white/[0.04]">
+        <button class="text-xs px-3 py-1.5 rounded-lg text-slate-400 hover:bg-white/[0.04]">Annuleren</button>
+        <button class="text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium">Aanmaken</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- =========================================================================
+     SCENE 4 — Alternative: tree-view toggle
+     ========================================================================= -->
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">SCENE 4 (alternative)</span>
+    <span class="scene-desc">Als het bij veel groepen druk wordt in de grid: toggle naar tree-view voor klassiek indent pattern.</span>
+  </div>
+  <div class="mock-shell">
+
+    <div class="space-y-0.5">
+      <div class="flex items-center gap-3 p-2.5 rounded hover:bg-white/[0.03] cursor-pointer">
+        <button class="text-slate-500"><i class="ph-bold ph-caret-down text-xs"></i></button>
+        <div class="w-8 h-8 rounded-lg pal-purple flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-house-line text-base"></i>
+        </div>
+        <span class="text-sm font-semibold text-slate-200">Smart Home</span>
+        <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+        <span class="text-[11px] text-slate-500 ml-auto">14 leden · 3 subgroepen</span>
+      </div>
+
+      <div class="ml-8 border-l border-white/[0.06] pl-3 space-y-0.5">
+        <div class="flex items-center gap-3 p-2 rounded hover:bg-white/[0.03] cursor-pointer">
+          <div class="w-7 h-7 rounded-lg pal-teal flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-cpu text-sm"></i>
+          </div>
+          <span class="text-[13px] text-slate-300">IoT / MCUs</span>
+          <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          <span class="text-[11px] text-slate-500 ml-auto">12 leden</span>
+        </div>
+        <div class="flex items-center gap-3 p-2 rounded hover:bg-white/[0.03] cursor-pointer">
+          <div class="w-7 h-7 rounded-lg pal-amber flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-thermometer text-sm"></i>
+          </div>
+          <span class="text-[13px] text-slate-300">Klimaat & Energie</span>
+          <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+          <span class="text-[11px] text-slate-500 ml-auto">5 leden</span>
+        </div>
+        <div class="flex items-center gap-3 p-2 rounded hover:bg-white/[0.03] cursor-pointer">
+          <div class="w-7 h-7 rounded-lg pal-emerald flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-washing-machine text-sm"></i>
+          </div>
+          <span class="text-[13px] text-slate-300">Appliances</span>
+          <i class="ph-duotone ph-pencil text-[10px] text-amber-400/80"></i>
+          <span class="text-[11px] text-slate-500 ml-auto">2 leden</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-2.5 rounded hover:bg-white/[0.03] cursor-pointer">
+        <button class="text-slate-500"><i class="ph-bold ph-caret-down text-xs"></i></button>
+        <div class="w-8 h-8 rounded-lg pal-pink flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-monitor-play text-base"></i>
+        </div>
+        <span class="text-sm font-semibold text-slate-200">Media</span>
+        <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+        <span class="text-[11px] text-slate-500 ml-auto">9 leden · 2 subgroepen</span>
+      </div>
+
+      <div class="ml-8 border-l border-white/[0.06] pl-3 space-y-0.5">
+        <div class="flex items-center gap-3 p-2 rounded hover:bg-white/[0.03] cursor-pointer">
+          <div class="w-7 h-7 rounded-lg pal-orange flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-television-simple text-sm"></i>
+          </div>
+          <span class="text-[13px] text-slate-300">TVs</span>
+          <span class="text-[11px] text-slate-500 ml-auto">3 leden</span>
+        </div>
+        <div class="flex items-center gap-3 p-2 rounded hover:bg-white/[0.03] cursor-pointer">
+          <div class="w-7 h-7 rounded-lg pal-pink flex items-center justify-center flex-shrink-0">
+            <i class="ph-duotone ph-speaker-high text-sm"></i>
+          </div>
+          <span class="text-[13px] text-slate-300">Speakers</span>
+          <span class="text-[11px] text-slate-500 ml-auto">6 leden</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 p-2.5 rounded hover:bg-white/[0.03] cursor-pointer">
+        <span class="w-3"></span>
+        <div class="w-8 h-8 rounded-lg pal-rose flex items-center justify-center flex-shrink-0">
+          <i class="ph-duotone ph-video-camera text-base"></i>
+        </div>
+        <span class="text-sm font-semibold text-slate-200">Camera's</span>
+        <i class="ph-fill ph-sparkle text-[10px] text-indigo-400/60"></i>
+        <span class="text-[11px] text-slate-500 ml-auto">8 leden</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <span class="scene-label">QUESTIONS</span>
+  </div>
+  <div class="mock-shell">
+    <ol class="text-sm text-slate-300 space-y-2 list-decimal list-inside marker:text-slate-500">
+      <li><strong class="text-slate-100">Grid vs tree view:</strong> ik stel voor: grid als default (visueel vlakker, snel scannen), tree-view knop voor netwerken met veel groepen. Alternatief is alleen tree. Voorkeur?</li>
+      <li><strong class="text-slate-100">Connector lijntjes tussen child en parent</strong> in de grid (Scene 1): subtiel / storend / weg?</li>
+      <li><strong class="text-slate-100">Indent-breedte</strong> voor children in grid: nu 4 units (~16px). Meer?</li>
+      <li><strong class="text-slate-100">Policy-inheritance indicator</strong> (Scene 2, de "↰" bij de "via parent Smart Home" policy): OK zo of anders visualiseren?</li>
+      <li><strong class="text-slate-100">"Sub-groep maken" direct vanuit parent detail</strong> (Scene 2) — of alleen via de globale "Nieuwe groep" knop met parent-dropdown?</li>
+      <li><strong class="text-slate-100">Voorgestelde parent-child relaties</strong> bij seeding: moet ik de 12 default groepen opnieuw seeden met standaard-nesting? Bijvoorbeeld: Smart Home wordt parent van Klimaat/IoT/Appliances. Media wordt parent van TVs/Speakers. Of laten staan als plat en jij nestet handmatig?</li>
+    </ol>
+  </div>
+</section>
+
+</body>
+</html>
