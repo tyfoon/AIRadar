@@ -22,6 +22,12 @@ export interface FleetDevice {
   top_countries: { cc: string; bytes: number }[];
   online: boolean;
   baseline_avg_bytes_24h: number | null;
+  // LAN-to-LAN stats (backfilled with 0 for backward compat when the
+  // backend hasn't been updated yet).
+  lan_bytes_24h: number;
+  lan_peers: number;
+  lan_orig_bytes_24h: number;
+  lan_resp_bytes_24h: number;
 }
 
 export interface FleetResponse {

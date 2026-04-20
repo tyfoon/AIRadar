@@ -124,22 +124,28 @@ const HEALTH_COLOR: Record<string, { stroke: string; fill: string; dot: string }
 
 /** Derive 0-100 radar dimensions from existing FleetDevice fields. */
 function computeRadar(d: FleetDevice): Record<string, number> {
+  // Total = cloud + LAN. A camera that only streams to its NVR has
+  // bytes_24h=0 but lan_bytes_24h > 0 — still a very active device;
+  // the fingerprint should reflect that instead of collapsing to a dot.
+  const totalBytes = (d.bytes_24h || 0) + (d.lan_bytes_24h || 0);
+  const totalPeers = (d.destinations || 0) + (d.lan_peers || 0);
+
   // No activity in the window → radar has nothing to fingerprint. Return
   // all-zero so the polygon collapses to a dot at the center, matching
-  // the user's mental model ("0B in, 0B out, no destinations, empty
+  // the user's mental model ("0B in, 0B out, no peers, empty
   // fingerprint"). Without this the math bottoms out in two deceiving
   // ways: a) zero-baseline devices get reg=100 (ratio defaults to 1 →
   // deviation 0 → "perfect regularity"); b) devices with a baseline
   // that went silent get reg=75 and a small anomaly bump (ratio=0 →
   // deviation 1 → reg 75, baselineDev 12). Either way the polygon
   // draws a visible shape for a device that is literally doing nothing.
-  if (!d.bytes_24h && !d.hits_24h && !d.destinations) {
+  if (!totalBytes && !d.hits_24h && !totalPeers) {
     return { volume: 0, frequency: 0, regularity: 0, uploadRatio: 0, destinations: 0, deviation: 0 };
   }
 
   // Volume: log scale — 1 KB=20, 1 MB=40, 100 MB=60, 1 GB=70, 10 GB=85, 100 GB=100
-  const vol = d.bytes_24h > 0
-    ? Math.min(100, Math.max(5, (Math.log10(d.bytes_24h) - 3) / 8 * 100))
+  const vol = totalBytes > 0
+    ? Math.min(100, Math.max(5, (Math.log10(totalBytes) - 3) / 8 * 100))
     : 0;
 
   // Frequency: sqrt scale — 100 hits=10, 1k=32, 5k=71, 10k=100
@@ -151,11 +157,14 @@ function computeRadar(d: FleetDevice): Record<string, number> {
   const deviation = Math.abs(ratio - 1);  // 0 = perfect, 4.8 = 580%
   const reg = Math.max(0, 100 - deviation * 25);
 
-  // Upload ratio: direct percentage (0-100)
-  const upRatio = d.bytes_24h > 0 ? (d.orig_bytes_24h / d.bytes_24h) * 100 : 0;
+  // Upload ratio: direct percentage (0-100). Includes LAN bytes so a
+  // camera streaming to the NVR reads as high upload-ratio.
+  const totalOrig = (d.orig_bytes_24h || 0) + (d.lan_orig_bytes_24h || 0);
+  const upRatio = totalBytes > 0 ? (totalOrig / totalBytes) * 100 : 0;
 
-  // Destinations: sqrt scale — 5=45, 10=63, 25=100, 50+=100
-  const dests = Math.min(100, Math.sqrt(d.destinations / 25) * 100);
+  // Destinations: sqrt scale — 5=45, 10=63, 25=100, 50+=100.
+  // Includes LAN peers so LAN-dominant devices still light up this axis.
+  const dests = Math.min(100, Math.sqrt(totalPeers / 25) * 100);
 
   // Deviation from normal: combines baseline deviation + anomaly count
   // 580% baseline alone should score high, anomalies add more
@@ -414,13 +423,29 @@ export function FleetCard({ device: d }: { device: FleetDevice }) {
       {/* Stats row — mt-auto pushes this + everything below (throughput
           bar + country/anomaly footer) to the bottom of the card so the
           flag line aligns across all cards in the row regardless of how
-          tall the heatmap above ended up. */}
-      <div className="flex items-center justify-between mt-auto pt-2 text-[10px] text-slate-500 dark:text-slate-400">
-        <span className="tabular-nums">{fmtBytes(d.bytes_24h)}</span>
-        <span className="flex items-center gap-1">
-          <span className="text-amber-500">↑{fmtBytes(d.orig_bytes_24h)}</span>
-          <span className="text-blue-500">↓{fmtBytes(d.resp_bytes_24h)}</span>
-        </span>
+          tall the heatmap above ended up. Cloud vs LAN bytes are shown
+          on separate lines so a camera-to-NVR device reads clearly as
+          "Cloud 0B · LAN 2 GB" instead of mysteriously "0B". */}
+      <div className="mt-auto pt-2 text-[10px] text-slate-500 dark:text-slate-400">
+        <div className="flex items-center justify-between">
+          <span className="tabular-nums"><i className="ph-duotone ph-globe text-[11px] mr-0.5" />{fmtBytes(d.bytes_24h)}</span>
+          <span className="flex items-center gap-1">
+            <span className="text-amber-500">↑{fmtBytes(d.orig_bytes_24h)}</span>
+            <span className="text-blue-500">↓{fmtBytes(d.resp_bytes_24h)}</span>
+          </span>
+        </div>
+        {(d.lan_bytes_24h ?? 0) > 0 && (
+          <div className="flex items-center justify-between mt-0.5">
+            <span className="tabular-nums" title="LAN traffic (device↔device)">
+              <i className="ph-duotone ph-network text-[11px] mr-0.5" />{fmtBytes(d.lan_bytes_24h)}
+              <span className="text-slate-400 dark:text-slate-500 ml-1">({d.lan_peers} peer{d.lan_peers === 1 ? '' : 's'})</span>
+            </span>
+            <span className="flex items-center gap-1 opacity-80">
+              <span className="text-amber-500">↑{fmtBytes(d.lan_orig_bytes_24h)}</span>
+              <span className="text-blue-500">↓{fmtBytes(d.lan_resp_bytes_24h)}</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Throughput bar — always renders a slot so cards without a

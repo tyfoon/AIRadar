@@ -270,6 +270,52 @@ class GeoConversation(Base):
     )
 
 
+class LanConversation(Base):
+    """LAN-to-LAN traffic: per (src device, peer IP, port, proto).
+
+    Parallel to GeoConversation but for flows where BOTH ends are local
+    (e.g. Hikvision camera → NVR, smart hub → HomeAssistant, printer →
+    client). The geo pipeline skips these because it has no country to
+    tag them with — historically this traffic was entirely invisible to
+    the IoT fleet card even though it's often the PRIMARY activity of
+    a device (cameras stream to local NVRs all day).
+
+    Recorded from the same conn.log tail path as GeoConversation, but
+    in its own accumulator. Aggregated per 5-tuple (mac, peer_ip, port,
+    proto) so the chatty IoT long-lived UDP heartbeats don't explode
+    row count — repeated flows upsert on the same row.
+
+    Queries for a specific device should match on either end:
+      WHERE mac_address = X OR peer_mac = X
+    because conn.log records one row per flow keyed on the originator;
+    the peer's fleet card needs to find its own traffic via peer_mac.
+    """
+
+    __tablename__ = "lan_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mac_address = Column(String, nullable=False, index=True)  # originator (local)
+    peer_ip = Column(String, nullable=False, index=True)      # other local IP
+    peer_mac = Column(String, nullable=True, index=True)      # may be null if unresolved
+    port = Column(Integer, nullable=False)                    # responder port
+    proto = Column(String, nullable=False)                    # "tcp" | "udp" | "icmp"
+    bytes_transferred = Column(Integer, nullable=False, default=0)
+    orig_bytes = Column(Integer, nullable=False, default=0)   # originator → peer
+    resp_bytes = Column(Integer, nullable=False, default=0)   # peer → originator
+    hits = Column(Integer, nullable=False, default=0)
+    first_seen = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    last_seen = Column(DateTime, nullable=False, index=True,
+                       default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "mac_address", "peer_ip", "port", "proto",
+            name="uq_lan_conv_flow",
+        ),
+    )
+
+
 class IpMetadata(Base):
     """Reverse-DNS and ASN cache for remote IPs seen in geo conversations.
 

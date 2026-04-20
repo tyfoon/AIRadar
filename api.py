@@ -101,6 +101,7 @@ from database import (
     GeoBlockRule,
     GeoTraffic,
     GeoConversation,
+    LanConversation,
     IpMetadata,
     InboundAttack,
     KnownDomain,
@@ -3375,6 +3376,90 @@ def ingest_geo_conversations(
         to_enrich = [ip for ip in unseen_ips if ip not in have]
 
     return {"status": "ok", "accepted": accepted, "enrich": to_enrich}
+
+
+@app.post("/api/lan/conversations/ingest")
+def ingest_lan_conversations(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Tailer ingests buffered LAN-to-LAN conversations (both ends local).
+
+    Complements /api/geo/conversations/ingest which skips flows that
+    don't cross a country boundary. Without this, IoT devices whose
+    primary activity is intra-LAN (camera → NVR, printer → client,
+    smart hub → HomeAssistant) show 0B on the fleet card.
+
+    Body:
+      {"updates": [
+         {"mac_address": "aa:bb:...", "peer_ip": "192.168.1.36",
+          "peer_mac": "cc:dd:...", "port": 554, "proto": "tcp",
+          "bytes": 12345, "orig_bytes": 1000, "resp_bytes": 11345,
+          "hits": 3},
+         ...
+      ]}
+    """
+    updates = payload.get("updates") or []
+    if not isinstance(updates, list):
+        raise HTTPException(status_code=400, detail="updates must be a list")
+    now = _utc_now_naive()
+    accepted = 0
+
+    for u in updates:
+        mac = u.get("mac_address") or ""
+        peer_ip = u.get("peer_ip") or ""
+        proto = (u.get("proto") or "tcp").lower()
+        try:
+            port = int(u.get("port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        if not mac or not peer_ip:
+            continue
+        peer_mac = u.get("peer_mac") or None
+        byts = int(u.get("bytes") or 0)
+        ob = int(u.get("orig_bytes") or 0)
+        rb = int(u.get("resp_bytes") or 0)
+        hits = int(u.get("hits") or 0)
+        if byts <= 0 and hits <= 0:
+            continue
+        row = (
+            db.query(LanConversation)
+            .filter(
+                LanConversation.mac_address == mac,
+                LanConversation.peer_ip == peer_ip,
+                LanConversation.port == port,
+                LanConversation.proto == proto,
+            )
+            .first()
+        )
+        if row:
+            row.bytes_transferred += byts
+            row.orig_bytes += ob
+            row.resp_bytes += rb
+            row.hits += hits
+            row.last_seen = now
+            # Fill in peer_mac if we didn't know it yet (ARP table can
+            # lag for devices that haven't been heard from in a while).
+            if peer_mac and not row.peer_mac:
+                row.peer_mac = peer_mac
+        else:
+            db.add(LanConversation(
+                mac_address=mac,
+                peer_ip=peer_ip,
+                peer_mac=peer_mac,
+                port=port,
+                proto=proto,
+                bytes_transferred=byts,
+                orig_bytes=ob,
+                resp_bytes=rb,
+                hits=hits,
+                first_seen=now,
+                last_seen=now,
+            ))
+        accepted += 1
+
+    db.commit()
+    return {"status": "ok", "accepted": accepted}
 
 
 @app.get("/api/geo/metadata/missing_asn")
@@ -9208,6 +9293,68 @@ def iot_fleet(db: Session = Depends(get_db)):
             "resp_bytes_24h": int(row.resp_bytes or 0),
         }
 
+    # LAN-to-LAN stats — aggregate rows where either end matches the
+    # device (conn.log records one row per flow keyed on the originator,
+    # so the peer's fleet card needs to find its own traffic via peer_mac).
+    # Peers are counted as distinct IPs.
+    lan_stats: dict[str, dict] = {}
+    _origin_rows = (
+        db.query(
+            LanConversation.mac_address.label("dev_mac"),
+            func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.hits).label("hits"),
+            func.count(func.distinct(LanConversation.peer_ip)).label("peers"),
+            func.sum(LanConversation.orig_bytes).label("orig_bytes"),
+            func.sum(LanConversation.resp_bytes).label("resp_bytes"),
+        )
+        .filter(LanConversation.last_seen >= cutoff)
+        .group_by(LanConversation.mac_address)
+        .all()
+    )
+    # Mirror: rows where this device is the peer. Bytes swap role —
+    # the originator's orig_bytes is inbound from the peer's POV, and
+    # resp_bytes is outbound (what the peer sent back on the same
+    # socket). Swap so orig/resp make sense from this device's POV.
+    _peer_rows = (
+        db.query(
+            LanConversation.peer_mac.label("dev_mac"),
+            func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.hits).label("hits"),
+            func.count(func.distinct(LanConversation.mac_address)).label("peers"),
+            func.sum(LanConversation.resp_bytes).label("orig_bytes"),
+            func.sum(LanConversation.orig_bytes).label("resp_bytes"),
+        )
+        .filter(
+            LanConversation.last_seen >= cutoff,
+            LanConversation.peer_mac.isnot(None),
+        )
+        .group_by(LanConversation.peer_mac)
+        .all()
+    )
+    for row in list(_origin_rows) + list(_peer_rows):
+        if not row.dev_mac:
+            continue
+        existing = lan_stats.get(row.dev_mac)
+        bytes_v = int(row.bytes or 0)
+        hits_v = int(row.hits or 0)
+        peers_v = int(row.peers or 0)
+        ob_v = int(row.orig_bytes or 0)
+        rb_v = int(row.resp_bytes or 0)
+        if existing:
+            existing["lan_bytes_24h"] += bytes_v
+            existing["lan_hits_24h"] += hits_v
+            existing["lan_peers"] += peers_v  # slight overcount if same peer
+            existing["lan_orig_bytes_24h"] += ob_v
+            existing["lan_resp_bytes_24h"] += rb_v
+        else:
+            lan_stats[row.dev_mac] = {
+                "lan_bytes_24h": bytes_v,
+                "lan_hits_24h": hits_v,
+                "lan_peers": peers_v,
+                "lan_orig_bytes_24h": ob_v,
+                "lan_resp_bytes_24h": rb_v,
+            }
+
     # Top 3 countries per device — batch query to avoid N+1
     iot_macs = [d.mac_address for d in iot_devices]
     _top_countries_raw = (
@@ -9269,6 +9416,7 @@ def iot_fleet(db: Session = Depends(get_db)):
     anomaly_device_count = 0
     for d in iot_devices:
         stats = conv_stats.get(d.mac_address, {})
+        lan = lan_stats.get(d.mac_address, {})
         baseline = baselines.get(d.mac_address)
         device_ips = [dip.ip for dip in d.ips] if d.ips else []
 
@@ -9326,9 +9474,19 @@ def iot_fleet(db: Session = Depends(get_db)):
             "top_countries": _top_countries_map.get(d.mac_address, []),
             "online": online,
             "baseline_avg_bytes_24h": int(baseline.avg_bytes_hour * 24) if baseline and baseline.avg_bytes_hour else None,
+            # LAN-to-LAN stats. Kept separate from bytes_24h / destinations
+            # so the UI can tell cloud vs local apart; the combined total
+            # is what most IoT cards should display for "is this device
+            # alive?" while still letting advanced users drill down.
+            "lan_bytes_24h": lan.get("lan_bytes_24h", 0),
+            "lan_peers": lan.get("lan_peers", 0),
+            "lan_orig_bytes_24h": lan.get("lan_orig_bytes_24h", 0),
+            "lan_resp_bytes_24h": lan.get("lan_resp_bytes_24h", 0),
         })
 
-    result.sort(key=lambda x: -x["bytes_24h"])
+    # Sort by combined cloud + LAN bytes so a camera that only streams
+    # to the NVR still bubbles up near the top instead of looking dead.
+    result.sort(key=lambda x: -(x["bytes_24h"] + x["lan_bytes_24h"]))
 
     return {
         "total_devices": len(result),
@@ -9484,6 +9642,85 @@ def iot_device_profile(mac_address: str, db: Session = Depends(get_db)):
     if first_conv and last_conv:
         hours_active = max(1, (last_conv - first_conv).total_seconds() / 3600)
 
+    # Top LAN peers — same shape as destinations but peer=local device.
+    # Queries both directions (originator and responder) so the list
+    # shows up on BOTH sides of every conversation.
+    lan_cutoff = _utc_now_naive() - timedelta(hours=24)
+    lan_device_map = {d.mac_address: d for d in db.query(Device).all()}
+    lan_peers_raw: dict[str, dict] = {}
+    for row in (
+        db.query(
+            LanConversation.peer_ip,
+            LanConversation.peer_mac,
+            func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.hits).label("hits"),
+        )
+        .filter(
+            LanConversation.mac_address == mac_address,
+            LanConversation.last_seen >= lan_cutoff,
+        )
+        .group_by(LanConversation.peer_ip, LanConversation.peer_mac)
+        .all()
+    ):
+        lan_peers_raw[row.peer_ip] = {
+            "ip": row.peer_ip,
+            "mac": row.peer_mac,
+            "bytes": int(row.bytes or 0),
+            "hits": int(row.hits or 0),
+        }
+    # Mirror: flows where this device is the responder. We don't know
+    # its IP here, so aggregate by the originator's mac_address+IP.
+    for row in (
+        db.query(
+            LanConversation.mac_address.label("peer_mac_col"),
+            func.sum(LanConversation.bytes_transferred).label("bytes"),
+            func.sum(LanConversation.hits).label("hits"),
+        )
+        .filter(
+            LanConversation.peer_mac == mac_address,
+            LanConversation.last_seen >= lan_cutoff,
+        )
+        .group_by(LanConversation.mac_address)
+        .all()
+    ):
+        # Need originator's IP to avoid aggregating all flows from a
+        # device under a single mac — pull the first matching row.
+        orig_row = (
+            db.query(LanConversation.mac_address, LanConversation.peer_ip)
+            .filter(
+                LanConversation.peer_mac == mac_address,
+                LanConversation.mac_address == row.peer_mac_col,
+                LanConversation.last_seen >= lan_cutoff,
+            )
+            .first()
+        )
+        orig_dev = lan_device_map.get(row.peer_mac_col)
+        orig_ip = None
+        if orig_dev and orig_dev.ips:
+            orig_ip = orig_dev.ips[0].ip
+        key_ip = orig_ip or row.peer_mac_col
+        if key_ip in lan_peers_raw:
+            lan_peers_raw[key_ip]["bytes"] += int(row.bytes or 0)
+            lan_peers_raw[key_ip]["hits"] += int(row.hits or 0)
+        else:
+            lan_peers_raw[key_ip] = {
+                "ip": orig_ip,
+                "mac": row.peer_mac_col,
+                "bytes": int(row.bytes or 0),
+                "hits": int(row.hits or 0),
+            }
+    # Enrich with device display_name / hostname where known.
+    lan_peers = []
+    for p in lan_peers_raw.values():
+        peer_dev = lan_device_map.get(p.get("mac")) if p.get("mac") else None
+        p["name"] = (
+            peer_dev.display_name or peer_dev.hostname if peer_dev
+            else None
+        )
+        lan_peers.append(p)
+    lan_peers.sort(key=lambda x: -x["bytes"])
+    lan_peers = lan_peers[:10]
+
     return {
         "mac_address": mac_address,
         "hostname": device.hostname,
@@ -9495,6 +9732,7 @@ def iot_device_profile(mac_address: str, db: Session = Depends(get_db)):
         "avg_bytes_hour": int(total_bytes / hours_active) if hours_active > 0 else 0,
         "contact_frequency": f"every {max(1, int(hours_active * 60 / max(1, total_hits)))} min",
         "destinations": destinations,
+        "lan_peers": lan_peers,
         "tls_fingerprints": [
             {"ja4": t.ja4, "sni": t.sni, "hits": t.hit_count}
             for t in tls_fps

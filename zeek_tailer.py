@@ -44,6 +44,10 @@ GEO_CONV_API_URL = os.environ.get(
     "AIRADAR_GEO_CONV_API_URL",
     "http://localhost:8000/api/geo/conversations/ingest",
 )
+LAN_CONV_API_URL = os.environ.get(
+    "AIRADAR_LAN_CONV_API_URL",
+    "http://localhost:8000/api/lan/conversations/ingest",
+)
 GEO_META_API_URL = os.environ.get(
     "AIRADAR_GEO_META_API_URL",
     "http://localhost:8000/api/geo/metadata/ingest",
@@ -1588,6 +1592,26 @@ def _is_local_ip(ip: str) -> bool:
         return False
 
 
+def _is_multicast_or_broadcast(ip: str) -> bool:
+    """True for multicast, broadcast, or all-zero IPs.
+
+    Used by the LAN-conversation accumulator to skip one-to-many chatter
+    (mDNS 224.0.0.251, SSDP 239.255.255.250, IPv6 multicast ff02::/16,
+    IPv4 broadcast 255.255.255.255). Recording those would explode row
+    counts while adding little diagnostic value — they aren't per-peer
+    conversations in the sense a user thinks about.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+        if addr.is_multicast or addr.is_unspecified:
+            return True
+        if addr.version == 4 and ip == "255.255.255.255":
+            return True
+        return False
+    except ValueError:
+        return False
+
+
 def _same_lan_segment(ip1: str, ip2: str) -> bool:
     """Return True iff ip1 and ip2 are in the same L2 broadcast domain.
 
@@ -2695,6 +2719,12 @@ GEO_FLUSH_INTERVAL = 15  # seconds
 # Key: (country_code, direction, mac_or_none, ai_service, resp_ip)
 _geo_conv_buckets: dict[tuple[str, str, str | None, str, str], dict] = {}
 
+# LAN-to-LAN buffer — for flows where BOTH endpoints are local. Fills the
+# blind spot the geo pipeline leaves (geo needs a country tag, LAN has
+# none). Same flush cadence as geo.
+# Key: (src_mac, peer_ip, port, proto)
+_lan_conv_buckets: dict[tuple[str, str, int, str], dict] = {}
+
 # IPs awaiting PTR/ASN enrichment. Populated by the ingest endpoint's
 # response and drained by enrich_ip_metadata_loop.
 _ip_enrich_queue: set[str] = set()
@@ -2751,6 +2781,42 @@ async def _record_geo_conversation(
             bucket["hits"] += 1
         else:
             _geo_conv_buckets[key] = {"bytes": total_bytes, "ob": ob, "rb": rb, "hits": 1}
+
+
+async def _record_lan_conversation(
+    src_mac: str,
+    peer_ip: str,
+    peer_mac: str | None,
+    port: int,
+    proto: str,
+    total_bytes: int,
+    ob: int = 0,
+    rb: int = 0,
+) -> None:
+    """Record one LAN-to-LAN flow keyed on (src_mac, peer_ip, port, proto).
+
+    Both src and peer are local. Without this the conn.log record is
+    dropped by the geo pipeline (no country tag). IoT fleet cards then
+    show 0B for devices whose PRIMARY activity is LAN (cameras → NVRs,
+    smart hubs → home assistant, printers → clients, ...).
+    """
+    if not src_mac or not peer_ip:
+        return
+    key = (src_mac, peer_ip, port, proto or "tcp")
+    async with _geo_lock:
+        bucket = _lan_conv_buckets.get(key)
+        if bucket:
+            bucket["bytes"] += total_bytes
+            bucket["ob"] += ob
+            bucket["rb"] += rb
+            bucket["hits"] += 1
+            if peer_mac and not bucket.get("peer_mac"):
+                bucket["peer_mac"] = peer_mac
+        else:
+            _lan_conv_buckets[key] = {
+                "bytes": total_bytes, "ob": ob, "rb": rb, "hits": 1,
+                "peer_mac": peer_mac,
+            }
 
 
 # Ranked priority for Zeek conn_state. Higher rank = more informative about
@@ -2874,10 +2940,26 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                 }
                 for (cc, d, mac, svc, ip), v in _geo_conv_buckets.items()
             ] if _geo_conv_buckets else []
+            lan_snapshot = [
+                {
+                    "mac_address": src_mac,
+                    "peer_ip": peer_ip,
+                    "peer_mac": v.get("peer_mac"),
+                    "port": port,
+                    "proto": proto,
+                    "bytes": v["bytes"],
+                    "orig_bytes": v.get("ob", 0),
+                    "resp_bytes": v.get("rb", 0),
+                    "hits": v["hits"],
+                }
+                for (src_mac, peer_ip, port, proto), v in _lan_conv_buckets.items()
+            ] if _lan_conv_buckets else []
             if snapshot:
                 _geo_buckets.clear()
             if conv_snapshot:
                 _geo_conv_buckets.clear()
+            if lan_snapshot:
+                _lan_conv_buckets.clear()
 
         if snapshot:
             try:
@@ -2908,6 +2990,16 @@ async def flush_geo_buckets(client: httpx.AsyncClient) -> None:
                     pass
             except httpx.HTTPError as exc:
                 print(f"[geo-conv] Flush failed ({len(conv_snapshot)} updates): {exc}")
+
+        if lan_snapshot:
+            try:
+                await client.post(
+                    LAN_CONV_API_URL,
+                    json={"updates": lan_snapshot},
+                    timeout=10,
+                )
+            except httpx.HTTPError as exc:
+                print(f"[lan-conv] Flush failed ({len(lan_snapshot)} updates): {exc}")
 
         # --- Inbound attack buffer flush ---
         async with _geo_lock:
@@ -3362,6 +3454,47 @@ async def tail_conn_log(log_path: Path, client: httpx.AsyncClient) -> None:
                                         ob=_ob, rb=_rb,
                                     )
                                 )
+
+                    # --- LAN-to-LAN conversation accumulation ---
+                    # Complements the geo branch above: when BOTH ends are
+                    # local, the geo pipeline skips the flow (no country
+                    # tag). Without this, IoT devices whose primary activity
+                    # is intra-LAN (cameras → NVRs, hubs → HomeAssistant,
+                    # printers → clients) show 0B on the fleet card even
+                    # when they're actively streaming 24/7.
+                    elif src_local and dst_local and src_ip != resp_ip:
+                        # Skip multicast/broadcast destinations — those are
+                        # one-to-many chatter (mDNS, SSDP, UPnP discovery)
+                        # and fan out to massive row counts with limited
+                        # diagnostic value. Unicast peers are what users
+                        # actually care about.
+                        if not _is_multicast_or_broadcast(resp_ip):
+                            src_lan_mac = (
+                                _normalize_mac(l2_mac) if l2_mac
+                                else _ip_to_mac.get(src_ip)
+                            )
+                            if src_lan_mac:
+                                try:
+                                    _ob = record.get("orig_bytes", "0")
+                                    _rb = record.get("resp_bytes", "0")
+                                    _ob = int(_ob) if _ob and _ob != "-" else 0
+                                    _rb = int(_rb) if _rb and _rb != "-" else 0
+                                except ValueError:
+                                    _ob = _rb = 0
+                                lan_total = _ob + _rb
+                                # Drop empty probes (SYN+RST, failed UDP
+                                # send, rejected connections) — these
+                                # explode row count without telling us
+                                # about real device activity.
+                                if lan_total > 0:
+                                    peer_lan_mac = _ip_to_mac.get(resp_ip)
+                                    asyncio.create_task(
+                                        _record_lan_conversation(
+                                            src_lan_mac, resp_ip, peer_lan_mac,
+                                            resp_port, proto,
+                                            lan_total, ob=_ob, rb=_rb,
+                                        )
+                                    )
 
                 # --- VPN / tunnel detection ---
                 vpn_key = (proto, resp_port)
