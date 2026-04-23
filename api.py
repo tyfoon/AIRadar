@@ -3919,9 +3919,13 @@ def get_country_detail(
         GeoConversation.direction == direction,
     )
 
-    # Totals
+    # Totals — use directional bytes (orig for outbound, resp for inbound)
+    _total_dir_bytes = (
+        GeoConversation.orig_bytes if direction == "outbound"
+        else GeoConversation.resp_bytes
+    )
     total_bytes = db.query(
-        func.coalesce(func.sum(GeoConversation.bytes_transferred), 0)
+        func.coalesce(func.sum(_total_dir_bytes), 0)
     ).filter(
         GeoConversation.country_code == cc,
         GeoConversation.direction == direction,
@@ -3933,11 +3937,18 @@ def get_country_detail(
         GeoConversation.direction == direction,
     ).scalar() or 0
 
-    # Top devices
+    # Top devices — use directional bytes so "outbound" shows upload
+    # volume and "inbound" shows download volume, not the combined total.
+    # bytes_transferred is orig+resp combined, which makes a streaming
+    # Apple TV (137 GB download, 310 MB upload) appear as 146 GB "outbound".
+    _dir_bytes = (
+        GeoConversation.orig_bytes if direction == "outbound"
+        else GeoConversation.resp_bytes
+    )
     dev_rows = (
         db.query(
             GeoConversation.mac_address,
-            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(_dir_bytes).label("bytes"),
             func.sum(GeoConversation.hits).label("hits"),
             func.max(GeoConversation.last_seen).label("last_seen"),
         )
@@ -3946,7 +3957,7 @@ def get_country_detail(
             GeoConversation.direction == direction,
         )
         .group_by(GeoConversation.mac_address)
-        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .order_by(func.sum(_dir_bytes).desc())
         .limit(15)
         .all()
     )
@@ -3963,11 +3974,11 @@ def get_country_detail(
             "last_seen": str(lseen) if lseen else None,
         })
 
-    # Top services
+    # Top services — same directional bytes logic
     svc_rows = (
         db.query(
             GeoConversation.ai_service,
-            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(_dir_bytes).label("bytes"),
             func.sum(GeoConversation.hits).label("hits"),
         )
         .filter(
@@ -3975,7 +3986,7 @@ def get_country_detail(
             GeoConversation.direction == direction,
         )
         .group_by(GeoConversation.ai_service)
-        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .order_by(func.sum(_dir_bytes).desc())
         .limit(15)
         .all()
     )
@@ -3984,11 +3995,11 @@ def get_country_detail(
         for s, b, h in svc_rows
     ]
 
-    # Top IPs with ASN/PTR join
+    # Top IPs with ASN/PTR join — same directional bytes
     ip_rows = (
         db.query(
             GeoConversation.resp_ip,
-            func.sum(GeoConversation.bytes_transferred).label("bytes"),
+            func.sum(_dir_bytes).label("bytes"),
             func.sum(GeoConversation.hits).label("hits"),
             func.max(GeoConversation.last_seen).label("last_seen"),
         )
@@ -3997,7 +4008,7 @@ def get_country_detail(
             GeoConversation.direction == direction,
         )
         .group_by(GeoConversation.resp_ip)
-        .order_by(func.sum(GeoConversation.bytes_transferred).desc())
+        .order_by(func.sum(_dir_bytes).desc())
         .limit(20)
         .all()
     )
