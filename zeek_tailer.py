@@ -2192,7 +2192,10 @@ async def tail_ssl_log(log_path: Path, client: httpx.AsyncClient) -> None:
                 # detection (e.g. nordvpn.com domain match) is reliable
                 # but the old code only generated sni_hello events which
                 # the alert system ignores. Dedup: 1 alert per 5 min.
-                if service.startswith("vpn_"):
+                # Gate on minimum bytes to avoid false positives from
+                # VPN apps that phone home periodically without an
+                # active tunnel (e.g. NordVPN keepalive every ~1.5h).
+                if service.startswith("vpn_") and orig_bytes >= 500_000:
                     _vpn_sni_key = (src_ip, service)
                     _vpn_sni_now = time.time()
                     _vpn_sni_last = _vpn_sni_dedup.get(_vpn_sni_key, 0)
@@ -2401,33 +2404,10 @@ async def tail_quic_log(log_path: Path, client: httpx.AsyncClient) -> None:
                         ),
                     )
 
-                    # VPN-tunnel side event: same handling as the SSL
-                    # path so the alert dashboard sees vpn_ services
-                    # arriving via QUIC too (NordVPN's QUIC mode and
-                    # any other vpn over h3).
-                    if service.startswith("vpn_"):
-                        _vpn_key = (src_ip, service)
-                        _vpn_now = time.time()
-                        _vpn_last = _vpn_sni_dedup.get(_vpn_key, 0)
-                        if (_vpn_now - _vpn_last) >= 300:
-                            _vpn_sni_dedup[_vpn_key] = _vpn_now
-                            await send_event(
-                                client,
-                                detection_type="vpn_tunnel",
-                                ai_service=service,
-                                source_ip=src_ip,
-                                bytes_transferred=0,
-                                category="security",
-                                attribution={
-                                    "labeler": proposal.labeler,
-                                    "confidence": proposal.effective_score,
-                                    "rationale": proposal.rationale,
-                                    "proposed_service": service,
-                                    "proposed_category": "security",
-                                    "is_low_confidence": False,
-                                    "is_disputed": False,
-                                },
-                            )
+                    # VPN-tunnel side event: skip for QUIC — quic.log has
+                    # no byte counts so we can't distinguish a keepalive
+                    # from an active tunnel. The conn.log volumetric path
+                    # handles VPN detection with actual byte thresholds.
 
                     await send_event(
                         client,
