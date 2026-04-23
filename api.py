@@ -3219,6 +3219,16 @@ _iot_country_alert_last: dict[tuple, float] = {}
 # known_countries are unreliable.
 BASELINE_READY_DAYS = 7
 
+# Countries with major CDN/cloud presence — traffic to these is almost
+# always CDN edge routing, not a genuine change in who the device talks to.
+# Excluded from iot_new_country alerts to avoid noise.
+_CDN_COUNTRIES = {
+    "US", "GB", "NL", "DE", "IE", "IN", "SG", "JP", "CA", "AU",
+    "FR", "SE", "FI", "BE", "IT", "ES", "BR", "KR", "HK", "TW",
+    "ZA", "AE", "IL", "PL", "CZ", "AT", "CH", "DK", "NO", "PT",
+    "BG", "RO",
+}
+
 
 # ---------------------------------------------------------------------------
 # PyOD multivariate IoT anomaly detector (ECOD)
@@ -3458,6 +3468,7 @@ def ingest_geo_conversations(
                 dev and _is_iot_backend(dev)
                 and dev.first_seen
                 and (now - dev.first_seen).days >= BASELINE_READY_DAYS
+                and cc not in _CDN_COUNTRIES
             ):
                 bl = _baselines.get(mac)
                 if bl and bl.known_countries:
@@ -9622,8 +9633,26 @@ def _classify_device_type_backend(device: Device) -> str:
     return ""
 
 
+# Device classes that are interactive user devices, not IoT.
+# These should NOT trigger iot_volume_spike or iot_new_country alerts
+# because volume spikes are expected normal usage for laptops/phones.
+_USER_DEVICE_CLASSES = {"laptop", "phone", "desktop", "tablet", "wearable"}
+
+
 def _is_iot_backend(device: Device) -> bool:
-    return bool(_classify_device_type_backend(device))
+    dtype = _classify_device_type_backend(device)
+    if not dtype:
+        return False
+    # If the keyword map classified it as a user device (laptop, phone, etc.)
+    # it's not IoT even though it matched a keyword.
+    if dtype in _USER_DEVICE_CLASSES:
+        return False
+    # Also check the device_class field directly — keyword map sets this
+    # to "laptop", "phone", etc. for user devices.
+    dc = (device.device_class or "").lower()
+    if dc in _USER_DEVICE_CLASSES:
+        return False
+    return True
 
 
 @app.get("/api/devices/{mac_address}/connections")
@@ -11199,6 +11228,19 @@ async def _check_volume_spikes():
                                 continue
                             if detector_score <= bl.score_p99:
                                 continue
+                            # ECOD flags any anomaly — including traffic
+                            # drops. Only alert on upward spikes: traffic
+                            # must exceed the hour-of-day average.
+                            import json as _jecod
+                            _ecod_avg = bl.avg_bytes_hour or 0
+                            if bl.hourly_profile:
+                                try:
+                                    _hp = _jecod.loads(bl.hourly_profile)
+                                    _ecod_avg = _hp.get(str(now.hour), {}).get("avg", _ecod_avg)
+                                except Exception:
+                                    pass
+                            if hour_bytes < _ecod_avg:
+                                continue
 
                 if not detector_used:
                     # Legacy 3σ fallback — use per-hour-of-day baseline
@@ -11257,7 +11299,21 @@ async def _check_volume_spikes():
                 if spike_dest_asn and bl.known_asns:
                     try:
                         known_list = _jctx.loads(bl.known_asns)
+                        # Direct match first
                         dest_is_known = spike_dest_asn in known_list
+                        # Fuzzy org match: ASN names for the same org vary
+                        # (e.g. "Akamai Technologies, Inc." vs "Akamai
+                        # International B.V."). Compare the first word to
+                        # catch these; single-word prefixes like "Google",
+                        # "Amazon", "Akamai", "Microsoft", "Cloudflare"
+                        # are unique enough to be safe.
+                        if not dest_is_known:
+                            prefix = spike_dest_asn.split(",")[0].split()[0].lower()
+                            if len(prefix) >= 4:  # avoid matching on "AS" etc.
+                                for k in known_list:
+                                    if k.lower().startswith(prefix):
+                                        dest_is_known = True
+                                        break
                     except Exception:
                         pass
 
